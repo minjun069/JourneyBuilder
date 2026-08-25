@@ -1,0 +1,75 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# 가상환경
+venv/
+.venv/
+
+# 환경변수
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# =========================
+# Django
+# =========================
+*.log
+db.sqlite3
+media/
+staticfiles/
+
+# migration은 협업 시 보통 관리하므로 제외하지 않음
+# */migrations/
+
+# =========================
+# Vue / Node.js
+# =========================
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# VSCode
+# =========================
+.vscode/
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Docker
+# =========================
+*.pid
+
+# PostgreSQL local volume/data
+postgres_data/
+
+# =========================
+# Kafka
+# =========================
+kafka-logs/
+
+# =========================
+# Test / Coverage
+# =========================
+.coverage
+htmlcov/
+.pytest_cache/
+
+# =========================
+# ETC
+# =========================
+*.swp
+*.swo

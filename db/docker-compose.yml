@@ -1,0 +1,31 @@
+# PostgreSQL + pgvector
+# 최종 뉴스 기사 데이터 저장
+
+# docker network create de_net 필요
+
+# 프로젝트명 고정: 어느 디렉토리에서 실행하든 동일 프로젝트/볼륨(de_pjt_postgres_data)을
+# 참조하도록 고정. (compose 기본값은 디렉토리명이라 db/ 에서 실행 시 볼륨이 갈라지는 것 방지)
+name: de_pjt
+
+services:
+  postgres:
+    container_name: postgres
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: streaming_data
+      POSTGRES_USER: ssafy
+      POSTGRES_PASSWORD: ssafy
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - de_net
+
+volumes:
+  postgres_data:
+
+networks:
+  de_net:
+    external: true

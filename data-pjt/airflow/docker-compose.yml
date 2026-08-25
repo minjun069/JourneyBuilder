@@ -1,0 +1,123 @@
+# Airflow 인프라 (배치 파이프라인 오케스트레이션)
+#
+# 구성:
+#   - airflow-postgres  : Airflow 전용 메타데이터 DB (streaming_data/news 와 분리)
+#   - airflow-init      : DB 마이그레이션 + admin 계정 생성 (1회 실행 후 종료)
+#   - airflow-webserver : Web UI (호스트 8090 -> 컨테이너 8080)
+#   - airflow-scheduler : DAG 스케줄링/실행 (LocalExecutor)
+#
+# Executor: LocalExecutor (redis/worker 불필요, 가장 가벼운 구성)
+#
+# 코드 마운트:
+#   ./dags -> /opt/airflow/dags        (DAG 파일)
+#   ../    -> /opt/app (PYTHONPATH)     (from common..., from news... import 가능)
+
+x-airflow-common: &airflow-common
+  # chromium + 파이프라인 의존성이 포함된 커스텀 이미지 (Dockerfile 참고)
+  build: .
+  image: de-pjt-airflow:2.10.5
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    PYTHONPATH: /opt/app
+
+    # 추가 패키지가 필요하면 .env 의 _PIP_ADDITIONAL_REQUIREMENTS 로 임시 설치 가능
+    # (운영에서는 전용 Dockerfile 권장)
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-apache-airflow-providers-apache-spark}
+
+    # --- 파이프라인 런타임 설정 (컨테이너 내부 호스트명) ---
+    DB_HOST: postgres
+    DB_PORT: '5432'
+    DB_USER: ssafy
+    DB_PASSWORD: ssafy
+    NEWS_DB_NAME: news
+    ES_URL: http://elasticsearch:9200
+    HDFS_URL: http://namenode:9870
+    # OPENAI_API_KEY 등 시크릿은 마운트한 /opt/app/.env 에서 load_dotenv 로 읽음
+
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ../:/opt/app
+    - ../../.env:/opt/app/.env:ro
+  user: "${AIRFLOW_UID:-50000}:0"
+  networks:
+    - de_net
+
+services:
+  airflow-postgres:
+    image: postgres:16
+    container_name: airflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - de_net
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    # DB 초기화 + admin 계정 생성 후 종료되는 1회성 컨테이너.
+    # 공식 entrypoint(/entrypoint)를 거쳐야 임의 UID가 passwd에 등록되고,
+    # _AIRFLOW_DB_MIGRATE / _AIRFLOW_WWW_USER_CREATE 환경변수로 초기화가 수행됨.
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - exec /entrypoint airflow version
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    restart: unless-stopped
+    ports:
+      - "8090:8080"   # Airflow Web UI (8080은 Spark Master가 사용 중)
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  airflow_postgres_data:
+
+networks:
+  de_net:
+    external: true

@@ -1,0 +1,49 @@
+# Hadoop HDFS 인프라 (배치 파이프라인 원본 뉴스 저장소)
+#
+# 구성:
+#   - namenode : HDFS 메타데이터 관리 + Web UI(9870) + WebHDFS
+#   - datanode : 실제 블록 데이터 저장
+#
+# 뉴스 원본은 hdfs:///news/raw/YYYY/MM/DD/news.jsonl 형태로 저장됩니다.
+# Python hdfs 클라이언트는 WebHDFS(9870)를 통해 접근합니다.
+
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    hostname: namenode
+    restart: unless-stopped
+    ports:
+      - "9870:9870"   # NameNode Web UI / WebHDFS
+      - "9000:9000"   # HDFS RPC (fs.defaultFS)
+    environment:
+      - CLUSTER_NAME=de-cluster
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    networks:
+      - de_net
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    hostname: datanode
+    restart: unless-stopped
+    environment:
+      # namenode가 준비된 뒤에 datanode가 기동되도록 대기
+      - SERVICE_PRECONDITION=namenode:9870
+    env_file:
+      - ./hadoop.env
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    networks:
+      - de_net
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+
+networks:
+  de_net:
+    external: true

@@ -1,0 +1,26 @@
+fastapi>=0.115
+uvicorn[standard]>=0.32
+langgraph>=0.2
+langgraph-checkpoint-postgres>=0.0.1
+psycopg[binary]>=3.0
+langchain-core>=0.3
+langchain-openai>=0.2
+langchain>=0.3
+langchain-community>=0.3
+langchain-postgres>=0.0.9
+langchain-google-genai>=2.0
+rank-bm25>=0.2.2
+langfuse>=2.0
+python-dotenv>=1.0
+
+# Redis 전환 시 위 postgres 패키지 대신 아래 사용:
+langgraph-checkpoint-redis>=0.0.1
+redis>=5.0
+
+llama-index
+llama-index-core
+llama-index-vector-stores-postgres
+llama-index-retrievers-bm25
+
+llama-index-embeddings-openai
+llama-index-embeddings-google-genai
