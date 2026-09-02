@@ -1,4 +1,5 @@
 import json
+from math import isfinite
 import uuid
 
 from django.conf import settings
@@ -12,6 +13,7 @@ from .models import (
     Message,
 )
 from .serializers import (
+    BasicInfoWriteSerializer,
     BasicInfoSerializer,
     ExpenseSerializer,
     FinancialAssetSerializer,
@@ -24,6 +26,7 @@ from .serializers import (
     PensionAssetSerializer,
     RealEstateAssetSerializer,
 )
+from .field_registry import get_step_field_registry, validate_field_change
 
 
 AI_STATUS_PROCESSING = 'processing'
@@ -32,7 +35,7 @@ AI_STATUS_FAILED = 'failed'
 
 
 ONE_TO_ONE_SECTIONS = {
-    'basic_info': (BasicInfo, BasicInfoSerializer),
+    'basic_info': (BasicInfo, BasicInfoWriteSerializer),
     'financial_mindset': (FinancialMindset, FinancialMindsetSerializer),
     'financial_satisfaction': (FinancialSatisfaction, FinancialSatisfactionSerializer),
 }
@@ -156,6 +159,7 @@ def build_ai_request_payload(request_id, session, user, message, step_id, form_d
         'step_id': step_id,
         'message': message,
         'customer_info': build_customer_info(session, form_data),
+        'field_registry': get_step_field_registry(step_id),
     }
 
 
@@ -207,6 +211,70 @@ def normalize_pending_changes(update, default_section=None):
     return normalized
 
 
+DIRECT_CHANGE_CONFIDENCE = 0.90
+
+
+def normalize_form_action(output, step_id):
+    action = output.get('action') if isinstance(output, dict) else None
+    if not isinstance(action, dict) or action.get('type') != 'form_change':
+        return None
+
+    target = action.get('target') or 'draft_form'
+    if target != 'draft_form':
+        raise ValueError(f'지원하지 않는 form action target입니다: {target}')
+    raw_confidence = action.get('confidence', 0)
+    try:
+        confidence = float(raw_confidence)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    if not isfinite(confidence):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+    user_requested = action.get('user_requested') is True
+    changes = []
+    for raw in action.get('changes') or []:
+        if not isinstance(raw, dict):
+            continue
+        section = raw.get('section')
+        path = raw.get('path')
+        operation = raw.get('operation')
+        spec = validate_field_change(
+            step_id=step_id,
+            section=section,
+            path=path,
+            operation=operation,
+        )
+        change = {
+            'section': section,
+            'path': path,
+            'operation': operation,
+            'value': raw.get('value'),
+            'label': raw.get('label') or spec.label,
+            'reason': raw.get('reason') or '',
+        }
+        if raw.get('item_id') is not None:
+            change['item_id'] = raw['item_id']
+        if raw.get('client_item_id'):
+            change['client_item_id'] = raw['client_item_id']
+        if raw.get('parent_item_id') is not None:
+            change['parent_item_id'] = raw['parent_item_id']
+        if raw.get('parent_client_item_id'):
+            change['parent_client_item_id'] = raw['parent_client_item_id']
+        changes.append(change)
+
+    if not changes:
+        return None
+    mode = 'direct' if target == 'draft_form' and user_requested and confidence >= DIRECT_CHANGE_CONFIDENCE else 'proposal'
+    return {
+        'type': 'form_change',
+        'step_id': step_id,
+        'target': target,
+        'mode': mode,
+        'user_requested': user_requested,
+        'confidence': confidence,
+        'changes': changes,
+    }
+
 def mark_message_action(message, action):
     extracted_data = message.extracted_data or {}
     extracted_data['action_status'] = action
@@ -228,7 +296,7 @@ def apply_pending_changes(session, message):
             if section not in ONE_TO_ONE_SECTIONS:
                 raise ValueError(f'지원하지 않는 section입니다: {section}')
 
-            model_class, _ = ONE_TO_ONE_SECTIONS[section]
+            model_class, serializer_class = ONE_TO_ONE_SECTIONS[section]
             allowed_fields = {
                 f.name for f in model_class._meta.fields
                 if f.name not in ('id', 'session', 'updated_at')
@@ -236,11 +304,12 @@ def apply_pending_changes(session, message):
             if field not in allowed_fields:
                 raise ValueError(f'{section}.{field} 필드는 수정할 수 없습니다.')
 
-            value = normalize_change_value(section, field, value)
             obj, _ = model_class.objects.get_or_create(session=session)
-            setattr(obj, field, value)
-            obj.save(update_fields=[field, 'updated_at'])
-            applied.append(change)
+            value = normalize_change_value(section, field, value)
+            serializer = serializer_class(obj, data={field: value}, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            applied.append({**change, 'value': value})
 
         mark_message_action(message, 'approved')
         session.refresh_completion_status()
@@ -252,8 +321,21 @@ def create_assistant_message_from_callback(session, payload):
     output = payload.get('output') or {}
     content = payload.get('content') or output.get('response') or ''
     extracted_data = payload.get('extracted_data')
+    request_state = get_ai_request_state(payload.get('request_id')) or {}
+    step_id = request_state.get('step_id') or output.get('step_id')
+    form_action = normalize_form_action(output, step_id) if step_id else None
 
-    if extracted_data is None:
+    if form_action:
+        direct_changes = form_action['changes'] if form_action['mode'] == 'direct' else []
+        pending_changes = form_action['changes'] if form_action['mode'] == 'proposal' else []
+        extracted_data = {
+            'intent': 'input_assist',
+            'requires_approval': form_action['mode'] == 'proposal',
+            'action': form_action,
+            'direct_changes': direct_changes,
+            'pending_changes': pending_changes,
+        }
+    elif extracted_data is None:
         update = output.get('update') or {}
         pending_changes = normalize_pending_changes(update)
         if pending_changes:

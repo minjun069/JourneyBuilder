@@ -25,6 +25,7 @@ async def _process_and_callback(graph, request: ChatRequest):
         "message": request.message,
         "step_id": request.step_id,
         "customer_info": request.customer_info,
+        "field_registry": request.field_registry,
     }
     config = {"configurable": {"thread_id": request.thread_id}, "callbacks": get_callbacks()}
 

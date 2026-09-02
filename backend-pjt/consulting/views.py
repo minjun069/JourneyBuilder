@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.http import StreamingHttpResponse
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -166,6 +167,7 @@ class MessageListCreateView(APIView):
             'user_id': request.user.id,
             'user_message_id': user_message.id,
             'thread_id': ai_payload['thread_id'],
+            'step_id': step_id,
         }
 
         try:
@@ -421,7 +423,7 @@ class AIActionApproveView(APIView):
 
         try:
             applied = apply_pending_changes(session, message)
-        except ValueError as exc:
+        except (ValueError, ValidationError) as exc:
             return Response({'success': False, 'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({'success': True, 'data': {'message_id': message.id, 'applied': applied}})
@@ -594,20 +596,50 @@ class BulkReplaceView(APIView):
         if not isinstance(request.data, list):
             return Response({'success': False, 'error': '리스트 형식으로 보내주세요.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = self.serializer_class(data=request.data, many=True)
-        if not serializer.is_valid():
-            return Response({'success': False, 'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        existing = {
+            obj.id: obj
+            for obj in getattr(session, self.related_name).all()
+        }
+        prepared = []
+        kept_ids = set()
+        for raw_item in request.data:
+            item_id = raw_item.get('id') if isinstance(raw_item, dict) else None
+            instance = None
+            if item_id is not None:
+                try:
+                    item_id = int(item_id)
+                except (TypeError, ValueError):
+                    return Response(
+                        {'success': False, 'error': 'id는 정수여야 합니다.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                instance = existing.get(item_id)
+                if instance is None:
+                    return Response(
+                        {'success': False, 'error': f'현재 세션의 항목이 아닙니다: {item_id}'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                kept_ids.add(item_id)
+            serializer = self.serializer_class(instance, data=raw_item)
+            if not serializer.is_valid():
+                return Response(
+                    {'success': False, 'error': serializer.errors},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            prepared.append((instance, serializer))
 
         with transaction.atomic():
-            getattr(session, self.related_name).all().delete()
-            objs = [
-                self.serializer_class.Meta.model(session=session, **item)
-                for item in serializer.validated_data
-            ]
-            created = self.serializer_class.Meta.model.objects.bulk_create(objs)
+            saved = []
+            for instance, serializer in prepared:
+                saved.append(
+                    serializer.save() if instance else serializer.save(session=session)
+                )
+            stale_ids = set(existing) - kept_ids
+            if stale_ids:
+                getattr(session, self.related_name).filter(id__in=stale_ids).delete()
             session.refresh_completion_status()
 
-        return Response({'success': True, 'data': self.serializer_class(created, many=True).data})
+        return Response({'success': True, 'data': self.serializer_class(saved, many=True).data})
 
 
 class FinancialAssetsView(BulkReplaceView):
@@ -669,21 +701,126 @@ class GoalPeriodsView(APIView):
         if not serializer.is_valid():
             return Response({'success': False, 'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        existing_periods = {
+            period.id: period
+            for period in session.goal_periods.prefetch_related('items').all()
+        }
+
+        # 모든 서버 ID의 소유권을 쓰기 전에 확인해 중첩 저장도 전부 성공하거나
+        # 전부 실패하도록 한다. 신규 행은 DB id 없이 client_item_id로만 식별한다.
+        for raw_period in request.data:
+            raw_period = raw_period if isinstance(raw_period, dict) else {}
+            period_id = raw_period.get('id')
+            period = None
+            if period_id is not None:
+                try:
+                    period_id = int(period_id)
+                except (TypeError, ValueError):
+                    return Response(
+                        {'success': False, 'error': '기간 id는 정수여야 합니다.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                period = existing_periods.get(period_id)
+                if period is None:
+                    return Response(
+                        {'success': False, 'error': f'현재 세션의 기간이 아닙니다: {period_id}'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            existing_item_ids = {
+                item.id for item in period.items.all()
+            } if period is not None else set()
+            for raw_item in raw_period.get('items', []):
+                item_id = raw_item.get('id') if isinstance(raw_item, dict) else None
+                if item_id is None:
+                    continue
+                try:
+                    item_id = int(item_id)
+                except (TypeError, ValueError):
+                    return Response(
+                        {'success': False, 'error': '기간 항목 id는 정수여야 합니다.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if item_id not in existing_item_ids:
+                    return Response(
+                        {'success': False, 'error': f'현재 기간의 항목이 아닙니다: {item_id}'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
         with transaction.atomic():
-            session.goal_periods.all().delete()
-            created = []
-            for period_data in serializer.validated_data:
+            saved_periods = []
+            kept_period_ids = set()
+            for raw_period, period_data in zip(request.data, serializer.validated_data):
+                raw_period = raw_period if isinstance(raw_period, dict) else {}
+                period_id = raw_period.get('id')
+                period = None
+                if period_id is not None:
+                    try:
+                        period_id = int(period_id)
+                    except (TypeError, ValueError):
+                        return Response(
+                            {'success': False, 'error': '기간 id는 정수여야 합니다.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    period = existing_periods.get(period_id)
+                    if period is None:
+                        return Response(
+                            {'success': False, 'error': f'현재 세션의 기간이 아닙니다: {period_id}'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    kept_period_ids.add(period_id)
+
                 items_data = period_data.pop('items', [])
-                period = FinancialGoalPeriod.objects.create(session=session, **period_data)
-                if items_data:
-                    FinancialGoalPeriodItem.objects.bulk_create([
-                        FinancialGoalPeriodItem(period=period, **item) for item in items_data
-                    ])
-                created.append(period)
+                if period is None:
+                    period = FinancialGoalPeriod.objects.create(session=session, **period_data)
+                else:
+                    for field, value in period_data.items():
+                        setattr(period, field, value)
+                    period.save(update_fields=list(period_data))
+
+                existing_items = {item.id: item for item in period.items.all()}
+                kept_item_ids = set()
+                for raw_item, item_data in zip(raw_period.get('items', []), items_data):
+                    item_id = raw_item.get('id') if isinstance(raw_item, dict) else None
+                    item = None
+                    if item_id is not None:
+                        try:
+                            item_id = int(item_id)
+                        except (TypeError, ValueError):
+                            return Response(
+                                {'success': False, 'error': '기간 항목 id는 정수여야 합니다.'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        item = existing_items.get(item_id)
+                        if item is None:
+                            return Response(
+                                {'success': False, 'error': f'현재 기간의 항목이 아닙니다: {item_id}'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        kept_item_ids.add(item_id)
+                    if item is None:
+                        FinancialGoalPeriodItem.objects.create(period=period, **item_data)
+                    else:
+                        for field, value in item_data.items():
+                            setattr(item, field, value)
+                        item.save(update_fields=list(item_data))
+                stale_item_ids = set(existing_items) - kept_item_ids
+                if stale_item_ids:
+                    period.items.filter(id__in=stale_item_ids).delete()
+                saved_periods.append(period)
+
+            stale_period_ids = set(existing_periods) - kept_period_ids
+            if stale_period_ids:
+                session.goal_periods.filter(id__in=stale_period_ids).delete()
             session.refresh_completion_status()
 
-        qs = FinancialGoalPeriod.objects.filter(id__in=[p.id for p in created]).prefetch_related('items')
-        return Response({'success': True, 'data': FinancialGoalPeriodSerializer(qs, many=True).data})
+        refreshed = {
+            period.id: period
+            for period in FinancialGoalPeriod.objects.filter(
+                id__in=[period.id for period in saved_periods]
+            ).prefetch_related('items')
+        }
+        ordered = [refreshed[period.id] for period in saved_periods]
+        return Response({'success': True, 'data': FinancialGoalPeriodSerializer(ordered, many=True).data})
 
 
 # 임시 stream 내부 함수 

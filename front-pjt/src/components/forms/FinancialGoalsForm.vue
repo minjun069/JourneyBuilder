@@ -85,7 +85,12 @@ function confirmPeriod() {
     periodError.value = '이미 입력한 기간과 겹칩니다.'
     return
   }
-  tabData.value.periods.push({ fromAge: from, toAge: to, items: [] })
+  tabData.value.periods.push({
+    clientItemId: crypto.randomUUID(),
+    fromAge: from,
+    toAge: to,
+    items: [],
+  })
   selIdx.value = tabData.value.periods.length - 1
   pending.value.from = ''
   pending.value.to   = ''
@@ -105,6 +110,7 @@ function deletePeriod(i) {
 function addPeriodItem() {
   if (selIdx.value === null) return
   tabData.value.periods[selIdx.value].items.push({
+    clientItemId: crypto.randomUUID(),
     name: EXPENSE_CATS[0],
     name__sel: EXPENSE_CATS[0],
     amount: '',
@@ -127,7 +133,15 @@ function clearItemNameEtc(item) {
 }
 
 function addMilestone() {
-  tabData.value.milestones.push({ age: '', category: '소득', content: '', amount: '', note: '', committed: false })
+  tabData.value.milestones.push({
+    clientItemId: crypto.randomUUID(),
+    age: '',
+    category: '소득',
+    content: '',
+    amount: '',
+    note: '',
+    committed: false,
+  })
 }
 
 function commitMilestone(i) {

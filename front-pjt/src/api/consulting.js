@@ -10,6 +10,8 @@ export const deleteSession = (sid)           => api.delete(`/consultations/${sid
 export const getMessages = (sid)           => api.get(`/consultations/${sid}/messages/`)
 export const postMessage = (sid, body)     => api.post(`/consultations/${sid}/messages/`, body)
 export const getMessage = (sid, rid)       => api.get(`/consultations/${sid}/ai-responses/${rid}/`)
+export const approveAiAction = (sid, messageId) => api.post(`/consultations/${sid}/ai-actions/approve/`, { message_id: messageId })
+export const rejectAiAction = (sid, messageId) => api.post(`/consultations/${sid}/ai-actions/reject/`, { message_id: messageId })
 
 // ── 1:1 Form data ────────────────────────────────────────────
 export const getBasicInfo = (sid)       => api.get(`/consultations/${sid}/data/basic-info/`)
@@ -49,8 +51,18 @@ export const putGoalMilestones = (sid, data) => api.put(`/consultations/${sid}/d
 // ── Form Data Mappers (프론트 form → 백엔드 payload) ─────────
 
 function num(val) {
+  if (val === '' || val == null) return null
   const n = Number(String(val ?? '').replace(/[^0-9.-]/g, ''))
-  return isNaN(n) || n === 0 ? null : n
+  return isNaN(n) ? null : n
+}
+
+export function ensureClientItemId(item) {
+  if (!item.clientItemId) item.clientItemId = crypto.randomUUID()
+  return item.clientItemId
+}
+
+function persistedIdentity(item) {
+  return item.id == null ? {} : { id: item.id }
 }
 
 function money(val, defaultUnit = 'man') {
@@ -58,7 +70,6 @@ function money(val, defaultUnit = 'man') {
 
   if (val === '' || val == null) return null
   if (typeof val === 'number') {
-    if (val === 0) return null
     return val > 0 && val < 10000 ? val * smallUnitMultiplier : val
   }
 
@@ -87,7 +98,7 @@ function money(val, defaultUnit = 'man') {
       ? extra * smallUnitMultiplier
       : extra
   }
-  return total === 0 ? null : Math.round(total)
+  return Math.round(total)
 }
 
 function str(val) {
@@ -96,7 +107,7 @@ function str(val) {
 
 function manWon(val) {
   const n = num(val)
-  return n == null ? null : n * 10000
+  return n == null || n === 0 ? n : n * 10000
 }
 
 export function mapBasicInfo(form) {
@@ -137,6 +148,7 @@ export function mapFinancialSatisfaction(form) {
 
 export function mapFinancialAssets(form) {
   return (form.assets ?? []).map(a => ({
+    ...persistedIdentity(a),
     asset_type:      str(a.assetType),
     name:            str(a.name),
     principal:       money(a.principal),
@@ -148,6 +160,7 @@ export function mapFinancialAssets(form) {
 
 export function mapPensionAssets(form) {
   return (form.assets ?? []).map(a => ({
+    ...persistedIdentity(a),
     type:                 str(a.type),
     name:                 str(a.name),
     current_value:        money(a.value),
@@ -164,6 +177,7 @@ export function mapPensionAssets(form) {
 
 export function mapRealEstateAssets(form) {
   return (form.assets ?? []).map(a => ({
+    ...persistedIdentity(a),
     type:                 str(a.type),
     name:                 str(a.name),
     current_value:        money(a.value, 'eok'),
@@ -177,6 +191,7 @@ export function mapRealEstateAssets(form) {
 
 export function mapLiabilities(form) {
   return (form.assets ?? []).map(a => ({
+    ...persistedIdentity(a),
     type:              str(a.type),
     name:              str(a.name),
     balance:           money(a.value, 'eok'),
@@ -192,18 +207,20 @@ export function mapLiabilities(form) {
 
 export function mapIncomes(form) {
   return (form.assets ?? []).map(a => ({
+    ...persistedIdentity(a),
     type:     str(a.type),
     name:     str(a.name),
     amount:   money(a.amount),
-    is_fixed: a.fixed === '고정',
+    is_fixed: a.fixed ? a.fixed === '고정' : null,
   }))
 }
 
 export function mapExpenses(form) {
   return (form.assets ?? []).map(a => ({
+    ...persistedIdentity(a),
     name:      str(a.name),
     amount:    money(a.value),
-    is_fixed:  a.fixed === '고정',
+    is_fixed:  a.fixed ? a.fixed === '고정' : null,
     frequency: str(a.frequency),
   }))
 }
@@ -213,13 +230,15 @@ export function mapGoalPeriods(form) {
   for (const phase of ['before', 'after']) {
     for (const p of (form[phase]?.periods ?? [])) {
       result.push({
+        ...persistedIdentity(p),
         phase,
         from_age: num(p.fromAge),
         to_age:   num(p.toAge),
         items: (p.items ?? []).map(item => ({
+          ...persistedIdentity(item),
           name:     str(item.name),
           amount:   money(item.amount),
-          is_fixed: item.type === '고정',
+          is_fixed: item.type ? item.type === '고정' : null,
         })),
       })
     }
@@ -233,6 +252,7 @@ export function mapGoalMilestones(form) {
     for (const m of (form[phase]?.milestones ?? [])) {
       if (!m.age) continue
       result.push({
+        ...persistedIdentity(m),
         phase,
         age:      num(m.age),
         category: str(m.category),
@@ -243,4 +263,54 @@ export function mapGoalMilestones(form) {
     }
   }
   return result
+}
+
+const CURRENT_FORM_MAPPERS = {
+  'basic-info': mapBasicInfo,
+  'financial-mindset': mapFinancialMindset,
+  'financial-satisfaction': mapFinancialSatisfaction,
+  'financial-assets': mapFinancialAssets,
+  'pension-assets': mapPensionAssets,
+  'real-estate': mapRealEstateAssets,
+  liabilities: mapLiabilities,
+  income: mapIncomes,
+  expenses: mapExpenses,
+}
+
+export function mapCurrentForm(stepId, form) {
+  if (stepId === 'financial-goals') {
+    const goalPeriods = []
+    const goalMilestones = []
+    for (const phase of ['before', 'after']) {
+      const sourcePeriods = form[phase]?.periods ?? []
+      const mappedPeriods = mapGoalPeriods({ [phase]: { periods: sourcePeriods } })
+      mappedPeriods.forEach((period, index) => {
+        const source = sourcePeriods[index]
+        goalPeriods.push({
+          ...period,
+          client_item_id: ensureClientItemId(source),
+          items: period.items.map((item, itemIndex) => ({
+            ...item,
+            client_item_id: ensureClientItemId(source.items[itemIndex]),
+          })),
+        })
+      })
+      const sourceMilestones = (form[phase]?.milestones ?? []).filter((item) => item.age)
+      const mappedMilestones = mapGoalMilestones({ [phase]: { milestones: sourceMilestones } })
+      mappedMilestones.forEach((milestone, index) => {
+        goalMilestones.push({
+          ...milestone,
+          client_item_id: ensureClientItemId(sourceMilestones[index]),
+        })
+      })
+    }
+    return { goal_periods: goalPeriods, goal_milestones: goalMilestones }
+  }
+  const mapper = CURRENT_FORM_MAPPERS[stepId]
+  const mapped = mapper ? mapper(form) : {}
+  if (!Array.isArray(mapped)) return mapped
+  return mapped.map((item, index) => ({
+    ...item,
+    client_item_id: ensureClientItemId(form.assets[index]),
+  }))
 }

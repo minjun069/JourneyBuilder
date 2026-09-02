@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Literal, TypedDict, Union
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -7,7 +8,6 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from core.llm import llm
-from rag.markdown_retriever import get_field_spec, get_step_guideline
 
 MAX_RETRIES = 2
 
@@ -22,26 +22,27 @@ class InputAssistState(TypedDict):
     step_id: str
     customer_info: dict
     next: str
-    # identify 출력 (RAG)
+    field_registry: list[dict]
+    # identify 출력 (Django canonical registry)
     guideline: str
     field_spec: str
     # classify 출력
     classification: str          # "fill_avg" | "find_field" | "organize" | "other"
     # identify 출력
-    identification: list[dict]   # [{"field_name": str, "excerpt": str}, ...]
+    user_requested_change: bool
+    identification: list[dict]
     cur_index: int             # 현재 처리 중인 항목 인덱스
     # resolve 출력 / 재시도 관리
     resolution: Any
     resolution_retries: int
+    resolution_confidence: float
     # error_check_2 출력
     validation_type: str
     validation_reason: str
     # 항목별 결과 누적 (qa.py 의 partial_answers 와 동일 역할)
-    partial_results: list[dict]  # [{"field_name": str, "excerpt": str, "resolution": Any, "success": bool, "reason": str}]
+    partial_results: list[dict]  # 성공·실패한 canonical field 처리 결과
     # 최종 출력 — ChatState 의 output 필드로 전파
-    output: dict                 # {"response": str, "update": {field_name: value}}
-
-
+    output: dict                 # 자연어 응답과 FormChangeAction
 # ---------------------------------------------------------------------------
 # 구조화 출력 스키마
 # ---------------------------------------------------------------------------
@@ -49,9 +50,17 @@ class InputAssistState(TypedDict):
 class ClassifyResult(BaseModel):
     intent: Literal["fill_avg", "find_field", "organize", "other"]
 
+    user_requested_change: bool
 
 class IdentificationItem(BaseModel):
-    field_name: str
+    section: str
+    path: str
+    operation: Literal["set", "add", "update", "remove"]
+    item_id: int | None = None
+    client_item_id: str | None = None
+    parent_item_id: int | None = None
+    parent_client_item_id: str | None = None
+    label: str | None = None
     excerpt: str
 
 
@@ -59,13 +68,10 @@ class IdentifyResult(BaseModel):
     items: list[IdentificationItem]
 
 
-class ErrorCheck1Result(BaseModel):
-    error_analysis: str      # CoT — 배정 오류 분석 (생성하되 이후 노드에 전달하지 않음)
-    corrected_field_name: str
-
 
 class ResolveResult(BaseModel):
-    value: Union[str, int, float]
+    value: Union[str, int, float, bool, dict, list, None]
+    confidence: float
 
 
 class ErrorCheck2Result(BaseModel):
@@ -75,7 +81,6 @@ class ErrorCheck2Result(BaseModel):
 
 _classify_chain      = llm.with_structured_output(ClassifyResult)
 _identify_chain      = llm.with_structured_output(IdentifyResult)
-_error_check_1_chain = llm.with_structured_output(ErrorCheck1Result)
 _resolve_chain       = llm.with_structured_output(ResolveResult)
 _error_check_2_chain = llm.with_structured_output(ErrorCheck2Result)
 
@@ -90,30 +95,31 @@ _CLASSIFY_SYSTEM = """\
 사용자 발화의 의도를 다음 중 하나로 분류하세요.
 - fill_avg : 특정 항목에 적절한 평균값·추천값으로 채워달라는 요청
 - find_field: 값은 알지만 어느 항목에 입력해야 할지 모르는 경우
-- organize  : 입력할 내용이 있으나 정리가 필요한 경우"""
+- organize  : 입력할 내용이 있으나 정리가 필요한 경우
+user_requested_change는 사용자가 입력·수정·추가·삭제를 명시적으로 요청한 경우에만 true이고,
+질문하거나 추천만 구한 경우에는 false입니다."""
 
 _IDENTIFY_SYSTEM = """\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 
-[프로세스 가이드라인]
+[현재 단계의 canonical 필드 레지스트리]
 {guideline}
 
-사용자 발화에서 입력 대상이 되는 폼 항목과 해당 발췌 내용을 추출하세요.
-- field_name 은 프로세스 가이드라인의 field_name 중 하나여야 합니다.
-- excerpt 는 사용자 발화에서 해당 항목과 관련된 내용을 그대로 발췌하세요.
-- 하나의 발화에서 여러 항목을 동시에 특정할 수 있습니다."""
+사용자 발화에서 입력 대상과 동작을 추출하세요.
+- section/path는 위 레지스트리에 있는 조합만 사용하세요.
+- operation은 객체의 단일/반복 여부와 무관하게 같은 뜻으로 사용합니다.
+  - set: 대상 값을 정확히 교체
+  - add: 새 대상·값·항목을 추가
+  - update: 기존 대상·객체·항목의 일부를 수정
+  - remove: 대상·값·항목을 제거
+- 기존 반복 항목이면 현재 폼의 id 또는 client_item_id를 그대로 지정하세요.
+- 새 반복 항목을 add할 때는 item_id와 client_item_id를 비워 두세요.
+- excerpt는 사용자 발화에서 해당 내용을 그대로 발췌하세요.
+- 중첩 항목을 add할 때는 부모의 id 또는 client_item_id를 parent_item_id 또는
+  parent_client_item_id로 지정하세요.
 
-_ERROR_CHECK_1_SYSTEM = """\
-당신은 은퇴 설계 전문 AI 상담사입니다.
-
-[프로세스 가이드라인]
-{guideline}
-
-아래 검토 대상의 항목 배정이 올바른지 검토하세요.
-
-[검토 절차]
-1. error_analysis: 배정된 항목이 발췌 내용과 맞지 않는 이유를 서술하세요. 올바른 배정이면 "오류 없음"이라고 적으세요.
-2. corrected_field_name: 발췌 내용이 실제로 해당하는 올바른 field_name 을 반환하세요. 배정이 옳다면 원래 field_name 을 그대로 반환하세요."""
+[현재 저장 전 폼]
+{current_form}"""
 
 _RESOLVE_SYSTEM = """\
 당신은 은퇴 설계 전문 AI 상담사입니다.
@@ -124,7 +130,9 @@ _RESOLVE_SYSTEM = """\
 
 [공통 작성 규칙]
 - 항목의 type 과 unit 에 맞는 형식으로 반환하세요.
-- constraints 범위를 벗어나면 가장 가까운 경계값으로 조정하세요.{hint}"""
+- constraints 범위를 벗어나면 가장 가까운 경계값으로 조정하세요.
+- confidence는 사용자 발화와 명세만으로 값과 대상을 확정할 수 있는 정도를 0~1로 반환하세요.
+{hint}"""
 
 _RESOLVE_INTENT_INSTRUCTIONS: dict[str, str] = {
     "fill_avg": "참고 자료를 바탕으로 이 항목에 적절한 평균값·추천값을 찾아 반환하세요. 참고 자료에 없는 값을 임의로 생성하지 마세요.",
@@ -163,9 +171,11 @@ def _init(_: InputAssistState) -> dict:
         "guideline": "",
         "field_spec": "",
         "classification": "",
+        "user_requested_change": False,
         "identification": [],
         "cur_index": 0,
         "resolution": None,
+        "resolution_confidence": 0,
         "resolution_retries": 0,
         "validation_type": "",
         "validation_reason": "",
@@ -179,23 +189,35 @@ async def _classify(state: InputAssistState) -> dict:
         SystemMessage(content=_CLASSIFY_SYSTEM),
         HumanMessage(content=state["message"]),
     ])
-    return {"classification": result.intent}
+    return {
+        "classification": result.intent,
+        "user_requested_change": result.user_requested_change,
+    }
 
 
 async def _identify(state: InputAssistState) -> dict:
-    guideline = get_step_guideline(state["step_id"])
-
+    writable_registry = [
+        field for field in state.get("field_registry", [])
+        if field.get("writable_by_ai")
+    ]
+    guideline = json.dumps(writable_registry, ensure_ascii=False, indent=2)
+    current_form = state.get("customer_info", {}).get("current_form", {})
     result = await _identify_chain.ainvoke([
         SystemMessage(content=_IDENTIFY_SYSTEM.format(
             guideline=guideline,
+            current_form=json.dumps(current_form, ensure_ascii=False, indent=2),
         )),
         HumanMessage(content=state["message"]),
     ])
     return {
         "guideline": guideline,
-        "identification": [{"field_name": i.field_name, "excerpt": i.excerpt} for i in result.items],
+        "identification": [item.model_dump() for item in result.items],
+        "resolution_confidence": 0,
         "cur_index": 0,
     }
+
+def _route_after_identify(state: InputAssistState) -> str:
+    return "next_field" if state["identification"] else "merge"
 
 
 def _next_field(state: InputAssistState) -> dict:
@@ -210,21 +232,47 @@ def _next_field(state: InputAssistState) -> dict:
 
 async def _error_check_1(state: InputAssistState) -> dict:
     item = state["identification"][state["cur_index"]]
+    field_spec = next((
+        field
+        for field in state.get("field_registry", [])
+        if field.get("section") == item["section"]
+        and field.get("path") == item["path"]
+    ), None)
 
-    result = await _error_check_1_chain.ainvoke([
-        SystemMessage(content=_ERROR_CHECK_1_SYSTEM.format(
-            guideline=state["guideline"]
-        )),
-        HumanMessage(content=(
-            f"[검토 대상]\n"
-            f"-사용자 입력: {item['excerpt']}\n"
-            f"-배정된 항목: {item['field_name']}"
-        )),
-    ])
-    # error_analysis 는 CoT 역할만 하며 이후 노드에 전달하지 않음
-    identification = list(state["identification"])
-    identification[state["cur_index"]] = {**identification[state["cur_index"]], "field_name": result.corrected_field_name}
-    return {"identification": identification}
+    if field_spec is None:
+        reason = "등록되지 않은 canonical 필드"
+    elif not field_spec.get("writable_by_ai"):
+        reason = "AI 쓰기가 허용되지 않은 canonical 필드"
+    elif item["operation"] not in field_spec.get("operations", []):
+        reason = "허용되지 않은 form operation"
+    else:
+        reason = ""
+
+    if not reason:
+        return {"validation_reason": ""}
+
+    return {
+        "partial_results": state["partial_results"] + [{
+            "section": item["section"],
+            "path": item["path"],
+            "operation": item["operation"],
+            "excerpt": item["excerpt"],
+            "resolution": None,
+            "success": False,
+            "reason": reason,
+        }],
+        "cur_index": state["cur_index"] + 1,
+        "validation_type": "registry",
+        "validation_reason": reason,
+    }
+
+
+def _route_after_error_check_1(state: InputAssistState) -> str:
+    if not state["validation_reason"]:
+        return "resolve"
+    if state["cur_index"] < len(state["identification"]):
+        return "next_field"
+    return "merge"
 
 
 async def _resolve(state: InputAssistState) -> dict:
@@ -235,10 +283,11 @@ async def _resolve(state: InputAssistState) -> dict:
         else ""
     )
     
-    if not state["field_spec"]:
-        field_spec = get_field_spec(state["step_id"], item["field_name"])
-    else:
-        field_spec = state["field_spec"]
+    field_spec = next((
+        field for field in state.get("field_registry", [])
+        if field.get("section") == item["section"] and field.get("path") == item["path"]
+    ), {})
+    field_spec = json.dumps(field_spec, ensure_ascii=False, indent=2)
 
     result = await _resolve_chain.ainvoke([
         SystemMessage(content=_RESOLVE_SYSTEM.format(
@@ -248,7 +297,11 @@ async def _resolve(state: InputAssistState) -> dict:
         )),
         HumanMessage(content=f"[사용자 입력]\n{item['excerpt']}"),
     ])
-    return {"resolution": result.value, "field_spec": field_spec}
+    return {
+        "resolution": result.value,
+        "resolution_confidence": max(0.0, min(1.0, result.confidence)),
+        "field_spec": field_spec,
+    }
 
 
 async def _error_check_2(state: InputAssistState) -> dict:
@@ -266,11 +319,18 @@ async def _error_check_2(state: InputAssistState) -> dict:
     if result.error_type == "ok":
         return {
             "partial_results": state["partial_results"] + [{
-                "field_name": item["field_name"],
+                "section": item["section"],
+                "path": item["path"],
+                "operation": item["operation"],
+                "item_id": item.get("item_id"),
+                "client_item_id": item.get("client_item_id"),
                 "excerpt": item["excerpt"],
                 "resolution": state["resolution"],
+                "parent_item_id": item.get("parent_item_id"),
+                "parent_client_item_id": item.get("parent_client_item_id"),
                 "success": True,
                 "reason": result.reason,
+                "confidence": state.get("resolution_confidence", 0),
             }],
             "cur_index": state["cur_index"] + 1,
             "resolution_retries": 0,
@@ -280,10 +340,16 @@ async def _error_check_2(state: InputAssistState) -> dict:
     if state["resolution_retries"] >= MAX_RETRIES:
         return {
             "partial_results": state["partial_results"] + [{
-                "field_name": item["field_name"],
+                "section": item["section"],
+                "path": item["path"],
+                "operation": item["operation"],
+                "item_id": item.get("item_id"),
+                "client_item_id": item.get("client_item_id"),
                 "excerpt": item["excerpt"],
                 "resolution": None,
                 "success": False,
+                "parent_item_id": item.get("parent_item_id"),
+                "parent_client_item_id": item.get("parent_client_item_id"),
                 "reason": result.reason,
             }],
             "cur_index": state["cur_index"] + 1,
@@ -308,14 +374,31 @@ def _route_after_error_check_2(state: InputAssistState) -> str:
 
 async def _merge(state: InputAssistState) -> dict:
     parts = []
-    update = {}
-    for r in state["partial_results"]:
-        field_name = r["field_name"]
-        if r["success"]:
-            parts.append(f"[{field_name}] 입력값: {r['resolution']}")
-            update[field_name] = r["resolution"]
+    changes = []
+    confidences = []
+    for item in state["partial_results"]:
+        field_name = f"{item['section']}.{item['path']}"
+        if item["success"]:
+            parts.append(f"[{field_name}] 입력값: {item['resolution']}")
+            change = {
+                "section": item["section"],
+                "path": item["path"],
+                "operation": item["operation"],
+                "value": item["resolution"],
+                "reason": item["reason"],
+            }
+            if item.get("item_id") is not None:
+                change["item_id"] = item["item_id"]
+            if item.get("client_item_id"):
+                change["client_item_id"] = item["client_item_id"]
+            if item.get("parent_item_id") is not None:
+                change["parent_item_id"] = item["parent_item_id"]
+            if item.get("parent_client_item_id"):
+                change["parent_client_item_id"] = item["parent_client_item_id"]
+            changes.append(change)
+            confidences.append(item.get("confidence", 0))
         else:
-            parts.append(f"[{field_name}] 입력 실패 — {r['reason']}")
+            parts.append(f"[{field_name}] 입력 실패 — {item['reason']}")
 
     result = await llm.ainvoke([
         SystemMessage(content=_MERGE_SYSTEM),
@@ -324,7 +407,19 @@ async def _merge(state: InputAssistState) -> dict:
             f"항목별 처리 결과:\n" + "\n".join(parts)
         )),
     ])
-    return {"output": {"response": result.content, "update": update}}
+    return {
+        "output": {
+            "response": result.content,
+            "step_id": state["step_id"],
+            "action": {
+                "type": "form_change",
+                "target": "draft_form",
+                "user_requested": state["user_requested_change"],
+                "confidence": min(confidences) if confidences else 0,
+                "changes": changes,
+            } if changes else None,
+        }
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -346,9 +441,9 @@ def _build():
     g.add_edge(START, "init")
     g.add_edge("init", "classify")
     g.add_edge("classify", "identify")
-    g.add_edge("identify", "next_field")
+    g.add_conditional_edges("identify", _route_after_identify)
     g.add_edge("next_field", "error_check_1")
-    g.add_edge("error_check_1", "resolve")
+    g.add_conditional_edges("error_check_1", _route_after_error_check_1)
     g.add_edge("resolve", "error_check_2")
     g.add_conditional_edges("error_check_2", _route_after_error_check_2)
     g.add_edge("merge", END)

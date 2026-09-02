@@ -26,30 +26,33 @@ AI 서비스는 Django가 전달한 snapshot을 바탕으로 6-Agent를 실행�
 ```json
 {
   "request_id": "ai_req_...",
-  "callback_url": "http://backend:8000/api/ai/callback/",
   "thread_id": "user-3-session-1",
-  "session_id": 1,
   "step_id": "basic-info",
   "message": "월급은 세후 300만 원이에요.",
   "customer_info": {
     "saved_data": {},
     "current_form": {}
   },
-  "chart_context": null
+  "field_registry": [
+    {
+      "section": "basic_info",
+      "path": "monthly_income",
+      "value_type": "integer",
+      "unit": "KRW"
+    }
+  ]
 }
 ```
 
 | 필드 | 필수 | 계약 |
 |---|---:|---|
 | `request_id` | Y | Django가 생성하는 작업·idempotency 식별자 |
-| `callback_url` | Y | 허용된 내부 callback 주소. 임의 외부 URL 금지 |
 | `thread_id` | Y | 사용자와 상담 세션을 함께 식별하며 소유권 검증 후 생성 |
-| `session_id` | Y | Django 상담 세션 ID |
 | `step_id` | Y | 프론트 실제 단계 ID. 미지원 값은 fallback 처리 |
 | `message` | Y | 1~2000자의 현재 사용자 메시지 |
 | `customer_info.saved_data` | Y | DB에 확정 저장된 canonical snapshot |
 | `customer_info.current_form` | Y | 아직 저장되지 않은 현재 폼 snapshot |
-| `chart_context` | N | 차트 분석 시 원본 수치·단위·계산 결과·기준 시점 |
+| `field_registry` | Y | 현재 단계의 canonical 필드·자료형·단위·제약·민감도·쓰기 가능 여부 |
 
 ### step_id 레지스트리
 
@@ -98,50 +101,34 @@ AI 서비스는 Django가 전달한 snapshot을 바탕으로 6-Agent를 실행�
 {
   "request_id": "ai_req_...",
   "thread_id": "user-3-session-1",
-  "session_id": 1,
-  "status": "completed",
   "output": {
-    "agent": "input_assist",
-    "response": "월 소득 300만 원으로 이해했어요. 반영할까요?",
-    "citations": [],
-    "actions": [
-      {
-        "type": "form_update_proposal",
-        "step_id": "basic-info",
-        "changes": [
-          {
-            "section": "basic_info",
-            "path": "monthly_income",
-            "operation": "set",
-            "value": 3000000,
-            "value_type": "integer",
-            "unit": "KRW",
-            "label": "세후 월 소득",
-            "reason": "사용자 발화에서 추출"
-          }
-        ],
-        "requires_approval": true
-      }
-    ],
-    "meta": {
-      "prompt_version": "TODO",
-      "model": "TODO",
-      "knowledge_version": "TODO"
+    "response": "월 소득 300만 원을 폼에 반영했어요.",
+    "step_id": "basic-info",
+    "action": {
+      "type": "form_change",
+      "target": "draft_form",
+      "user_requested": true,
+      "confidence": 0.97,
+      "changes": [
+        {
+          "section": "basic_info",
+          "path": "monthly_income",
+          "operation": "set",
+          "value": 3000000,
+          "reason": "사용자 발화에서 추출"
+        }
+      ]
     }
   }
 }
 ```
 
-공통 출력 규칙:
+- AI는 `user_requested`와 `confidence`를 출력하지만 최종 `mode`를 결정하지 않는다.
+- Django는 section/path/operation을 canonical 레지스트리로 검증하고 `direct` 또는 `proposal` mode를 부여한다.
+- `direct`는 미저장 `draft_form`만 변경한다. 저장된 고객 데이터는 callback만으로 바꾸지 않는다.
+- 반복 항목은 `item_id` 또는 `client_item_id`, 중첩 추가는 부모 ID를 사용한다.
 
-- `agent`는 채택된 6개 Agent 이름 중 하나다.
-- `response`는 사용자에게 표시할 텍스트다.
-- `citations`는 QA·금융 근거 답변에서 문서 ID·제목·기준일·근거 구간을 가진다.
-- `actions`는 실행 결과가 아니라 제안이다. Django가 schema·권한·현재 상태를 재검증한다.
-- `meta`는 재현에 필요한 모델·프롬프트·지식 버전을 가진다.
-- Agent별 추가 결과는 공통 envelope 안의 버전된 구조화 필드로 추가하며 임의 최상위 필드를 만들지 않는다.
-
-필드·목록·중첩 구조는 [`데이터 스키마`](../data/schema.md)의 `FormUpdateProposal` 계약을 따른다.
+필드·목록·중첩 구조와 mode 판정은 [데이터 스키마](../data/schema.md)의 `FormChangeAction` 계약을 따른다.
 
 ## 오류와 재시도
 

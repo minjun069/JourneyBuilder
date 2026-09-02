@@ -8,7 +8,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 function addRow() {
-  const blank = {}
+  const blank = { clientItemId: crypto.randomUUID() }
   props.columns.forEach(col => {
     if (col.type === 'frequency') {
       blank[col.key] = { none: true, unit: '월', count: '' }
