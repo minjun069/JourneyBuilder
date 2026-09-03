@@ -28,6 +28,7 @@
 | field_registry | 현재 단계에서 허용된 section/path·자료형·제약·쓰기 권한 |
 | messages | 역할이 구분된 bounded 대화 이력 |
 | customer_info | 확정 정보와 현재 미저장 폼이 구분된 snapshot |
+| chart_payload | chart 단계에서만 사용하는 읽기 전용 보고서 원본·단위·기간·가정·요약. 미준비 또는 비차트 단계는 `null` |
 | route | 선택 Agent와 선택 근거 코드 |
 | output | 자연어 답변, 인용, FormChangeAction, 오류의 구조화 결과 |
 | trace_context | 가명화된 관측 식별자와 모델·프롬프트·인덱스 버전 |
@@ -67,6 +68,8 @@ input_assist가 내보내는 `FormChangeAction`은 저장된 DB가 아니라 `ta
 
 구조화 출력 파싱 실패와 일시적 외부 오류만 제한적으로 자동 재시도한다. 부작용 도구는 idempotency가 없으면 자동 재시도하지 않는다.
 
+`chart_interpret`는 `chart_payload.status=ready`이고 `chart_id`가 현재 `step_id`와 같을 때만 수치 해석을 수행한다. 렌더링 option이나 screenshot을 입력으로 사용하지 않고 form change를 출력하지 않는다. 입력 구조와 미준비 동작은 [chart payload fixture](../contracts/fixtures/ai-lifecycle/v2/chart-payloads.json)를 따른다.
+
 ## 프롬프트와 모델
 
 - Agent별 system prompt와 구조화 출력 스키마를 코드의 단일 원천으로 관리한다.
@@ -84,6 +87,7 @@ input_assist가 내보내는 `FormChangeAction`은 저장된 DB가 아니라 `ta
 | MCP·Function Calling 도구 | [tools.md](tools.md) |
 | 평가셋·지표·관측·rollback | [evaluation.md](evaluation.md) |
 | 데이터 보호·권한·공격 통제 | [AI 보안 정책 v0.1](../security/ai-security-policy.md) |
+| AI request·callback·공용 fixture | [AI 서비스 API 계약](../contracts/ai-api.md) |
 | 3주 MVP 범위와 제외 범위 | [프로젝트 요구사항](../REQUIREMENTS.md) §4 |
 
 ## 열린 결정

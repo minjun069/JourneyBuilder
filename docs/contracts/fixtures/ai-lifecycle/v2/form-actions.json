@@ -1,0 +1,647 @@
+{
+  "fixture_set": "ai-contract-v2",
+  "fixture_kind": "form_actions",
+  "contract_version": "2.0",
+  "identity_semantics": {
+    "item_id": "Django에 저장된 반복 항목의 안정 ID",
+    "client_item_id": "Frontend draft에만 있는 반복 항목의 UUID",
+    "parent_item_id": "저장된 중첩 부모 항목의 안정 ID",
+    "parent_client_item_id": "Frontend draft에만 있는 중첩 부모 항목의 UUID",
+    "<generated-uuid>": "Frontend가 add를 적용할 때 한 번 생성하고 이후 요청에서 보존해야 하는 UUID"
+  },
+  "common_assertions": [
+    "AI output에는 action_id, change_id, mode, status, decision_status가 없다.",
+    "Django가 canonical field 검증 뒤 action_id, change_id, mode와 상태를 부여한다.",
+    "direct 또는 승인된 proposal은 Frontend draft만 바꾸며 업무 DB 저장 완료가 아니다.",
+    "금액은 canonical payload에서 KRW 원 단위 정수다.",
+    "배열 index는 항목 식별자로 사용하지 않는다."
+  ],
+  "cases": {
+    "basic_info_single_direct": {
+      "shape": "single",
+      "step_id": "basic-info",
+      "initial": {
+        "canonical_current_form": {
+          "monthly_income": 2500000,
+          "job": null
+        },
+        "frontend_draft": {
+          "earnings": 250,
+          "job": ""
+        }
+      },
+      "ai_output_action": {
+        "type": "form_change",
+        "target": "draft_form",
+        "user_requested": true,
+        "confidence": 0.96,
+        "changes": [
+          {
+            "section": "basic_info",
+            "path": "monthly_income",
+            "operation": "set",
+            "value": 3000000,
+            "reason": "사용자가 세후 월급 수정을 명시적으로 요청"
+          },
+          {
+            "section": "basic_info",
+            "path": "job",
+            "operation": "set",
+            "value": "직장인",
+            "reason": "사용자가 현재 직업을 명시"
+          }
+        ]
+      },
+      "django_normalized_action": {
+        "action_id": "act_basic_direct",
+        "type": "form_change",
+        "step_id": "basic-info",
+        "target": "draft_form",
+        "mode": "direct",
+        "status": "direct",
+        "user_requested": true,
+        "confidence": 0.96,
+        "changes": [
+          {
+            "change_id": "chg_basic_income",
+            "decision_status": "not_required",
+            "section": "basic_info",
+            "path": "monthly_income",
+            "operation": "set",
+            "value": 3000000,
+            "label": "세후 월 소득",
+            "reason": "사용자가 세후 월급 수정을 명시적으로 요청"
+          },
+          {
+            "change_id": "chg_basic_job",
+            "decision_status": "not_required",
+            "section": "basic_info",
+            "path": "job",
+            "operation": "set",
+            "value": "직장인",
+            "label": "직업",
+            "reason": "사용자가 현재 직업을 명시"
+          }
+        ]
+      },
+      "expected": {
+        "canonical_draft": {
+          "monthly_income": 3000000,
+          "job": "직장인"
+        },
+        "frontend_draft": {
+          "earnings": 300,
+          "job": "직장인"
+        },
+        "database_write_count": 0
+      }
+    },
+    "financial_mindset_text_proposal": {
+      "shape": "qualitative_text",
+      "step_id": "financial-mindset",
+      "initial": {
+        "canonical_current_form": {
+          "current_challenge": null
+        },
+        "frontend_draft": {
+          "currentChallenge": ""
+        }
+      },
+      "ai_output_action": {
+        "type": "form_change",
+        "target": "draft_form",
+        "user_requested": false,
+        "confidence": 0.84,
+        "changes": [
+          {
+            "section": "financial_mindset",
+            "path": "current_challenge",
+            "operation": "set",
+            "value": "은퇴 준비를 시작해야 하지만 매달 얼마를 저축할지 정하지 못했다.",
+            "reason": "사용자의 현재 고민을 한 문장으로 정리"
+          }
+        ]
+      },
+      "django_normalized_action": {
+        "action_id": "act_mindset_proposal",
+        "type": "form_change",
+        "step_id": "financial-mindset",
+        "target": "draft_form",
+        "mode": "proposal",
+        "status": "pending",
+        "user_requested": false,
+        "confidence": 0.84,
+        "changes": [
+          {
+            "change_id": "chg_mindset_challenge",
+            "decision_status": "pending",
+            "section": "financial_mindset",
+            "path": "current_challenge",
+            "operation": "set",
+            "value": "은퇴 준비를 시작해야 하지만 매달 얼마를 저축할지 정하지 못했다.",
+            "label": "당면 과제",
+            "reason": "사용자의 현재 고민을 한 문장으로 정리"
+          }
+        ]
+      },
+      "decision": {
+        "change_id": "chg_mindset_challenge",
+        "decision_status": "approved"
+      },
+      "expected": {
+        "canonical_draft": {
+          "current_challenge": "은퇴 준비를 시작해야 하지만 매달 얼마를 저축할지 정하지 못했다."
+        },
+        "frontend_draft": {
+          "currentChallenge": "은퇴 준비를 시작해야 하지만 매달 얼마를 저축할지 정하지 못했다."
+        },
+        "database_write_count": 0
+      }
+    },
+    "financial_assets_list_add_update_remove": {
+      "shape": "list",
+      "step_id": "financial-assets",
+      "initial": {
+        "canonical_current_form": [
+          {
+            "id": 41,
+            "asset_type": "예금/적금",
+            "name": "급여 통장",
+            "principal": 5000000,
+            "current_value": 5000000,
+            "monthly_savings": 0,
+            "purpose": "비상자금"
+          },
+          {
+            "client_item_id": "asset-client-02",
+            "asset_type": "주식",
+            "name": "정리할 종목",
+            "principal": 1000000,
+            "current_value": 800000,
+            "monthly_savings": 0,
+            "purpose": "자산증식"
+          }
+        ],
+        "frontend_draft": {
+          "assets": [
+            {
+              "id": 41,
+              "assetType": "예금/적금",
+              "name": "급여 통장",
+              "principal": 5000000,
+              "value": 5000000,
+              "monthly": 0,
+              "purpose": "비상자금"
+            },
+            {
+              "clientItemId": "asset-client-02",
+              "assetType": "주식",
+              "name": "정리할 종목",
+              "principal": 1000000,
+              "value": 800000,
+              "monthly": 0,
+              "purpose": "자산증식"
+            }
+          ]
+        }
+      },
+      "ai_output_action": {
+        "type": "form_change",
+        "target": "draft_form",
+        "user_requested": true,
+        "confidence": 0.95,
+        "changes": [
+          {
+            "section": "financial_assets",
+            "path": "current_value",
+            "operation": "update",
+            "item_id": 41,
+            "value": 5500000,
+            "reason": "사용자가 현재 잔액을 정정"
+          },
+          {
+            "section": "financial_assets",
+            "path": "name",
+            "operation": "remove",
+            "client_item_id": "asset-client-02",
+            "value": null,
+            "reason": "사용자가 아직 저장하지 않은 행 삭제를 요청"
+          },
+          {
+            "section": "financial_assets",
+            "path": "name",
+            "operation": "add",
+            "value": {
+              "asset_type": "펀드/ETF",
+              "name": "연금계좌 ETF",
+              "principal": 10000000,
+              "current_value": 12000000,
+              "monthly_savings": 300000,
+              "purpose": "노후준비"
+            },
+            "reason": "사용자가 새 금융자산 추가를 요청"
+          }
+        ]
+      },
+      "django_normalized_action": {
+        "action_id": "act_assets_direct",
+        "type": "form_change",
+        "step_id": "financial-assets",
+        "target": "draft_form",
+        "mode": "direct",
+        "status": "direct",
+        "user_requested": true,
+        "confidence": 0.95,
+        "changes": [
+          {
+            "change_id": "chg_asset_update",
+            "decision_status": "not_required",
+            "section": "financial_assets",
+            "path": "current_value",
+            "operation": "update",
+            "item_id": 41,
+            "value": 5500000,
+            "label": "현재 평가금액",
+            "reason": "사용자가 현재 잔액을 정정"
+          },
+          {
+            "change_id": "chg_asset_remove",
+            "decision_status": "not_required",
+            "section": "financial_assets",
+            "path": "name",
+            "operation": "remove",
+            "client_item_id": "asset-client-02",
+            "value": null,
+            "label": "상품명",
+            "reason": "사용자가 아직 저장하지 않은 행 삭제를 요청"
+          },
+          {
+            "change_id": "chg_asset_add",
+            "decision_status": "not_required",
+            "section": "financial_assets",
+            "path": "name",
+            "operation": "add",
+            "value": {
+              "asset_type": "펀드/ETF",
+              "name": "연금계좌 ETF",
+              "principal": 10000000,
+              "current_value": 12000000,
+              "monthly_savings": 300000,
+              "purpose": "노후준비"
+            },
+            "label": "상품명",
+            "reason": "사용자가 새 금융자산 추가를 요청"
+          }
+        ]
+      },
+      "expected": {
+        "canonical_draft": [
+          {
+            "id": 41,
+            "asset_type": "예금/적금",
+            "name": "급여 통장",
+            "principal": 5000000,
+            "current_value": 5500000,
+            "monthly_savings": 0,
+            "purpose": "비상자금"
+          },
+          {
+            "client_item_id": "<generated-uuid>",
+            "asset_type": "펀드/ETF",
+            "name": "연금계좌 ETF",
+            "principal": 10000000,
+            "current_value": 12000000,
+            "monthly_savings": 300000,
+            "purpose": "노후준비"
+          }
+        ],
+        "frontend_draft": {
+          "assets": [
+            {
+              "id": 41,
+              "assetType": "예금/적금",
+              "name": "급여 통장",
+              "principal": 5000000,
+              "value": 5500000,
+              "monthly": 0,
+              "purpose": "비상자금"
+            },
+            {
+              "clientItemId": "<generated-uuid>",
+              "assetType": "펀드/ETF",
+              "name": "연금계좌 ETF",
+              "principal": 10000000,
+              "value": 12000000,
+              "monthly": 300000,
+              "purpose": "노후준비"
+            }
+          ]
+        },
+        "generated_value_assertions": [
+          {
+            "path": "canonical_draft[1].client_item_id",
+            "format": "uuid",
+            "persist_for_later_requests": true
+          },
+          {
+            "path": "frontend_draft.assets[1].clientItemId",
+            "format": "uuid",
+            "persist_for_later_requests": true
+          }
+        ],
+        "database_write_count": 0
+      }
+    },
+    "financial_goals_nested_add_to_unsaved_parent": {
+      "shape": "nested_list",
+      "step_id": "financial-goals",
+      "initial": {
+        "canonical_current_form": {
+          "goal_periods": [
+            {
+              "client_item_id": "period-client-01",
+              "phase": "after",
+              "from_age": 65,
+              "to_age": 75,
+              "items": []
+            }
+          ],
+          "goal_milestones": []
+        },
+        "frontend_draft": {
+          "before": {"periods": [], "milestones": []},
+          "after": {
+            "periods": [
+              {
+                "clientItemId": "period-client-01",
+                "fromAge": 65,
+                "toAge": 75,
+                "items": []
+              }
+            ],
+            "milestones": []
+          }
+        }
+      },
+      "ai_output_action": {
+        "type": "form_change",
+        "target": "draft_form",
+        "user_requested": true,
+        "confidence": 0.97,
+        "changes": [
+          {
+            "section": "goal_periods",
+            "path": "items",
+            "operation": "add",
+            "parent_client_item_id": "period-client-01",
+            "value": {
+              "name": "기본 생활비",
+              "amount": 2500000,
+              "is_fixed": true
+            },
+            "reason": "은퇴 후 기간에 월 생활비 항목 추가"
+          }
+        ]
+      },
+      "django_normalized_action": {
+        "action_id": "act_goal_nested_add",
+        "type": "form_change",
+        "step_id": "financial-goals",
+        "target": "draft_form",
+        "mode": "direct",
+        "status": "direct",
+        "user_requested": true,
+        "confidence": 0.97,
+        "changes": [
+          {
+            "change_id": "chg_goal_item_add",
+            "decision_status": "not_required",
+            "section": "goal_periods",
+            "path": "items",
+            "operation": "add",
+            "parent_client_item_id": "period-client-01",
+            "value": {
+              "name": "기본 생활비",
+              "amount": 2500000,
+              "is_fixed": true
+            },
+            "label": "기간별 항목",
+            "reason": "은퇴 후 기간에 월 생활비 항목 추가"
+          }
+        ]
+      },
+      "expected": {
+        "canonical_draft": {
+          "goal_periods": [
+            {
+              "client_item_id": "period-client-01",
+              "phase": "after",
+              "from_age": 65,
+              "to_age": 75,
+              "items": [
+                {
+                  "client_item_id": "<generated-uuid>",
+                  "name": "기본 생활비",
+                  "amount": 2500000,
+                  "is_fixed": true
+                }
+              ]
+            }
+          ],
+          "goal_milestones": []
+        },
+        "frontend_draft": {
+          "before": {"periods": [], "milestones": []},
+          "after": {
+            "periods": [
+              {
+                "clientItemId": "period-client-01",
+                "fromAge": 65,
+                "toAge": 75,
+                "items": [
+                  {
+                    "clientItemId": "<generated-uuid>",
+                    "name": "기본 생활비",
+                    "amount": 2500000,
+                    "type": "고정"
+                  }
+                ]
+              }
+            ],
+            "milestones": []
+          }
+        },
+        "generated_value_assertions": [
+          {
+            "path": "canonical_draft.goal_periods[0].items[0].client_item_id",
+            "format": "uuid",
+            "persist_for_later_requests": true
+          },
+          {
+            "path": "frontend_draft.after.periods[0].items[0].clientItemId",
+            "format": "uuid",
+            "persist_for_later_requests": true
+          }
+        ],
+        "database_write_count": 0
+      }
+    },
+    "financial_goals_nested_update_remove": {
+      "shape": "nested_list",
+      "step_id": "financial-goals",
+      "initial": {
+        "canonical_current_form": {
+          "goal_periods": [
+            {
+              "id": 51,
+              "phase": "after",
+              "from_age": 65,
+              "to_age": 75,
+              "items": [
+                {
+                  "id": 501,
+                  "name": "기본 생활비",
+                  "amount": 2500000,
+                  "is_fixed": true
+                },
+                {
+                  "client_item_id": "goal-item-client-02",
+                  "name": "임시 항목",
+                  "amount": 100000,
+                  "is_fixed": false
+                }
+              ]
+            }
+          ]
+        },
+        "frontend_draft": {
+          "before": {"periods": [], "milestones": []},
+          "after": {
+            "periods": [
+              {
+                "id": 51,
+                "fromAge": 65,
+                "toAge": 75,
+                "items": [
+                  {
+                    "id": 501,
+                    "name": "기본 생활비",
+                    "amount": 2500000,
+                    "type": "고정"
+                  },
+                  {
+                    "clientItemId": "goal-item-client-02",
+                    "name": "임시 항목",
+                    "amount": 100000,
+                    "type": "변동"
+                  }
+                ]
+              }
+            ],
+            "milestones": []
+          }
+        }
+      },
+      "ai_output_action": {
+        "type": "form_change",
+        "target": "draft_form",
+        "user_requested": true,
+        "confidence": 0.96,
+        "changes": [
+          {
+            "section": "goal_periods",
+            "path": "items[].amount",
+            "operation": "update",
+            "item_id": 501,
+            "value": 2700000,
+            "reason": "저장된 생활비 항목 금액 정정"
+          },
+          {
+            "section": "goal_periods",
+            "path": "items[].name",
+            "operation": "remove",
+            "client_item_id": "goal-item-client-02",
+            "value": null,
+            "reason": "미저장 임시 항목 삭제"
+          }
+        ]
+      },
+      "django_normalized_action": {
+        "action_id": "act_goal_nested_update_remove",
+        "type": "form_change",
+        "step_id": "financial-goals",
+        "target": "draft_form",
+        "mode": "direct",
+        "status": "direct",
+        "user_requested": true,
+        "confidence": 0.96,
+        "changes": [
+          {
+            "change_id": "chg_goal_item_update",
+            "decision_status": "not_required",
+            "section": "goal_periods",
+            "path": "items[].amount",
+            "operation": "update",
+            "item_id": 501,
+            "value": 2700000,
+            "label": "기간별 금액",
+            "reason": "저장된 생활비 항목 금액 정정"
+          },
+          {
+            "change_id": "chg_goal_item_remove",
+            "decision_status": "not_required",
+            "section": "goal_periods",
+            "path": "items[].name",
+            "operation": "remove",
+            "client_item_id": "goal-item-client-02",
+            "value": null,
+            "label": "기간별 항목명",
+            "reason": "미저장 임시 항목 삭제"
+          }
+        ]
+      },
+      "expected": {
+        "canonical_draft": {
+          "goal_periods": [
+            {
+              "id": 51,
+              "phase": "after",
+              "from_age": 65,
+              "to_age": 75,
+              "items": [
+                {
+                  "id": 501,
+                  "name": "기본 생활비",
+                  "amount": 2700000,
+                  "is_fixed": true
+                }
+              ]
+            }
+          ]
+        },
+        "frontend_draft": {
+          "before": {"periods": [], "milestones": []},
+          "after": {
+            "periods": [
+              {
+                "id": 51,
+                "fromAge": 65,
+                "toAge": 75,
+                "items": [
+                  {
+                    "id": 501,
+                    "name": "기본 생활비",
+                    "amount": 2700000,
+                    "type": "고정"
+                  }
+                ]
+              }
+            ],
+            "milestones": []
+          }
+        },
+        "database_write_count": 0
+      }
+    }
+  }
+}

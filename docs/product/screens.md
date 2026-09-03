@@ -1,6 +1,6 @@
 # 화면 흐름과 표기 정책
 
-상태: **AI 상담 상호작용 정책 승인 — 전체 화면 정책 미정**
+상태: **AI 상담 v2 상호작용 정책 승인 — 전체 화면 정책 미정**
 
 ## 정보 구조
 
@@ -19,11 +19,12 @@ AI 상담 화면은 상담 단계, 대화, 현재 폼 또는 분석 차트, AI �
 
 1. AI가 canonical 필드, operation, confidence, 사용자 요청 여부를 반환한다.
 2. 사용자가 변경을 명시적으로 요청했고 confidence가 0.90 이상이면 현재 미저장 폼에 즉시 반영한다.
-3. 그 외에는 필드명·이유를 제안 카드에 표시하고 사용자가 승인하거나 거절한다.
-4. 화면 단계가 응답 단계와 달라졌거나 안정 ID 대상을 찾지 못하면 즉시 반영하지 않고 제안으로 표시한다.
-5. draft 제안 승인은 Frontend의 동일 operation resolver로 적용한다.
-6. draft 반영은 저장 완료가 아니다. 사용자가 작성 완료를 눌러 Django serializer 검증과 저장이 성공한 뒤에만 저장 완료로 표시한다.
-7. 저장된 고객 데이터 변경 제안은 별도 Backend 승인 API를 사용한다.
+3. proposal의 change가 여러 개면 각 change를 별도 카드 또는 독립 control로 표시하고 사용자가 하나씩 승인하거나 거절한다.
+4. 화면 단계가 응답 단계와 다르거나 안정 ID 대상을 찾지 못하면 direct change도 proposal로 낮춰 개별 결정 흐름을 사용한다.
+5. 승인·거절은 Django에 change별로 기록한다. 승인 응답에 포함된 change만 Frontend 공통 resolver로 draft에 적용하고 거절 change는 적용하지 않는다.
+6. 같은 결정을 다시 보내면 기존 결과를 유지하고, 반대 결정 충돌은 사용자에게 이미 처리된 상태로 표시한다.
+7. draft 반영과 change 승인은 저장 완료가 아니다. 사용자가 작성 완료를 눌러 Django serializer 검증과 폼 저장이 성공한 뒤에만 저장 완료로 표시한다.
+8. v2 AI action은 확정 재무정보를 직접 수정하지 않는다.
 
 ### 정성정보 유도
 
@@ -34,6 +35,7 @@ AI 상담 화면은 상담 단계, 대화, 현재 폼 또는 분석 차트, AI �
 ### 차트 분석
 
 - AI 설명과 함께 근거가 된 차트명, 기간, 단위, 핵심 수치를 표시할 수 있어야 한다.
+- AI는 렌더링 option이나 화면 이미지를 해석하지 않고 Django가 제공한 읽기 전용 `chart_payload` 원본만 사용한다.
 - 데이터가 없거나 계산이 완료되지 않으면 임의 분석을 표시하지 않는다.
 
 ## 화면별 계약
@@ -41,17 +43,17 @@ AI 상담 화면은 상담 단계, 대화, 현재 폼 또는 분석 차트, AI �
 | 상태 | 화면 동작 |
 |---|---|
 | 빈 상담 | 시작 방법과 지원 범위 안내 |
-| processing | 중복 전송 방지, 취소·timeout 정책에 맞는 진행 표시 |
+| processing | 3초 간격 polling, 중복 전송 방지, 90초 processing deadline 표시 |
 | completed QA | 답변, 인용, 기준일, 한계 표시 |
-| completed proposal | 기존·제안 값, 이유, 승인·거절 버튼 표시 |
-| failed retryable | 재시도 가능 안내와 버튼 |
+| completed proposal | change마다 기존·제안 값, 이유, 독립 승인·거절 버튼과 action 진행 상태 표시 |
+| failed retryable | 새 Idempotency-Key로 다시 접수하는 안내와 버튼 |
 | failed non-retryable | 직접 입력·지원 범위·문의 안내 |
 | expired/not found | 새 요청 필요 안내 |
 | unauthorized | 데이터 없이 인증·권한 안내 |
 
 구현 순서는 `basic-info`, `financial-mindset`, `financial-assets`에서 단일·정성·반복 데이터의 제안 UI를 먼저 검증하고 나머지 단계로 확장한다. 최종 지원 범위는 세 단계로 제한하지 않는다.
 
-Frontend·Backend·AI가 공유할 fixture와 인수인계 절차는 [`서비스 계약 변경·인수인계`](../engineering/contract-handoff.md)를 따른다.
+Frontend·Backend·AI가 공유할 생명주기·form action·chart 예시는 [`AI lifecycle v2 fixture set`](../contracts/fixtures/ai-lifecycle/v2/lifecycle.json), 인수인계 절차는 [`서비스 계약 변경·인수인계`](../engineering/contract-handoff.md)를 따른다.
 
 ## 공통 표기와 접근성
 
@@ -64,7 +66,5 @@ Frontend·Backend·AI가 공유할 fixture와 인수인계 절차는 [`서비스
 
 ## 열린 결정
 
-- 여러 변경 제안의 일괄·개별 승인 UX
 - 사용자가 제안 값을 수정한 뒤 승인하는 흐름
 - citation 상세 표시와 외부 원문 연결 방식
-- polling·SSE 중 최종 사용자 상태 갱신 방식

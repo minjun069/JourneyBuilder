@@ -1,30 +1,77 @@
 # 현재 AI 상담 계약 불일치 조사
 
-상태: **D1 조사 완료 — 계약 동결 전**
+상태: **D1 HTTP·AI·승인 생명주기와 chart 입력 v2 동결 — runtime 구현 전**
 
-이 문서는 현재 저장소 코드에서 관찰한 Frontend·Django·AI 경계의 불일치를 기록한다. 목표 형식은 [Django HTTP API](http-api.md), [AI 서비스 API](ai-api.md), [데이터 스키마](../data/schema.md)가 소유한다. 이 문서의 Before는 채택 계약이 아니며, runtime E2E를 실행하기 전까지는 코드 정적 조사 결과다.
+이 문서는 현재 저장소 코드와 동결된 v2 목표의 차이를 기록한다. 채택 계약은 [Django HTTP API](http-api.md), [AI 서비스 API](ai-api.md), [데이터 스키마](../data/schema.md)가 소유하며 이 문서의 현재 관찰은 runtime E2E 통과를 뜻하지 않는다.
 
-## 사용 방법
+## 이미 반영된 기반
 
-- 계약·구현 작업 전에는 `NEED='현재 계약 상태'`로 이 문서와 경로 계약 문서를 함께 읽는다.
-- 동결 전에는 이 표의 After를 구현 확정안으로 취급하지 않는다. 열린 선택지는 해당 목표 계약 문서에 담당자·기한과 함께 남긴다.
-- 실제 E2E로 확인하고 계약을 동결하면 행을 제거하거나 현재 관찰로 갱신한다. 변경 이력은 Git이 관리한다.
+- Frontend 메시지 payload는 `form_data`와 단계별 canonical adapter를 사용한다.
+- AI 요청은 `request_id`, `thread_id`, `step_id`, customer snapshot, 현재 단계 field registry를 보낸다.
+- 실제 23개 step ID와 Agent allowlist가 계약에 반영돼 있다.
+- canonical field registry와 `set/add/update/remove`, stable item ID, direct/proposal 기준이 코드와 테스트에 있다.
 
-## 코드 기준 Before → After
+## runtime Before → v2 목표
 
-| 경계 | Before: 현재 코드 관찰 | After: 목표 계약 | 구현 영향 |
+| 경계 | 현재 코드 관찰 | 동결된 v2 목표 | 구현 영향 |
 |---|---|---|---|
-| Browser 메시지 | [ai.js](../../front-pjt/src/stores/ai.js)가 `form`을 전송하지만 Django는 `form_data`만 읽어 현재 폼이 비어 있다. | `form_data`와 단계별 canonical adapter로 고정한다. | Frontend adapter·serializer |
-| 접수 응답 | Django 메시지 POST는 `request_id`만 반환하고 `processing` 상태를 반환하지 않는다. | 202 응답에 안정적인 작업 상태를 포함한다. | view·Frontend 상태 |
-| Django → AI | [ai_services.py](../../backend-pjt/consulting/ai_services.py)는 session ID, callback URL, chart context 없이 5개 필드만 보낸다. | request ID·thread·session·callback URL·chart context를 검증한다. | request schema·설정 |
-| AI callback | [main.py](../../ai-pjt/main.py)는 고정 주소에 status·session ID·인증 헤더 없이 callback한다. Django는 status 누락 시 completed로 기본 처리한다. | 요청의 허용 callback URL, 공통 envelope, 인증·재시도 규칙을 적용한다. | AI callback·Django 검증 |
-| polling·오류 | Django polling은 상태·오류를 반환하지만 Frontend는 message와 pending changes만 소비한다. | processing·completed·failed·expired·unauthorized를 화면 상태로 표시한다. | polling adapter·화면 |
-| 제안·승인 | AI는 `update: {field: value}`를 만들고 Django는 1:1 section의 legacy field만 승인한다. Frontend 승인·거절 호출은 없다. | `FormUpdateProposal`과 set/add/update/remove, 반복·중첩 재검증, 승인 후 저장을 적용한다. | AI output·Django transaction·UI |
-| 거절 멱등성 | 승인 재요청은 409이나 이미 거절된 제안은 다시 거절할 수 있다. | 승인·거절 모두 한 번만 처리하고 이후 요청은 409으로 통일한다. | action view·E2E fixture |
+| Browser 접수 | `/api/v1` POST가 ID는 반환하지만 status·deadline·contract version·client idempotency가 없다. | `/api/v2`, `Idempotency-Key`, processing deadline과 공통 envelope | Frontend API/store, Django serializer·view |
+| Django → AI | session ID·deadline·version 없이 `/chat`을 호출하고 secret header는 선택적이다. | `/v2/chat`, v2 envelope, 5초 timeout·동일 request 1회 재시도 | Django payload·settings, AI schema |
+| 서비스 인증 | Django는 secret을 보내지만 AI가 검증하지 않고 AI callback도 인증 header를 보내지 않는다. | 양방향 동일 `AI_SERVICE_BEARER_TOKEN`, 빈 값 금지, TLS, 동시 rotation | 두 서비스 config·middleware·secret 운영 |
+| AI callback | 성공 callback만 있고 status·session ID·인증·실패 callback·retry가 없다. | 고정 v2 callback, completed/failed 공통 envelope, 5초 timeout·최대 4회 | AI background task·schema·callback client |
+| callback 검증 | Django가 누락 status를 completed로 보완하고 thread fallback을 허용하며 terminal 상태가 뒤집힐 수 있다. | 모든 식별자 필수, terminal 불변, 동일 digest replay 200·충돌 409 | Django callback validator·상태 저장 |
+| 작업 상태·TTL | Redis 600초 TTL에 processing/completed/failed만 있고 의미상 만료 상태가 없다. | 실행 60초, processing 90초, expired 전이, terminal·tombstone 24시간 | Redis schema·만료 작업·polling |
+| Frontend polling | 3초 간격 60초이며 completed message만 소비하고 오류를 계속 polling한다. | 3초·90초, failed/expired/auth/state 오류별 종료와 안내 | store·AiChatView 상태 UI |
+| action 결정 | draft proposal은 로컬 처리하고 Backend API는 message 단위 legacy 1:1 DB 변경이다. 중복 reject도 허용한다. | Django가 action/change ID 발급, change별 독립 승인·거절 감사, draft만 적용 | callback 정규화·action endpoint·Frontend resolver |
+| chart 입력 | Backend 보고서와 Frontend 렌더링 데이터는 있지만 AI에는 별도 원본 payload가 없다. | `lifetime-cashflow`의 원본 series·단위·기간·가정·요약을 읽기 전용 `chart_payload`로 전달 | report adapter·AI request schema·chart Agent |
+| 오류·버전 | error 문자열·객체가 혼재하고 안정 code와 schema version이 없다. | 공통 `{code,message,retryable}`, `contract_version: 2.0`, v1 병행 없는 조정 배포 | 전 adapter·schema·운영 배포 |
+| 검증 | field registry와 mode 정책 단위 테스트만 있고 lifecycle fixture·contract test·E2E가 없다. | 공용 v2 fixture를 세 consumer가 검증하고 D4·D5에서 lifecycle E2E 실행 | Frontend·Backend·AI test |
 
-## 다음 계약 동결 순서
+## 동결 결정
 
-1. 실제 step ID registry와 canonical field registry를 확정한다.
-2. 세 대표 단계의 정상·오류·경계 fixture를 만든다.
-3. callback·상태·승인·거절을 같은 fixture로 3자 검토한다.
-4. 목표 계약 문서와 provider·consumer schema를 같은 변경에서 갱신한다.
+- 외부 작업 상태는 `processing → completed | failed | expired`다.
+- AI의 `accepted`는 내부 접수 응답이며 callback terminal 상태는 `completed | failed`뿐이다.
+- v2 AI form action은 `draft_form`만 대상으로 하며 최종 업무 DB 저장은 폼 저장 API가 담당한다.
+- action은 여러 change를 묶을 수 있지만 승인·거절은 change별 독립 상태로 처리한다.
+- 양방향 서비스 인증은 bearer token 하나를 공유한다.
+- timeout, retry, idempotency, TTL, 오류 code는 두 목표 계약과 공용 fixture 값으로 고정한다.
+- chart 입력 대표 단계는 `lifetime-cashflow`이며 렌더링 option이 아닌 읽기 전용 보고서 원본을 사용한다. 보고서가 준비되지 않으면 수치를 생성하지 않는다.
+- v1 호환 기간 없이 Frontend·Django·AI를 v2로 함께 전환하고 rollback도 전체 release 단위로 수행한다.
+- 별도 역할별 승인 서명 없이 사용자의 명시적 결정으로 이 계약을 동결한다. 구현 인수는 자동 검사와 E2E 증거로 판정한다.
+
+## 공용 fixture와 변경 영향 목록
+
+세 JSON은 `ai-contract-v2`라는 하나의 fixture set이다. 서비스별 복사본을 만들지 않고 필요한 case를 원본 경로에서 직접 읽는다.
+
+| 파일 | 고정하는 범위 | 현재 증거 |
+|---|---|---|
+| [`lifecycle.json`](fixtures/ai-lifecycle/v2/lifecycle.json) | 정상·누락·잘못된 자료형·사용자/서비스 권한·접수/실행/callback timeout·네 중복 경계 | JSON 예시 작성, 제품 contract test 미구현 |
+| [`form-actions.json`](fixtures/ai-lifecycle/v2/form-actions.json) | `basic-info` 단일, `financial-mindset` 정성, `financial-assets` 반복, `financial-goals` 중첩 변경 | canonical·Frontend draft 기대값 작성, 제품 resolver test 미구현 |
+| [`chart-payloads.json`](fixtures/ai-lifecycle/v2/chart-payloads.json) | `lifetime-cashflow` 원본 series·단위·기간·가정·요약과 미준비 동작 | 입력 계약 예시 작성, Backend→AI 전달 미구현 |
+
+fixture의 합성 사용자·세션·금융 값은 계약 검증용이며 실제 사용자 원문이나 credential을 넣지 않는다. `<user-jwt>`, `<AI_SERVICE_BEARER_TOKEN>`, `<generated-uuid>`는 테스트 adapter가 주입하거나 형식을 검사하는 placeholder다.
+
+| 소유 영역 | 생산자·소비자와 파일 영향 | 구현 후 확인할 증거 |
+|---|---|---|
+| Frontend HTTP·상태 | `front-pjt/src/api/consulting.js`가 v2 endpoint·Idempotency-Key를 생산하고 `front-pjt/src/stores/ai.js`, `front-pjt/src/views/ai/AiChatView.vue`가 processing·failed·expired와 change 결정을 소비 | lifecycle consumer test, 3초 polling 종료 조건, 오류별 화면 상태 |
+| Frontend draft resolver | `front-pjt/src/utils/formChanges.js`가 단일·정성·반복·중첩 change와 stable ID를 적용하고 `front-pjt/src/api/consulting.js` adapter가 canonical 이름·단위로 왕복 변환 | form action fixture 전체, 생성 UUID 보존, 승인 change만 적용, draft/저장 완료 구분 |
+| Frontend chart | `front-pjt/src/utils/reportData.js`, `front-pjt/src/components/presentation/LifetimeCashflowSlide.vue`, `front-pjt/src/views/ai/AiChatView.vue`가 같은 report 원본을 표시하고 AI 질문 맥락으로 전달 | chart title·기간·단위 표시, 미준비 시 분석 차단, 수치 일치 |
+| Django Browser 경계 | `backend-pjt/consulting/urls.py`, `views.py`, message/action serializer가 JWT·소유권·Idempotency-Key·공통 envelope를 강제 | 정상·누락·자료형·타 세션·동일 replay·충돌 API test |
+| Django AI 경계 | `backend-pjt/consulting/ai_services.py`, `views.py`, `backend-pjt/config/settings.py`가 v2 request·bearer·retry·callback binding·terminal 불변을 생산·검증 | lifecycle provider/consumer test, 동일 callback message 1개, secret 마스킹 |
+| Django 상태·감사 | 작업·action/change 상태 model·migration·Redis adapter가 90초 expired, 10분 active TTL, 24시간 terminal/idempotency와 개별 결정을 소유 | 상태 전이·transaction·TTL test, 반대 결정 409, expired callback 미저장 |
+| Django report | `backend-pjt/reports/calculators.py`, `services.py`, `views.py`, serializer/adapter가 `lifetime-cashflow`의 source report와 chart metadata를 생산 | chart fixture producer test, series 산식·단위·generated_at·version 확인 |
+| AI 접수·callback | `ai-pjt/schemas/chat.py`, `main.py`, `core/config.py`, callback client가 v2 schema·인증·deadline·접수/전달 idempotency를 처리 | lifecycle consumer/provider test, 5초 timeout과 제한 retry, 실패 callback |
+| AI Agent | `ai-pjt/graph/state.py`, `agents/input_assist.py`, `agents/chart_interpret.py`가 form action과 읽기 전용 chart input을 구분 | form fixture 출력 검사, chart에서 form change 0건, 미준비/원본 외 수치 생성 0건 |
+| 배포·보안 | 두 서비스의 `AI_SERVICE_BEARER_TOKEN`, TLS, drain·동시 회전과 v2 조정 배포가 필요 | 빈 token 실패, 양방향 smoke test, 90초 drain, 전체 release rollback |
+| 계약 검증 | Frontend test runner, `backend-pjt/consulting/tests.py`, 신규 `ai-pjt/tests/**`가 같은 fixture set을 직접 읽어야 한다 | G2 provider·consumer test. 현재 제품 공통 test 명령은 미정 |
+
+## 구현 순서와 완료 증거
+
+1. Django와 AI의 v2 schema·bearer 인증·idempotent request/callback을 구현한다.
+2. Django 작업 상태와 change별 action 상태를 구현한다.
+3. Frontend를 v2 접수·polling·개별 결정 UI로 전환한다.
+4. provider·consumer test가 위 `ai-contract-v2` fixture set을 직접 읽게 한다.
+5. Backend가 `lifetime-cashflow` report를 읽기 전용 `chart_payload`로 조합하고 AI가 원본 밖의 수치를 생성하지 않게 한다.
+6. D4에서 callback 성공·실패·인증을, D5에서 Front→Django→AI→callback→polling→개별 승인·거절→폼 저장을 검증한다.
+
+현재 단계의 완료 증거는 동결 문서, 공용 fixture, 변경 영향 목록과 문서 검사다. runtime test와 실제 DB·화면·trace 증거는 아직 미검증이며 구현 후 인수 항목이다.

@@ -35,9 +35,12 @@
 ## 4. 서비스·API 통제
 
 - Browser는 AI 서버와 MCP 서버를 직접 호출하지 않고 Django를 경유한다.
-- Django→AI와 AI→Django callback은 별도의 서비스 자격 증명을 검증한다.
+- Django→AI와 AI→Django callback은 같은 `AI_SERVICE_BEARER_TOKEN`을 `Authorization: Bearer`로 검증한다.
+- shared bearer token은 빈 값이나 선택적 bypass를 허용하지 않고 TLS 안에서만 전송하며 사용자 JWT와 분리한다.
+- token 하나가 양방향 권한을 가지므로 유출 시 두 서비스를 함께 차단·회전하고, 회전 전에는 신규 접수를 중지한 뒤 기존 processing 작업을 drain한다.
 - `request_id`는 추측하기 어렵고 callback의 idempotency 키로 사용한다.
 - callback은 request·session·thread의 결합을 확인하고 완료된 요청의 중복 부작용을 막는다.
+- proposal 승인·거절은 action 안의 change별로 기록하고 같은 결정의 재전송만 idempotent하게 허용한다.
 - 사용자 JWT를 AI 또는 MCP에 불필요하게 전달하지 않는다.
 - AI·MCP·DB 계정은 분리하고 필요한 테이블·도구 권한만 부여한다.
 - timeout, 요청·응답 크기, 동시 실행, 재시도 횟수에 상한을 둔다.
