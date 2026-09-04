@@ -1,0 +1,24 @@
+{
+  "queries": [
+    {
+      "query_id": "q-pension-tax-credit",
+      "query": "연금저축 납입액 세액공제 조건",
+      "relevant_source_ids": ["synthetic-pension-tax-credit"]
+    },
+    {
+      "query_id": "q-retirement-pension",
+      "query": "퇴직연금 DB형 DC형 IRP 유형",
+      "relevant_source_ids": ["synthetic-retirement-pension"]
+    },
+    {
+      "query_id": "q-emergency-fund",
+      "query": "생활비 현금흐름 비상자금 규모",
+      "relevant_source_ids": ["synthetic-emergency-fund"]
+    },
+    {
+      "query_id": "q-asset-allocation",
+      "query": "분산투자 자산배분 위험 자산군",
+      "relevant_source_ids": ["synthetic-asset-allocation"]
+    }
+  ]
+}
