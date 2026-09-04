@@ -1,88 +1,142 @@
-# 재무목표 프로세스 가이드라인
+# 재무목표 인터페이스 가이드
 step_id: financial-goals
+registry_source: backend-pjt/consulting/field_registry.py@ef3f8b7
 
-은퇴 전후의 재무 목표와 예상 지출 계획을 입력하는 단계입니다.
-두 가지 방식으로 입력할 수 있습니다.
+은퇴 전후 기간별 현금흐름 항목과 마일스톤을 정리한다.
+필드명·자료형·단위·제약은 canonical 필드 레지스트리를 그대로 따른다. 외부 금융 통계나 권장값은 이 문서에 넣지 않는다.
 
-**방식 A: 기간별 지출** — 특정 연령대 구간에서 필요한 정기 지출 항목과 금액을 입력
-**방식 B: 예상 달성자금** — 특정 나이에 목돈이 필요한 이벤트(주택 구입, 자녀 결혼 등)를 입력
-
-은퇴 전(before)과 은퇴 후(after) 구간을 별도로 관리합니다.
-
-| 항목명 | field_name | 유형 | 설명 |
-|--------|------------|------|------|
-| 시작 나이 | fromAge | 방식 A | 해당 지출 기간의 시작 나이 |
-| 종료 나이 | toAge | 방식 A | 해당 지출 기간의 종료 나이 |
-| 지출 항목명 | items[].name | 방식 A | 지출 항목 이름 |
-| 지출 금액 | items[].amount | 방식 A | 월 지출 금액 (만 원) |
-| 고정/변동 | items[].type | 방식 A | 고정 지출인지 변동 지출인지 |
-| 나이 | age | 방식 B | 목표 달성 예정 나이 |
-| 카테고리 | category | 방식 B | 목표 분류 (자산, 교육, 결혼 등) |
-| 내용 | content | 방식 B | 목표 상세 내용 |
-| 금액 | amount | 방식 B | 필요 금액 (만 원) |
-| 메모 | note | 방식 B | 추가 메모 |
-
----
-
-## fromAge / toAge: 기간 나이
-**작성요령**: 해당 지출이 발생하는 연령 구간을 입력합니다. 겹치는 구간은 허용되지 않습니다.
-**표준값/기준값**:
-- 은퇴 전(before) 일반 기간: 현재 나이 ~ 은퇴 나이 (예: 45~65세)
-- 은퇴 후(after) 일반 기간: 은퇴 나이 ~ 90세 (예: 65~90세)
-- 자녀 부양 기간: 현재~자녀 독립 (예: 45~55세)
-- 노인 의료비 증가 구간: 75세 이후
-**제약사항**: 숫자, 은퇴 전 구간은 현재 나이~은퇴 나이, 은퇴 후 구간은 은퇴 나이~100세. 구간 겹침 불가.
-**파싱 예시**:
-- "은퇴 전까지, 지금 45살부터 65살까지" → fromAge: 45, toAge: 65
-- "은퇴 후 65세부터 90세까지" → fromAge: 65, toAge: 90
-- "자녀 독립할 때까지 앞으로 10년, 55세까지" → fromAge: 45, toAge: 55
+| section | field_name | 자료형 | 단위 | 제약 | AI 변경 |
+|---|---|---|---|---|---|
+| `goal_periods` | `phase` | `string` | `none` | `{"choices": ["before", "after"]}` | 허용 |
+| `goal_periods` | `from_age` | `integer` | `age` | `{"max": 120, "min": 1}` | 허용 |
+| `goal_periods` | `to_age` | `integer` | `age` | `{"max": 120, "min": 1}` | 허용 |
+| `goal_periods` | `items` | `array` | `none` | `{}` | 허용 |
+| `goal_periods` | `items[].name` | `string` | `none` | `{"max_length": 100}` | 허용 |
+| `goal_periods` | `items[].amount` | `integer` | `KRW` | `{"min": 0, "period": "month"}` | 허용 |
+| `goal_periods` | `items[].is_fixed` | `boolean` | `none` | `{}` | 허용 |
+| `goal_milestones` | `phase` | `string` | `none` | `{"choices": ["before", "after"]}` | 허용 |
+| `goal_milestones` | `age` | `integer` | `age` | `{"max": 120, "min": 1}` | 허용 |
+| `goal_milestones` | `category` | `string` | `none` | `{"choices": ["소득", "지출"]}` | 허용 |
+| `goal_milestones` | `content` | `string` | `none` | `{"max_length": 200}` | 허용 |
+| `goal_milestones` | `amount` | `integer` | `KRW` | `{"min": 0}` | 허용 |
+| `goal_milestones` | `note` | `string` | `none` | `{"max_length": 200}` | 허용 |
 
 ---
 
-## items[].name: 지출 항목명
-**작성요령**: 해당 기간에 발생할 정기 지출 항목 이름을 입력합니다.
-**표준값/기준값**: 주요 항목 예시: "생활비", "주거비", "의료비", "여행·여가비", "자녀 교육비", "자녀 결혼 지원"
-**제약사항**: 텍스트 자유 입력
-**파싱 예시**:
-- "생활비랑 의료비 따로 넣고 싶어요" → items: [{name: "생활비"}, {name: "의료비"}]
-- "여행 다닐 비용도 넣어요" → items: [{name: "여행·여가비"}]
+## phase: 은퇴 전후 구분
+- section: `goal_periods`, `goal_milestones`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"choices": ["before", "after"]}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## items[].amount: 지출 금액
-**작성요령**: 월 기준 금액을 만 원 단위로 입력합니다. "200만 원"은 200으로 입력.
-**표준값/기준값**:
-- 은퇴 후 부부 평균 생활비: 월 250만 원 (국민연금공단 2024년 조사)
-- 1인 은퇴 후 생활비: 월 170만 원
-- 은퇴 후 의료비: 월 20만~50만 원 (75세 이후 증가)
-- 여행·여가비: 월 30만~80만 원
-- 은퇴 전 자녀 교육비: 월 50만~100만 원
-**제약사항**: 숫자, 0 이상 (만 원 단위)
-**파싱 예시**:
-- "은퇴 후 부부 생활비 200만 원이면 될 것 같아요" → items[].amount: 200
-- "의료비는 월 30만 원 잡아요" → items[].amount: 30
+## from_age: 시작 나이
+- section: `goal_periods`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 120, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 만 나이 정수를 사용한다.
+
+---
+
+## to_age: 종료 나이
+- section: `goal_periods`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 120, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 만 나이 정수를 사용한다.
+
+---
+
+## items: 기간별 항목
+- section: `goal_periods`
+- 자료형: `array`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 현재 section의 canonical 구조를 유지하며 임의 키를 추가하지 않는다.
+
+---
+
+## items[].name: 기간별 항목명
+- section: `goal_periods`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"max_length": 100}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## items[].amount: 기간별 금액
+- section: `goal_periods`
+- 자료형: `integer`
+- 단위: `KRW`
+- 제약: `{"min": 0, "period": "month"}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 원 단위 정수로 정규화한다. 만 원 단위 표시값을 그대로 저장하지 않는다.
+
+---
+
+## items[].is_fixed: 기간별 고정 여부
+- section: `goal_periods`
+- 자료형: `boolean`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: `true` 또는 `false`를 사용한다.
 
 ---
 
 ## age: 마일스톤 나이
-**작성요령**: 목돈이 필요한 이벤트가 발생할 예상 나이를 입력합니다.
-**표준값/기준값**: 주요 이벤트 나이: 자녀 대학 입학(부모 48~52세), 자녀 결혼(부모 55~60세), 주택 구입(40~50세)
-**제약사항**: 숫자, 현재 나이~100세
-**파싱 예시**:
-- "60살에 집 사려고요" → age: 60
-- "아이 대학 갈 때, 제가 50살 쯤일 것 같아요" → age: 50
+- section: `goal_milestones`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 120, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 만 나이 정수를 사용한다.
+
+---
+
+## category: 마일스톤 분류
+- section: `goal_milestones`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"choices": ["소득", "지출"]}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## content: 마일스톤 내용
+- section: `goal_milestones`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"max_length": 200}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
 ## amount: 마일스톤 금액
-**작성요령**: 해당 이벤트에 필요한 총 금액을 만 원 단위로 입력합니다.
-**표준값/기준값**:
-- 자녀 결혼 지원 평균: 1억~2억 원 (10000만~20000만)
-- 자녀 대학 4년 등록금: 약 3,000만~6,000만 원
-- 주택 구입 추가 자금: 1억~3억 원
-- 해외여행 버킷리스트: 2,000만~5,000만 원
-**제약사항**: 숫자, 0 이상 (만 원 단위)
-**파싱 예시**:
-- "아이 결혼 자금으로 1억 정도 줘야 할 것 같아요" → amount: 10000
-- "집 장만에 2억 더 필요해요" → amount: 20000
-- "대학 4년 등록금 4천만 원 잡아요" → amount: 4000
+- section: `goal_milestones`
+- 자료형: `integer`
+- 단위: `KRW`
+- 제약: `{"min": 0}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 원 단위 정수로 정규화한다. 만 원 단위 표시값을 그대로 저장하지 않는다.
+
+---
+
+## note: 마일스톤 비고
+- section: `goal_milestones`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"max_length": 200}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.

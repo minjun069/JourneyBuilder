@@ -1,94 +1,163 @@
-# 기본 정보 프로세스 가이드라인
+# 기본 정보 인터페이스 가이드
 step_id: basic-info
+registry_source: backend-pjt/consulting/field_registry.py@ef3f8b7
 
-고객의 인적사항, 소득, 가족관계, 투자 성향, 재무 관심사를 수집하는 단계입니다.
-이 단계는 이후 모든 재무 분석의 기반이 되므로 정확한 입력이 중요합니다.
+고객의 기본 인적·소득·은퇴 계획 정보를 canonical 필드로 정리한다.
+필드명·자료형·단위·제약은 canonical 필드 레지스트리를 그대로 따른다. 외부 금융 통계나 권장값은 이 문서에 넣지 않는다.
 
-| 항목명 | field_name | 설명 |
-|--------|------------|------|
-| 나이 | age | 현재 나이 (만 나이 기준) |
-| 직업 | job | 현재 직업 또는 직종 |
-| 세후 월 소득 | earnings | 세후 월 실수령액 (만 원) |
-| 결혼 여부 | marital | 미혼 또는 기혼 |
-| 부양가족 - 자녀 | dependents.children | 자녀 나이 목록 |
-| 부양가족 - 부모님 | dependents.parents | 부양 중인 부모님 나이 목록 |
-| 부양가족 - 기타 | dependents.others | 기타 부양 대상 이름과 나이 |
-| 재무 성향 | tendency | 재무에 대한 성향 (복수 선택) |
-| 주요 관심사 | interest | 시간과 돈을 가장 많이 소비하는 대상 |
-| 주요 니즈 | need | 현재 가장 필요로 하는 재무 목표 |
+| section | field_name | 자료형 | 단위 | 제약 | AI 변경 |
+|---|---|---|---|---|---|
+| `basic_info` | `age` | `integer` | `age` | `{"max": 100, "min": 18}` | 허용 |
+| `basic_info` | `job` | `string` | `none` | `{"choices": ["직장인", "공무원", "자영업자", "프리랜서", "전업주부", "학생", "퇴직자", "기타"]}` | 허용 |
+| `basic_info` | `marital_status` | `string` | `none` | `{"choices": ["미혼", "기혼"]}` | 허용 |
+| `basic_info` | `dependents` | `object` | `none` | `{}` | 허용 |
+| `basic_info` | `dependents.children[].age` | `integer` | `age` | `{"max": 40, "min": 0}` | 읽기 전용 |
+| `basic_info` | `dependents.parents[].age` | `integer` | `age` | `{"max": 120, "min": 0}` | 읽기 전용 |
+| `basic_info` | `dependents.others[].name` | `string` | `none` | `{}` | 읽기 전용 |
+| `basic_info` | `dependents.others[].age` | `integer` | `age` | `{"max": 120, "min": 0}` | 읽기 전용 |
+| `basic_info` | `tendency` | `array` | `none` | `{}` | 허용 |
+| `basic_info` | `interest` | `string` | `none` | `{"max_length": 200}` | 허용 |
+| `basic_info` | `need` | `string` | `none` | `{"choices": ["은퇴", "투자", "주택자금", "교육자금", "보장", "기타"]}` | 허용 |
+| `basic_info` | `monthly_income` | `integer` | `KRW` | `{"min": 0, "period": "month"}` | 허용 |
+| `basic_info` | `retirement_age` | `integer` | `age` | `{"max": 100, "min": 18}` | 허용 |
+| `basic_info` | `end_age` | `integer` | `age` | `{"max": 120, "min": 18}` | 허용 |
 
 ---
 
 ## age: 나이
-**작성요령**: 만 나이 기준으로 숫자만 입력합니다. "올해 55살이에요", "55세입니다" 등 다양한 표현에서 숫자를 추출합니다.
-**표준값/기준값**: 한국 재무 상담 고객 평균 나이 48세. 은퇴 설계 주 고객층 45~60세.
-**제약사항**: 숫자, 18세 이상 100세 이하
-**파싱 예시**:
-- "저 올해 55살이에요" → age: 55
-- "만 49세입니다" → age: 49
-- "쉰두 살" → age: 52
+- section: `basic_info`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 100, "min": 18}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 만 나이 정수를 사용한다.
 
 ---
 
 ## job: 직업
-**작성요령**: 현재 직업 또는 직종을 자유 텍스트로 입력합니다. "회사원", "자영업", "공무원", "전업주부" 등.
-**표준값/기준값**: 주요 직업군: 회사원(직장인), 자영업자, 공무원, 전문직(의사·변호사·교사), 전업주부.
-**제약사항**: 텍스트 자유 입력
-**파싱 예시**:
-- "저는 대기업 직장인이에요" → job: "대기업 직장인"
-- "병원에서 일하는 간호사입니다" → job: "간호사"
-- "카페를 운영 중이에요" → job: "자영업(카페)"
+- section: `basic_info`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"choices": ["직장인", "공무원", "자영업자", "프리랜서", "전업주부", "학생", "퇴직자", "기타"]}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## earnings: 세후 월 소득
-**작성요령**: 세금·4대보험 공제 후 실제 통장에 입금되는 월 금액을 만 원 단위로 입력합니다.
-**표준값/기준값**: 한국 직장인 평균 세후 월 소득 약 280만 원 (2024년 기준). 40대 평균 약 350만 원.
-**제약사항**: 숫자, 0 이상 (만 원 단위)
-**파싱 예시**:
-- "월급은 세후 300만 원 정도 받아요" → earnings: 300
-- "연봉 5천만 원인데 세후로 받으면 한 340 정도" → earnings: 340
-- "매달 250이 들어와요" → earnings: 250
+## marital_status: 혼인 상태
+- section: `basic_info`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"choices": ["미혼", "기혼"]}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## marital: 결혼 여부
-**작성요령**: 현재 혼인 상태를 선택합니다. 이혼·사별의 경우 실질적 상황에 따라 선택합니다.
-**표준값/기준값**: 선택지: '미혼', '기혼'
-**제약사항**: '미혼' 또는 '기혼' 중 선택
-**파싱 예시**:
-- "결혼했어요" → marital: "기혼"
-- "아직 미혼입니다" → marital: "미혼"
-- "아내랑 같이 살고 있어요" → marital: "기혼"
+## dependents: 부양가족
+- section: `basic_info`
+- 자료형: `object`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 현재 section의 canonical 구조를 유지하며 임의 키를 추가하지 않는다.
 
 ---
 
-## dependents.children: 자녀 나이
-**작성요령**: 자녀가 있는 경우 각 자녀의 나이를 입력합니다. 자녀가 여럿이면 모두 입력합니다.
-**표준값/기준값**: 자녀 1명 평균 자녀 나이 약 12세 (부모 45세 기준).
-**제약사항**: 나이는 숫자 (0~40세)
-**파싱 예시**:
-- "아이가 둘인데 13살, 10살이에요" → children: [{age: "13"}, {age: "10"}]
-- "자녀 없어요" → children: []
-- "초등학교 3학년 아들이 있어요" → children: [{age: "9"}]
+## dependents.children[].age: 자녀 나이
+- section: `basic_info`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 40, "min": 0}`
+- AI 변경: 읽기 전용이며 draft 변경 대상이 아님
+- 입력 규칙: 만 나이 정수를 사용한다.
+
+---
+
+## dependents.parents[].age: 부모 나이
+- section: `basic_info`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 120, "min": 0}`
+- AI 변경: 읽기 전용이며 draft 변경 대상이 아님
+- 입력 규칙: 만 나이 정수를 사용한다.
+
+---
+
+## dependents.others[].name: 기타 부양가족 관계
+- section: `basic_info`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 읽기 전용이며 draft 변경 대상이 아님
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## dependents.others[].age: 기타 부양가족 나이
+- section: `basic_info`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 120, "min": 0}`
+- AI 변경: 읽기 전용이며 draft 변경 대상이 아님
+- 입력 규칙: 만 나이 정수를 사용한다.
 
 ---
 
 ## tendency: 재무 성향
-**작성요령**: 재무에 대한 본인의 성향을 복수 선택합니다. 투자 위험 허용도, 투자 기간, 목표 등을 반영합니다.
-**표준값/기준값**: 선택지: '안전 최우선', '안정 추구', '균형 추구', '성장 추구', '위험 감수', '단기 지향', '장기 지향', '수익 중시', '유동성 중시'
-**제약사항**: 위 9가지 선택지 중 복수 선택 가능
-**파싱 예시**:
-- "원금은 절대 잃고 싶지 않아요, 장기로 가져갈 생각이에요" → tendency: ["안전 최우선", "장기 지향"]
-- "어느 정도 위험은 감수하고 수익을 높이고 싶어요" → tendency: ["성장 추구", "수익 중시"]
+- section: `basic_info`
+- 자료형: `array`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 현재 section의 canonical 구조를 유지하며 임의 키를 추가하지 않는다.
+
+---
+
+## interest: 주요 관심사
+- section: `basic_info`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"max_length": 200}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
 ## need: 주요 니즈
-**작성요령**: 현재 가장 필요로 하는 재무 목표를 하나 선택합니다.
-**표준값/기준값**: 선택지: '은퇴', '투자', '주택자금', '교육자금', '보장', '기타'. 50대 이상은 '은퇴' 비중 높음.
-**제약사항**: 위 6가지 중 하나 선택
-**파싱 예시**:
-- "노후 준비가 가장 걱정이에요" → need: "은퇴"
-- "집을 사고 싶어요" → need: "주택자금"
-- "아이 대학 등록금 때문에요" → need: "교육자금"
+- section: `basic_info`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"choices": ["은퇴", "투자", "주택자금", "교육자금", "보장", "기타"]}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## monthly_income: 세후 월 소득
+- section: `basic_info`
+- 자료형: `integer`
+- 단위: `KRW`
+- 제약: `{"min": 0, "period": "month"}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 원 단위 정수로 정규화한다. 만 원 단위 표시값을 그대로 저장하지 않는다.
+
+---
+
+## retirement_age: 은퇴 예정 나이
+- section: `basic_info`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 100, "min": 18}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 만 나이 정수를 사용한다.
+
+---
+
+## end_age: 계획 종료 나이
+- section: `basic_info`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 120, "min": 18}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 만 나이 정수를 사용한다.

@@ -1,90 +1,130 @@
-# 연금자산 프로세스 가이드라인
+# 연금자산 인터페이스 가이드
 step_id: pension-assets
+registry_source: backend-pjt/consulting/field_registry.py@ef3f8b7
 
-연금저축, 연금보험, 저축보험 등 노후 대비 연금성 자산을 입력하는 단계입니다.
-국민연금과 달리 개인이 별도로 가입한 사적 연금 상품을 기록합니다.
-각 연금 상품의 평가금액, 납입 현황, 수익률, 개시 연령, 연금 수령 기간을 입력합니다.
+사적 연금자산 목록의 가입·납입·수령 정보를 정리한다.
+필드명·자료형·단위·제약은 canonical 필드 레지스트리를 그대로 따른다. 외부 금융 통계나 권장값은 이 문서에 넣지 않는다.
 
-| 항목명 | field_name | 설명 |
-|--------|------------|------|
-| 구분 | type | 연금 상품 유형 |
-| 상품명 | name | 연금 상품 이름 |
-| 평가금액 | value | 현재 연금 계좌 평가금액 (원) |
-| 월 적립액 | monthly | 매월 납입하는 금액 (원) |
-| 기대수익률 | rate | 연 기대수익률 (%) |
-| 가입일 | date | 연금 가입 날짜 |
-| 납입기간 | payment-period | 납입 예정 기간 (년) |
-| 투자목적 | objective | 이 연금의 운용 목적 |
-| 개시 연령 | age | 연금 수령 시작 나이 (세) |
-| 연금 기간 | pension-period | 연금 수령 기간 |
-
----
-
-## type: 구분
-**작성요령**: 가입한 연금 상품의 종류를 선택합니다.
-**표준값/기준값**: 선택지: '연금저축', '연금보험', '저축보험', '기타'. 연금저축(세액공제 가능), 연금보험(비과세 혜택)이 주요 유형.
-**제약사항**: 위 4가지 중 하나 선택
-**파싱 예시**:
-- "연금저축펀드 있어요" → type: "연금저축"
-- "종신보험 들어놨어요" → type: "연금보험"
-- "저축보험이에요" → type: "저축보험"
+| section | field_name | 자료형 | 단위 | 제약 | AI 변경 |
+|---|---|---|---|---|---|
+| `pension_assets` | `type` | `string` | `none` | `{"max_length": 50}` | 허용 |
+| `pension_assets` | `name` | `string` | `none` | `{"max_length": 100}` | 허용 |
+| `pension_assets` | `current_value` | `integer` | `KRW` | `{"min": 0}` | 허용 |
+| `pension_assets` | `monthly_savings` | `integer` | `KRW` | `{"min": 0, "period": "month"}` | 허용 |
+| `pension_assets` | `expected_return_rate` | `decimal` | `percent` | `{"max": 20, "min": 0}` | 허용 |
+| `pension_assets` | `subscription_date` | `date` | `date` | `{}` | 허용 |
+| `pension_assets` | `payment_period_years` | `integer` | `year` | `{"max": 50, "min": 1}` | 허용 |
+| `pension_assets` | `receive_method` | `string` | `none` | `{"choices": ["연금형", "일시금"]}` | 허용 |
+| `pension_assets` | `pension_start_age` | `integer` | `age` | `{"max": 80, "min": 55}` | 허용 |
+| `pension_assets` | `pension_period` | `string` | `none` | `{"max_length": 50}` | 허용 |
+| `pension_assets` | `expected_amount` | `integer` | `KRW` | `{"min": 0, "period": "month"}` | 허용 |
 
 ---
 
-## value: 평가금액
-**작성요령**: 현재 연금 계좌에 쌓인 총 평가금액을 원 단위로 입력합니다.
-**표준값/기준값**: 한국 50대 평균 연금저축 잔액 약 4,000만 원. 연금보험 평균 잔액 약 3,500만 원.
-**제약사항**: 숫자, 0 이상 (원 단위)
-**파싱 예시**:
-- "지금 4천만 원 정도 쌓였어요" → value: 40000000
-- "3,500만 원 돼요" → value: 35000000
+## type: 연금 유형
+- section: `pension_assets`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"max_length": 50}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## monthly: 월 적립액
-**작성요령**: 매월 해당 연금 상품에 납입하는 금액입니다.
-**표준값/기준값**: 연금저축 세액공제 한도 연 600만 원 (월 50만 원). 한국 평균 월 납입액 약 30만 원.
-**제약사항**: 숫자, 0 이상 (원 단위)
-**파싱 예시**:
-- "매달 50만 원씩 넣고 있어요" → monthly: 500000
-- "연금은 납입 끝났어요" → monthly: 0
+## name: 상품명
+- section: `pension_assets`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"max_length": 100}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## rate: 기대수익률
-**작성요령**: 해당 연금 상품의 연간 기대수익률(%)을 입력합니다. 확정금리 상품은 약정금리, 변액은 예상수익률.
-**표준값/기준값**: 확정금리형 연금: 연 3~4%. 변액연금 기대수익률: 연 4~6%. 안정형 포트폴리오: 연 3.5%.
-**제약사항**: 숫자, 0~20 (%)
-**파싱 예시**:
-- "확정금리 3.5%짜리예요" → rate: 3.5
-- "변액이라 기대수익 5% 잡았어요" → rate: 5
+## current_value: 현재 평가금액
+- section: `pension_assets`
+- 자료형: `integer`
+- 단위: `KRW`
+- 제약: `{"min": 0}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 원 단위 정수로 정규화한다. 만 원 단위 표시값을 그대로 저장하지 않는다.
 
 ---
 
-## payment-period: 납입기간
-**작성요령**: 연금 납입 예정 기간(년)을 입력합니다. 이미 납입이 완료된 경우 실제 납입한 기간을 입력합니다.
-**표준값/기준값**: 연금저축 평균 납입기간 20~30년. 단기납 연금보험은 5~10년.
-**제약사항**: 숫자, 1~50 (년)
-**파싱 예시**:
-- "30년 납입 계획이에요" → payment-period: 30
-- "10년 납입으로 들었어요" → payment-period: 10
+## monthly_savings: 월 적립액
+- section: `pension_assets`
+- 자료형: `integer`
+- 단위: `KRW`
+- 제약: `{"min": 0, "period": "month"}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 원 단위 정수로 정규화한다. 만 원 단위 표시값을 그대로 저장하지 않는다.
 
 ---
 
-## age: 개시 연령
-**작성요령**: 연금을 수령하기 시작할 예정 나이를 입력합니다. 일반적으로 55~70세.
-**표준값/기준값**: 연금저축 최저 개시 연령 55세. 권장 개시 연령 65세. 연금보험 일반 개시 연령 60~65세.
-**제약사항**: 숫자, 55~80 (세)
-**파싱 예시**:
-- "65세부터 받을 계획이에요" → age: 65
-- "60살부터 타려고요" → age: 60
+## expected_return_rate: 기대수익률
+- section: `pension_assets`
+- 자료형: `decimal`
+- 단위: `percent`
+- 제약: `{"max": 20, "min": 0}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 백분율 숫자를 사용한다. 예를 들어 4.5%는 `4.5`다.
 
 ---
 
-## pension-period: 연금 기간
-**작성요령**: 연금을 수령하는 기간을 입력합니다. 종신형이면 "종신", 확정기간형이면 "20년" 등으로 입력.
-**표준값/기준값**: 종신형(사망까지 수령)이 노후 안정성 높음. 확정형 평균 20년. 권장: 종신형 또는 20년 이상.
-**제약사항**: 텍스트 (예: "20년", "종신", "10년 / 종신")
-**파싱 예시**:
-- "죽을 때까지 받는 종신형으로 들었어요" → pension-period: "종신"
-- "20년 확정으로 받기로 했어요" → pension-period: "20년"
+## subscription_date: 가입일
+- section: `pension_assets`
+- 자료형: `date`
+- 단위: `date`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: `YYYY-MM-DD` 형식을 사용한다.
+
+---
+
+## payment_period_years: 납입기간
+- section: `pension_assets`
+- 자료형: `integer`
+- 단위: `year`
+- 제약: `{"max": 50, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## receive_method: 수령방식
+- section: `pension_assets`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"choices": ["연금형", "일시금"]}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## pension_start_age: 연금 개시 연령
+- section: `pension_assets`
+- 자료형: `integer`
+- 단위: `age`
+- 제약: `{"max": 80, "min": 55}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 만 나이 정수를 사용한다.
+
+---
+
+## pension_period: 연금 기간
+- section: `pension_assets`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{"max_length": 50}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## expected_amount: 예상 수령액
+- section: `pension_assets`
+- 자료형: `integer`
+- 단위: `KRW`
+- 제약: `{"min": 0, "period": "month"}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 원 단위 정수로 정규화한다. 만 원 단위 표시값을 그대로 저장하지 않는다.

@@ -1,77 +1,64 @@
-# 재무 만족도 프로세스 가이드라인
+# 재무 만족도 인터페이스 가이드
 step_id: financial-satisfaction
+registry_source: backend-pjt/consulting/field_registry.py@ef3f8b7
 
-6개 재무 영역에 대한 현재 만족도를 1~5점 척도로 평가하는 단계입니다.
-각 영역의 만족도를 통해 취약 분야를 파악하고 우선 개선 영역을 도출합니다.
+재무 영역별 만족도를 1~5점으로 정리한다.
+필드명·자료형·단위·제약은 canonical 필드 레지스트리를 그대로 따른다. 외부 금융 통계나 권장값은 이 문서에 넣지 않는다.
 
-| 항목명 | field_name | 설명 |
-|--------|------------|------|
-| 현금흐름 관리 만족도 | cashflow | 수입·지출·저축의 균형 관리에 대한 만족도 |
-| 위험 관리 만족도 | danger | 보험·비상금 등 리스크 대비에 대한 만족도 |
-| 투자 만족도 | investment | 현재 투자 포트폴리오 및 수익에 대한 만족도 |
-| 재무 관리 만족도 | management | 전반적인 재무 계획 및 관리에 대한 만족도 |
-| 상속 만족도 | inheritance | 상속·증여 계획 준비에 대한 만족도 |
-| 교육 만족도 | education | 자녀 교육비 준비에 대한 만족도 |
-
----
-
-## cashflow: 현금흐름 관리 만족도
-**작성요령**: 월 수입 대비 지출·저축 균형이 얼마나 만족스러운지 1~5점으로 평가합니다.
-**표준값/기준값**: 1점=매우 불만족, 2점=불만족, 3점=보통, 4점=만족, 5점=매우 만족. 한국 평균 3.1점.
-**제약사항**: 1~5 정수
-**파싱 예시**:
-- "현금흐름 관리는 잘 안 되고 있어요" → cashflow: 2
-- "저축도 잘 하고 있고 나쁘지 않아요" → cashflow: 4
-- "그냥 평범해요" → cashflow: 3
+| section | field_name | 자료형 | 단위 | 제약 | AI 변경 |
+|---|---|---|---|---|---|
+| `financial_satisfaction` | `cashflow_score` | `integer` | `score` | `{"max": 5, "min": 1}` | 허용 |
+| `financial_satisfaction` | `risk_score` | `integer` | `score` | `{"max": 5, "min": 1}` | 허용 |
+| `financial_satisfaction` | `investment_score` | `integer` | `score` | `{"max": 5, "min": 1}` | 허용 |
+| `financial_satisfaction` | `management_score` | `integer` | `score` | `{"max": 5, "min": 1}` | 허용 |
+| `financial_satisfaction` | `inheritance_score` | `integer` | `score` | `{"max": 5, "min": 1}` | 허용 |
 
 ---
 
-## danger: 위험 관리 만족도
-**작성요령**: 보험 가입 현황, 비상금 보유 수준, 예상치 못한 지출에 대한 대비가 충분한지 평가합니다.
-**표준값/기준값**: 1점=매우 불만족, 5점=매우 만족. 한국 평균 2.8점 (보험 과잉 또는 과소 가입 불만족 많음).
-**제약사항**: 1~5 정수
-**파싱 예시**:
-- "보험도 없고 비상금도 없어요" → danger: 1
-- "보험은 어느 정도 있는데 충분한지 모르겠어요" → danger: 3
+## cashflow_score: 현금흐름 관리 만족도
+- section: `financial_satisfaction`
+- 자료형: `integer`
+- 단위: `score`
+- 제약: `{"max": 5, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## investment: 투자 만족도
-**작성요령**: 현재 투자 포트폴리오의 수익률, 구성, 관리 수준에 대한 만족도를 평가합니다.
-**표준값/기준값**: 1점=매우 불만족, 5점=매우 만족. 한국 평균 2.9점 (투자 방법 모름, 수익 부족 불만족 多).
-**제약사항**: 1~5 정수
-**파싱 예시**:
-- "투자는 전혀 안 하고 있어요" → investment: 1
-- "적금만 들어놨는데 만족해요" → investment: 3
-- "주식·펀드 골고루 하고 있어서 나름 만족해요" → investment: 4
+## risk_score: 위험 관리 만족도
+- section: `financial_satisfaction`
+- 자료형: `integer`
+- 단위: `score`
+- 제약: `{"max": 5, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## management: 재무 관리 만족도
-**작성요령**: 전체적인 재무 계획 수립과 실행, 자산 관리 체계에 대한 만족도를 평가합니다.
-**표준값/기준값**: 1점=매우 불만족, 5점=매우 만족. 한국 평균 2.7점.
-**제약사항**: 1~5 정수
-**파싱 예시**:
-- "재무 관리 엉망이에요" → management: 1
-- "그럭저럭 관리되고 있어요" → management: 3
+## investment_score: 투자 만족도
+- section: `financial_satisfaction`
+- 자료형: `integer`
+- 단위: `score`
+- 제약: `{"max": 5, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## inheritance: 상속 만족도
-**작성요령**: 상속·증여 계획, 유언장 작성 등 자산 이전 준비에 대한 만족도를 평가합니다.
-**표준값/기준값**: 1점=매우 불만족, 5점=매우 만족. 한국 평균 2.2점 (준비 안 한 경우 多).
-**제약사항**: 1~5 정수
-**파싱 예시**:
-- "상속 같은 거 전혀 생각 안 해봤어요" → inheritance: 1
-- "어느 정도 생각은 해뒀어요" → inheritance: 3
+## management_score: 재무관리 만족도
+- section: `financial_satisfaction`
+- 자료형: `integer`
+- 단위: `score`
+- 제약: `{"max": 5, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## education: 교육 만족도
-**작성요령**: 자녀 교육비 준비 현황 및 계획에 대한 만족도를 평가합니다. 자녀가 없는 경우 해당 없음으로 처리합니다.
-**표준값/기준값**: 1점=매우 불만족, 5점=매우 만족. 자녀 있는 가구 평균 3.0점.
-**제약사항**: 1~5 정수
-**파싱 예시**:
-- "교육비 준비 전혀 안 돼 있어요" → education: 1
-- "어느 정도 준비됐어요" → education: 4
-- "자녀가 없어요" → education: 3 (중립)
+## inheritance_score: 상속 만족도
+- section: `financial_satisfaction`
+- 자료형: `integer`
+- 단위: `score`
+- 제약: `{"max": 5, "min": 1}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.

@@ -1,0 +1,364 @@
+{
+  "catalog_version": "1.0.0",
+  "as_of_date": "2026-09-04",
+  "hash_algorithm": "sha256",
+  "collections": [
+    {
+      "id": "interface-guides",
+      "document_type": "interface-guide",
+      "path_pattern": "ai-pjt/rag/data/*.md",
+      "consumers": [
+        "input-assist",
+        "error-review"
+      ],
+      "purpose": "canonical 단계·필드·자료형·단위·제약 제공"
+    },
+    {
+      "id": "financial-knowledge",
+      "document_type": "financial-knowledge",
+      "path_pattern": "ai-pjt/rag/data/financial-knowledge/*.md",
+      "consumers": [
+        "qa"
+      ],
+      "purpose": "공식 출처로 확인한 금융 제도·세제 지식 제공"
+    }
+  ],
+  "documents": [
+    {
+      "id": "interface-basic-info",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/basic-info.md",
+      "title": "기본 정보 인터페이스 가이드",
+      "source_id": "canonical-field-registry-basic-info-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "basic-info"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "1637c0bb7f85fa65671239c60d23a23442c1eaeaaf134c4b4c7033141196b496"
+    },
+    {
+      "id": "interface-financial-mindset",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/financial-mindset.md",
+      "title": "재무 관점 인터페이스 가이드",
+      "source_id": "canonical-field-registry-financial-mindset-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "financial-mindset"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "b34b2baa85f0dcb0a4cf0a3eccc1eb8212e0dee2d48d2c4b35a5fc7c87920dfd"
+    },
+    {
+      "id": "interface-financial-satisfaction",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/financial-satisfaction.md",
+      "title": "재무 만족도 인터페이스 가이드",
+      "source_id": "canonical-field-registry-financial-satisfaction-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "financial-satisfaction"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "ff2397910352908c17c5cdc8aef1f74cb3ebbb0a08604d624b958453dba02fd0"
+    },
+    {
+      "id": "interface-financial-assets",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/financial-assets.md",
+      "title": "금융자산 인터페이스 가이드",
+      "source_id": "canonical-field-registry-financial-assets-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "financial-assets"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "8d9397de24252a5772d093e04711a2774e8a637741e804300e8606abdf2ac786"
+    },
+    {
+      "id": "interface-pension-assets",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/pension-assets.md",
+      "title": "연금자산 인터페이스 가이드",
+      "source_id": "canonical-field-registry-pension-assets-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "pension-assets"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "4a9bcef245a53a15948a21efb8c9696b058c93595a8734612400f46872160e38"
+    },
+    {
+      "id": "interface-real-estate",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/real-estate.md",
+      "title": "부동산자산 인터페이스 가이드",
+      "source_id": "canonical-field-registry-real-estate-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "real-estate"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "d3d159844ed060f40d4e726d0c9ed815159f2f2a25b73cf8c7d49e29aeef3852"
+    },
+    {
+      "id": "interface-liabilities",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/liabilities.md",
+      "title": "부채 인터페이스 가이드",
+      "source_id": "canonical-field-registry-liabilities-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "liabilities"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "05ff9c0f9c1d8d84bbf44145e5d0ec14c50165e47f8394d51e5dab76fcc7f2b7"
+    },
+    {
+      "id": "interface-income",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/income.md",
+      "title": "소득 인터페이스 가이드",
+      "source_id": "canonical-field-registry-income-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "income"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "296a657c8e02b50203b0d0b8929dacf3b64575455d24c5387f14d101b69216da"
+    },
+    {
+      "id": "interface-expenses",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/expenses.md",
+      "title": "지출 인터페이스 가이드",
+      "source_id": "canonical-field-registry-expenses-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "expenses"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "296c4ae3b550966d995e7d4e48fbada0659cc8035b28cc159b712364faf85707"
+    },
+    {
+      "id": "interface-financial-goals",
+      "document_type": "interface-guide",
+      "collection": "interface-guides",
+      "path": "ai-pjt/rag/data/financial-goals.md",
+      "title": "재무목표 인터페이스 가이드",
+      "source_id": "canonical-field-registry-financial-goals-ef3f8b7",
+      "publisher": "S15P21B109",
+      "source_locator": "backend-pjt/consulting/field_registry.py@ef3f8b7",
+      "published_at": "2026-09-02",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "step_id": "financial-goals"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "canonical field registry의 field 추가·삭제·이름·자료형·단위·제약 변경",
+          "Frontend adapter 또는 Django serializer의 canonical 계약 변경"
+        ]
+      },
+      "retire_when": "해당 step_id가 폐기되거나 새 canonical 가이드가 이 버전을 대체할 때",
+      "sha256": "c1b227a542abbb2b4d36076246442284f32fd47760b51234063f8c11d07dddbd"
+    },
+    {
+      "id": "knowledge-national-pension-old-age",
+      "title": "국민연금 노령연금 수급 기본 요건",
+      "source_id": "nps-old-age-pension-eligibility",
+      "publisher": "국민연금공단",
+      "source_locator": "https://www.nps.or.kr/pnsinfo/ntpsklg/getOHAF0056M0.do?menuId=MN24001118",
+      "published_at": null,
+      "publication_date_note": "국민연금공단 상시 안내 페이지에 별도 발행일이 표시되지 않아 null로 기록",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/national-pension-old-age.md",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "national-pension-old-age"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "국민연금법의 수급 요건·지급개시연령·조기 또는 연기 제도 변경",
+          "국민연금공단 원문 대체"
+        ]
+      },
+      "retire_when": "현행 국민연금법 또는 국민연금공단의 대체 안내와 내용이 달라질 때",
+      "sha256": "e1c81419a27c6566704c6de6abe249af1b637330a2f1f082cfc395929795b9e9"
+    },
+    {
+      "id": "knowledge-pension-account-tax-credit",
+      "title": "연금계좌 세액공제 한도와 비율",
+      "source_id": "income-tax-pension-account-credit",
+      "publisher": "국가법령정보센터·국세청",
+      "source_locator": [
+        "https://law.go.kr/lsLinkCommonInfo.do?lsJoLnkSeq=1019370223&print=print",
+        "https://b.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7875&mi=6596"
+      ],
+      "published_at": null,
+      "publication_date_note": "국세청 상시 안내와 현행 법령 조문에 단일 발행일이 없어 null로 기록",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/pension-account-tax-credit.md",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "pension-account-tax-credit"
+      },
+      "refresh": {
+        "cadence_days": 90,
+        "triggers": [
+          "소득세법 제59조의3 또는 관련 시행령·시행규칙 변경",
+          "국세청 과세연도 안내 변경"
+        ]
+      },
+      "retire_when": "현행 세법의 한도·비율과 내용이 다르거나 새 과세연도 문서가 대체할 때",
+      "sha256": "8de2d8d364a379a2150cbd6060ada316c013fd78c586e805c1eacca6cfab59f7"
+    },
+    {
+      "id": "knowledge-deposit-protection-limit",
+      "title": "예금보호한도",
+      "source_id": "deposit-protection-limit-2025",
+      "publisher": "금융위원회·국가법령정보센터",
+      "source_locator": [
+        "https://www.fsc.go.kr/no010101/85200",
+        "https://www.law.go.kr/LSW/lsInfoP.do?ancYnChk=0&chrClsCd=010202&efYd=20250901&lsiSeq=273001&urlMode=lsInfoP"
+      ],
+      "published_at": "2025-09-01",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/deposit-protection-limit.md",
+      "as_of_date": "2026-09-04",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "deposit-protection"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "예금자보호법 또는 시행령의 보호한도·합산 범위·보호 대상 변경",
+          "금융위원회 또는 예금보험공사 공식 안내 대체"
+        ]
+      },
+      "retire_when": "현행 법령의 보호한도 또는 적용 범위와 내용이 다를 때",
+      "sha256": "07dc22f5f412de8270cce4ea446d985eb47c836f29b97559786ffb700ff20063"
+    }
+  ]
+}
