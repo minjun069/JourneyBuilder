@@ -2,8 +2,8 @@ from collections import Counter
 
 from django.test import SimpleTestCase
 
-from .ai_services import normalize_form_action
 from .field_registry import ALLOWED_OPERATIONS, FIELDS, SECTION_META
+from .form_actions import normalize_form_action
 from .models import BasicInfo
 from .serializers import (
     BasicInfoWriteSerializer,
@@ -104,12 +104,12 @@ class FormActionPolicyTests(SimpleTestCase):
             },
         }, 'basic-info')
 
-    def test_explicit_high_confidence_request_is_direct(self):
+    def test_explicit_high_confidence_request_still_requires_approval(self):
         action = self.action(confidence=0.90, requested=True)
-        self.assertEqual(action['mode'], 'direct')
+        self.assertEqual(action['mode'], 'proposal')
         self.assertEqual(action['changes'][0]['value'], 0)
 
-    def test_low_confidence_or_implicit_change_is_proposal(self):
+    def test_every_ai_generated_change_is_proposal(self):
         self.assertEqual(
             self.action(confidence=0.89, requested=True)['mode'],
             'proposal',
@@ -119,7 +119,7 @@ class FormActionPolicyTests(SimpleTestCase):
             'proposal',
         )
 
-    def test_malformed_direct_policy_inputs_are_proposal(self):
+    def test_malformed_metadata_does_not_bypass_approval(self):
         self.assertEqual(
             self.action(confidence='nan', requested=True)['mode'],
             'proposal',

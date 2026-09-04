@@ -7,8 +7,9 @@
 - Browser는 `/api/v2` 아래 Django API만 호출한다. AI 서버와 MCP 서버는 직접 호출하지 않는다.
 - 사용자 API는 JWT 인증과 상담 세션 소유권을 검증한다. 인증되지 않은 요청은 `401`, 인증됐지만 소유하지 않은 세션·request·action은 존재 여부를 숨기기 위해 `404`로 응답한다.
 - AI 비동기 요청·응답에는 `contract_version: "2.0"`을 포함한다.
-- 금액은 저장·AI canonical payload에서 원 단위 정수를 사용하며 화면 단위 변환은 Frontend adapter가 담당한다.
-- 날짜·시간은 UTC ISO 8601 문자열로 교환하고 Frontend가 표시 timezone으로 변환한다.
+- 금액은 저장·AI canonical payload에서 KRW 원 단위 정수를 사용하며 화면 단위 변환은 Frontend adapter가 담당한다. canonical JSON number는 크기와 무관하게 원 단위이고, `만`·`억` 해석은 원시 화면 문자열에만 적용한다.
+- form field의 `unit: percent`는 퍼센트포인트라서 `5`가 5%를 뜻한다. chart assumption의 `unit: decimal`은 `0.05`가 5%를 뜻하며 두 표현을 암묵적으로 섞지 않는다.
+- 날짜는 `YYYY-MM-DD`, 시각은 UTC ISO 8601 문자열로 교환하고 Frontend가 시각만 표시 timezone으로 변환한다.
 - 오류는 다음 envelope를 사용하며 내부 stack, credential, 원본 금융정보를 포함하지 않는다.
 
 ```json
@@ -81,7 +82,7 @@ AI 실행 deadline은 60초, callback 전달 여유를 포함한 Django processi
 
 ## draft 변경과 개별 결정
 
-v2의 AI 폼 변경 target은 `draft_form`뿐이다. 고확신 `direct` change는 현재 화면에 즉시 적용할 수 있지만 DB 저장 완료가 아니다. Django는 검증된 모든 form action에 `action_id`와 change별 `change_id`를 부여한다. `proposal` change는 `pending`, `direct` change는 `not_required`로 시작한다.
+v2의 AI 폼 변경 target은 `draft_form`뿐이다. Django는 검증된 모든 form action을 `proposal`로 정규화하고 `action_id`와 change별 `change_id`를 부여한다. 모든 change는 `pending`으로 시작하며 사용자가 별도 결정 endpoint로 승인하기 전에는 draft에도 적용하지 않는다. AI가 표시한 `user_requested`와 confidence는 설명·감사 메타데이터일 뿐 승인이나 적용 권한이 아니다.
 
 하나의 action에 여러 change가 있어도 전체 승인·전체 거절하지 않는다. 각 change는 독립적으로 다음 endpoint를 사용한다.
 
@@ -111,8 +112,8 @@ POST /api/v2/consultations/{session_id}/ai-actions/{action_id}/changes/{change_i
 }
 ```
 
-- proposal change는 `pending → approved | rejected` 단방향이다. Frontend가 적용하지 못한 direct change를 proposal로 낮추면 같은 endpoint가 `not_required → approved | rejected` 전이를 기록한다.
-- action 상태는 direct이면 `direct`, proposal의 모든 change가 pending이면 `pending`, 일부만 결정됐으면 `partially_resolved`, pending이 없으면 `resolved`다.
+- change는 `pending → approved | rejected` 단방향이다.
+- action 상태는 모든 change가 pending이면 `pending`, 일부만 결정됐으면 `partially_resolved`, pending이 없으면 `resolved`다.
 - Frontend는 승인 응답에 포함된 단일 change만 공통 resolver로 draft에 적용한다. 거절은 draft를 바꾸지 않는다.
 - 같은 결정을 재전송하면 최초 결과와 `200`을 반환한다. 반대 결정을 보내면 `409 ACTION_DECISION_CONFLICT`다.
 - 개별 승인은 전체 폼의 저장 유효성을 보장하지 않는다. 사용자가 작성 완료를 누를 때 Django serializer가 현재 draft 전체를 다시 검증하고 성공한 경우에만 업무 DB에 저장한다.

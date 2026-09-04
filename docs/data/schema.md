@@ -8,7 +8,7 @@
 |---|---|---|---|
 | 상담 세션·사용자 메시지 | Django | Django | 인증·소유권 검증된 snapshot만 요청으로 수신 |
 | 확정 재무 정보 | Django | Django serializer·transaction | Agent별 allowlist로 읽기 |
-| 미저장 현재 폼 | Frontend, 요청 시점 snapshot | 사용자·direct change·개별 승인된 proposal change | Django가 검증·정규화해 AI에 전달 |
+| 미저장 현재 폼 | Frontend, 요청 시점 snapshot | 사용자 직접 입력·개별 승인된 AI proposal change | Django가 검증·정규화해 AI에 전달 |
 | AI 대화 checkpoint | AI 서비스 | LangGraph checkpointer | 같은 `thread_id`에서만 읽기·쓰기 |
 | RAG 문서·인덱스 | AI 지식 파이프라인 | 승인된 적재 작업 | 검색 도구를 통해 읽기 |
 | AI 작업 상태 | Django | Django callback 처리 | request 상태 callback만 전달 |
@@ -45,6 +45,18 @@ Django model·serializer의 snake_case 필드명을 저장·AI 계약의 canonic
 | `writable_by_ai` | AI가 draft 직접 변경 또는 변경 제안을 만들 수 있는지 여부. DB 직접 쓰기 권한은 아님 |
 | `nullable` | 모름·미입력 상태를 `null`로 허용하는지 여부 |
 | `operations` | 해당 경로에 허용된 operation 목록 |
+
+단위 표현은 다음처럼 고정한다.
+
+| unit | canonical 표현 | 화면·분석 경계 |
+|---|---|---|
+| `KRW` | 원 단위 JSON integer. `5000`은 항상 5,000원 | Frontend의 원시 문자열만 `만`·`억` 또는 화면 기본 단위를 해석하고, canonical number는 재추론하지 않음 |
+| `percent` | 퍼센트포인트 decimal. `5`는 5% | 연금 기대수익률·대출금리 등 form field에 사용 |
+| `decimal` | 비율 decimal. `0.05`는 5% | 읽기 전용 chart assumption에만 사용 |
+| `date` | `YYYY-MM-DD` | timezone 변환 없음 |
+| `datetime` | UTC ISO 8601 | Frontend 표시 시 timezone 변환 |
+| `age`·`year`·`score` | 제약 범위 안의 JSON integer | 레지스트리의 min·max를 그대로 적용 |
+| `none` | 별도 측정 단위 없음 | 자료형·선택지 제약만 적용 |
 
 레지스트리의 section 범위는 다음과 같이 동결한다.
 
@@ -115,7 +127,7 @@ Django가 AI callback을 검증하고 정규화한 draft 변경은 다음 구조
 }
 ```
 
-AI callback에는 `action_id`, `change_id`, `mode`, 결정 상태가 없다. Django가 canonical 레지스트리 검증 뒤 안정 ID와 상태를 부여한다.
+AI callback에는 `action_id`, `change_id`, `mode`, 결정 상태가 없다. Django가 canonical 레지스트리 검증 뒤 안정 ID를 부여하고 `mode=proposal`, change별 `decision_status=pending`으로 정규화한다.
 
 | operation | cardinality와 무관한 공통 의미 |
 |---|---|
@@ -134,15 +146,13 @@ AI callback에는 `action_id`, `change_id`, `mode`, 결정 상태가 없다. Dja
 - 배열 index는 식별 계약으로 사용하지 않는다.
 - 목록 PUT은 기존 ID의 세션 소유권을 확인해 upsert하고 응답 ID를 Frontend 행에 동기화한다.
 
-### direct와 proposal 판정
+### proposal과 사용자 결정
 
-Django는 target이 `draft_form`이고, 사용자가 변경을 명시적으로 요청했으며, 전체 변경의 최저 confidence가 `0.90` 이상일 때만 `direct`를 허용한다. 그 외는 `proposal`이다.
+AI가 생성한 form action은 사용자가 변경을 요청했는지, confidence가 얼마인지와 무관하게 모두 `proposal`이다. `user_requested`와 confidence는 설명·감사 메타데이터이며 사용자 승인으로 간주하지 않는다. 별도의 change 승인 응답을 받기 전에는 Frontend draft를 바꾸지 않는다.
 
-Frontend는 응답 `step_id`가 현재 화면과 다르거나 대상을 찾지 못하면 direct change도 proposal처럼 표시하고 해당 change의 결정 endpoint를 사용한다. direct와 승인된 proposal은 미저장 draft만 바꾸며 DB 저장 완료로 표시하지 않는다.
+각 change는 `pending → approved | rejected`로 독립 전이한다. action 전체 상태는 `pending`, `partially_resolved`, `resolved` 중 하나이며 전체 승인·전체 거절 endpoint는 없다. 같은 결정의 재전송은 같은 결과를 반환하고 반대 결정은 conflict다.
 
-proposal의 각 change는 `pending → approved | rejected`로 독립 전이한다. direct change는 `not_required`이고 화면에서 proposal로 낮아지면 같은 결정 endpoint로 종결한다. action 전체 상태는 `direct`, `pending`, `partially_resolved`, `resolved` 중 하나이며 전체 승인·전체 거절 endpoint는 없다. 같은 결정의 재전송은 같은 결과를 반환하고 반대 결정은 conflict다.
-
-개별 승인 당시에는 그 change의 식별자·operation·대상만 다시 검증한다. 여러 change 사이의 최종 상호 필드 제약은 사용자가 폼 저장을 실행할 때 serializer가 현재 draft 전체에 강제한다.
+개별 승인 당시에는 그 change의 식별자·operation·대상만 다시 검증하고, 승인 응답의 단일 change만 draft에 적용한다. 여러 change 사이의 최종 상호 필드 제약은 사용자가 폼 저장을 실행할 때 serializer가 현재 draft 전체에 강제한다.
 
 ### 대표 데이터 형태와 구현 순서
 

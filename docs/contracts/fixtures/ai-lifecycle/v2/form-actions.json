@@ -11,13 +11,14 @@
   },
   "common_assertions": [
     "AI output에는 action_id, change_id, mode, status, decision_status가 없다.",
-    "Django가 canonical field 검증 뒤 action_id, change_id, mode와 상태를 부여한다.",
-    "direct 또는 승인된 proposal은 Frontend draft만 바꾸며 업무 DB 저장 완료가 아니다.",
+    "Django가 canonical field 검증 뒤 action_id, change_id, mode=proposal과 pending 상태를 부여한다.",
+    "user_requested와 confidence는 승인 증거가 아니며 모든 AI change는 별도 사용자 결정을 거친다.",
+    "승인된 proposal만 Frontend draft를 바꾸며 업무 DB 저장 완료가 아니다.",
     "금액은 canonical payload에서 KRW 원 단위 정수다.",
     "배열 index는 항목 식별자로 사용하지 않는다."
   ],
   "cases": {
-    "basic_info_single_direct": {
+    "basic_info_single_requires_approval": {
       "shape": "single",
       "step_id": "basic-info",
       "initial": {
@@ -53,18 +54,18 @@
         ]
       },
       "django_normalized_action": {
-        "action_id": "act_basic_direct",
+        "action_id": "act_basic_proposal",
         "type": "form_change",
         "step_id": "basic-info",
         "target": "draft_form",
-        "mode": "direct",
-        "status": "direct",
+        "mode": "proposal",
+        "status": "pending",
         "user_requested": true,
         "confidence": 0.96,
         "changes": [
           {
             "change_id": "chg_basic_income",
-            "decision_status": "not_required",
+            "decision_status": "pending",
             "section": "basic_info",
             "path": "monthly_income",
             "operation": "set",
@@ -74,7 +75,7 @@
           },
           {
             "change_id": "chg_basic_job",
-            "decision_status": "not_required",
+            "decision_status": "pending",
             "section": "basic_info",
             "path": "job",
             "operation": "set",
@@ -84,6 +85,10 @@
           }
         ]
       },
+      "decisions": [
+        {"change_id": "chg_basic_income", "decision_status": "approved"},
+        {"change_id": "chg_basic_job", "decision_status": "approved"}
+      ],
       "expected": {
         "canonical_draft": {
           "monthly_income": 3000000,
@@ -144,10 +149,9 @@
           }
         ]
       },
-      "decision": {
-        "change_id": "chg_mindset_challenge",
-        "decision_status": "approved"
-      },
+      "decisions": [
+        {"change_id": "chg_mindset_challenge", "decision_status": "approved"}
+      ],
       "expected": {
         "canonical_draft": {
           "current_challenge": "은퇴 준비를 시작해야 하지만 매달 얼마를 저축할지 정하지 못했다."
@@ -244,18 +248,18 @@
         ]
       },
       "django_normalized_action": {
-        "action_id": "act_assets_direct",
+        "action_id": "act_assets_proposal",
         "type": "form_change",
         "step_id": "financial-assets",
         "target": "draft_form",
-        "mode": "direct",
-        "status": "direct",
+        "mode": "proposal",
+        "status": "pending",
         "user_requested": true,
         "confidence": 0.95,
         "changes": [
           {
             "change_id": "chg_asset_update",
-            "decision_status": "not_required",
+            "decision_status": "pending",
             "section": "financial_assets",
             "path": "current_value",
             "operation": "update",
@@ -266,7 +270,7 @@
           },
           {
             "change_id": "chg_asset_remove",
-            "decision_status": "not_required",
+            "decision_status": "pending",
             "section": "financial_assets",
             "path": "name",
             "operation": "remove",
@@ -277,7 +281,7 @@
           },
           {
             "change_id": "chg_asset_add",
-            "decision_status": "not_required",
+            "decision_status": "pending",
             "section": "financial_assets",
             "path": "name",
             "operation": "add",
@@ -294,6 +298,11 @@
           }
         ]
       },
+      "decisions": [
+        {"change_id": "chg_asset_update", "decision_status": "approved"},
+        {"change_id": "chg_asset_remove", "decision_status": "approved"},
+        {"change_id": "chg_asset_add", "decision_status": "approved"}
+      ],
       "expected": {
         "canonical_draft": [
           {
@@ -408,14 +417,14 @@
         "type": "form_change",
         "step_id": "financial-goals",
         "target": "draft_form",
-        "mode": "direct",
-        "status": "direct",
+        "mode": "proposal",
+        "status": "pending",
         "user_requested": true,
         "confidence": 0.97,
         "changes": [
           {
             "change_id": "chg_goal_item_add",
-            "decision_status": "not_required",
+            "decision_status": "pending",
             "section": "goal_periods",
             "path": "items",
             "operation": "add",
@@ -430,6 +439,9 @@
           }
         ]
       },
+      "decisions": [
+        {"change_id": "chg_goal_item_add", "decision_status": "approved"}
+      ],
       "expected": {
         "canonical_draft": {
           "goal_periods": [
@@ -571,14 +583,14 @@
         "type": "form_change",
         "step_id": "financial-goals",
         "target": "draft_form",
-        "mode": "direct",
-        "status": "direct",
+        "mode": "proposal",
+        "status": "pending",
         "user_requested": true,
         "confidence": 0.96,
         "changes": [
           {
             "change_id": "chg_goal_item_update",
-            "decision_status": "not_required",
+            "decision_status": "pending",
             "section": "goal_periods",
             "path": "items[].amount",
             "operation": "update",
@@ -589,7 +601,7 @@
           },
           {
             "change_id": "chg_goal_item_remove",
-            "decision_status": "not_required",
+            "decision_status": "pending",
             "section": "goal_periods",
             "path": "items[].name",
             "operation": "remove",
@@ -600,6 +612,10 @@
           }
         ]
       },
+      "decisions": [
+        {"change_id": "chg_goal_item_update", "decision_status": "approved"},
+        {"change_id": "chg_goal_item_remove", "decision_status": "approved"}
+      ],
       "expected": {
         "canonical_draft": {
           "goal_periods": [

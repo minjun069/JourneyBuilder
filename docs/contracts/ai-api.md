@@ -187,7 +187,7 @@ AI는 고정 endpoint `POST /api/v2/internal/ai/callback/`으로 `completed` 또
 }
 ```
 
-AI는 `action_id`, `change_id`, 최종 `mode`, 결정 상태를 만들지 않는다. Django가 callback의 section/path/operation을 canonical 레지스트리로 검증하고 action을 정규화한다. 모든 form action에 action ID와 각 change ID를 발급한다. proposal은 change별 pending 상태를 가지며 Browser가 독립 승인·거절한다.
+AI는 `action_id`, `change_id`, 최종 `mode`, 결정 상태를 만들지 않는다. Django가 callback의 section/path/operation을 canonical 레지스트리로 검증하고 모든 form action을 `proposal`로 정규화한다. 모든 change에 ID와 `pending` 상태를 부여하며 Browser가 독립 승인·거절한다. AI의 `user_requested`와 confidence는 승인 증거가 아니고 별도 사용자 결정 없이 draft 적용을 허용하지 않는다.
 
 반복 항목은 `item_id` 또는 `client_item_id`, 중첩 추가는 부모 ID를 사용한다. 상세 필드·operation·mode 계약은 [데이터 스키마](../data/schema.md)를 따른다.
 

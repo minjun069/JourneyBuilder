@@ -1,4 +1,5 @@
 import api from '@/api'
+import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
 
 // ── Session ──────────────────────────────────────────────────
 export const getSessions   = ()              => api.get('/consultations/')
@@ -65,49 +66,8 @@ function persistedIdentity(item) {
   return item.id == null ? {} : { id: item.id }
 }
 
-function money(val, defaultUnit = 'man') {
-  const smallUnitMultiplier = defaultUnit === 'eok' ? 100000000 : 10000
-
-  if (val === '' || val == null) return null
-  if (typeof val === 'number') {
-    return val > 0 && val < 10000 ? val * smallUnitMultiplier : val
-  }
-
-  const raw = String(val).replace(/,/g, '').replace(/\s+/g, '')
-  if (!raw) return null
-  if (!/[억만]/.test(raw)) {
-    const n = num(raw)
-    return n != null && n > 0 && n < 10000 ? n * smallUnitMultiplier : n
-  }
-
-  let total = 0
-  let matched = false
-  const unitPattern = /(-?\d+(?:\.\d+)?)(억|만)/g
-  for (const match of raw.matchAll(unitPattern)) {
-    matched = true
-    const amount = Number(match[1])
-    if (Number.isNaN(amount)) continue
-    total += amount * (match[2] === '억' ? 100000000 : 10000)
-  }
-
-  if (!matched) return num(raw)
-  const remainder = raw.replace(unitPattern, '')
-  const extra = Number(remainder)
-  if (remainder && !Number.isNaN(extra)) {
-    total += raw.includes('억') && !raw.includes('만') && extra > 0 && extra < 10000
-      ? extra * smallUnitMultiplier
-      : extra
-  }
-  return Math.round(total)
-}
-
 function str(val) {
   return val !== '' && val != null ? val : null
-}
-
-function manWon(val) {
-  const n = num(val)
-  return n == null || n === 0 ? n : n * 10000
 }
 
 export function mapBasicInfo(form) {
@@ -119,7 +79,7 @@ export function mapBasicInfo(form) {
     tendency:       form.tendency,
     interest:       str(form.interest),
     need:           str(form.need),
-    monthly_income: manWon(form.earnings),
+    monthly_income: money(form.earnings),
     retirement_age: num(form.retirementAge),
     end_age:        num(form.endAge),
   }
