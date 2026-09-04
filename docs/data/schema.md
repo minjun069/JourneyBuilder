@@ -15,7 +15,7 @@
 | RAG 문서·인덱스 | AI 지식 파이프라인 | 승인된 적재 작업 | 검색 도구를 통해 읽기 |
 | AI 작업 상태 | Django | Django callback 처리 | request 상태 callback만 전달 |
 
-AI와 MCP는 Django 업무 테이블에 직접 쓰지 않는다. v2 AI action은 미저장 draft만 대상으로 하며, DB 영속화는 사용자가 폼 저장을 실행하고 Django serializer가 현재 draft 전체를 검증한 뒤에만 일어난다.
+AI와 MCP·Function Calling 도구는 Django 업무 테이블에 직접 쓰지 않는다. v2 AI action은 미저장 draft만 대상으로 하며, DB 영속화는 사용자가 폼 저장을 실행하고 Django serializer가 현재 draft 전체를 검증한 뒤에만 일어난다.
 
 ## 논리 모델
 
