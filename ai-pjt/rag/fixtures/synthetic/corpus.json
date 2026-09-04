@@ -1,0 +1,68 @@
+{
+  "documents": [
+    {
+      "metadata": {
+        "source_id": "synthetic-pension-tax-credit",
+        "title": "연금저축 세액공제 합성 안내",
+        "issuer": "RetireWise Synthetic Authority",
+        "source_uri": "synthetic://financial-knowledge/pension-tax-credit",
+        "published_at": "2026-01-01",
+        "as_of": "2026-01-01",
+        "version": "1.0",
+        "scope": "synthetic evaluation only",
+        "review_status": "synthetic",
+        "reviewed_by": "synthetic-fixture",
+        "document_kind": "financial_knowledge"
+      },
+      "text": "연금저축 세액공제 합성 문서입니다. 연금저축 납입액은 세액공제 검토 대상이며 개인별 소득과 납입 조건을 함께 확인해야 합니다. 이 내용은 검색 파이프라인 시험용이며 실제 세무 조언이 아닙니다."
+    },
+    {
+      "metadata": {
+        "source_id": "synthetic-retirement-pension",
+        "title": "퇴직연금 유형 합성 안내",
+        "issuer": "RetireWise Synthetic Authority",
+        "source_uri": "synthetic://financial-knowledge/retirement-pension",
+        "published_at": "2026-01-01",
+        "as_of": "2026-01-01",
+        "version": "1.0",
+        "scope": "synthetic evaluation only",
+        "review_status": "synthetic",
+        "reviewed_by": "synthetic-fixture",
+        "document_kind": "financial_knowledge"
+      },
+      "text": "퇴직연금 유형 합성 문서입니다. DB형은 급여 기준을 중심으로 설명하고 DC형은 적립금 운용 결과를 중심으로 설명합니다. IRP는 개인형 퇴직연금 계좌를 뜻합니다. 실제 제도 판단에는 승인된 최신 문서를 사용해야 합니다."
+    },
+    {
+      "metadata": {
+        "source_id": "synthetic-emergency-fund",
+        "title": "비상자금 합성 안내",
+        "issuer": "RetireWise Synthetic Authority",
+        "source_uri": "synthetic://financial-knowledge/emergency-fund",
+        "published_at": "2026-01-01",
+        "as_of": "2026-01-01",
+        "version": "1.0",
+        "scope": "synthetic evaluation only",
+        "review_status": "synthetic",
+        "reviewed_by": "synthetic-fixture",
+        "document_kind": "financial_knowledge"
+      },
+      "text": "비상자금 합성 문서입니다. 예상하지 못한 지출에 대비하는 비상자금은 생활비와 현금흐름을 기준으로 별도 관리합니다. 필요한 규모는 가구 상황과 소득 안정성에 따라 달라집니다."
+    },
+    {
+      "metadata": {
+        "source_id": "synthetic-asset-allocation",
+        "title": "자산배분 합성 안내",
+        "issuer": "RetireWise Synthetic Authority",
+        "source_uri": "synthetic://financial-knowledge/asset-allocation",
+        "published_at": "2026-01-01",
+        "as_of": "2026-01-01",
+        "version": "1.0",
+        "scope": "synthetic evaluation only",
+        "review_status": "synthetic",
+        "reviewed_by": "synthetic-fixture",
+        "document_kind": "financial_knowledge"
+      },
+      "text": "자산배분 합성 문서입니다. 분산투자는 여러 자산군에 위험을 나누는 원칙입니다. 자산배분은 투자 기간과 위험 감수 수준을 반영하며 특정 수익을 보장하지 않습니다."
+    }
+  ]
+}
