@@ -1,57 +1,75 @@
-# 경제 관념 프로세스 가이드라인
+# 재무 관점 인터페이스 가이드
 step_id: financial-mindset
+registry_source: backend-pjt/consulting/field_registry.py@ef3f8b7
 
-고객의 소비 습관, 투자 성향, 재무 목표 우선순위, 재무 관리 방식을 파악하는 단계입니다.
-정성적인 성향 정보를 수집하여 맞춤형 재무 전략 수립에 활용합니다.
+고객의 가치관·경험·현재 상황·투자 철학을 정성 텍스트로 정리한다.
+필드명·자료형·단위·제약은 canonical 필드 레지스트리를 그대로 따른다. 외부 금융 통계나 권장값은 이 문서에 넣지 않는다.
 
-| 항목명 | field_name | 설명 |
-|--------|------------|------|
-| 소비 성향 | spendingTendency | 소비와 저축의 균형에 대한 개인 성향 |
-| 투자 성향 | investmentTendency | 투자 위험 허용도 및 수익 추구 성향 |
-| 주요 재무 목표 | primaryGoal | 현재 가장 우선시하는 재무 목표 |
-| 재무 관리 방식 | managementStyle | 재무를 얼마나 체계적으로 관리하는지 |
-
----
-
-## spendingTendency: 소비 성향
-**작성요령**: 평소 소비와 저축의 균형을 어떻게 유지하는지 선택합니다. 현재 실제 행동 패턴을 기준으로 합니다.
-**표준값/기준값**: 선택지: '절약형 (저축 우선)', '균형형 (저축·소비 균형)', '소비형 (현재 삶 우선)'. 한국 40~50대 평균은 '균형형' 비중 가장 높음.
-**제약사항**: 위 3가지 중 하나 선택
-**파싱 예시**:
-- "저축을 최대한 많이 하려고 해요, 소비는 최소화" → spendingTendency: "절약형 (저축 우선)"
-- "쓸 건 쓰되 저축도 어느 정도 해요" → spendingTendency: "균형형 (저축·소비 균형)"
-- "지금 행복하게 사는 게 더 중요해요" → spendingTendency: "소비형 (현재 삶 우선)"
+| section | field_name | 자료형 | 단위 | 제약 | AI 변경 |
+|---|---|---|---|---|---|
+| `financial_mindset` | `values` | `string` | `none` | `{}` | 허용 |
+| `financial_mindset` | `past_experience` | `string` | `none` | `{}` | 허용 |
+| `financial_mindset` | `current_situation` | `string` | `none` | `{}` | 허용 |
+| `financial_mindset` | `current_challenge` | `string` | `none` | `{}` | 허용 |
+| `financial_mindset` | `invest_philosophy` | `string` | `none` | `{}` | 허용 |
+| `financial_mindset` | `future_goals` | `string` | `none` | `{}` | 허용 |
 
 ---
 
-## investmentTendency: 투자 성향
-**작성요령**: 투자 시 감수할 수 있는 위험 수준을 선택합니다. 원금 보전 중시 → 고수익 추구 순으로 선택지가 구성됩니다.
-**표준값/기준값**: 선택지: '안정형', '안정추구형', '안정 기반 수익 추구', '위험중립형', '적극투자형', '공격투자형'. 한국 50대 평균은 '안정추구형' ~ '위험중립형'.
-**제약사항**: 위 6가지 중 하나 선택
-**파싱 예시**:
-- "원금 손실은 절대 안 됩니다" → investmentTendency: "안정형"
-- "예금보다 조금 더 버는 정도면 충분해요" → investmentTendency: "안정추구형"
-- "어느 정도 손실 감수하고 수익 추구할 수 있어요" → investmentTendency: "위험중립형"
-- "주식 100% 넣어도 괜찮아요, 단기 손실은 신경 안 써요" → investmentTendency: "공격투자형"
+## values: 가치관
+- section: `financial_mindset`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## primaryGoal: 주요 재무 목표
-**작성요령**: 현재 가장 우선으로 달성하고 싶은 재무 목표를 선택합니다.
-**표준값/기준값**: 선택지: '노후 준비', '내 집 마련', '자녀 교육', '부채 상환', '단기 목돈 마련', '기타'. 50대 이상 고객은 '노후 준비' 비중 압도적.
-**제약사항**: 위 6가지 중 하나 선택
-**파싱 예시**:
-- "은퇴 후가 걱정돼요" → primaryGoal: "노후 준비"
-- "빚부터 갚고 싶어요" → primaryGoal: "부채 상환"
-- "아이 대학 보낼 돈이 필요해요" → primaryGoal: "자녀 교육"
+## past_experience: 과거 경험
+- section: `financial_mindset`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
 
 ---
 
-## managementStyle: 재무 관리 방식
-**작성요령**: 현재 가계부 작성, 예산 계획 등 재무 관리를 얼마나 체계적으로 하는지 선택합니다.
-**표준값/기준값**: 선택지: '체계적·계획적', '보통 (대략 파악)', '비체계적·즉흥적'. 한국 평균은 '보통 (대략 파악)' 가장 많음.
-**제약사항**: 위 3가지 중 하나 선택
-**파싱 예시**:
-- "가계부 매일 쓰고 월별 예산 정해서 관리해요" → managementStyle: "체계적·계획적"
-- "대충 얼마 쓰는지는 알아요" → managementStyle: "보통 (대략 파악)"
-- "카드 명세서 보기 전까지 얼마 썼는지 몰라요" → managementStyle: "비체계적·즉흥적"
+## current_situation: 현재 재무 상황
+- section: `financial_mindset`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## current_challenge: 당면 과제
+- section: `financial_mindset`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## invest_philosophy: 투자 철학
+- section: `financial_mindset`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
+
+---
+
+## future_goals: 미래 인생 목표
+- section: `financial_mindset`
+- 자료형: `string`
+- 단위: `none`
+- 제약: `{}`
+- AI 변경: 허용된 draft 변경 대상
+- 입력 규칙: 사용자의 표현을 의미가 바뀌지 않도록 canonical 값으로 정리한다.
