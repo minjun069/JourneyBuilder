@@ -49,4 +49,4 @@
 5. 교체·폐기 문서를 활성 인덱스에서 제외하고 재색인 결과와 활성 인덱스 버전을 남긴다.
 6. synthetic corpus로 적재·평가 명령을 먼저 검증한 후 이 corpus를 운영 후보 인덱스에 적재한다.
 
-`docs/ai/retrieval.md`의 추적 여부와 runtime 코드 변경은 이 커밋의 범위가 아니다.
+`docs/ai/retrieval.md`에는 위 collection·catalog·생명주기 정책과 P09 인수 조건을 반영했다. 이 문서의 기존 Git 추적 방식은 유지하며, runtime 코드 변경은 이 커밋의 범위가 아니다.
