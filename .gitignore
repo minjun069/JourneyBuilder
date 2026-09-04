@@ -71,5 +71,16 @@ htmlcov/
 # =========================
 # ETC
 # =========================
+# AI 개발 담당자 개인 하네스
+/.codex/
+/.harness/
+/AGENTS.md
+/Makefile
+/.gitlab-ci.yml
+/docs/INDEX.md
+/docs/engineering/agent-workflow.md
+/docs/engineering/context-observability.md
+/docs/engineering/git-workflow.md
+/docs/engineering/validation.md
 *.swp
 *.swo

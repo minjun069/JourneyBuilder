@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useAiStore } from '@/stores/ai'
+import { applyCanonicalChanges } from '@/utils/formChanges'
 import { PROCESS_STEPS, STEP_IDS } from './data/processSteps.js'
 import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.js'
 import BasicInfoForm from '@/components/forms/BasicInfoForm.vue'
@@ -307,11 +308,32 @@ async function sendMessage() {
     try {
       const result = await aiStore.receiveMessage()
       if (result) {
-        const { message, update } = result
-        const hasUpdate = update && Object.keys(update).length > 0
+        const { messageId, message, action } = result
+        let proposal = null
+        if (action?.type === 'form_change') {
+          const canApplyHere = (
+            action.target === 'draft_form'
+            && action.step_id === currentStepId.value
+            && activeFormRef.value?.form
+          )
+          if (action.mode === 'direct' && canApplyHere) {
+            try {
+              applyCanonicalChanges(action.step_id, activeFormRef.value.form, action.changes)
+            } catch {
+              proposal = action
+            }
+          } else {
+            proposal = action
+          }
+        }
         streamAiMessages([{
           text: message,
-          ...(hasUpdate ? { action: { type: 'form-update', update, fields: Object.keys(update).join(', ') } } : {}),
+          ...(proposal ? { action: {
+            type: 'form-update',
+            messageId,
+            ...proposal,
+            fields: proposal.changes.map((change) => change.label ?? `${change.section}.${change.path}`).join(', '),
+          } } : {}),
         }], { typingDelay: 0 })
         return
       }
@@ -348,8 +370,27 @@ function dismissAction(msg) {
   if (idx !== -1) messages.value[idx] = { ...messages.value[idx], action: undefined }
 }
 
-function approveFormUpdate(msg) {
-  if (activeFormRef.value?.form) Object.assign(activeFormRef.value.form, msg.action.update)
+async function approveFormUpdate(msg) {
+  const action = msg.action
+  if (action.target === 'draft_form') {
+    if (action.step_id !== currentStepId.value || !activeFormRef.value?.form) return
+    try {
+      applyCanonicalChanges(action.step_id, activeFormRef.value.form, action.changes)
+      dismissAction(msg)
+    } catch {
+      sessionError.value = '현재 폼에서 AI 제안 대상을 찾지 못했습니다. 다시 요청해주세요.'
+    }
+    return
+  }
+  await aiStore.approveAction(action.messageId)
+  dismissAction(msg)
+}
+
+async function rejectFormUpdate(msg) {
+  const action = msg.action
+  if (action.target !== 'draft_form') {
+    await aiStore.rejectAction(action.messageId)
+  }
   dismissAction(msg)
 }
 
@@ -557,7 +598,7 @@ onBeforeUnmount(() => {
                     <div v-else-if="msg.action.type === 'form-update'" class="update-card">
                       <p class="update-desc"><strong>{{ msg.action.fields }}</strong>에 대해 수정을 제안합니다. 승인하시겠습니까?</p>
                       <div class="update-actions">
-                        <button class="action-btn action-btn--secondary" type="button" @click="dismissAction(msg)">거절</button>
+                        <button class="action-btn action-btn--secondary" type="button" @click="rejectFormUpdate(msg)">거절</button>
                         <button class="action-btn" type="button" @click="approveFormUpdate(msg)">승인</button>
                       </div>
                     </div>

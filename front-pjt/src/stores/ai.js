@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   getSessions, createSession,
   getMessages, postMessage, getMessage,
+  approveAiAction, rejectAiAction,
   getBasicInfo,
   putBasicInfo, putFinancialMindset, putFinancialSatisfaction,
   putFinancialAssets, putPensionAssets, putRealEstateAssets,
@@ -12,6 +13,7 @@ import {
   mapFinancialAssets, mapPensionAssets, mapRealEstateAssets,
   mapLiabilities, mapIncomes, mapExpenses,
   mapGoalPeriods, mapGoalMilestones,
+  mapCurrentForm,
 } from '@/api/consulting'
 import { getReports } from '@/api/reports'
 import { MOCK_PRESENTATION_DATA } from '@/mock/aiData'
@@ -66,7 +68,7 @@ export const useAiStore = defineStore('ai', () => {
   // 사용자 메시지 전송
   async function sendMessage(content, { stepId, form = null } = {}) {
     if (!sessionId.value) return
-    const { data: res } = await postMessage(sessionId.value, { content, step_id: stepId, form })
+    const { data: res } = await postMessage(sessionId.value, { content, step_id: stepId, form_data: mapCurrentForm(stepId, form ?? {}) })
     return (requestId.value = res.data.request_id)
   }
 
@@ -76,10 +78,45 @@ export const useAiStore = defineStore('ai', () => {
     const { data: res } = await getMessage(sessionId.value, requestId.value)
     const message = res.data?.message
     if (!message) return null
-    return {
-      message: message.content,
-      update:  message.extracted_data?.pending_changes ?? null,
-    }
+    return { messageId: message.id, message: message.content, action: message.extracted_data?.action ?? null }
+  }
+
+  async function approveAction(messageId) {
+    if (!sessionId.value) return
+    return approveAiAction(sessionId.value, messageId)
+  }
+
+  async function rejectAction(messageId) {
+    if (!sessionId.value) return
+    return rejectAiAction(sessionId.value, messageId)
+  }
+
+  function syncIds(sourceRows, savedRows) {
+    ;(sourceRows ?? []).forEach((row, index) => {
+      if (savedRows?.[index]?.id != null) row.id = savedRows[index].id
+    })
+  }
+
+  async function saveList(putter, mapper, sid, form) {
+    const response = await putter(sid, mapper(form))
+    syncIds(form.assets, response.data?.data)
+    return response
+  }
+
+  async function saveGoals(sid, form) {
+    const periodResponse = await putGoalPeriods(sid, mapGoalPeriods(form))
+    const sourcePeriods = ['before', 'after'].flatMap((phase) => form[phase]?.periods ?? [])
+    syncIds(sourcePeriods, periodResponse.data?.data)
+    sourcePeriods.forEach((period, periodIndex) => {
+      syncIds(period.items, periodResponse.data?.data?.[periodIndex]?.items)
+    })
+
+    const milestoneResponse = await putGoalMilestones(sid, mapGoalMilestones(form))
+    const sourceMilestones = ['before', 'after'].flatMap(
+      (phase) => (form[phase]?.milestones ?? []).filter((item) => item.age),
+    )
+    syncIds(sourceMilestones, milestoneResponse.data?.data)
+    return { periods: periodResponse, milestones: milestoneResponse }
   }
 
   // 스텝별 폼 데이터 → 백엔드 저장
@@ -87,16 +124,13 @@ export const useAiStore = defineStore('ai', () => {
     'basic-info':             (sid, form) => putBasicInfo(sid, mapBasicInfo(form)),
     'financial-mindset':      (sid, form) => putFinancialMindset(sid, mapFinancialMindset(form)),
     'financial-satisfaction': (sid, form) => putFinancialSatisfaction(sid, mapFinancialSatisfaction(form)),
-    'financial-assets':       (sid, form) => putFinancialAssets(sid, mapFinancialAssets(form)),
-    'pension-assets':         (sid, form) => putPensionAssets(sid, mapPensionAssets(form)),
-    'real-estate':            (sid, form) => putRealEstateAssets(sid, mapRealEstateAssets(form)),
-    'liabilities':            (sid, form) => putLiabilities(sid, mapLiabilities(form)),
-    'income':                 (sid, form) => putIncomes(sid, mapIncomes(form)),
-    'expenses':               (sid, form) => putExpenses(sid, mapExpenses(form)),
-    'financial-goals': async  (sid, form) => {
-      await putGoalPeriods(sid, mapGoalPeriods(form))
-      await putGoalMilestones(sid, mapGoalMilestones(form))
-    },
+    'financial-assets':       (sid, form) => saveList(putFinancialAssets, mapFinancialAssets, sid, form),
+    'pension-assets':         (sid, form) => saveList(putPensionAssets, mapPensionAssets, sid, form),
+    'real-estate':            (sid, form) => saveList(putRealEstateAssets, mapRealEstateAssets, sid, form),
+    'liabilities':            (sid, form) => saveList(putLiabilities, mapLiabilities, sid, form),
+    'income':                 (sid, form) => saveList(putIncomes, mapIncomes, sid, form),
+    'expenses':               (sid, form) => saveList(putExpenses, mapExpenses, sid, form),
+    'financial-goals':        saveGoals,
   }
 
   async function saveFormData(stepId, formData) {
@@ -153,7 +187,7 @@ export const useAiStore = defineStore('ai', () => {
     presentationData,
     loading, error,
     initSession, loadSessions, continueLatestSession,
-    loadMessages, sendMessage, receiveMessage,
+    loadMessages, sendMessage, receiveMessage, approveAction, rejectAction,
     saveFormData, loadBasicInfo,
     fetchPresentationData,
     clearSession,

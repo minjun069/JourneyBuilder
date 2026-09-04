@@ -1,0 +1,517 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "ai-router-evaluation-v1",
+  "activation_gate": "I03",
+  "source_contract": "docs/contracts/ai-api.md#step_id-레지스트리",
+  "baseline_commit": "f0fa13d35788515cd1a8e5b079545c9c32f8d3c0",
+  "accuracy_threshold": 0.95,
+  "minimum_correct": 57,
+  "step_candidates": {
+    "intro": ["qa", "fallback"],
+    "collection": ["qa", "fallback"],
+    "basic-info": ["qa", "input_assist", "error_review", "fallback"],
+    "financial-mindset": ["qa", "input_assist", "elicit", "error_review", "fallback"],
+    "financial-satisfaction": ["qa", "input_assist", "error_review", "fallback"],
+    "financial-info": ["qa", "fallback"],
+    "financial-assets": ["qa", "input_assist", "error_review", "fallback"],
+    "pension-assets": ["qa", "input_assist", "error_review", "fallback"],
+    "real-estate": ["qa", "input_assist", "error_review", "fallback"],
+    "liabilities": ["qa", "input_assist", "error_review", "fallback"],
+    "income": ["qa", "input_assist", "error_review", "fallback"],
+    "expenses": ["qa", "input_assist", "error_review", "fallback"],
+    "financial-goals": ["qa", "input_assist", "error_review", "fallback"],
+    "presentation": ["qa", "fallback"],
+    "balance-sheet": ["qa", "chart_interpret", "fallback"],
+    "cash-flow": ["qa", "chart_interpret", "fallback"],
+    "financial-indicators": ["qa", "chart_interpret", "fallback"],
+    "financial-goal-result": ["qa", "chart_interpret", "fallback"],
+    "retirement-fund": ["qa", "chart_interpret", "fallback"],
+    "retirement-readiness": ["qa", "chart_interpret", "fallback"],
+    "pension-schedule": ["qa", "chart_interpret", "fallback"],
+    "lifetime-cashflow": ["qa", "chart_interpret", "fallback"],
+    "required-savings": ["qa", "chart_interpret", "fallback"]
+  },
+  "cases": [
+    {
+      "id": "qa-intro-service-scope",
+      "kind": "role_success",
+      "step_id": "intro",
+      "message": "이 서비스로 무엇을 할 수 있나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-collection-preparation",
+      "kind": "role_success",
+      "step_id": "collection",
+      "message": "상담을 시작하기 전에 어떤 정보를 준비해야 하나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-basic-info-age-purpose",
+      "kind": "role_success",
+      "step_id": "basic-info",
+      "message": "나이가 은퇴 설계에 왜 중요한가요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-mindset-risk-meaning",
+      "kind": "role_success",
+      "step_id": "financial-mindset",
+      "message": "위험 감수 성향이 자산 배분에 어떤 영향을 주나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-satisfaction-purpose",
+      "kind": "role_success",
+      "step_id": "financial-satisfaction",
+      "message": "재무 만족도는 왜 묻나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-financial-info-process",
+      "kind": "role_success",
+      "step_id": "financial-info",
+      "message": "재무 정보 수집 과정은 어떻게 진행되나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-assets-category",
+      "kind": "role_success",
+      "step_id": "financial-assets",
+      "message": "예금과 펀드는 어떻게 구분해 입력하나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-pension-difference",
+      "kind": "role_success",
+      "step_id": "pension-assets",
+      "message": "연금저축과 퇴직연금의 차이를 알려주세요.",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-real-estate-value",
+      "kind": "role_success",
+      "step_id": "real-estate",
+      "message": "부동산 가치는 어떤 기준으로 적나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-liabilities-fields",
+      "kind": "role_success",
+      "step_id": "liabilities",
+      "message": "대출 원금과 월 상환액은 왜 둘 다 필요한가요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-income-net-or-gross",
+      "kind": "role_success",
+      "step_id": "income",
+      "message": "세전 소득과 세후 소득 중 무엇을 입력하나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-expenses-category",
+      "kind": "role_success",
+      "step_id": "expenses",
+      "message": "고정지출과 변동지출을 어떻게 나누나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-goals-priority",
+      "kind": "role_success",
+      "step_id": "financial-goals",
+      "message": "재무목표의 우선순위는 어떻게 정하나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-presentation-sections",
+      "kind": "role_success",
+      "step_id": "presentation",
+      "message": "재무 진단 결과는 어떤 항목으로 구성되나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-lifetime-concept",
+      "kind": "role_success",
+      "step_id": "lifetime-cashflow",
+      "message": "생애현금흐름에서 순자산은 무엇을 뜻하나요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-basic-info-age-job",
+      "kind": "role_success",
+      "step_id": "basic-info",
+      "message": "만 34세이고 직장인이야. 입력해 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-mindset-risk-profile",
+      "kind": "role_success",
+      "step_id": "financial-mindset",
+      "message": "투자 성향은 안정형으로 적어줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-satisfaction-score",
+      "kind": "role_success",
+      "step_id": "financial-satisfaction",
+      "message": "재무 만족도는 7점이야.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-financial-assets-deposit",
+      "kind": "role_success",
+      "step_id": "financial-assets",
+      "message": "정기예금 2천만 원을 추가해 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-pension-assets-savings",
+      "kind": "role_success",
+      "step_id": "pension-assets",
+      "message": "연금저축 잔액은 1,200만 원으로 입력해 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-real-estate-apartment",
+      "kind": "role_success",
+      "step_id": "real-estate",
+      "message": "아파트 현재 시세를 5억 원으로 적어 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-liabilities-mortgage",
+      "kind": "role_success",
+      "step_id": "liabilities",
+      "message": "주택담보대출 잔액 1억 2천만 원을 추가해 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-income-monthly-net",
+      "kind": "role_success",
+      "step_id": "income",
+      "message": "세후 월급은 350만 원이야. 반영해 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-expenses-living",
+      "kind": "role_success",
+      "step_id": "expenses",
+      "message": "월 생활비 180만 원으로 입력해 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "input-financial-goals-house",
+      "kind": "role_success",
+      "step_id": "financial-goals",
+      "message": "5년 뒤 주택자금 1억 원 마련을 목표로 추가해 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "input_assist", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-basic-info-negative-age",
+      "kind": "role_success",
+      "step_id": "basic-info",
+      "message": "나이를 -3살로 입력했는데 왜 오류가 나나요?",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-mindset-invalid-option",
+      "kind": "role_success",
+      "step_id": "financial-mindset",
+      "message": "투자 성향에 20을 넣으니 오류가 나요. 이유를 알려줘.",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-satisfaction-range",
+      "kind": "role_success",
+      "step_id": "financial-satisfaction",
+      "message": "만족도 11점이 저장되지 않는 이유가 뭐예요?",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-financial-assets-negative",
+      "kind": "role_success",
+      "step_id": "financial-assets",
+      "message": "예금 잔액에 마이너스를 넣을 수 없다는 오류를 설명해 줘.",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-pension-assets-date",
+      "kind": "role_success",
+      "step_id": "pension-assets",
+      "message": "연금 개시일 형식이 잘못됐다고 하는데 어떻게 고치나요?",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-real-estate-missing-value",
+      "kind": "role_success",
+      "step_id": "real-estate",
+      "message": "부동산 종류는 적었는데 평가액 누락 오류가 나요.",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-liabilities-rate",
+      "kind": "role_success",
+      "step_id": "liabilities",
+      "message": "대출 금리를 500으로 입력하니 거부됐어요. 이유가 뭔가요?",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-income-text-number",
+      "kind": "role_success",
+      "step_id": "income",
+      "message": "월 소득에 숫자 대신 문장을 넣었다는 오류를 고쳐줘.",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-expenses-period",
+      "kind": "role_success",
+      "step_id": "expenses",
+      "message": "연 지출을 월 지출 칸에 넣어서 단위 오류가 났어요.",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "error-financial-goals-order",
+      "kind": "role_success",
+      "step_id": "financial-goals",
+      "message": "목표 시작일이 종료일보다 늦다는 오류를 설명해 줘.",
+      "classifier": {"status": "matched", "agent": "error_review"},
+      "expected": {"agent": "error_review", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-balance-sheet-structure",
+      "kind": "role_success",
+      "step_id": "balance-sheet",
+      "message": "내 재무상태표에서 자산과 부채 비중을 해석해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-cash-flow-balance",
+      "kind": "role_success",
+      "step_id": "cash-flow",
+      "message": "이 현금흐름표에서 매달 남는 금액을 설명해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-financial-indicators-gauge",
+      "kind": "role_success",
+      "step_id": "financial-indicators",
+      "message": "표시된 가계재무지표 중 취약한 항목을 해석해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-goal-result-progress",
+      "kind": "role_success",
+      "step_id": "financial-goal-result",
+      "message": "현재 재무목표 달성 가능성 결과를 설명해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-retirement-fund-needed",
+      "kind": "role_success",
+      "step_id": "retirement-fund",
+      "message": "계산된 은퇴 필요자금이 왜 이 금액인지 해석해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-retirement-readiness-gap",
+      "kind": "role_success",
+      "step_id": "retirement-readiness",
+      "message": "은퇴 준비자금의 부족분을 현재 결과 기준으로 설명해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-pension-schedule-timing",
+      "kind": "role_success",
+      "step_id": "pension-schedule",
+      "message": "연금 수령 시기별 금액 변화를 해석해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-lifetime-cashflow-depletion",
+      "kind": "role_success",
+      "step_id": "lifetime-cashflow",
+      "message": "내 생애현금흐름에서 자산이 줄어드는 구간을 설명해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "chart-required-savings-monthly",
+      "kind": "role_success",
+      "step_id": "required-savings",
+      "message": "표시된 필요저축액이 현재 소득에서 어느 정도인지 해석해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "chart_interpret", "reason_code": "intent_match"}
+    },
+    {
+      "id": "elicit-mindset-retirement-life",
+      "kind": "qualitative_collection",
+      "step_id": "financial-mindset",
+      "message": "은퇴 후 원하는 삶을 정리할 수 있게 한 가지씩 물어봐 줘.",
+      "classifier": {"status": "matched", "agent": "elicit"},
+      "expected": {"agent": "elicit", "reason_code": "intent_match"}
+    },
+    {
+      "id": "elicit-mindset-financial-worry",
+      "kind": "qualitative_collection",
+      "step_id": "financial-mindset",
+      "message": "돈과 관련해 내가 가장 걱정하는 점을 찾도록 질문해 줘.",
+      "classifier": {"status": "matched", "agent": "elicit"},
+      "expected": {"agent": "elicit", "reason_code": "intent_match"}
+    },
+    {
+      "id": "elicit-mindset-value-priority",
+      "kind": "qualitative_collection",
+      "step_id": "financial-mindset",
+      "message": "안정성과 수익성 중 내 가치관을 정리할 수 있게 순서대로 물어봐 줘.",
+      "classifier": {"status": "matched", "agent": "elicit"},
+      "expected": {"agent": "elicit", "reason_code": "intent_match"}
+    },
+    {
+      "id": "elicit-mindset-retirement-priority",
+      "kind": "qualitative_collection",
+      "step_id": "financial-mindset",
+      "message": "은퇴 후 삶의 우선순위를 정하도록 질문을 하나씩 해 줘.",
+      "classifier": {"status": "matched", "agent": "elicit"},
+      "expected": {"agent": "elicit", "reason_code": "intent_match"}
+    },
+    {
+      "id": "fallback-ambiguous-basic-action",
+      "kind": "ambiguous",
+      "step_id": "basic-info",
+      "message": "그거 좀 해줘.",
+      "classifier": {"status": "ambiguous", "agent": null},
+      "expected": {"agent": "fallback", "reason_code": "ambiguous_intent"}
+    },
+    {
+      "id": "fallback-ambiguous-mindset-unknown",
+      "kind": "ambiguous",
+      "step_id": "financial-mindset",
+      "message": "잘 모르겠어.",
+      "classifier": {"status": "ambiguous", "agent": null},
+      "expected": {"agent": "fallback", "reason_code": "ambiguous_intent"}
+    },
+    {
+      "id": "fallback-ambiguous-chart-pronoun",
+      "kind": "ambiguous",
+      "step_id": "cash-flow",
+      "message": "이건 왜 이래?",
+      "classifier": {"status": "ambiguous", "agent": null},
+      "expected": {"agent": "fallback", "reason_code": "ambiguous_intent"}
+    },
+    {
+      "id": "fallback-ambiguous-intro-filler",
+      "kind": "ambiguous",
+      "step_id": "intro",
+      "message": "음, 저기...",
+      "classifier": {"status": "ambiguous", "agent": null},
+      "expected": {"agent": "fallback", "reason_code": "ambiguous_intent"}
+    },
+    {
+      "id": "fallback-unsupported-stock-trade",
+      "kind": "unsupported_intent",
+      "step_id": "financial-assets",
+      "message": "수익 날 종목을 골라서 지금 바로 매수해 줘.",
+      "classifier": {"status": "unsupported", "agent": null},
+      "expected": {"agent": "fallback", "reason_code": "unsupported_intent"}
+    },
+    {
+      "id": "fallback-unsupported-money-transfer",
+      "kind": "unsupported_intent",
+      "step_id": "liabilities",
+      "message": "내 계좌에서 대출 계좌로 돈을 이체해 줘.",
+      "classifier": {"status": "unsupported", "agent": null},
+      "expected": {"agent": "fallback", "reason_code": "unsupported_intent"}
+    },
+    {
+      "id": "fallback-unsupported-lottery",
+      "kind": "unsupported_intent",
+      "step_id": "intro",
+      "message": "이번 주 로또 당첨 번호를 알려줘.",
+      "classifier": {"status": "unsupported", "agent": null},
+      "expected": {"agent": "fallback", "reason_code": "unsupported_intent"}
+    },
+    {
+      "id": "fallback-unsupported-guaranteed-return",
+      "kind": "unsupported_intent",
+      "step_id": "financial-goals",
+      "message": "원금과 연 20퍼센트 수익이 보장되는 상품을 추천해 줘.",
+      "classifier": {"status": "unsupported", "agent": null},
+      "expected": {"agent": "fallback", "reason_code": "unsupported_intent"}
+    },
+    {
+      "id": "fallback-unsupported-step",
+      "kind": "unsupported_step",
+      "step_id": "legacy-dashboard",
+      "message": "이 화면 내용을 설명해 줘.",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "fallback", "reason_code": "unsupported_step"},
+      "expected_classifier_calls": 0
+    },
+    {
+      "id": "fallback-basic-chart-agent-not-allowed",
+      "kind": "policy_rejection",
+      "step_id": "basic-info",
+      "message": "현재 화면의 그래프를 분석해 줘.",
+      "classifier": {"status": "matched", "agent": "chart_interpret"},
+      "expected": {"agent": "fallback", "reason_code": "agent_not_allowed"}
+    },
+    {
+      "id": "fallback-chart-input-agent-not-allowed",
+      "kind": "policy_rejection",
+      "step_id": "balance-sheet",
+      "message": "여기에 새 자산 금액을 입력해 줘.",
+      "classifier": {"status": "matched", "agent": "input_assist"},
+      "expected": {"agent": "fallback", "reason_code": "agent_not_allowed"}
+    },
+    {
+      "id": "fallback-classifier-provider-error",
+      "kind": "classifier_error",
+      "step_id": "income",
+      "message": "월급 정보를 설명해 줘.",
+      "classifier": {"status": "error", "agent": null, "error": "provider_timeout"},
+      "expected": {"agent": "fallback", "reason_code": "classifier_error"}
+    }
+  ]
+}
