@@ -1,0 +1,44 @@
+# P13 데이터 분류·마스킹 테스트 준비
+
+- 작업 레인: P13 — D11 데이터 분류·마스킹 준비
+- 목표와 지금 필요한 이유: production 경계가 공개되기 전에 합성 데이터로 마스킹 누락을 판정할 공통 계약을 준비한다.
+- 기준 commit SHA: `f0fa13d35788515cd1a8e5b079545c9c32f8d3c0`
+- 입력 계약·fixture: 외부 계약 비의존 합성 sentinel. D1 공용 fixture는 사용하지 않는다.
+- 쓰기 파일: `ai-pjt/tests/security/**`, 테스트 패키지 표시용 `ai-pjt/tests/__init__.py`
+- 수정 금지 파일: AI production 코드, D1 계약 문서, `docs/security/ai-security-policy.md`
+- mock 경계: 모델 입력·출력, 애플리케이션 로그, trace exporter에 전달되기 직전의 직렬화 문자열
+- 산출물: `masking_contract.py`의 분류·sentinel·누락 판정 함수와 그 self-test
+- 다음 병합 게이트: G0 뒤 실제 직렬화 경계와 계약 함수를 연결하고 G5의 D11 마스킹 검사에 사용한다.
+
+## 실행
+
+저장소 루트에서 다음을 실행한다.
+
+```bash
+cd ai-pjt
+python3 -m unittest tests.security.test_masking_contract -v
+```
+
+테스트는 실제 개인정보를 포함하지 않는다. `.invalid` 예약 도메인, 명백한 P13 표식, 무효 전화번호처럼 합성임을 식별할 수 있는 값만 사용한다.
+
+## 현재 판정 범위
+
+현재 계약은 다음 원문 노출을 탐지한다.
+
+| 데이터 분류 | 모델 입력·출력 | 애플리케이션 로그·trace |
+|---|---|---|
+| 직접 식별정보 | 원문 금지 | 원문 금지 |
+| 준식별정보 | 과업별 allowlist 결합 전에는 판정하지 않음 | 원문 금지 |
+| 프로젝트 고위험 금융정보 | 과업별 allowlist 결합 전에는 판정하지 않음 | 원문 금지 |
+| 운영정보 | 원문 식별자 금지 | 가명 식별자로 대체하기 전 원문 금지 |
+
+`프로젝트 고위험 금융정보`는 내부 보호 등급이며 개인정보보호법 제23조의 법정 `민감정보`와 같은 뜻이 아니다.
+
+## G0 이후 연결할 항목
+
+1. 실제 모델 request·response, callback, 일반 로그, trace export 직전 값을 문자열로 직렬화해 `assert_no_raw_sentinels`에 전달한다.
+2. Agent별 필드 allowlist가 없는 준식별·금융정보가 모델 입력으로 전달되지 않는지 별도 테스트한다.
+3. 마스킹 실패나 exporter 오류를 성공으로 우회하지 않고 외부 전송을 닫는지 검증한다.
+4. 부분 노출, 구분자 변형, 인코딩처럼 단순 literal 탐지를 벗어나는 회귀는 D13 공격 회귀셋과 결합한다.
+
+이 준비 테스트의 통과는 production 마스킹 완료를 뜻하지 않는다. 현재 증명하는 것은 합성 사례의 분류가 일관되고, passthrough 누락이 각 sink에서 실패한다는 사실까지다.
