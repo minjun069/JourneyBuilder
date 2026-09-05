@@ -1,53 +1,126 @@
+x-backend-environment: &backend-environment
+  DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}"
+  DJANGO_DEBUG: "${DJANGO_DEBUG:-false}"
+  DJANGO_ALLOWED_HOSTS: "${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}"
+  POSTGRES_DB: "${POSTGRES_DB:-retirewise_db}"
+  POSTGRES_USER: "${POSTGRES_USER:-retirewise}"
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  REDIS_URL: redis://redis:6379/0
+  AI_SERVICE_URL: http://ai-pjt:8001/chat
+  AI_CALLBACK_URL: http://backend:8000/api/ai/callback/
+  AI_REQUEST_TTL_SECONDS: "${AI_REQUEST_TTL_SECONDS:-600}"
+  AI_SERVICE_TIMEOUT_SECONDS: "${AI_SERVICE_TIMEOUT_SECONDS:-5}"
+  AI_SERVICE_BEARER_TOKEN: "${AI_SERVICE_BEARER_TOKEN:?AI_SERVICE_BEARER_TOKEN is required}"
+  AI_CALLBACK_SECRET: "${AI_CALLBACK_SECRET:-}"
+  READINESS_HOST: 127.0.0.1
+  READINESS_PORT: "8000"
+  READINESS_TIMEOUT_SECONDS: "${READINESS_TIMEOUT_SECONDS:-2}"
+
 services:
-  zookeeper:
-    container_name: zookeeper
-    image: confluentinc/cp-zookeeper:7.5.0
-    ports:
-      - "2181:2181"
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    networks:
-      - de_net
-
-  kafka:
-    container_name: kafka
-    image: confluentinc/cp-kafka:7.5.0
-    ports:
-      - "9092:9092"
-      - "29092:29092"
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-    depends_on:
-      - zookeeper
-    networks:
-      - de_net
-
   postgres:
-    container_name: postgres
     image: pgvector/pgvector:pg16
-    ports:
-      - "5432:5432"
     environment:
-      POSTGRES_DB: streaming_data
-      POSTGRES_USER: ssafy
-      POSTGRES_PASSWORD: ssafy
+      POSTGRES_DB: "${POSTGRES_DB:-retirewise_db}"
+      POSTGRES_USER: "${POSTGRES_USER:-retirewise}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./db/postgres/init.sql:/docker-entrypoint-initdb.d/10-runtime.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    expose:
+      - "5432"
     networks:
-      - de_net
+      - application
+
+  redis:
+    image: redis:7.4-bookworm
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    expose:
+      - "6379"
+    networks:
+      - application
+
+  migrate:
+    build:
+      context: ./backend-pjt
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - application
+
+  backend:
+    build:
+      context: ./backend-pjt
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "8000"
+    networks:
+      - application
+
+  ai-pjt:
+    build:
+      context: ./ai-pjt
+    environment:
+      LLM_PROVIDER: "${LLM_PROVIDER:-gemini}"
+      EMBEDDING_PROVIDER: "${EMBEDDING_PROVIDER:-gemini}"
+      LLM_MODEL: "${LLM_MODEL:-gemini-2.5-flash-lite}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-gemini-embedding-001}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://gms.ssafy.io/gmsapi/api.openai.com/v1}"
+      DATABASE_URL: "${DATABASE_URL:?DATABASE_URL is required}"
+      BACKEND_URL: http://backend:8000
+      AI_SERVICE_BEARER_TOKEN: "${AI_SERVICE_BEARER_TOKEN:?AI_SERVICE_BEARER_TOKEN is required}"
+      AI_CALLBACK_SECRET: "${AI_CALLBACK_SECRET:-}"
+      RAG_COLLECTION: "${RAG_COLLECTION:-retirement_docs}"
+      RAG_TOP_K: "${RAG_TOP_K:-5}"
+      EMBED_DIM: "${EMBED_DIM:-3072}"
+      READINESS_HTTP_URL: http://127.0.0.1:8001/health
+      READINESS_TIMEOUT_SECONDS: "${READINESS_TIMEOUT_SECONDS:-2}"
+      LANGFUSE_ENABLED: "${LANGFUSE_ENABLED:-false}"
+      LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY:-}"
+      LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
+      LANGFUSE_HOST: "${LANGFUSE_HOST:-http://langfuse:3000}"
+      LANGCHAIN_TRACING_V2: "${LANGCHAIN_TRACING_V2:-false}"
+      LANGCHAIN_API_KEY: "${LANGCHAIN_API_KEY:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8001"
+    networks:
+      - application
 
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
-  de_net:
-    external: true
+  application:
+    driver: bridge

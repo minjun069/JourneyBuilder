@@ -1,84 +1,74 @@
-# SSAFY 15기 관통프로젝트
+# RetireWise
 
-## 팀 프로젝트 진행 방법
+사용자의 자산·현금 흐름·재무 목표를 바탕으로 은퇴 설계와 금융 건강 진단을 지원하는 AI 재무설계 서비스다.
 
-1. 각자의 PC에서 `git clone` 명령어로 내려 받습니다.
-2. 각자의 `branch`를 생성하여 맡은 업무를 진행합니다.
-  - 작업 중 주기적으로 `Merge Request`를 활용하여 서로의 작업물을 동기화 합니다.
-3. 각 작업이 완료되기 전, `README.md`에 프로젝트에 대한 설명과 이슈 등을 작성합니다.
-4. 당일 18시 이전에 오늘까지 수행한 내용을 최종 commit을 작성하여 제출합니다.
-  - 제출은 생성된 원격 저장소의 `master branch`에 merge 하여야만 인정됩니다.
----
+## 현재 애플리케이션 구성
 
-# 프로젝트명
-## 은퇴 설계에 특화된 AI 기반 재무설계 서비스
-사용자의 자산 현황, 현금 흐름, 재무 목표 등을 분석하여  
-맞춤형 재무 계획 및 금융 건강 진단을 제공하는 비대면 AI 재무설계 플랫폼
+| 경로 | 역할 | 로컬 실행 |
+|---|---|---|
+| `front-pjt/` | Vue 사용자 화면 | 별도 Vite 개발 서버 |
+| `backend-pjt/` | Django 업무 API와 AI 요청 상태 | 루트 Compose의 `backend` |
+| `ai-pjt/` | FastAPI·LangGraph 상담 서비스 | 루트 Compose의 `ai-pjt` |
+| `db/` | 애플리케이션 PostgreSQL 초기화 | 루트 Compose의 `postgres` |
 
-## 프로젝트 구조
-backend-pjt/ &ensp;# Django 서버  
-front-pjt/ &emsp;&emsp;# Vue 프론트엔드  
-data-pjt/ &nbsp;&emsp;&emsp;# 데이터 파이프라인  
+루트 `docker-compose.yml`은 Backend·AI·PostgreSQL·Redis의 통합 실행 진입점이다. 기존 뉴스 분석과 Kafka·Flink·배치 데이터 파이프라인은 이번 프로젝트에서 폐기됐으며, `data-pjt/`, `docker-compose-kafka.yml`, `docker-compose-flink.yml`, `db/docker-compose.yml` 등 남아 있는 산출물은 현재 실행 경로에서 사용하지 않는다. P03 범위를 넘어서는 파일 삭제는 별도 정리 작업에서 수행한다.
 
-## 작업 완료 요약 설명 & 이슈  
-1. 네이버 뉴스 API 검색
+## Compose 실행 계약
 
-당일의, 주어진 키워드(국민연금 공적연금 주택연금 퇴직연금)로 검색한 뉴스 목록 조회 (제목, URL, 게시일)
+Compose는 다음 순서로 준비 상태를 확인한다.
 
-2. 뉴스 본문 크롤링
+```text
+PostgreSQL healthy ─┬─→ AI
+                    └─→ Django migration 완료 ─→ Backend
+Redis healthy ─────────────────────────────────→ Backend
+```
 
-검색된 url에 대한 본문 크롤링 (네이버 뉴스에 업로드 된 경우로 제한)
+- 서비스 간 연결은 `postgres`, `redis`, `backend`, `ai-pjt`라는 내부 DNS를 사용한다.
+- host 포트는 기본 공개하지 않는다. 필요한 개발 포트는 별도 override에서 loopback에만 공개한다.
+- PostgreSQL과 Redis 데이터는 Compose project별 named volume에 저장된다.
+- PostgreSQL 초기화 SQL은 새 `postgres_data` volume을 만들 때만 실행된다.
+- secret에는 동작 가능한 기본값이 없다. 실제 값은 커밋하지 않은 루트 `.env` 또는 실행 환경에서 주입한다.
 
-3. DB 적재
+필수 환경변수:
 
-streaming_data DB의 news 테이블에 적재
+| 변수 | 용도 |
+|---|---|
+| `POSTGRES_PASSWORD` | `retirewise` PostgreSQL 계정 비밀번호 |
+| `DATABASE_URL` | AI checkpoint용 PostgreSQL DSN. host는 `postgres`, DB는 `retirewise_db`를 사용 |
+| `DJANGO_SECRET_KEY` | Django secret |
+| `AI_SERVICE_BEARER_TOKEN` | Backend·AI 서비스 인증용 공유 token |
 
-4. Docker 초기 환경 설정
-- 'docker compose up -d' : 기존 테이블, 데이터 확인 가능
-- 'docker compose down' : 작업 완료 후 docker 종료 시 사용, 데이터 유지
-5. PostgresSQL 연동 및 설정
+기본 DB 이름과 사용자는 각각 `retirewise_db`, `retirewise`다. 다른 값을 사용할 때는 `POSTGRES_DB`, `POSTGRES_USER`, `DATABASE_URL`을 함께 바꿔야 한다. LLM provider에 따라 `GOOGLE_API_KEY` 또는 `OPENAI_API_KEY`도 주입한다. 전체 AI·Backend 변수 목록은 `ai-pjt/.env.example`과 `backend-pjt/.env.example`을 따른다.
 
-6. 뉴스 검색 API 이후, 기사 하나씩 크롤링 하며 producer에서 send
+secret 누락 여부와 Compose 구조는 컨테이너를 만들기 전에 확인할 수 있다.
 
-7. Kafka, Flink 컨테이너 구성
+```bash
+docker compose config --quiet
+```
 
-8. PostgreSQL pgvector 설정 및 컬럼 추가
+인프라만 기동하고 준비 상태를 확인하는 명령은 다음과 같다.
 
-9. Flink Consumer 구현
-- Kafka 메시지 수신, JSON 파싱
-- PostgreSQL 적재
+```bash
+docker compose up -d postgres redis
+docker compose ps postgres redis
+docker compose down
+```
 
-10. AI 기반 데이터 전처리 파이프라인 적용
-- 뉴스 카테고리 분류, 키워드 추출, 본문 임베딩 생성
+전체 이미지와 서비스를 기동하는 최종 명령은 다음과 같다.
 
-## 브랜치 전략
-### 1.브랜치 (Branch) 전략
+```bash
+docker compose up --build -d
+docker compose ps
+docker compose exec ai-pjt python readiness.py
+docker compose exec backend python readiness.py
+docker compose down
+```
 
-- **브랜치명 형식:** `태그/기능명`
-    - 예시: `feat/stock-chart`, `fix/jwt-auth`
+현재 `backend-pjt/config/settings.py`는 아직 PostgreSQL 연결을 환경변수에서 읽지 않는다. I06 Backend lifecycle 반영 전에는 migration과 Backend readiness가 실패하므로 위 전체 기동을 G1 통과로 판정하지 않는다. P04가 I06 반영 뒤 빈 volume에서 전체 clean start와 종료를 다시 검증한다.
 
-### 2. 커밋 메시지 규칙
+## 개발 원칙
 
-- **형식:** `{이모지} {태그}: [{기능명}] 커밋 메세지`
-- **예시:** `feat: [stock-chart] 차트 시각화 기능 구현`
-- **이모지 및 태그:**
-    - `feat`: 새로운 기능 추가
-    - `fix`: 버그 수정
-    - `refactor`: 코드 리팩토링
-    - `comment`: 주석 추가 또는 오타 수정
-    - `docs`: README 등 문서 수정
-    - `merge`: 브랜치 병합
-    - `rename`: 파일/폴더명 수정 및 이동
-    - `chore`: 패키지 매니저, 환경 설정 등 기타 변경
-
-### 3. PR (Pull Request) 및 코드 리뷰 규칙
-
-- **PR 제목:** `merge: [{날짜}] {이름} {한 일} {종료 여부}`
-    - 예시: `merge: [2026-04-14] 홍길동 차트 시각화(완)`
-- **PR 내용:** 전체 작업 내용 요약, 주요 로직, 리뷰어가 집중해서 봐야 할 부분 명시
-
-## 기술 스택
-
-## 환경 변수
-
-## 실행 방법
+- AI는 Django 업무 테이블을 직접 수정하지 않는다.
+- 사용자가 승인하기 전 AI의 변경 제안은 저장된 업무 데이터가 아니다.
+- 외부 HTTP·AI 계약은 `docs/contracts/`, 데이터 소유권은 `docs/data/schema.md`를 따른다.
+- 실제 secret, 로컬 volume 데이터, 자동 생성물은 커밋하지 않는다.
