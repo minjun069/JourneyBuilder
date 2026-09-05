@@ -5,8 +5,8 @@ from core.llm import llm
 from graph.state import ChatState
 
 # Frontend의 processSteps.js에 정의된 23개 ID와 동기화한다.
-# 서비스 간 import는 하지 않는다. 경계 계약의 단일 원천은
-# docs/contracts/ai-api.md의 "step_id 레지스트리" 표다.
+# 서비스 간 import는 하지 않는다. 이 레지스트리는 Frontend 단계 목록 및
+# router evaluation fixture와 contract test로 동기화한다.
 STEP_CANDIDATES: dict[str, list[str]] = {
     "intro": ["qa", "fallback"],
     "collection": ["qa", "fallback"],

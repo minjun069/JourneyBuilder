@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "fixture_id": "ai-router-evaluation-v1",
   "activation_gate": "I03",
-  "source_contract": "docs/contracts/ai-api.md#step_id-레지스트리",
+  "source_contract": "ai-pjt/graph/router.py#STEP_CANDIDATES",
   "baseline_commit": "f0fa13d35788515cd1a8e5b079545c9c32f8d3c0",
   "accuracy_threshold": 0.95,
   "minimum_correct": 57,

@@ -4,8 +4,8 @@ import path from 'node:path'
 import { changeKey, validateScenario } from './scenarios.mjs'
 
 export const COMMON_FIXTURE_PATHS = Object.freeze({
-  lifecycle: 'docs/contracts/fixtures/ai-lifecycle/v2/lifecycle.json',
-  formActions: 'docs/contracts/fixtures/ai-lifecycle/v2/form-actions.json',
+  lifecycle: 'contract-fixtures/ai-lifecycle/v2/lifecycle.json',
+  formActions: 'contract-fixtures/ai-lifecycle/v2/form-actions.json',
 })
 
 const clone = (value) => structuredClone(value)

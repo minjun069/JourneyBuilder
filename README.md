@@ -2,7 +2,7 @@
 
 사용자의 자산·현금 흐름·재무 목표를 정리·분석해 금융 건강과 은퇴 준비 상태를 진단·설명하는 AI 재무진단 서비스다.
 
-> 현재 채택된 AI-001 3주 MVP의 사용자 기능은 재무 정보 입력·검토와 재무 진단까지다. 개인별 자산배분안·상품 구성·매매·리밸런싱 계획을 생성하는 재무 설계 기능은 포함하지 않는다. 정확한 범위는 [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) §4를 따른다.
+> 현재 채택된 AI-001 3주 MVP의 사용자 기능은 재무 정보 입력·검토와 재무 진단까지다. 개인별 자산배분안·상품 구성·매매·리밸런싱 계획을 생성하는 재무 설계 기능은 포함하지 않는다.
 
 ## 현재 애플리케이션 구성
 
@@ -72,5 +72,5 @@ docker compose down
 
 - AI는 Django 업무 테이블을 직접 수정하지 않는다.
 - 사용자가 승인하기 전 AI의 변경 제안은 저장된 업무 데이터가 아니다.
-- 외부 HTTP·AI 계약은 `docs/contracts/`, 데이터 소유권은 `docs/data/schema.md`를 따른다.
+- 외부 HTTP·AI 계약은 서비스 schema·serializer와 contract test로 검증하고, 공용 실행 fixture는 `contract-fixtures/`에 둔다.
 - 실제 secret, 로컬 volume 데이터, 자동 생성물은 커밋하지 않는다.

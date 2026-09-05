@@ -7,7 +7,7 @@ class FormActionProducerContractTests(unittest.TestCase):
     def test_ai_output_has_no_approval_or_server_owned_ids(self):
         fixture_path = (
             Path(__file__).resolve().parents[2]
-            / 'docs/contracts/fixtures/ai-lifecycle/v2/form-actions.json'
+            / 'contract-fixtures/ai-lifecycle/v2/form-actions.json'
         )
         fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
 

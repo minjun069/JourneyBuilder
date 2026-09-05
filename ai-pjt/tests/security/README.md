@@ -5,7 +5,7 @@
 - 기준 commit SHA: `f0fa13d35788515cd1a8e5b079545c9c32f8d3c0`
 - 입력 계약·fixture: 외부 계약 비의존 합성 sentinel. D1 공용 fixture는 사용하지 않는다.
 - 쓰기 파일: `ai-pjt/tests/security/**`, 테스트 패키지 표시용 `ai-pjt/tests/__init__.py`
-- 수정 금지 파일: AI production 코드, D1 계약 문서, `docs/security/ai-security-policy.md`
+- 수정 금지 파일: AI production 코드와 기존 보안 계약 구현
 - mock 경계: 모델 입력·출력, 애플리케이션 로그, trace exporter에 전달되기 직전의 직렬화 문자열
 - 산출물: `masking_contract.py`의 분류·sentinel·누락 판정 함수와 그 self-test
 - 다음 병합 게이트: G0 뒤 실제 직렬화 경계와 계약 함수를 연결하고 G5의 D11 마스킹 검사에 사용한다.

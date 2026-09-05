@@ -39,7 +39,7 @@ class FormActionPolicyContractTests(unittest.TestCase):
     def test_every_fixture_change_starts_pending_and_has_a_decision(self):
         fixture_path = (
             REPOSITORY_ROOT
-            / 'docs/contracts/fixtures/ai-lifecycle/v2/form-actions.json'
+            / 'contract-fixtures/ai-lifecycle/v2/form-actions.json'
         )
         fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
 

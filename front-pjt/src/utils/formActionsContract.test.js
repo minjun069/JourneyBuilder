@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const fixtureUrl = new URL(
-  '../../../docs/contracts/fixtures/ai-lifecycle/v2/form-actions.json',
+  '../../../contract-fixtures/ai-lifecycle/v2/form-actions.json',
   import.meta.url,
 )
 const fixture = JSON.parse(readFileSync(fixtureUrl, 'utf8'))

@@ -1,6 +1,6 @@
 # Backend runtime
 
-이 문서는 P02(D2 Backend 실행환경)의 설치·컨테이너·환경변수·migration·readiness와 후속 담당자 인수 정보를 기록한다. 외부 HTTP·AI 계약은 `docs/contracts/**`가 소유하며, 이 문서는 해당 계약을 변경하지 않는다.
+이 문서는 P02(D2 Backend 실행환경)의 설치·컨테이너·환경변수·migration·readiness와 후속 담당자 인수 정보를 기록한다. 외부 HTTP·AI 계약은 runtime schema와 contract test로 검증하며, 이 문서는 해당 계약을 변경하지 않는다.
 
 ## 실행 기준
 

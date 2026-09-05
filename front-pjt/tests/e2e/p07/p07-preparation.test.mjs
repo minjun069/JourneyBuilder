@@ -86,7 +86,7 @@ test('G0 전에는 test fallback을 쓰고 공용 fixture가 생기면 같은 ad
 
     const fixturePath = path.join(
       temporaryRoot,
-      'docs/contracts/fixtures/ai-lifecycle/v2/form-actions.json',
+      'contract-fixtures/ai-lifecycle/v2/form-actions.json',
     )
     await mkdir(path.dirname(fixturePath), { recursive: true })
     await writeFile(fixturePath, JSON.stringify({

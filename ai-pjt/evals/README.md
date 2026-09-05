@@ -1,8 +1,8 @@
 # P11 관측·AX baseline
 
-이 디렉터리는 [`docs/ai/evaluation.md`](../../docs/ai/evaluation.md)의 지표를
-실행 가능한 측정 계약으로 옮긴다. 제품 인수 기준과 SLO는 요구사항 문서가
-소유하며, 여기서는 임계값이나 provider 가격표를 확정하지 않는다.
+이 디렉터리는 AI 평가 지표를 실행 가능한 측정 계약으로 옮긴다. 제품 인수
+기준과 SLO는 별도 합의가 소유하며, 여기서는 임계값이나 provider 가격표를
+확정하지 않는다.
 
 현재 단계는 합성 이벤트와 `FakeTraceSink`를 사용한 준비 상태다. P13 마스킹
 검사가 production 직렬화 경계에 연결되기 전에는 Langfuse·LangSmith exporter를
