@@ -45,7 +45,7 @@ input_assist가 내보내는 `FormChangeAction`은 저장된 DB가 아니라 `ta
 - `update`: 안정적인 `item_id` 또는 `client_item_id`로 항목을 수정한다.
 - `remove`: 안정적인 ID로 항목을 제거한다.
 
-사용자가 변경을 명시적으로 요청했고 모델 확신도가 `0.90` 이상인 경우에만 `direct`로 적용한다. 그 밖의 변경은 `proposal`로 반환해 사용자가 미저장 폼에서 승인하거나 거절한다. Django는 현재 단계의 레지스트리와 operation allowlist를 다시 검증해 모델 출력만으로 쓰기 범위가 확장되지 않게 한다. 프론트는 step 불일치나 대상 폼 부재 시 `direct`도 `proposal`로 하향한다. 실제 DB 저장은 기존 폼 저장 API와 serializer 검증을 반드시 거친다.
+AI가 만든 모든 변경은 `proposal`로 반환해 사용자가 change별로 승인하거나 거절한다. 사용자가 변경을 명시적으로 요청했거나 모델 confidence가 높아도 그 사실만으로 승인된 것이 아니며 draft에 자동 적용하지 않는다. Django는 현재 단계의 레지스트리와 operation allowlist를 다시 검증해 모델 출력만으로 쓰기 범위가 확장되지 않게 한다. 실제 DB 저장은 기존 폼 저장 API와 serializer 검증을 반드시 거친다.
 
 반복 항목은 DB 저장 후 서버 `id`를 사용하고, 저장 전에는 프론트가 발급한 `client_item_id`를 사용한다. 중첩 항목 추가는 `parent_item_id` 또는 `parent_client_item_id`로 부모를 지정한다.
 ## 공통 흐름

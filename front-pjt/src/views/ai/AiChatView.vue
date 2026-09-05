@@ -309,23 +309,7 @@ async function sendMessage() {
       const result = await aiStore.receiveMessage()
       if (result) {
         const { messageId, message, action } = result
-        let proposal = null
-        if (action?.type === 'form_change') {
-          const canApplyHere = (
-            action.target === 'draft_form'
-            && action.step_id === currentStepId.value
-            && activeFormRef.value?.form
-          )
-          if (action.mode === 'direct' && canApplyHere) {
-            try {
-              applyCanonicalChanges(action.step_id, activeFormRef.value.form, action.changes)
-            } catch {
-              proposal = action
-            }
-          } else {
-            proposal = action
-          }
-        }
+        const proposal = action?.type === 'form_change' ? action : null
         streamAiMessages([{
           text: message,
           ...(proposal ? { action: {
