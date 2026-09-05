@@ -1,6 +1,8 @@
 # Django HTTP API 계약
 
-상태: **AI 상담 HTTP·승인 생명주기 v2 동결 — 나머지 HTTP API 미정**
+상태: **D1 기준 Browser↔Django AI 상담 HTTP·승인 생명주기 v2 단일 원천 동결 — 나머지 HTTP API 미정**
+
+이 문서는 Browser↔Django 메시지 접수·polling·change별 결정의 endpoint, envelope, 상태·오류와 호환성을 소유한다. Django↔AI 서비스 경계는 [AI 서비스 API](ai-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
 ## 공통 규칙
 

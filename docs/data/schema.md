@@ -1,6 +1,8 @@
 # 데이터 스키마와 소유권
 
-상태: **Canonical AI 필드·change별 결정 계약 v2 동결 — 전체 물리 스키마 미정**
+상태: **D1 기준 데이터 소유권·canonical AI 필드·change별 결정 v2 단일 원천 동결 — 전체 물리 스키마 미정**
+
+이 문서는 데이터 소유권, canonical 필드의 의미·단위·제약, 안정 ID와 change별 결정의 데이터 의미를 소유한다. Browser↔Django payload는 [Django HTTP API](../contracts/http-api.md), Django↔AI payload는 [AI 서비스 API](../contracts/ai-api.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](../contracts/current-state.md)를 따른다. 전체 필드 목록의 기계 원천은 아래 canonical 필드 레지스트리 절에서 지정한다.
 
 ## 데이터 소유권
 

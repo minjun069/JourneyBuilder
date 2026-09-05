@@ -1,6 +1,8 @@
 # AI 서비스 API 계약
 
-상태: **HTTP·AI·승인 생명주기와 chart 입력 v2 동결 — citation·chart insight 출력은 후속 계약**
+상태: **D1 기준 Django↔AI·승인 생명주기와 chart 입력 v2 단일 원천 동결 — citation·chart insight 출력은 후속 계약**
+
+이 문서는 Django→AI 작업 요청, AI→Django callback, 서비스 인증·상태·오류·호환성과 step별 Agent allowlist를 소유한다. Browser↔Django 계약은 [Django HTTP API](http-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
 ## 호출 주체와 책임
 
