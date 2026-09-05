@@ -18,13 +18,12 @@ AI 상담 화면은 상담 단계, 대화, 현재 폼 또는 분석 차트, AI �
 ### AI 폼 변경
 
 1. AI가 canonical 필드, operation, confidence, 사용자 요청 여부를 반환한다.
-2. 사용자가 변경을 명시적으로 요청했고 confidence가 0.90 이상이면 현재 미저장 폼에 즉시 반영한다.
-3. proposal의 change가 여러 개면 각 change를 별도 카드 또는 독립 control로 표시하고 사용자가 하나씩 승인하거나 거절한다.
-4. 화면 단계가 응답 단계와 다르거나 안정 ID 대상을 찾지 못하면 direct change도 proposal로 낮춰 개별 결정 흐름을 사용한다.
-5. 승인·거절은 Django에 change별로 기록한다. 승인 응답에 포함된 change만 Frontend 공통 resolver로 draft에 적용하고 거절 change는 적용하지 않는다.
-6. 같은 결정을 다시 보내면 기존 결과를 유지하고, 반대 결정 충돌은 사용자에게 이미 처리된 상태로 표시한다.
-7. draft 반영과 change 승인은 저장 완료가 아니다. 사용자가 작성 완료를 눌러 Django serializer 검증과 폼 저장이 성공한 뒤에만 저장 완료로 표시한다.
-8. v2 AI action은 확정 재무정보를 직접 수정하지 않는다.
+2. 모든 AI change를 별도 카드 또는 독립 control로 표시하고 사용자가 하나씩 승인하거나 거절한다. 사용자 요청 여부와 confidence는 자동 적용 조건이 아니다.
+3. 화면 단계가 응답 단계와 다르거나 안정 ID 대상을 찾지 못하면 승인 control을 비활성화하고 적용할 수 없는 이유를 표시한다.
+4. 승인·거절은 Django에 change별로 기록한다. 승인 응답에 포함된 change만 Frontend 공통 resolver로 draft에 적용하고 거절 change는 적용하지 않는다.
+5. 같은 결정을 다시 보내면 기존 결과를 유지하고, 반대 결정 충돌은 사용자에게 이미 처리된 상태로 표시한다.
+6. draft 반영과 change 승인은 저장 완료가 아니다. 사용자가 작성 완료를 눌러 Django serializer 검증과 폼 저장이 성공한 뒤에만 저장 완료로 표시한다.
+7. v2 AI action은 확정 재무정보를 직접 수정하지 않는다.
 
 ### 정성정보 유도
 
