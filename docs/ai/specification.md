@@ -53,9 +53,10 @@ AI가 만든 모든 변경은 `proposal`로 반환해 사용자가 change별로 
 1. 요청 스키마와 권한을 검증한다.
 2. 세션 문맥을 복원한다.
 3. 현재 단계의 Agent 후보를 제한하고 의도를 라우팅한다.
-4. 선택 Agent가 필요한 RAG·도구를 호출한다.
-5. 도구·검색 결과와 구조화 출력을 검증한다.
-6. 보안 검사를 통과한 결과를 callback한다.
+4. 선택 Agent가 현재 Agent allowlist에 있는 RAG·Function Calling 도구를 호출한다.
+5. runtime이 모델 인자와 분리된 request·step·Agent·deadline 컨텍스트를 주입하고 도구 입력·출력·권한·timeout을 검증한다.
+6. Agent 최종 출력은 form action 유무와 관계없이 항상 `validate_form_update` 파이프라인 노드를 통과한다. 이 노드는 일반 응답 계약과 form action의 canonical 필드·자료형·단위·연산을 결정론적으로 검사한다.
+7. 보안 검사를 통과한 결과만 callback한다.
 
 ## Agent별 종료와 재시도
 
@@ -75,16 +76,17 @@ AI가 만든 모든 변경은 `proposal`로 반환해 사용자가 change별로 
 - Agent별 system prompt와 구조화 출력 스키마를 코드의 단일 원천으로 관리한다.
 - prompt ID·버전, 모델 provider·모델명, temperature, tool schema 버전을 trace에 남긴다.
 - 라우터, 입력 보조, 도구 인자는 구조화 출력으로 제한하고 allowlist 밖 값은 fallback으로 보낸다.
+- 모델이 생성한 사용자·세션·step·권한 값은 신뢰하지 않으며 Function tool에는 runtime의 `ToolExecutionContext`만 사용한다.
 - 모델은 품질, 구조화 출력 성공률, 지연, 비용, 데이터 처리 조건을 동일 평가셋으로 비교해 결정한다.
 - 프로덕션 모델·Embedding은 재현 가능한 버전으로 고정한다.
-- 자산배분 연구에서 LLM은 사용자 제약 추출과 설명만 맡고, 계산·제약 충족·백테스트는 결정론적 코드가 수행한다.
+- P12 자산배분 연구는 [프로젝트 요구사항](../REQUIREMENTS.md) §4의 비제품 문헌·설계 조사로만 수행하며 모델, 도구, graph, 화면에 연결하지 않는다. 개인별 비중 계산·제약 최적화·백테스트 구현은 별도 요구사항이 채택되기 전에는 수행하지 않는다.
 
 ## 관련 세부 명세
 
 | 확인 대상 | 단일 원천 |
 |---|---|
 | RAG 문서·검색·근거 | [retrieval.md](retrieval.md) |
-| MCP·Function Calling 도구 | [tools.md](tools.md) |
+| Function Calling 도구·공통 출력 후검증 | [tools.md](tools.md) |
 | 평가셋·지표·관측·rollback | [evaluation.md](evaluation.md) |
 | 데이터 보호·권한·공격 통제 | [AI 보안 정책 v0.1](../security/ai-security-policy.md) |
 | AI request·callback·공용 fixture | [AI 서비스 API 계약](../contracts/ai-api.md) |

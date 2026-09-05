@@ -7,6 +7,7 @@
 ## 공통 규칙
 
 - Browser는 `/api/v2` 아래 Django API만 호출한다. AI 서버와 MCP 서버는 직접 호출하지 않는다.
+- Function Calling 도구는 AI 프로세스 내부에서만 실행하며 별도 HTTP endpoint로 공개하지 않는다.
 - 사용자 API는 JWT 인증과 상담 세션 소유권을 검증한다. 인증되지 않은 요청은 `401`, 인증됐지만 소유하지 않은 세션·request·action은 존재 여부를 숨기기 위해 `404`로 응답한다.
 - AI 비동기 요청·응답에는 `contract_version: "2.0"`을 포함한다.
 - 금액은 저장·AI canonical payload에서 KRW 원 단위 정수를 사용하며 화면 단위 변환은 Frontend adapter가 담당한다. canonical JSON number는 크기와 무관하게 원 단위이고, `만`·`억` 해석은 원시 화면 문자열에만 적용한다.

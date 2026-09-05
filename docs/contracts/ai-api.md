@@ -14,7 +14,7 @@ AI 서비스는 Django가 전달한 snapshot을 바탕으로 6-Agent를 실행�
 |---|---|
 | Frontend | 메시지·단계·현재 폼 전달, polling 상태 표시, 승인된 단일 change의 draft 적용 |
 | Django | 사용자·세션 소유권, request/thread/session 결합, 작업·action 상태, callback과 form change 재검증 |
-| AI | 문맥 복원, Agent·RAG·MCP 실행, 구조화 출력 검사, 성공·실패 callback |
+| AI | 문맥 복원, Agent 라우팅·실행, RAG·Function Calling·MCP 실행, 도구 입출력·구조화 출력·보안 검사, 성공·실패 callback |
 | MCP | 허용 도구 실행, 스키마·권한·timeout·감사 결과 반환 |
 
 ## 공용 서비스 인증
