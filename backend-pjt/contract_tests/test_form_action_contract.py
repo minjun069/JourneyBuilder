@@ -39,7 +39,7 @@ class FormActionPolicyContractTests(unittest.TestCase):
     def test_every_fixture_change_starts_pending_and_has_a_decision(self):
         fixture_path = (
             REPOSITORY_ROOT
-            / 'docs/contracts/fixtures/ai-lifecycle/v2/form-actions.json'
+            / 'contract-fixtures/ai-lifecycle/v2/form-actions.json'
         )
         fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
 
@@ -56,6 +56,28 @@ class FormActionPolicyContractTests(unittest.TestCase):
                     {change['change_id'] for change in action['changes']},
                     {decision['change_id'] for decision in case['decisions']},
                 )
+
+    def test_backend_normalizer_matches_each_fixture_before_server_ids_are_added(self):
+        fixture_path = (
+            REPOSITORY_ROOT
+            / 'contract-fixtures/ai-lifecycle/v2/form-actions.json'
+        )
+        fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
+
+        for case_name, case in fixture['cases'].items():
+            with self.subTest(case=case_name):
+                actual = normalize_form_action(
+                    {'action': case['ai_output_action']},
+                    case['step_id'],
+                )
+                expected = dict(case['django_normalized_action'])
+                expected.pop('action_id')
+                expected.pop('status')
+                for change in expected['changes']:
+                    change.pop('change_id')
+                    change.pop('decision_status')
+
+                self.assertEqual(actual, expected)
 
 
 if __name__ == '__main__':

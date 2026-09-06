@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
+import { applyCanonicalChanges } from './formChanges.js'
+
 const fixtureUrl = new URL(
-  '../../../docs/contracts/fixtures/ai-lifecycle/v2/form-actions.json',
+  '../../../contract-fixtures/ai-lifecycle/v2/form-actions.json',
   import.meta.url,
 )
 const fixture = JSON.parse(readFileSync(fixtureUrl, 'utf8'))
@@ -40,5 +42,41 @@ test('AI output metadata never contains an approval state', () => {
         `${caseName}: decision_status`,
       )
     }
+  }
+})
+
+function withoutGeneratedIds(value) {
+  if (Array.isArray(value)) return value.map(withoutGeneratedIds)
+  if (value == null || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => {
+    if (
+      key === 'clientItemId'
+      && typeof child === 'string'
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(child)
+    ) {
+      return [key, '<generated-uuid>']
+    }
+    return [key, withoutGeneratedIds(child)]
+  }))
+}
+
+test('승인된 D1 fixture 변경은 실제 Frontend draft resolver 결과와 일치한다', () => {
+  for (const [caseName, contractCase] of Object.entries(fixture.cases)) {
+    const draft = structuredClone(contractCase.initial.frontend_draft)
+    const approvedIds = new Set(
+      contractCase.decisions
+        .filter((decision) => decision.decision_status === 'approved')
+        .map((decision) => decision.change_id),
+    )
+    const approvedChanges = contractCase.django_normalized_action.changes
+      .filter((change) => approvedIds.has(change.change_id))
+
+    applyCanonicalChanges(contractCase.step_id, draft, approvedChanges)
+
+    assert.deepEqual(
+      withoutGeneratedIds(draft),
+      contractCase.expected.frontend_draft,
+      caseName,
+    )
   }
 })

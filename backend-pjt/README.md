@@ -1,6 +1,6 @@
 # Backend runtime
 
-이 문서는 P02(D2 Backend 실행환경)의 설치·컨테이너·환경변수·migration·readiness와 후속 담당자 인수 정보를 기록한다. 외부 HTTP·AI 계약은 `docs/contracts/**`가 소유하며, 이 문서는 해당 계약을 변경하지 않는다.
+이 문서는 P02(D2 Backend 실행환경)의 설치·컨테이너·환경변수·migration·readiness와 후속 담당자 인수 정보를 기록한다. 외부 HTTP·AI 계약은 runtime schema와 contract test로 검증하며, 이 문서는 해당 계약을 변경하지 않는다.
 
 ## 실행 기준
 
@@ -30,16 +30,18 @@ uv pip compile \
 
 | 분류 | 변수 | 현재 판정 |
 |---|---|---|
-| I06 필수 | `DJANGO_SECRET_KEY` | 빈 값·placeholder를 startup에서 거부하고 Django `SECRET_KEY`로 사용해야 함 |
-| I06 필수 | `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS` | 명시적으로 파싱하고 배포 기본값을 안전하게 유지해야 함 |
-| I06 필수 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | Django `DATABASES`의 단일 입력으로 사용해야 함 |
+| startup 필수 | `DJANGO_SECRET_KEY` | 빈 값·placeholder를 startup에서 거부하고 Django `SECRET_KEY`로 사용 |
+| 현재 사용 | `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS` | 명시적으로 파싱하고 안전한 기본값 유지 |
+| 현재 사용 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | Django `DATABASES`의 단일 입력 |
 | 현재 필수 | `REDIS_URL` | AI request 상태 저장과 readiness가 사용하는 Redis URL |
 | 현재 사용 | `AI_SERVICE_URL`, `AI_CALLBACK_URL`, `AI_REQUEST_TTL_SECONDS`, `AI_SERVICE_TIMEOUT_SECONDS` | Backend의 AI 호출·callback 설정 |
-| v2 필수 | `AI_SERVICE_BEARER_TOKEN` | I06에서 빈 값 거부와 양방향 서비스 인증에 사용해야 함 |
+| startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 빈 값·placeholder 거부. 양방향 서비스 인증 연결은 후속 작업 범위 |
 | legacy | `AI_CALLBACK_SECRET` | 현재 선택값. v2 bearer 전환 뒤 제거 후보 |
 | readiness | `READINESS_HOST`, `READINESS_PORT`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `127.0.0.1:8000`, 2초 |
 
-현재 `config/settings.py`는 PostgreSQL과 Django secret/debug/host 설정을 환경변수에서 읽지 않는다. 따라서 P02 image와 probe는 준비됐지만 표준 다중 컨테이너 구성에서 Backend readiness를 통과하려면 I06 settings 반영이 먼저 필요하다. host networking으로 하드코딩을 우회하지 않는다.
+`config/settings.py`는 PostgreSQL과 Django secret/debug/host 설정을 환경변수에서 읽고,
+필수 secret과 boolean·숫자·host 목록을 startup에서 검증한다. host networking이나
+하드코딩 credential로 이 경계를 우회하지 않는다.
 
 ## Container build와 기동
 
@@ -49,7 +51,8 @@ Backend 디렉터리를 build context로 사용한다.
 docker build -t retirewise-backend:d2 backend-pjt
 ```
 
-migration은 각 application replica의 startup에서 실행하지 않는다. P03 Compose는 PostgreSQL이 healthy가 된 뒤 아래 one-shot 명령이 성공해야 Backend application을 시작하도록 구성한다. 이 명령은 I06 settings 반영 뒤 유효하다.
+migration은 각 application replica의 startup에서 실행하지 않는다. Compose는 PostgreSQL이
+healthy가 된 뒤 아래 one-shot 명령이 성공해야 Backend application을 시작하도록 구성한다.
 
 ```bash
 docker run --rm \
@@ -80,7 +83,7 @@ docker run --rm \
 
 성공하면 `ready`와 exit 0, 실패하면 예외 종류만 출력하고 exit 1을 반환한다. DSN·credential·원격 URL이 오류 출력에 포함되지 않도록 예외 메시지는 출력하지 않는다. Dockerfile의 `HEALTHCHECK`가 이 결과를 `healthy` 또는 `unhealthy`로 변환한다.
 
-AI service와 callback은 Backend 자체의 필수 저장 의존성이 아니므로 readiness에서 호출하지 않는다. 이들을 readiness에 넣으면 AI 장애가 인증·상담 데이터 조회 같은 Backend 전체 트래픽까지 제거할 수 있다. 서비스 간 호출은 I06 smoke test와 운영 지표로 확인한다.
+AI service와 callback은 Backend 자체의 필수 저장 의존성이 아니므로 readiness에서 호출하지 않는다. 이들을 readiness에 넣으면 AI 장애가 인증·상담 데이터 조회 같은 Backend 전체 트래픽까지 제거할 수 있다. 서비스 간 호출은 F04-T04 contract test와 F10 운영 지표로 확인한다.
 
 readiness unit test:
 
@@ -109,19 +112,20 @@ P04 clean-start 담당자는 빈 환경에서 lock 설치 또는 image build, Po
 - 0 이하·10초 초과·숫자가 아닌 readiness timeout과 잘못된 port
 - 빈 `DJANGO_SECRET_KEY`와 `AI_SERVICE_BEARER_TOKEN`의 startup 거부
 
-## I06 Backend lifecycle 인수 사항
+## 후속 Backend lifecycle 인수 사항
 
-I06는 `config/settings.py`와 Backend v2 lifecycle을 구현할 때 다음 환경 요구를 반영해야 한다.
+G1은 환경 기반 Django·PostgreSQL 설정과 실패 폐쇄형 parsing을 반영했다. 후속 Backend
+lifecycle 구현에는 다음 항목이 남아 있다.
 
-1. 하드코딩된 `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, PostgreSQL credential·host를 `.env.example`의 입력으로 교체한다.
-2. `DJANGO_SECRET_KEY`와 `AI_SERVICE_BEARER_TOKEN`에 동작 가능한 기본값을 두지 않고 누락·빈 값·placeholder를 startup에서 거부한다.
-3. boolean, 숫자, host 목록을 명시적으로 파싱하고 잘못된 값은 조용한 fallback 대신 startup 오류로 처리한다.
-4. PostgreSQL connect timeout을 readiness timeout과 일관되게 제한한다.
-5. legacy `AI_CALLBACK_SECRET` 선택 동작을 v2 bearer 계약으로 교체하고 이행 뒤 환경 예시에서 제거한다.
-6. startup/config/callback 오류에 password, token, 전체 DSN을 남기지 않는다.
-7. `/health` 또는 `/ready` endpoint를 추가한다면 process·dependency 의미를 분리하고 `readiness.py`와 서로 다른 판정을 만들지 않는다.
+1. PostgreSQL connect timeout을 readiness timeout과 일관되게 제한한다.
+2. `AI_SERVICE_BEARER_TOKEN`을 실제 Backend→AI request와 AI→Backend callback 인증에 연결한다.
+3. legacy `AI_CALLBACK_SECRET` 선택 동작을 v2 bearer 계약으로 교체하고 이행 뒤 환경 예시에서 제거한다.
+4. startup/config/callback 오류에 password, token, 전체 DSN을 남기지 않는다.
+5. `/health` 또는 `/ready` endpoint를 추가한다면 process·dependency 의미를 분리하고 `readiness.py`와 서로 다른 판정을 만들지 않는다.
 
-I06 반영 전까지 정상 다중 컨테이너 PostgreSQL 연결, secret 기본 거부, 전체 G1 판정은 완료로 간주하지 않는다.
+정상 다중 컨테이너 PostgreSQL 연결, secret 기본 거부와 전체 G1 runtime 판정은
+완료됐다. 위 항목은 readiness가 아니라 아직 구현되지 않은 v2 Backend lifecycle의
+후속 인수 조건이다.
 
 ## P02 검증 결과
 
@@ -138,4 +142,6 @@ I06 반영 전까지 정상 다중 컨테이너 PostgreSQL 연결, secret 기본
 - branch 밖의 임시 settings overlay와 격리 network에서 PostgreSQL·Redis `healthy`, 전체 migration one-shot, Gunicorn, Backend Docker `healthy` 확인
 - 같은 격리 검증에서 Redis 중단 뒤 `not ready: ConnectionError`, exit 1, Redis URL 출력 없음
 
-임시 overlay는 probe와 image 경계를 검증하기 위한 것으로 branch에 남기지 않았다. 실제 `config/settings.py`, P03 Compose service name·credential·dependency condition을 사용한 clean start와 Docker 연속 실패 뒤 `unhealthy` 전환은 I06·P03 준비 후 P04가 G1에서 다시 검증해야 한다.
+이 P02 기록에서 사용한 임시 overlay는 branch에 남기지 않았다. 이후 G1에서 실제
+`config/settings.py`, Compose service name·credential·dependency condition을 사용한
+clean start, Docker 연속 실패 뒤 `unhealthy` 전환, 장애 복구와 cleanup을 다시 검증했다.

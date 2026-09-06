@@ -232,6 +232,7 @@ def _validate_change(
             "change 단위가 canonical 필드 단위와 일치하지 않습니다.",
         ))
 
+    cardinality = spec.get("cardinality")
     if operation != "remove" and "value" not in change:
         issues.append(_issue(
             "VALUE_REQUIRED",
@@ -239,9 +240,18 @@ def _validate_change(
             "remove 이외 operation에는 value가 필요합니다.",
         ))
     elif "value" in change:
-        issues.extend(_validate_value(change.get("value"), spec, f"{base_path}.value"))
+        value = change.get("value")
+        if operation == "add" and cardinality in {"list", "nested_list"}:
+            issues.extend(_validate_added_item(
+                value=value,
+                section=section,
+                path=path,
+                registry=registry,
+                base_path=f"{base_path}.value",
+            ))
+        else:
+            issues.extend(_validate_value(value, spec, f"{base_path}.value"))
 
-    cardinality = spec.get("cardinality")
     if cardinality in {"list", "nested_list"} and operation in {"update", "remove"}:
         if change.get("item_id") is None and not change.get("client_item_id"):
             issues.append(_issue(
@@ -256,6 +266,52 @@ def _validate_change(
                 base_path,
                 "중첩 항목 add에는 부모 ID가 필요합니다.",
             ))
+    return issues
+
+
+def _validate_added_item(
+    *,
+    value: Any,
+    section: Any,
+    path: Any,
+    registry: dict[tuple[Any, Any], dict[str, Any]],
+    base_path: str,
+) -> list[ValidationIssue]:
+    """Validate a list row represented by one D1 form-action change.
+
+    A list ``add`` uses ``path`` as the canonical anchor field while ``value``
+    contains the new row. Nested ``goal_periods.items`` additions contain one
+    child row whose fields map to ``items[].*`` registry paths.
+    """
+
+    if not isinstance(value, dict) or not value:
+        return [_issue(
+            "ADDED_ITEM_OBJECT_REQUIRED",
+            base_path,
+            "반복 항목 add의 value는 비어 있지 않은 object여야 합니다.",
+        )]
+
+    prefix = "items[]." if section == "goal_periods" and path == "items" else ""
+    issues: list[ValidationIssue] = []
+    for key, item_value in value.items():
+        item_path = f"{prefix}{key}"
+        item_spec = registry.get((section, item_path))
+        item_value_path = f"{base_path}.{key}"
+        if item_spec is None:
+            issues.append(_issue(
+                "UNKNOWN_ADDED_ITEM_FIELD",
+                item_value_path,
+                "추가 항목에 등록되지 않은 canonical 필드가 있습니다.",
+            ))
+            continue
+        if item_spec.get("writable_by_ai") is not True:
+            issues.append(_issue(
+                "ADDED_ITEM_FIELD_NOT_WRITABLE",
+                item_value_path,
+                "추가 항목에 AI가 쓸 수 없는 canonical 필드가 있습니다.",
+            ))
+            continue
+        issues.extend(_validate_value(item_value, item_spec, item_value_path))
     return issues
 
 

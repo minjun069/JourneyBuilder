@@ -13,6 +13,14 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from config.runtime_env import (
+    read_bool,
+    read_csv,
+    read_positive_float,
+    read_positive_int,
+    require_secret,
+)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -20,13 +28,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-_q-zl_)eqv44y%bm9831h3h3kt$-o7wn*o@p_s)po==x&3#_d8'
+# Required even in local containers so an image never boots with a shared key.
+SECRET_KEY = require_secret('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = read_bool('DJANGO_DEBUG', False)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = read_csv(
+    'DJANGO_ALLOWED_HOSTS',
+    'localhost,127.0.0.1,backend',
+)
 
 
 # Application definition
@@ -84,11 +95,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'retirewise_db',
-        'USER': 'ssafy',
-        'PASSWORD': 'ssafy',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.environ.get('POSTGRES_DB', 'retirewise_db'),
+        'USER': os.environ.get('POSTGRES_USER', 'retirewise'),
+        'PASSWORD': require_secret('POSTGRES_PASSWORD'),
+        'HOST': os.environ.get('POSTGRES_HOST', 'postgres'),
+        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
     }
 }
 
@@ -158,6 +169,7 @@ SIMPLE_JWT = {
 AI_SERVICE_URL = os.environ.get('AI_SERVICE_URL', 'http://localhost:8001/chat')
 AI_CALLBACK_URL = os.environ.get('AI_CALLBACK_URL', 'http://localhost:8000/api/ai/callback/')
 AI_CALLBACK_SECRET = os.environ.get('AI_CALLBACK_SECRET', '')
-AI_REQUEST_TTL_SECONDS = int(os.environ.get('AI_REQUEST_TTL_SECONDS', '600'))
-AI_SERVICE_TIMEOUT_SECONDS = float(os.environ.get('AI_SERVICE_TIMEOUT_SECONDS', '5'))
+AI_SERVICE_BEARER_TOKEN = require_secret('AI_SERVICE_BEARER_TOKEN')
+AI_REQUEST_TTL_SECONDS = read_positive_int('AI_REQUEST_TTL_SECONDS', 600)
+AI_SERVICE_TIMEOUT_SECONDS = read_positive_float('AI_SERVICE_TIMEOUT_SECONDS', 5)
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')

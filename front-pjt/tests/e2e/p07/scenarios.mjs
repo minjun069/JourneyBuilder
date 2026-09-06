@@ -6,24 +6,6 @@ const freeze = (value) => {
   return value
 }
 
-const basicIncome = {
-  section: 'basic_info',
-  path: 'monthly_income',
-  operation: 'set',
-  value: 3_000_000,
-  label: '세후 월 소득',
-  reason: '사용자 발화에서 세후 월 소득을 추출',
-}
-
-const basicJob = {
-  section: 'basic_info',
-  path: 'job',
-  operation: 'set',
-  value: '직장인',
-  label: '직업',
-  reason: '사용자 발화에서 직업을 추출',
-}
-
 const mindsetChallenge = {
   section: 'financial_mindset',
   path: 'current_challenge',
@@ -42,42 +24,6 @@ const mindsetGoal = {
   reason: '명시적으로 확정되지 않은 장기 목표 후보',
 }
 
-const assetUpdate = {
-  section: 'financial_assets',
-  path: 'current_value',
-  operation: 'update',
-  item_id: 41,
-  value: 5_500_000,
-  label: '현재 평가금액',
-  reason: '사용자가 현재 잔액을 정정',
-}
-
-const assetRemove = {
-  section: 'financial_assets',
-  path: 'name',
-  operation: 'remove',
-  client_item_id: 'asset-client-02',
-  value: null,
-  label: '상품명',
-  reason: '미저장 금융자산 행 삭제 후보',
-}
-
-const assetAdd = {
-  section: 'financial_assets',
-  path: 'name',
-  operation: 'add',
-  value: {
-    asset_type: '펀드/ETF',
-    name: '연금계좌 ETF',
-    principal: 10_000_000,
-    current_value: 12_000_000,
-    monthly_savings: 300_000,
-    purpose: '노후준비',
-  },
-  label: '상품명',
-  reason: '새 금융자산 추가 후보',
-}
-
 export const P07_SCENARIOS = freeze([
   {
     id: 'basic-info-proposal-mixed-decisions',
@@ -88,7 +34,6 @@ export const P07_SCENARIOS = freeze([
       actionPath: 'response.body.data.message.extracted_data.action',
     },
     prompt: '월급은 세후 300만 원이고 직업은 직장인으로 정리해 주세요.',
-    fallbackChanges: [basicIncome, basicJob],
     initial: {
       database: { monthly_income: 2_500_000, job: '프리랜서' },
       draft: { earnings: 250, job: '프리랜서' },
@@ -115,7 +60,6 @@ export const P07_SCENARIOS = freeze([
       actionPath: 'ai_output_action',
     },
     prompt: '요즘 고민과 장기 목표를 정리해 주세요.',
-    fallbackChanges: [mindsetChallenge],
     extraChanges: [mindsetGoal],
     initial: {
       database: { current_challenge: null, future_goals: null },
@@ -145,7 +89,6 @@ export const P07_SCENARIOS = freeze([
       actionPath: 'ai_output_action',
     },
     prompt: '급여 통장 잔액을 고치고, 기존 종목은 지우고, 연금계좌 ETF를 추가해 주세요.',
-    fallbackChanges: [assetUpdate, assetRemove, assetAdd],
     initial: {
       database: [
         {
@@ -217,17 +160,12 @@ export const P07_SCENARIOS = freeze([
 export const changeKey = ({ section, path, operation }) => `${section}:${path}:${operation}`
 
 export function validateScenario(scenario) {
-  if (scenario.source == null || scenario.fallbackChanges.length === 0) {
-    throw new Error(`${scenario.id}: fixture source와 fallback change가 필요합니다.`)
+  if (scenario.source == null) {
+    throw new Error(`${scenario.id}: 공용 fixture source가 필요합니다.`)
   }
-  const changes = [...scenario.fallbackChanges, ...(scenario.extraChanges ?? [])]
-  const changeKeys = new Set(changes.map(changeKey))
   const decisionKeys = scenario.decisions.map(({ match }) => changeKey(match))
-  if (decisionKeys.some((key) => !changeKeys.has(key))) {
-    throw new Error(`${scenario.id}: change와 일치하지 않는 결정이 있습니다.`)
-  }
-  if (new Set(decisionKeys).size !== changeKeys.size) {
-    throw new Error(`${scenario.id}: 모든 change는 정확히 한 번 결정되어야 합니다.`)
+  if (decisionKeys.length === 0 || new Set(decisionKeys).size !== decisionKeys.length) {
+    throw new Error(`${scenario.id}: 서로 다른 change 결정이 필요합니다.`)
   }
   if (!scenario.decisions.some(({ outcome }) => outcome === 'approve')) {
     throw new Error(`${scenario.id}: 승인 결정이 필요합니다.`)

@@ -8,8 +8,8 @@
       "document_type": "interface-guide",
       "path_pattern": "ai-pjt/rag/data/*.md",
       "consumers": [
-        "input-assist",
-        "error-review"
+        "input_assist",
+        "error_review"
       ],
       "purpose": "canonical 단계·필드·자료형·단위·제약 제공"
     },

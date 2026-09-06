@@ -1,8 +1,8 @@
-"""Validate and execute the P14 security regression suite against a mock policy boundary.
+"""Validate the P14 foundation suite against a mock-only policy boundary.
 
 This module deliberately does not import production Agent, RAG, tool, or callback
 code.  It prepares deterministic attack inputs and expected decisions so each
-production owner can bind the same cases after its boundary is available.
+F13 can bind the same cases after its production guardrail boundary is available.
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ SUPPORTED_SURFACES = {
 }
 VERSION_KEYS = {"dataset", "model", "prompt", "document", "index", "tool"}
 CASE_ID_PATTERN = re.compile(r"^SEC-[A-Z]+-\d{3}$")
+SHARED_DOC_SOURCE_PATTERN = re.compile(r"^shared-docs:[^#]+\.md#[^#]+$")
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,12 @@ def validate_suite(suite: dict[str, Any]) -> list[str]:
         errors.append("production_binding must remain 'out-of-scope'")
     if suite.get("synthetic_data_only") is not True:
         errors.append("synthetic_data_only must be true")
+    for source_name in ("policy_source", "requirements_source"):
+        source = suite.get(source_name)
+        if not isinstance(source, str) or SHARED_DOC_SOURCE_PATTERN.fullmatch(source) is None:
+            errors.append(
+                f"{source_name} must reference the external shared-docs namespace"
+            )
     if not isinstance(suite.get("decision_semantics"), str) or not suite[
         "decision_semantics"
     ].strip():

@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
+import sys
 import unittest
+
+
+AI_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(AI_ROOT))
+
+from tools.catalog import default_tool_definitions  # noqa: E402
 
 from security_regression import (
     SUPPORTED_CATEGORIES,
@@ -17,6 +25,9 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
 
     def test_suite_structure_and_policy_coverage_are_valid(self) -> None:
         self.assertEqual([], validate_suite(self.suite))
+
+        self.assertTrue(self.suite["policy_source"].startswith("shared-docs:"))
+        self.assertTrue(self.suite["requirements_source"].startswith("shared-docs:"))
 
         coverage = {
             category: {"allow": 0, "block": 0}
@@ -38,6 +49,31 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
             if not result.passed
         }
         self.assertEqual({}, failures)
+
+    def test_allowlisted_tool_cases_match_the_p10_registry_and_agent_scope(self) -> None:
+        definitions = {
+            definition.name: definition
+            for definition in default_tool_definitions()
+        }
+
+        for case in self.suite["cases"]:
+            if case["category"] != "tool_manipulation":
+                continue
+            payload = case["input"]["payload"]
+            signals = case["input"]["signals"]
+            tool_name = payload["tool_name"]
+            with self.subTest(case=case["id"]):
+                if signals["tool_allowlisted"]:
+                    self.assertIn(tool_name, definitions)
+                else:
+                    self.assertNotIn(tool_name, definitions)
+
+                agent = payload.get("agent")
+                if signals["tool_allowlisted"] and agent is not None:
+                    self.assertEqual(
+                        signals["scope_allowed"],
+                        agent in definitions[tool_name].allowed_agents,
+                    )
 
     def test_critical_cases_are_fail_closed(self) -> None:
         critical_cases = [

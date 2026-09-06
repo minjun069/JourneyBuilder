@@ -12,6 +12,7 @@ from schemas.chat import ChatRequest
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_runtime()
     async with get_checkpointer() as checkpointer:
         app.state.chat_graph = build_graph(checkpointer)
         yield

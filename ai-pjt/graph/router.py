@@ -2,45 +2,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 
 from core.llm import llm
+from core.step_registry import load_agent_descriptions, load_step_candidates
 from graph.state import ChatState
 
-# Frontend의 processSteps.js에 정의된 23개 ID와 동기화한다.
-# 서비스 간 import는 하지 않는다. 경계 계약의 단일 원천은
-# docs/contracts/ai-api.md의 "step_id 레지스트리" 표다.
-STEP_CANDIDATES: dict[str, list[str]] = {
-    "intro": ["qa", "fallback"],
-    "collection": ["qa", "fallback"],
-    "basic-info": ["qa", "input_assist", "error_review", "fallback"],
-    "financial-mindset": ["qa", "input_assist", "elicit", "error_review", "fallback"],
-    "financial-satisfaction": ["qa", "input_assist", "error_review", "fallback"],
-    "financial-info": ["qa", "fallback"],
-    "financial-assets": ["qa", "input_assist", "error_review", "fallback"],
-    "pension-assets": ["qa", "input_assist", "error_review", "fallback"],
-    "real-estate": ["qa", "input_assist", "error_review", "fallback"],
-    "liabilities": ["qa", "input_assist", "error_review", "fallback"],
-    "income": ["qa", "input_assist", "error_review", "fallback"],
-    "expenses": ["qa", "input_assist", "error_review", "fallback"],
-    "financial-goals": ["qa", "input_assist", "error_review", "fallback"],
-    "presentation": ["qa", "fallback"],
-    "balance-sheet": ["qa", "chart_interpret", "fallback"],
-    "cash-flow": ["qa", "chart_interpret", "fallback"],
-    "financial-indicators": ["qa", "chart_interpret", "fallback"],
-    "financial-goal-result": ["qa", "chart_interpret", "fallback"],
-    "retirement-fund": ["qa", "chart_interpret", "fallback"],
-    "retirement-readiness": ["qa", "chart_interpret", "fallback"],
-    "pension-schedule": ["qa", "chart_interpret", "fallback"],
-    "lifetime-cashflow": ["qa", "chart_interpret", "fallback"],
-    "required-savings": ["qa", "chart_interpret", "fallback"],
-}
-
-AGENT_DESCRIPTIONS = {
-    "qa":              "사용자의 질문에 답변",
-    "input_assist":    "사용자 입력을 정리하여 대신 입력",
-    "elicit":          "정성 정보를 유도하는 질문",
-    "error_review":    "사용자 입력 오류 검토",
-    "chart_interpret": "차트 및 데이터 해석",
-    "fallback":        "그 외 일반 안내",
-}
+STEP_CANDIDATES = load_step_candidates()
+AGENT_DESCRIPTIONS = load_agent_descriptions()
 
 ROUTER_PROMPT = """\
 사용자의 마지막 메시지를 분석하여 아래 후보 에이전트 중 가장 적합한 것을 하나 선택하세요.
@@ -56,7 +22,9 @@ _parser = StrOutputParser()
 
 
 def router(state: ChatState) -> dict:
-    candidates = STEP_CANDIDATES.get(state["step_id"], ["fallback"])
+    candidates = STEP_CANDIDATES.get(state["step_id"])
+    if candidates is None:
+        return {"next": "fallback"}
 
     candidate_lines = "\n".join(
         f"- {name}: {AGENT_DESCRIPTIONS[name]}" for name in candidates

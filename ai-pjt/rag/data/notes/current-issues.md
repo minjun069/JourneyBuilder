@@ -1,8 +1,10 @@
 # RAG 자료 현재 문제와 D6 인수 범위
 
-상태: **D6 corpus 정비 완료 — runtime 반영은 P09 대기**
+상태: **과거 P08 corpus 정비 완료 — runtime 반영은 F06-T01~T05 대기**
 
-이 문서는 기준 커밋 `ef3f8b7`에서 관찰한 RAG 자료와 검색 코드의 문제, D6에서 처리한 범위, P09에 남기는 작업을 기록한다. 채택된 데이터 계약을 변경하지 않으며 `backend-pjt/consulting/field_registry.py`를 읽기 전용 단일 원천으로 사용한다.
+이 문서는 기준 커밋 `ef3f8b7`에서 관찰한 RAG 자료와 검색 코드의 문제, 과거 P08에서
+처리한 범위와 현재 F06에 남은 작업을 기록한다. 채택된 데이터 계약을 변경하지 않으며
+`backend-pjt/consulting/field_registry.py`를 읽기 전용 단일 원천으로 사용한다.
 
 ## 기준 상태에서 확인한 문제
 
@@ -40,7 +42,7 @@
 - 공식 1차 출처를 확인한 금융 지식 문서를 `ai-pjt/rag/data/financial-knowledge/`에 분리했다.
 - `ai-pjt/rag/data/catalog.json`에 collection, 문서 원본, 기준일, 버전, 적용 범위, 갱신·폐기 조건과 내용 hash를 기록했다.
 
-## P09에 남기는 작업
+## F06에 남기는 작업
 
 1. catalog만 적재 입력으로 사용하고 디렉터리 전체를 암묵적으로 적재하지 않는다.
 2. `interface-guides`와 `financial-knowledge`를 서로 다른 collection 또는 동등한 강제 필터 경계로 분리한다.
@@ -49,4 +51,6 @@
 5. 교체·폐기 문서를 활성 인덱스에서 제외하고 재색인 결과와 활성 인덱스 버전을 남긴다.
 6. synthetic corpus로 적재·평가 명령을 먼저 검증한 후 이 corpus를 운영 후보 인덱스에 적재한다.
 
-`docs/ai/retrieval.md`에는 위 collection·catalog·생명주기 정책과 P09 인수 조건을 반영했다. 이 문서의 기존 Git 추적 방식은 유지하며, runtime 코드 변경은 이 커밋의 범위가 아니다.
+공유 문서에는 위 collection·catalog·생명주기 정책과 F06 인수 조건을 반영했다.
+P09 synthetic pipeline은 이 정책의 실행 기반이지만 production adapter나 승인 corpus
+적재를 완료한 것으로 보지 않는다.

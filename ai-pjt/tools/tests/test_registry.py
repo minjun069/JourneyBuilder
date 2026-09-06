@@ -1,8 +1,10 @@
 import asyncio
+import json
 import unittest
+from pathlib import Path
 from time import monotonic
 
-from tools.catalog import build_default_registry
+from tools.catalog import build_default_registry, default_tool_definitions
 from tools.contracts import (
     FunctionToolDefinition,
     ToolErrorCode,
@@ -93,6 +95,21 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         schemas = self.registry.schemas_for("chart_interpret")
         self.assertTrue(all("input_schema" in item for item in schemas))
         self.assertTrue(all("function" not in item for item in schemas))
+
+    async def test_tool_allowlists_use_only_shared_step_registry_agents(self):
+        repository_root = Path(__file__).resolve().parents[3]
+        step_registry = json.loads((
+            repository_root
+            / "contract-fixtures/ai-lifecycle/v2/step-registry.json"
+        ).read_text(encoding="utf-8"))
+        registered_agents = set(step_registry["agents"])
+        definitions = default_tool_definitions()
+
+        self.assertEqual(len(definitions), 6)
+        for definition in definitions:
+            with self.subTest(tool=definition.name):
+                self.assertTrue(definition.allowed_agents)
+                self.assertLessEqual(definition.allowed_agents, registered_agents)
 
     async def test_unknown_tool_returns_structured_error(self):
         result = await self.registry.invoke("unknown", {}, self.context)

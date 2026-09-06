@@ -1,0 +1,152 @@
+{
+  "schema_version": "1.0",
+  "fixture_kind": "g1-artifact-consistency",
+  "gate": "G1",
+  "status_axis": "production_binding",
+  "pass_semantics": {
+    "asserts": [
+      "D1/G0와 P01~P14 산출물이 같은 후보 SHA에 존재한다.",
+      "산출물 사이의 기계 계약과 현재 소비 코드가 결정적 검사에서 일치한다.",
+      "후속 구현용 foundation과 비제품 연구가 제품 완료로 잘못 표시되지 않는다."
+    ],
+    "does_not_assert": [
+      "F02~F13의 production binding 완료",
+      "D1 v2 lifecycle의 실제 provider-consumer 또는 수직 E2E 완료",
+      "실제 LLM provider 품질, 운영 RAG 품질, 외부 trace exporter 검증"
+    ]
+  },
+  "inputs": [
+    {
+      "id": "D1-G0",
+      "artifact_role": "contract-baseline",
+      "production_status": "deferred",
+      "current_consumers": [
+        "ai-pjt/tests/test_form_action_fixture.py",
+        "ai-pjt/tools/tests/test_output_validation.py",
+        "backend-pjt/contract_tests/test_form_action_contract.py",
+        "front-pjt/src/utils/formActionsContract.test.js"
+      ],
+      "next_activation": ["W1-L04", "W1-L05", "W1-L06", "W2-L03"],
+      "checks": ["step-contract", "form-action-contract", "chart-contract"]
+    },
+    {
+      "id": "P01",
+      "artifact_role": "runtime-foundation",
+      "production_status": "active",
+      "current_consumers": ["docker-compose.yml", "g1_runtime.py"],
+      "next_activation": [],
+      "checks": ["ai-clean-build", "ai-readiness", "dependency-recovery"]
+    },
+    {
+      "id": "P02",
+      "artifact_role": "runtime-foundation",
+      "production_status": "active",
+      "current_consumers": ["docker-compose.yml", "g1_runtime.py"],
+      "next_activation": [],
+      "checks": ["backend-clean-build", "migration", "backend-readiness"]
+    },
+    {
+      "id": "P03",
+      "artifact_role": "runtime-foundation",
+      "production_status": "active",
+      "current_consumers": ["docker-compose.yml", "g1_runtime.py"],
+      "next_activation": [],
+      "checks": ["compose-config", "postgres-readiness", "redis-readiness"]
+    },
+    {
+      "id": "P04",
+      "artifact_role": "verification-foundation",
+      "production_status": "active",
+      "current_consumers": ["g1_runtime.py", "Makefile"],
+      "next_activation": [],
+      "checks": ["clean-start", "negative-readiness", "cleanup"]
+    },
+    {
+      "id": "P05",
+      "artifact_role": "test-foundation",
+      "production_status": "deferred",
+      "current_consumers": ["ai-pjt/tests/test_context.py"],
+      "next_activation": ["W1-L01"],
+      "checks": ["context-budget", "context-correction", "context-isolation"]
+    },
+    {
+      "id": "P06",
+      "artifact_role": "evaluation-foundation",
+      "production_status": "deferred",
+      "current_consumers": [
+        "ai-pjt/tests/router_evaluation.py",
+        "ai-pjt/tests/test_router_evaluation.py",
+        "ai-pjt/graph/router.py"
+      ],
+      "next_activation": ["W1-L02", "M2-L02"],
+      "checks": ["step-contract", "router-evaluation-coverage"]
+    },
+    {
+      "id": "P07",
+      "artifact_role": "e2e-scenario-foundation",
+      "production_status": "deferred",
+      "current_consumers": ["front-pjt/tests/e2e/p07/p07-preparation.test.mjs"],
+      "next_activation": ["W1-L07"],
+      "checks": ["shared-form-fixture", "scenario-isolation", "cleanup"]
+    },
+    {
+      "id": "P08",
+      "artifact_role": "governance-foundation",
+      "production_status": "deferred",
+      "current_consumers": [
+        "g1_gate.py",
+        "backend-pjt/contract_tests/test_rag_interface_contract.py"
+      ],
+      "next_activation": ["W1-L08"],
+      "checks": ["catalog-hashes", "canonical-field-guide-sync"]
+    },
+    {
+      "id": "P09",
+      "artifact_role": "retrieval-foundation",
+      "production_status": "deferred",
+      "current_consumers": ["ai-pjt/rag/tests/test_pipeline.py"],
+      "next_activation": ["W1-L09"],
+      "checks": ["synthetic-index-reproducibility", "unapproved-corpus-rejection"]
+    },
+    {
+      "id": "P10",
+      "artifact_role": "tool-contract-foundation",
+      "production_status": "deferred",
+      "current_consumers": ["ai-pjt/tools/tests/test_registry.py", "ai-pjt/tools/tests/test_output_validation.py"],
+      "next_activation": ["W1-L10"],
+      "checks": ["tool-schema", "tool-agent-allowlist", "form-action-contract"]
+    },
+    {
+      "id": "P11",
+      "artifact_role": "observability-foundation",
+      "production_status": "deferred",
+      "current_consumers": ["ai-pjt/main.py", "ai-pjt/evals/tests/test_observability_baseline.py"],
+      "next_activation": ["W1-L11"],
+      "checks": ["typed-events", "synthetic-baseline", "external-export-fail-closed"]
+    },
+    {
+      "id": "P12",
+      "artifact_role": "research-only",
+      "production_status": "excluded",
+      "current_consumers": [],
+      "next_activation": [],
+      "checks": ["no-executable-product-code", "no-runtime-binding"]
+    },
+    {
+      "id": "P13",
+      "artifact_role": "masking-test-foundation",
+      "production_status": "deferred",
+      "current_consumers": ["ai-pjt/tests/security/test_masking_contract.py"],
+      "next_activation": ["W1-L12"],
+      "checks": ["synthetic-sentinels", "sink-coverage", "external-export-fail-closed"]
+    },
+    {
+      "id": "P14",
+      "artifact_role": "security-evaluation-foundation",
+      "production_status": "deferred",
+      "current_consumers": ["ai-pjt/evals/security/test_security_regression.py"],
+      "next_activation": ["W1-L14"],
+      "checks": ["policy-category-coverage", "allow-block-coverage", "mock-only-boundary"]
+    }
+  ]
+}

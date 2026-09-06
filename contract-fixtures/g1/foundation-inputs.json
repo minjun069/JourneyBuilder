@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0",
+  "fixture_kind": "g1-foundation-inputs",
+  "gate": "G1",
+  "consistency_manifest": "contract-fixtures/g1/artifact-consistency.json",
+  "inputs": [
+    {
+      "id": "D1-G0",
+      "commits": ["a66afdbd7ac5f06f924d1b208826da43d8e5f627"],
+      "required_paths": [
+        "contract-fixtures/ai-lifecycle/v2/lifecycle.json",
+        "contract-fixtures/ai-lifecycle/v2/step-registry.json",
+        "contract-fixtures/ai-lifecycle/v2/form-actions.json",
+        "contract-fixtures/ai-lifecycle/v2/chart-payloads.json",
+        "backend-pjt/contract_tests/test_form_action_contract.py"
+      ]
+    },
+    {
+      "id": "P01",
+      "commits": ["6beb030d3ef214af357dc643f7969e95893b87d7"],
+      "required_paths": ["ai-pjt/Dockerfile", "ai-pjt/readiness.py", "ai-pjt/requirements.lock"]
+    },
+    {
+      "id": "P02",
+      "commits": ["96b5aa45aedd07e87cba371f9d1fe6a7a59c03cf"],
+      "required_paths": ["backend-pjt/Dockerfile", "backend-pjt/readiness.py", "backend-pjt/requirements.lock"]
+    },
+    {
+      "id": "P03",
+      "commits": ["71532020a0b0f9a930438782b81b099434307a6d"],
+      "required_paths": ["docker-compose.yml", "db/postgres/init.sql"]
+    },
+    {
+      "id": "P04",
+      "commits": ["2eb9897675cb56f696cae52541a22429b697d308"],
+      "required_paths": ["ai-pjt/readiness.py", "backend-pjt/readiness.py", "docker-compose.yml"]
+    },
+    {
+      "id": "P05",
+      "commits": ["b8d2931c82cd11afe12005681a29e24a07610455"],
+      "required_paths": ["ai-pjt/core/context.py", "ai-pjt/tests/fixtures/context_scenarios.json"]
+    },
+    {
+      "id": "P06",
+      "commits": ["512f6489cced44a74ee25a0b32d434812009d9bf"],
+      "required_paths": ["ai-pjt/tests/fixtures/router-evaluation-v1.json", "ai-pjt/tests/router_evaluation.py"]
+    },
+    {
+      "id": "P07",
+      "commits": ["713ac6654d53a3c85f57ee76c5cc0327544215a1"],
+      "required_paths": [
+        "front-pjt/tests/e2e/p07/e2e-flow.mjs",
+        "front-pjt/tests/e2e/p07/fixture-adapter.mjs",
+        "front-pjt/tests/e2e/p07/isolation.mjs",
+        "front-pjt/tests/e2e/p07/p07-preparation.test.mjs",
+        "front-pjt/tests/e2e/p07/scenarios.mjs"
+      ]
+    },
+    {
+      "id": "P08",
+      "commits": [
+        "c1737d395574f1b209fb331f9af4a6082a1c5823",
+        "39a48376ecd0b7c0093fc153c5bfcaf93dfba7ac"
+      ],
+      "required_paths": [
+        "ai-pjt/rag/data/catalog.json",
+        "ai-pjt/rag/data/financial-knowledge",
+        "backend-pjt/contract_tests/test_rag_interface_contract.py"
+      ]
+    },
+    {
+      "id": "P09",
+      "commits": ["c9683e250bec137ce375102faee670b329a070c2"],
+      "required_paths": ["ai-pjt/rag/pipeline", "ai-pjt/rag/fixtures/synthetic/gold.json"]
+    },
+    {
+      "id": "P10",
+      "commits": ["58ed5eb68c8a7f2f5ee21de943ead74514ee9ce0"],
+      "required_paths": [
+        "ai-pjt/tools/catalog.py",
+        "ai-pjt/tools/contracts.py",
+        "ai-pjt/tools/registry.py",
+        "ai-pjt/tools/output_validation.py"
+      ]
+    },
+    {
+      "id": "P11",
+      "commits": ["5790ebd093b0f2c0c112852956a24308ac5a0650"],
+      "required_paths": ["ai-pjt/core/monitoring.py", "ai-pjt/evals/observability_baseline.py"]
+    },
+    {
+      "id": "P12",
+      "commits": ["f28810626569843037b0faee866e70916fd99ffa"],
+      "required_paths": ["ai-pjt/experiments/asset-allocation/README.md"]
+    },
+    {
+      "id": "P13",
+      "commits": ["6f8d77c23a1f752f0be6ff9ad3036134bc7ea0d1"],
+      "required_paths": ["ai-pjt/tests/security/masking_contract.py", "ai-pjt/tests/security/test_masking_contract.py"]
+    },
+    {
+      "id": "P14",
+      "commits": ["ea742e2a64e36d9226a6855979fd8f6e74df8c3f"],
+      "required_paths": ["ai-pjt/evals/security/cases.json", "ai-pjt/evals/security/security_regression.py"]
+    }
+  ]
+}

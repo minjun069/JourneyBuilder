@@ -24,7 +24,12 @@ def _freeze_facts(facts: Mapping[str, Any]) -> Mapping[str, Any]:
 
 @dataclass(frozen=True)
 class ContextScope:
-    """Internal isolation key; a G0 adapter will bind it to transport IDs."""
+    """Internal isolation key awaiting the F02 Django-owned identity adapter.
+
+    The D1 ``thread_id`` is an opaque user/session composite. F02 must bind it
+    to a Django-validated owner and session; AI code must not parse raw IDs from
+    the string itself.
+    """
 
     user_id: ScopePart
     session_id: ScopePart
@@ -143,7 +148,7 @@ class ContextStore(Protocol):
 
 
 class FakeContextStore:
-    """In-memory store used to prove scope isolation before G0 integration."""
+    """In-memory store used to prove scope isolation before F02 runtime binding."""
 
     def __init__(self) -> None:
         self._turns: dict[ContextScope, list[ConversationTurn]] = {}
@@ -193,7 +198,7 @@ def resolve_confirmed_facts(
 ) -> Mapping[str, Any]:
     """Resolve canonical path/value maps using the agreed source precedence.
 
-    An adapter added after G0 will flatten the transport snapshot into canonical
+    The F02 runtime adapter will flatten the D1 transport snapshot into canonical
     path/value maps. For fields owned by the active step, key presence in
     current_form wins, including falsey values and explicit null. All other
     current_form fields are ignored and saved_data remains authoritative.

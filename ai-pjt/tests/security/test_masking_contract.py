@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from tests.security.masking_contract import (
+from .masking_contract import (
     ALL_SINKS,
     MASKING_SENTINELS,
     OBSERVABILITY_SINKS,
