@@ -2,7 +2,7 @@
   "fixture_set": "ai-contract-v2",
   "fixture_kind": "lifecycle",
   "contract_version": "2.0",
-  "companion_fixtures": ["form-actions.json", "chart-payloads.json"],
+  "companion_fixtures": ["step-registry.json", "form-actions.json", "chart-payloads.json"],
   "required_case_categories": [
     "normal",
     "missing",

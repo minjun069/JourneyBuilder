@@ -2,12 +2,16 @@
   "schema_version": "1.0",
   "fixture_kind": "g1-foundation-inputs",
   "gate": "G1",
+  "consistency_manifest": "contract-fixtures/g1/artifact-consistency.json",
   "inputs": [
     {
       "id": "D1-G0",
       "commits": ["a66afdbd7ac5f06f924d1b208826da43d8e5f627"],
       "required_paths": [
+        "contract-fixtures/ai-lifecycle/v2/lifecycle.json",
+        "contract-fixtures/ai-lifecycle/v2/step-registry.json",
         "contract-fixtures/ai-lifecycle/v2/form-actions.json",
+        "contract-fixtures/ai-lifecycle/v2/chart-payloads.json",
         "backend-pjt/contract_tests/test_form_action_contract.py"
       ]
     },
@@ -44,7 +48,13 @@
     {
       "id": "P07",
       "commits": ["713ac6654d53a3c85f57ee76c5cc0327544215a1"],
-      "required_paths": ["front-pjt/tests/e2e/p07/p07-preparation.test.mjs"]
+      "required_paths": [
+        "front-pjt/tests/e2e/p07/e2e-flow.mjs",
+        "front-pjt/tests/e2e/p07/fixture-adapter.mjs",
+        "front-pjt/tests/e2e/p07/isolation.mjs",
+        "front-pjt/tests/e2e/p07/p07-preparation.test.mjs",
+        "front-pjt/tests/e2e/p07/scenarios.mjs"
+      ]
     },
     {
       "id": "P08",
@@ -52,7 +62,11 @@
         "c1737d395574f1b209fb331f9af4a6082a1c5823",
         "39a48376ecd0b7c0093fc153c5bfcaf93dfba7ac"
       ],
-      "required_paths": ["ai-pjt/rag/data/catalog.json", "ai-pjt/rag/data/financial-knowledge"]
+      "required_paths": [
+        "ai-pjt/rag/data/catalog.json",
+        "ai-pjt/rag/data/financial-knowledge",
+        "backend-pjt/contract_tests/test_rag_interface_contract.py"
+      ]
     },
     {
       "id": "P09",
@@ -62,7 +76,12 @@
     {
       "id": "P10",
       "commits": ["58ed5eb68c8a7f2f5ee21de943ead74514ee9ce0"],
-      "required_paths": ["ai-pjt/tools/registry.py", "ai-pjt/tools/output_validation.py"]
+      "required_paths": [
+        "ai-pjt/tools/catalog.py",
+        "ai-pjt/tools/contracts.py",
+        "ai-pjt/tools/registry.py",
+        "ai-pjt/tools/output_validation.py"
+      ]
     },
     {
       "id": "P11",

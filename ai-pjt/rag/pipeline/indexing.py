@@ -157,7 +157,7 @@ class IndexPipeline:
 
 
 class IndexedRetriever:
-    """D8-facing retrieval boundary with versioned provenance in every result."""
+    """F06-facing retrieval boundary with versioned provenance in every result."""
 
     def __init__(self, *, store: IndexStore, embedding: EmbeddingAdapter) -> None:
         self.store = store

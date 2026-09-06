@@ -1,4 +1,4 @@
-"""Aggregate safe P11 trace events into operational and AX baselines.
+"""Aggregate safe P11 foundation events into operational and AX baselines.
 
 This module defines measurements, not targets. Thresholds and SLOs remain
 owned by the requirements and evaluation documents and are set only after a

@@ -153,9 +153,10 @@ P12는 optimizer나 backtest를 실행하지 않는다. 다음 항목은 향후 
 부적절하게 노출할 위험이 있다. 금융 진단 설명도 모델 출력만 신뢰하지 않고
 결정론적 후검증, 최소 데이터, 권한 분리와 감사 가능한 버전을 유지해야 한다.
 
-## 8. D10 인수 내용
+## 8. 현재 제품 코드가 지켜야 할 비제품 경계
 
-D10 Function Calling과 Agent runtime 담당자는 P12 결과를 다음처럼 소비한다.
+F09 Function Calling과 Agent runtime 구현은 P12 결과를 기능 입력으로 사용하지 않고,
+다음 금지 경계만 유지한다.
 
 1. 현재 등록 도구를 검색·검증된 snapshot 조회와 출력 후검증 범위로 유지한다.
 2. `calculate_asset_allocation`, portfolio optimizer, 상품 추천 도구를 추가하지 않는다.

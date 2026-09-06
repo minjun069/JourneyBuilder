@@ -47,13 +47,23 @@ function asAiChange(change) {
 }
 
 function asProposalAction(sourceAction, scenario) {
-  const sourceChanges = sourceAction?.changes?.length
-    ? sourceAction.changes.map(asAiChange)
-    : scenario.fallbackChanges.map(asAiChange)
+  if (!sourceAction?.changes?.length) {
+    throw new Error(`${scenario.source.caseName}의 공용 fixture action에 change가 없습니다.`)
+  }
+  const sourceChanges = sourceAction.changes.map(asAiChange)
   const existingKeys = new Set(sourceChanges.map(changeKey))
   const extraChanges = (scenario.extraChanges ?? [])
     .filter((change) => !existingKeys.has(changeKey(change)))
     .map(asAiChange)
+  const changes = [...sourceChanges, ...extraChanges]
+  const changeKeys = new Set(changes.map(changeKey))
+  const decisionKeys = new Set(scenario.decisions.map(({ match }) => changeKey(match)))
+  if (
+    changeKeys.size !== decisionKeys.size
+    || [...changeKeys].some((key) => !decisionKeys.has(key))
+  ) {
+    throw new Error(`${scenario.id}: 공용 fixture의 모든 change는 정확히 한 번 결정되어야 합니다.`)
+  }
 
   const action = {
     type: 'form_change',
@@ -61,18 +71,19 @@ function asProposalAction(sourceAction, scenario) {
     step_id: scenario.stepId,
     user_requested: false,
     confidence: Math.min(Number(sourceAction?.confidence ?? 0.85), 0.89),
-    changes: [...sourceChanges, ...extraChanges],
+    changes,
   }
   if (!Number.isFinite(action.confidence)) action.confidence = 0.85
   return action
 }
 
-export function createProposalOutput(scenario, fixtureCase = null) {
+export function createProposalOutput(scenario, fixtureCase) {
   validateScenario(scenario)
-  const sourceAction = fixtureCase
-    ? valueAtPath(fixtureCase, scenario.source.actionPath)
-    : null
-  if (fixtureCase && !sourceAction) {
+  if (!fixtureCase) {
+    throw new Error(`${scenario.id}: 공용 fixture case가 필요합니다.`)
+  }
+  const sourceAction = valueAtPath(fixtureCase, scenario.source.actionPath)
+  if (!sourceAction) {
     throw new Error(`${scenario.source.caseName}에서 ${scenario.source.actionPath}를 찾을 수 없습니다.`)
   }
 
@@ -84,21 +95,13 @@ export function createProposalOutput(scenario, fixtureCase = null) {
 }
 
 export async function prepareScenarioOutput(repoRoot, scenario) {
-  try {
-    const fixtureCase = await loadFixtureCase(
-      repoRoot,
-      scenario.source.fixtureName,
-      scenario.source.caseName,
-    )
-    return {
-      source: 'common-fixture',
-      output: createProposalOutput(scenario, fixtureCase),
-    }
-  } catch (error) {
-    if (error.code !== 'P07_FIXTURE_UNAVAILABLE') throw error
-    return {
-      source: 'test-fallback',
-      output: createProposalOutput(scenario),
-    }
+  const fixtureCase = await loadFixtureCase(
+    repoRoot,
+    scenario.source.fixtureName,
+    scenario.source.caseName,
+  )
+  return {
+    source: 'common-fixture',
+    output: createProposalOutput(scenario, fixtureCase),
   }
 }

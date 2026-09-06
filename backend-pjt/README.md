@@ -83,7 +83,7 @@ docker run --rm \
 
 성공하면 `ready`와 exit 0, 실패하면 예외 종류만 출력하고 exit 1을 반환한다. DSN·credential·원격 URL이 오류 출력에 포함되지 않도록 예외 메시지는 출력하지 않는다. Dockerfile의 `HEALTHCHECK`가 이 결과를 `healthy` 또는 `unhealthy`로 변환한다.
 
-AI service와 callback은 Backend 자체의 필수 저장 의존성이 아니므로 readiness에서 호출하지 않는다. 이들을 readiness에 넣으면 AI 장애가 인증·상담 데이터 조회 같은 Backend 전체 트래픽까지 제거할 수 있다. 서비스 간 호출은 I06 smoke test와 운영 지표로 확인한다.
+AI service와 callback은 Backend 자체의 필수 저장 의존성이 아니므로 readiness에서 호출하지 않는다. 이들을 readiness에 넣으면 AI 장애가 인증·상담 데이터 조회 같은 Backend 전체 트래픽까지 제거할 수 있다. 서비스 간 호출은 F04-T04 contract test와 F10 운영 지표로 확인한다.
 
 readiness unit test:
 
@@ -120,10 +120,12 @@ lifecycle 구현에는 다음 항목이 남아 있다.
 1. PostgreSQL connect timeout을 readiness timeout과 일관되게 제한한다.
 2. `AI_SERVICE_BEARER_TOKEN`을 실제 Backend→AI request와 AI→Backend callback 인증에 연결한다.
 3. legacy `AI_CALLBACK_SECRET` 선택 동작을 v2 bearer 계약으로 교체하고 이행 뒤 환경 예시에서 제거한다.
-6. startup/config/callback 오류에 password, token, 전체 DSN을 남기지 않는다.
-7. `/health` 또는 `/ready` endpoint를 추가한다면 process·dependency 의미를 분리하고 `readiness.py`와 서로 다른 판정을 만들지 않는다.
+4. startup/config/callback 오류에 password, token, 전체 DSN을 남기지 않는다.
+5. `/health` 또는 `/ready` endpoint를 추가한다면 process·dependency 의미를 분리하고 `readiness.py`와 서로 다른 판정을 만들지 않는다.
 
-I06 반영 전까지 정상 다중 컨테이너 PostgreSQL 연결, secret 기본 거부, 전체 G1 판정은 완료로 간주하지 않는다.
+정상 다중 컨테이너 PostgreSQL 연결, secret 기본 거부와 전체 G1 runtime 판정은
+완료됐다. 위 항목은 readiness가 아니라 아직 구현되지 않은 v2 Backend lifecycle의
+후속 인수 조건이다.
 
 ## P02 검증 결과
 
@@ -140,4 +142,6 @@ I06 반영 전까지 정상 다중 컨테이너 PostgreSQL 연결, secret 기본
 - branch 밖의 임시 settings overlay와 격리 network에서 PostgreSQL·Redis `healthy`, 전체 migration one-shot, Gunicorn, Backend Docker `healthy` 확인
 - 같은 격리 검증에서 Redis 중단 뒤 `not ready: ConnectionError`, exit 1, Redis URL 출력 없음
 
-임시 overlay는 probe와 image 경계를 검증하기 위한 것으로 branch에 남기지 않았다. 실제 `config/settings.py`, P03 Compose service name·credential·dependency condition을 사용한 clean start와 Docker 연속 실패 뒤 `unhealthy` 전환은 I06·P03 준비 후 P04가 G1에서 다시 검증해야 한다.
+이 P02 기록에서 사용한 임시 overlay는 branch에 남기지 않았다. 이후 G1에서 실제
+`config/settings.py`, Compose service name·credential·dependency condition을 사용한
+clean start, Docker 연속 실패 뒤 `unhealthy` 전환, 장애 복구와 cleanup을 다시 검증했다.

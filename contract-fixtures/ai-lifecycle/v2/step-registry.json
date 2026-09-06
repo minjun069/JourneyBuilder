@@ -3,6 +3,7 @@
   "contract_version": "2.0",
   "fixture_kind": "ai-step-registry",
   "fallback_agent": "fallback",
+  "transport_fallback_step_ids": ["general"],
   "agents": [
     "qa",
     "input_assist",
@@ -11,6 +12,14 @@
     "elicit",
     "fallback"
   ],
+  "agent_descriptions": {
+    "qa": "사용자의 질문에 답변",
+    "input_assist": "사용자 입력을 정리하여 대신 입력",
+    "error_review": "사용자 입력 오류 검토",
+    "chart_interpret": "차트 및 데이터 해석",
+    "elicit": "정성 정보를 유도하는 질문",
+    "fallback": "그 외 일반 안내"
+  },
   "steps": [
     {"step_id": "intro", "allowed_agents": ["qa", "fallback"]},
     {"step_id": "collection", "allowed_agents": ["qa", "fallback"]},

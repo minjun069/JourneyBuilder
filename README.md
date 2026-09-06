@@ -13,7 +13,7 @@
 | `ai-pjt/` | FastAPI·LangGraph 상담 서비스 | 루트 Compose의 `ai-pjt` |
 | `db/` | 애플리케이션 PostgreSQL 초기화 | 루트 Compose의 `postgres` |
 
-루트 `docker-compose.yml`은 Backend·AI·PostgreSQL·Redis의 통합 실행 진입점이다. 기존 뉴스 분석과 Kafka·Flink·배치 데이터 파이프라인은 이번 프로젝트에서 폐기됐으며, `data-pjt/`, `docker-compose-kafka.yml`, `docker-compose-flink.yml`, `db/docker-compose.yml` 등 남아 있는 산출물은 현재 실행 경로에서 사용하지 않는다. P03 범위를 넘어서는 파일 삭제는 별도 정리 작업에서 수행한다.
+루트 `docker-compose.yml`은 Backend·AI·PostgreSQL·Redis의 통합 실행 진입점이다. 기존 뉴스 분석과 Kafka·Flink·배치 데이터 파이프라인은 이번 프로젝트에서 폐기됐으며, `data-pjt/`, `docker-compose-kafka.yml`, `docker-compose-flink.yml`, `db/docker-compose.yml` 등 남아 있는 산출물은 현재 실행 경로에서 사용하지 않는다. 이 비활성 산출물의 삭제는 별도 정리 작업에서 수행한다.
 
 ## Compose 실행 계약
 
@@ -66,7 +66,16 @@ docker compose exec backend python readiness.py
 docker compose down
 ```
 
-현재 `backend-pjt/config/settings.py`는 아직 PostgreSQL 연결을 환경변수에서 읽지 않는다. I06 Backend lifecycle 반영 전에는 migration과 Backend readiness가 실패하므로 위 전체 기동을 G1 통과로 판정하지 않는다. P04가 I06 반영 뒤 빈 volume에서 전체 clean start와 종료를 다시 검증한다.
+`backend-pjt/config/settings.py`는 PostgreSQL과 필수 secret을 환경변수에서 읽으며,
+G1은 빈 volume·clean image에서 migration, 두 애플리케이션 readiness, PostgreSQL·Redis
+장애와 복구, 종료 후 자원 정리까지 검증했다. `make g1-check`는 D1/G0·P01~P14의
+결정적 검사와 산출물 정합성을, `make g1-runtime`은 이 실행환경을 다시 검사한다.
+
+이 G1 결과는 동결된 D1 v2 HTTP·AI lifecycle의 제품 구현 완료를 뜻하지 않는다.
+현재 `/chat`, legacy callback과 메시지 단위 승인 흐름을 v2 request·callback·polling·change별
+결정으로 전환하는 작업은 F04와 F12에 남아 있다. 정확한 현재/목표 차이는 공유 계약 문서의
+`contracts/current-state.md`, 입력별 활성 상태는
+`contract-fixtures/g1/artifact-consistency.json`을 따른다.
 
 ## 개발 원칙
 

@@ -1,6 +1,6 @@
 """Provider-neutral Function Calling contracts and deterministic validators."""
 
-from .catalog import build_default_registry
+from .catalog import build_default_registry, default_tool_definitions
 from .contracts import ToolCallResult, ToolExecutionContext
 from .output_validation import (
     validate_agent_output,
@@ -13,6 +13,7 @@ __all__ = [
     "ToolCallResult",
     "ToolExecutionContext",
     "build_default_registry",
+    "default_tool_definitions",
     "validate_agent_output",
     "validate_agent_output_contract",
     "validate_form_update",

@@ -66,6 +66,10 @@ class RouterEvaluationFixtureTests(unittest.TestCase):
     def test_metadata_and_case_count_are_frozen(self) -> None:
         self.assertEqual(self.fixture["schema_version"], "1.0")
         self.assertEqual(self.fixture["activation_gate"], "M2-L02")
+        self.assertEqual(
+            self.fixture["source_contract"],
+            "contract-fixtures/ai-lifecycle/v2/step-registry.json",
+        )
         self.assertEqual(self.fixture["accuracy_threshold"], 0.95)
         self.assertEqual(len(self.cases), 60)
         self.assertEqual(self.fixture["minimum_correct"], 57)

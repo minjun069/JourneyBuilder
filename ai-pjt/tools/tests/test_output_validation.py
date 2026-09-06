@@ -1,4 +1,14 @@
+import json
+import sys
 import unittest
+from pathlib import Path
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+BACKEND_ROOT = REPOSITORY_ROOT / "backend-pjt"
+sys.path.insert(0, str(BACKEND_ROOT))
+
+from consulting.field_registry import get_step_field_registry  # noqa: E402
 
 from tools.output_validation import validate_form_update, validate_form_update_contract
 
@@ -49,6 +59,29 @@ def state_with_change(change, *, step_id="basic-info", registry=None):
 
 
 class OutputValidationTests(unittest.TestCase):
+    def test_all_d1_form_action_fixtures_pass_the_common_validator(self):
+        fixture = json.loads((
+            REPOSITORY_ROOT
+            / "contract-fixtures/ai-lifecycle/v2/form-actions.json"
+        ).read_text(encoding="utf-8"))
+
+        for case_name, case in fixture["cases"].items():
+            with self.subTest(case=case_name):
+                step_id = case["step_id"]
+                result = validate_form_update_contract({
+                    "step_id": step_id,
+                    "field_registry": get_step_field_registry(step_id),
+                    "output": {
+                        "response": "fixture response",
+                        "step_id": step_id,
+                        "action": case["ai_output_action"],
+                    },
+                })
+                self.assertTrue(
+                    result.valid,
+                    [issue.to_dict() for issue in result.issues],
+                )
+
     def test_plain_answer_passes_mandatory_node(self):
         state = {
             "step_id": "intro",
@@ -118,6 +151,29 @@ class OutputValidationTests(unittest.TestCase):
         ))
         self.assertFalse(result.valid)
         self.assertIn("ITEM_ID_REQUIRED", {issue.code for issue in result.issues})
+
+    def test_list_add_rejects_unknown_row_field(self):
+        row_name_spec = {
+            **LIST_FIELD_SPEC,
+            "path": "name",
+            "value_type": "string",
+            "unit": "none",
+        }
+        result = validate_form_update_contract(state_with_change(
+            {
+                "section": "financial_assets",
+                "path": "name",
+                "operation": "add",
+                "value": {"name": "새 자산", "unregistered": 1},
+            },
+            step_id="financial-assets",
+            registry=[row_name_spec],
+        ))
+        self.assertFalse(result.valid)
+        self.assertIn(
+            "UNKNOWN_ADDED_ITEM_FIELD",
+            {issue.code for issue in result.issues},
+        )
 
     def test_non_empty_legacy_update_is_rejected(self):
         result = validate_form_update_contract({

@@ -20,15 +20,16 @@ python3 -m unittest discover -s ai-pjt/tests -p 'test_*.py'
 
 P06에서는 production router를 import하거나 실제 모델을 호출하지 않는다.
 
-## M2-L02 — production pure router 계약 활성화
+## W1-L02 구현 후 M2-L02에서 production pure router 검사 활성화
 
-`test_router_m2_l02.py`는 `M2-L02` 전환 전까지 명시적으로 skip된다. 해당 레인 담당자는 다음 순서로 활성화한다.
+`test_router_m2_l02.py`는 W1-L02가 production pure router를 구현할 때까지 명시적으로
+skip된다. W1-L02 완료 결과를 검증하는 M2-L02 담당자는 다음 순서로 활성화한다.
 
 1. `graph.router.select_route`를 외부 상태를 사용하지 않는 함수로 구현한다.
 2. allowlist와 classifier를 keyword 인자로 주입받게 한다.
 3. 반환값에 `agent`와 `reason_code`를 포함한다.
 4. `AI_M2_L02_ROUTER_TESTS=1`을 설정해 skip을 해제한다.
-5. AI 의존성을 설치한 환경에서 아래 명령을 실행한다.
+5. AI 의존성을 설치한 환경에서 아래 명령을 실행하고 M2-L02 증거로 남긴다.
 
 ```bash
 AI_M2_L02_ROUTER_TESTS=1 PYTHONPATH=ai-pjt \
@@ -65,4 +66,7 @@ classifier는 `message`와 현재 단계의 `candidates`를 keyword 인자로 �
 
 ## 모델·의존성 평가
 
-실제 모델, prompt, LangChain adapter를 사용하는 정확도 평가는 deterministic `M2-L02` 계약 검사가 통과한 뒤 별도 실행한다. 같은 `fixtures/router-evaluation-v1.json`을 사용하되 모델·prompt ID와 버전, 실행 시각, 예측 결과를 함께 남긴다. 기본 unit test에서는 네트워크나 credential을 요구하지 않는다.
+실제 모델, prompt, LangChain adapter를 사용하는 정확도 평가는 deterministic M2-L02
+계약 검사가 통과한 뒤 F03 후속 평가에서 실행한다. 같은
+`fixtures/router-evaluation-v1.json`을 사용하되 모델·prompt ID와 버전, 실행 시각,
+예측 결과를 함께 남긴다. 기본 unit test에서는 네트워크나 credential을 요구하지 않는다.

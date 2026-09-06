@@ -1,7 +1,7 @@
-"""Synthetic masking contract shared by future production-bound tests.
+"""P13 synthetic masking contract shared by future production-bound tests.
 
-This module deliberately does not import production code.  Before G0, P13 owns
-only synthetic cases and assertions that can be bound to real serialization
+This module deliberately does not import production code. It owns only
+synthetic cases and assertions that F11 can bind to real serialization
 checkpoints after the production masking interface is published.
 """
 

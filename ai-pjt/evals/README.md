@@ -4,8 +4,8 @@
 기준과 SLO는 별도 합의가 소유하며, 여기서는 임계값이나 provider 가격표를
 확정하지 않는다.
 
-현재 단계는 합성 이벤트와 `FakeTraceSink`를 사용한 준비 상태다. P13 마스킹
-검사가 production 직렬화 경계에 연결되기 전에는 Langfuse·LangSmith exporter를
+현재 단계는 합성 이벤트와 `FakeTraceSink`를 사용한 준비 상태다. F11 마스킹
+구현이 production 직렬화 경계에 연결되기 전에는 Langfuse·LangSmith exporter를
 활성화하지 않는다.
 
 ## 이벤트와 측정 단위
@@ -56,5 +56,5 @@ route·검색·도구·모델·공통 출력 검증·callback은 `OperationTrace
 python3 -m unittest discover -s evals/tests -v
 ```
 
-P13 통과 뒤 실제 producer가 동일한 event 계약을 사용하도록 연결하고, exporter
-직전 직렬화 결과를 masking sentinel 검사에 통과시킨 후 실제 baseline을 측정한다.
+W1-L11에서 실제 producer가 동일한 event 계약을 사용하도록 연결하고, F11의
+production masker와 exporter 직전 sentinel 검사를 통과시킨 후 실제 baseline을 측정한다.

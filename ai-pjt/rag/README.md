@@ -35,7 +35,7 @@ workspace에 기록한다.
   버전은 바뀌지 않으며 새 버전도 활성화할 수 없다.
 - synthetic fixture는 실제 금융·세무 판단의 근거로 사용하지 않는다.
 
-## Adapter와 D8 경계
+## Adapter와 F06 경계
 
 자동 테스트는 외부 호출이 없는 `DeterministicHashEmbedding`을 사용한다.
 운영 provider는 이미 생성된 LlamaIndex embedding 객체를
@@ -44,10 +44,10 @@ workspace에 기록한다.
 의존하지 않는다.
 
 `IndexedRetriever.retrieve()`는 활성 logical collection을 해석하고 검색 결과마다
-`source_id`, 문서 버전, 근거 구간 offset, 점수와 chunk ID를 반환한다. D8 QA는
-이 결과를 답변 인용 경계로 사용할 수 있다. 운영 vector database 연결은
-`IndexStore` protocol 구현으로 교체하며, P08 승인 corpus 없이 운영 적재 완료로
-판정하지 않는다.
+`source_id`, 문서 버전, 근거 구간 offset, 점수와 chunk ID를 반환한다. F06 runtime
+adapter와 F07 QA는 이 결과를 검색·인용 경계로 사용한다. 운영 vector database 연결은
+`IndexStore` protocol 구현으로 교체하며, P08에서 준비한 catalog가 F06-T01·T02의
+감사와 승인을 통과하기 전에는 운영 적재 완료로 판정하지 않는다.
 
 ## 테스트
 

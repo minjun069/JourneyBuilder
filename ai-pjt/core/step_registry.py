@@ -66,9 +66,24 @@ def load_step_registry(path: Path | None = None) -> dict[str, Any]:
         raise StepRegistryError("step registry contract_version is unsupported")
 
     agents = _require_non_empty_strings(payload.get("agents"), "agents")
+    agent_descriptions = payload.get("agent_descriptions")
+    if not isinstance(agent_descriptions, dict):
+        raise StepRegistryError("agent_descriptions must be an object")
+    if set(agent_descriptions) != set(agents):
+        raise StepRegistryError("agent_descriptions must describe every registered agent")
+    if any(
+        not isinstance(description, str) or not description.strip()
+        for description in agent_descriptions.values()
+    ):
+        raise StepRegistryError("agent_descriptions must contain non-empty strings")
     fallback_agent = payload.get("fallback_agent")
     if fallback_agent not in agents:
         raise StepRegistryError("fallback_agent must be a registered agent")
+
+    transport_fallback_step_ids = _require_non_empty_strings(
+        payload.get("transport_fallback_step_ids"),
+        "transport_fallback_step_ids",
+    )
 
     steps = payload.get("steps")
     if not isinstance(steps, list) or not steps:
@@ -97,6 +112,10 @@ def load_step_registry(path: Path | None = None) -> dict[str, Any]:
 
     if len(step_ids) != len(set(step_ids)):
         raise StepRegistryError("steps must not contain duplicate step_id values")
+    if set(step_ids) & set(transport_fallback_step_ids):
+        raise StepRegistryError(
+            "transport_fallback_step_ids must not duplicate supported steps"
+        )
     return payload
 
 
@@ -106,3 +125,8 @@ def load_step_candidates(path: Path | None = None) -> dict[str, list[str]]:
         step["step_id"]: list(step["allowed_agents"])
         for step in registry["steps"]
     }
+
+
+def load_agent_descriptions(path: Path | None = None) -> dict[str, str]:
+    registry = load_step_registry(path)
+    return dict(registry["agent_descriptions"])

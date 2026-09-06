@@ -20,12 +20,14 @@ EMPTY_INPUT_SCHEMA = {
 
 def build_default_registry() -> FunctionToolRegistry:
     registry = FunctionToolRegistry()
-    for definition in _definitions():
+    for definition in default_tool_definitions():
         registry.register(definition)
     return registry
 
 
-def _definitions() -> tuple[FunctionToolDefinition, ...]:
+def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
+    """Return the P10 foundation definitions before runtime graph binding."""
+
     return (
         FunctionToolDefinition(
             name="search_financial_knowledge",

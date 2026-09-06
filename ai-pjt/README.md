@@ -12,7 +12,10 @@
 
 `requirements.txt`는 직접 의존성의 호환 범위를 사람이 관리한다. `requirements.lock`은 Python 3.13/Linux에서 해석한 직접·전이 의존성 전체와 배포 파일 hash를 고정하며 Docker와 CI가 설치한다.
 
-FastAPI는 현재 transport 구현의 기준선인 0.115 minor 범위에 유지한다. I05가 request·callback 계약을 변경하면서 framework 범위를 올릴 경우 `/health`, request validation, background callback 회귀검사를 먼저 통과시킨 뒤 lock을 함께 갱신한다. `--exclude-newer` 날짜는 의도적으로 의존성 기준 시점을 올릴 때만 변경한다.
+FastAPI는 현재 transport 구현의 기준선인 0.115 minor 범위에 유지한다. F04-T01이
+request·callback 계약을 변경하면서 framework 범위를 올릴 경우 `/health`, request
+validation, background callback 회귀검사를 먼저 통과시킨 뒤 lock을 함께 갱신한다.
+`--exclude-newer` 날짜는 의도적으로 의존성 기준 시점을 올릴 때만 변경한다.
 
 lock을 갱신할 때는 저장소 루트에서 다음 명령을 실행하고 unit test와 clean image build를 다시 수행한다.
 
@@ -36,7 +39,7 @@ uv pip compile \
 | 조건부 필수 | `GOOGLE_API_KEY` | `LLM_PROVIDER=gemini`일 때 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부. 실제 request·callback 인증 연결은 후속 transport 작업 범위 |
-| legacy | `AI_CALLBACK_SECRET` | 현재 코드가 읽는 선택값. I05 전환 뒤 제거 후보 |
+| legacy | `AI_CALLBACK_SECRET` | 현재 코드가 읽는 선택값. F04-T01·F12-T02의 v2 bearer 전환 뒤 제거 후보 |
 | 선택 | `RAG_*`, `EMBED_DIM`, `LANGFUSE_*` | 검색·관측 조정값 |
 | readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/health`, 2초 |
 | 미래 선택 | `REDIS_URL` | 현재 AI runtime과 readiness는 사용하지 않음 |
@@ -56,7 +59,7 @@ docker run --rm \
   --env-file ai-pjt/.env \
   --network de_net \
   -p 127.0.0.1:8001:8001 \
-  retirewise-ai:d2
+  retirewise-ai:g1
 ```
 
 ## Liveness와 readiness

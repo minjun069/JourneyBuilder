@@ -1,8 +1,8 @@
-"""Safe observability contracts used before a production trace exporter exists.
+"""Safe P11 observability foundation used before a production exporter exists.
 
-P11 deliberately provides no free-form fields for messages, customer snapshots,
-tool arguments, or financial result values. External tracing remains
-fail-closed until the P13 masking boundary is integrated and tested.
+The contract deliberately provides no free-form fields for messages, customer
+snapshots, tool arguments, or financial result values. External tracing remains
+fail-closed until F11 production masking is integrated and tested.
 """
 
 from __future__ import annotations
@@ -419,7 +419,7 @@ class TraceSink(Protocol):
 
 
 class FakeTraceSink:
-    """Deterministic in-memory sink for P11 tests and synthetic baselines."""
+    """Deterministic in-memory sink for the P11 foundation baseline."""
 
     def __init__(self) -> None:
         self._events: list[ObservabilityEvent] = []
@@ -441,7 +441,7 @@ class FakeTraceSink:
 
 
 class TraceExportBlockedError(RuntimeError):
-    """Raised when external tracing is requested before P13 integration."""
+    """Raised when external tracing is requested before F11 integration."""
 
 
 def _external_tracing_requested() -> bool:
@@ -456,7 +456,7 @@ def _external_tracing_requested() -> bool:
 
 
 def get_callbacks() -> list[object]:
-    """Return no external callbacks until the P13 masking gate is integrated.
+    """Return no external callbacks until the F11 masking boundary is integrated.
 
     LangSmith may attach itself from environment variables without an explicit
     callback, so its enable flags are checked here too. Failing the request is
@@ -465,6 +465,6 @@ def get_callbacks() -> list[object]:
 
     if _external_tracing_requested():
         raise TraceExportBlockedError(
-            "P13 masking verification is not integrated; external tracing is blocked"
+            "F11 production masking is not integrated; external tracing is blocked"
         )
     return []
