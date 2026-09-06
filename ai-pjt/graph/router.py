@@ -2,36 +2,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 
 from core.llm import llm
+from core.step_registry import load_step_candidates
 from graph.state import ChatState
 
-# Frontend의 processSteps.js에 정의된 23개 ID와 동기화한다.
-# 서비스 간 import는 하지 않는다. 이 레지스트리는 Frontend 단계 목록 및
-# router evaluation fixture와 contract test로 동기화한다.
-STEP_CANDIDATES: dict[str, list[str]] = {
-    "intro": ["qa", "fallback"],
-    "collection": ["qa", "fallback"],
-    "basic-info": ["qa", "input_assist", "error_review", "fallback"],
-    "financial-mindset": ["qa", "input_assist", "elicit", "error_review", "fallback"],
-    "financial-satisfaction": ["qa", "input_assist", "error_review", "fallback"],
-    "financial-info": ["qa", "fallback"],
-    "financial-assets": ["qa", "input_assist", "error_review", "fallback"],
-    "pension-assets": ["qa", "input_assist", "error_review", "fallback"],
-    "real-estate": ["qa", "input_assist", "error_review", "fallback"],
-    "liabilities": ["qa", "input_assist", "error_review", "fallback"],
-    "income": ["qa", "input_assist", "error_review", "fallback"],
-    "expenses": ["qa", "input_assist", "error_review", "fallback"],
-    "financial-goals": ["qa", "input_assist", "error_review", "fallback"],
-    "presentation": ["qa", "fallback"],
-    "balance-sheet": ["qa", "chart_interpret", "fallback"],
-    "cash-flow": ["qa", "chart_interpret", "fallback"],
-    "financial-indicators": ["qa", "chart_interpret", "fallback"],
-    "financial-goal-result": ["qa", "chart_interpret", "fallback"],
-    "retirement-fund": ["qa", "chart_interpret", "fallback"],
-    "retirement-readiness": ["qa", "chart_interpret", "fallback"],
-    "pension-schedule": ["qa", "chart_interpret", "fallback"],
-    "lifetime-cashflow": ["qa", "chart_interpret", "fallback"],
-    "required-savings": ["qa", "chart_interpret", "fallback"],
-}
+STEP_CANDIDATES = load_step_candidates()
 
 AGENT_DESCRIPTIONS = {
     "qa":              "사용자의 질문에 답변",

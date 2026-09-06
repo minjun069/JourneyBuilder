@@ -61,11 +61,11 @@ class RouterEvaluationFixtureTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.fixture = load_evaluation_fixture()
         cls.cases = cls.fixture["cases"]
-        cls.step_candidates = cls.fixture["step_candidates"]
+        cls.step_candidates = load_contract_step_candidates()
 
     def test_metadata_and_case_count_are_frozen(self) -> None:
         self.assertEqual(self.fixture["schema_version"], "1.0")
-        self.assertEqual(self.fixture["activation_gate"], "I03")
+        self.assertEqual(self.fixture["activation_gate"], "M2-L02")
         self.assertEqual(self.fixture["accuracy_threshold"], 0.95)
         self.assertEqual(len(self.cases), 60)
         self.assertEqual(self.fixture["minimum_correct"], 57)
@@ -82,8 +82,7 @@ class RouterEvaluationFixtureTests(unittest.TestCase):
                 self.assertTrue(set(candidates) <= EXPECTED_AGENTS)
                 self.assertIn("fallback", candidates)
 
-    def test_fixture_matches_contract_and_frontend_step_registry(self) -> None:
-        self.assertEqual(self.step_candidates, load_contract_step_candidates())
+    def test_machine_registry_matches_frontend_step_registry(self) -> None:
         frontend_step_ids = load_frontend_step_ids()
         self.assertEqual(len(frontend_step_ids), len(set(frontend_step_ids)))
         self.assertEqual(set(frontend_step_ids), set(self.step_candidates))

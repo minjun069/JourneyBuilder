@@ -1,6 +1,6 @@
 # AI 라우팅 테스트
 
-이 디렉터리는 P06에서 준비하고 I03에서 production router에 결합하는 라우팅 평가 자산을 소유한다. 외부 AI provider나 LangChain 설치 여부 때문에 정책 검사가 막히지 않도록 실행 단계를 분리한다.
+이 디렉터리는 과거 P06에서 준비하고 `M2-L02`에서 production router에 결합하는 라우팅 평가 자산을 소유한다. 외부 AI provider나 LangChain 설치 여부 때문에 정책 검사가 막히지 않도록 실행 단계를 분리한다.
 
 ## P06 — 지금 실행하는 검사
 
@@ -20,18 +20,18 @@ python3 -m unittest discover -s ai-pjt/tests -p 'test_*.py'
 
 P06에서는 production router를 import하거나 실제 모델을 호출하지 않는다.
 
-## I03 — production pure router 계약 활성화
+## M2-L02 — production pure router 계약 활성화
 
-`test_router_i03.py`는 I03 전환 전까지 명시적으로 skip된다. I03 담당자는 다음 순서로 활성화한다.
+`test_router_m2_l02.py`는 `M2-L02` 전환 전까지 명시적으로 skip된다. 해당 레인 담당자는 다음 순서로 활성화한다.
 
 1. `graph.router.select_route`를 외부 상태를 사용하지 않는 함수로 구현한다.
 2. allowlist와 classifier를 keyword 인자로 주입받게 한다.
 3. 반환값에 `agent`와 `reason_code`를 포함한다.
-4. `AI_I03_ROUTER_TESTS=1`을 설정해 skip을 해제한다.
+4. `AI_M2_L02_ROUTER_TESTS=1`을 설정해 skip을 해제한다.
 5. AI 의존성을 설치한 환경에서 아래 명령을 실행한다.
 
 ```bash
-AI_I03_ROUTER_TESTS=1 PYTHONPATH=ai-pjt \
+AI_M2_L02_ROUTER_TESTS=1 PYTHONPATH=ai-pjt \
   python3 -m unittest discover -s ai-pjt/tests -p 'test_*.py'
 ```
 
@@ -46,7 +46,7 @@ select_route(
 )
 ```
 
-classifier는 `message`와 현재 단계의 `candidates`를 keyword 인자로 받고 `status`와 `agent`를 반환한다. `status`는 `matched`, `ambiguous`, `unsupported` 중 하나다. I03의 LLM adapter는 모델 출력을 이 작은 내부 계약으로 정규화해야 한다.
+classifier는 `message`와 현재 단계의 `candidates`를 keyword 인자로 받고 `status`와 `agent`를 반환한다. `status`는 `matched`, `ambiguous`, `unsupported` 중 하나다. `M2-L02`의 LLM adapter는 모델 출력을 이 작은 내부 계약으로 정규화해야 한다.
 
 ## 선택 근거 코드
 
@@ -65,4 +65,4 @@ classifier는 `message`와 현재 단계의 `candidates`를 keyword 인자로 �
 
 ## 모델·의존성 평가
 
-실제 모델, prompt, LangChain adapter를 사용하는 정확도 평가는 deterministic I03 계약 검사가 통과한 뒤 별도 실행한다. 같은 `fixtures/router-evaluation-v1.json`을 사용하되 모델·prompt ID와 버전, 실행 시각, 예측 결과를 함께 남긴다. 기본 unit test에서는 네트워크나 credential을 요구하지 않는다.
+실제 모델, prompt, LangChain adapter를 사용하는 정확도 평가는 deterministic `M2-L02` 계약 검사가 통과한 뒤 별도 실행한다. 같은 `fixtures/router-evaluation-v1.json`을 사용하되 모델·prompt ID와 버전, 실행 시각, 예측 결과를 함께 남긴다. 기본 unit test에서는 네트워크나 credential을 요구하지 않는다.

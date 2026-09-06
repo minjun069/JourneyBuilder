@@ -85,7 +85,8 @@ services:
 
   ai-pjt:
     build:
-      context: ./ai-pjt
+      context: .
+      dockerfile: ai-pjt/Dockerfile
     environment:
       LLM_PROVIDER: "${LLM_PROVIDER:-gemini}"
       EMBEDDING_PROVIDER: "${EMBEDDING_PROVIDER:-gemini}"

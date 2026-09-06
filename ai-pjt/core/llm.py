@@ -3,11 +3,14 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from core.config import settings
+from core.config import RuntimeConfigurationError, settings
 
 
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core import Settings
+
+
+settings.validate_runtime()
 
 
 # ==========================================
@@ -66,12 +69,10 @@ def _create_llamaindex_embedding() -> BaseEmbedding:
             api_key=settings.gemini_api_key,
         )
     elif provider == "openai":
-        from llama_index.embeddings.openai import OpenAIEmbedding
-        return OpenAIEmbedding(
-            model=settings.embedding_model,
-            api_base=settings.llm_base_url or None,
-            api_key=settings.openai_api_key or "not-needed",
+        raise RuntimeConfigurationError(
+            "EMBEDDING_PROVIDER=openai has no installed runtime adapter"
         )
+    raise RuntimeConfigurationError("EMBEDDING_PROVIDER is unsupported")
 
 llm: BaseChatModel = _create_llm()
 # embeddings: Embeddings = _create_embeddings()

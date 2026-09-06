@@ -34,8 +34,8 @@ uv pip compile \
 |---|---|---|
 | 필수 | `DATABASE_URL` | AI startup과 readiness가 사용하는 PostgreSQL DSN |
 | 조건부 필수 | `GOOGLE_API_KEY` | `LLM_PROVIDER=gemini`일 때 필요 |
-| 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 provider에 맞춰 필요 |
-| v2 필수 예정 | `AI_SERVICE_BEARER_TOKEN` | I05가 빈 값 거부와 양방향 인증을 구현해야 함 |
+| 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
+| startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부. 실제 request·callback 인증 연결은 후속 transport 작업 범위 |
 | legacy | `AI_CALLBACK_SECRET` | 현재 코드가 읽는 선택값. I05 전환 뒤 제거 후보 |
 | 선택 | `RAG_*`, `EMBED_DIM`, `LANGFUSE_*` | 검색·관측 조정값 |
 | readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/health`, 2초 |
@@ -43,10 +43,10 @@ uv pip compile \
 
 ## Container build와 실행
 
-AI 디렉터리를 build context로 사용한다.
+공용 step registry를 image에 포함하기 위해 저장소 루트를 build context로 사용한다.
 
 ```bash
-docker build -t retirewise-ai:d2 ai-pjt
+docker build -f ai-pjt/Dockerfile -t retirewise-ai:g1 .
 ```
 
 기본 배포에서는 AI 포트를 host에 공개하지 않고 Backend가 Compose 내부 주소 `http://ai-pjt:8001`로 호출한다. 로컬에서 직접 smoke test할 때만 loopback에 임시 공개한다.
@@ -77,11 +77,11 @@ readiness unit test:
 python3 -m unittest discover -s ai-pjt/tests -p 'test_*.py'
 ```
 
-## P03·P04 인수 사항
+## Compose·G1 인수 사항
 
 P03 Compose 담당자는 다음 조건을 사용한다.
 
-- build context: `./ai-pjt`
+- build context: 저장소 루트, Dockerfile `ai-pjt/Dockerfile`
 - container port: 8001, 기본 host publish 없음
 - service DNS 예시: `ai-pjt`
 - PostgreSQL의 실제 user/password/database/host를 `DATABASE_URL`로 주입
@@ -89,26 +89,28 @@ P03 Compose 담당자는 다음 조건을 사용한다.
 - AI Dockerfile의 healthcheck를 덮어쓴다면 동일한 `python readiness.py` 조건 유지
 - 현재 AI runtime은 Redis를 사용하지 않으므로 Redis를 AI readiness dependency로 연결하지 않음
 
-P04 clean-start 담당자는 빈 환경에서 lock 설치 또는 image build, PostgreSQL 기동, AI `healthy`, 종료 순서를 재현하고 다음 실패도 증거로 남긴다.
+G1은 빈 환경에서 lock 설치, PostgreSQL 기동, AI `healthy`, 종료 순서와 다음 실패를 재현했다.
 
 - `DATABASE_URL` 누락
 - PostgreSQL 미기동 또는 연결 끊김
 - `/health`의 비정상 status 또는 payload
 - 0 이하·10초 초과·숫자가 아닌 readiness timeout
 
-## I05 AI transport 인수 사항
+## 후속 AI transport 인수 사항
 
-I05는 `main.py`와 `core/config.py`의 v2 transport를 구현할 때 이 readiness 경계를 유지하고 다음 항목을 자동 검사해야 한다.
+G1은 `DATABASE_URL`, provider credential과 `AI_SERVICE_BEARER_TOKEN`을 startup에서
+실패 폐쇄형으로 검증한다. 후속 transport 구현은 이 readiness 경계를 유지하고 다음
+항목을 자동 검사해야 한다.
 
-1. `DATABASE_URL`에 동작 가능한 credential 기본값을 두지 않고 누락을 startup에서 거부한다.
-2. `LLM_PROVIDER`에 맞는 provider key/base URL을 startup에서 조건부 검증한다.
-3. `AI_SERVICE_BEARER_TOKEN`을 필수·비어 있지 않은 값으로 검증하고 request와 callback 양방향 인증에 같은 rotation 가능한 secret을 사용한다.
-4. legacy `AI_CALLBACK_SECRET`의 선택적 동작을 v2 bearer 계약으로 교체하고 이행 뒤 환경 예시에서 제거한다.
-5. startup/config 오류와 callback 로그에 API key, bearer token, 전체 DSN을 남기지 않는다.
-6. `/ready` endpoint를 application에 추가한다면 `readiness.py`와 PostgreSQL 판정이 서로 달라지지 않게 하나를 공통 경계로 만들고 Docker healthcheck도 그 경계를 사용한다.
-7. 실제 LLM·Backend·Redis·Langfuse 호출을 readiness에 추가하지 않는다. 별도 provider/callback smoke test와 운영 관측으로 검증한다.
+1. `AI_SERVICE_BEARER_TOKEN`을 request와 callback 양방향 인증에 같은 rotation 가능한 secret으로 연결한다.
+2. legacy `AI_CALLBACK_SECRET`의 선택적 동작을 v2 bearer 계약으로 교체하고 이행 뒤 환경 예시에서 제거한다.
+3. startup/config 오류와 callback 로그에 API key, bearer token, 전체 DSN을 남기지 않는다.
+4. `/ready` endpoint를 application에 추가한다면 `readiness.py`와 PostgreSQL 판정이 서로 달라지지 않게 하나를 공통 경계로 만들고 Docker healthcheck도 그 경계를 사용한다.
+5. 실제 LLM·Backend·Redis·Langfuse 호출을 readiness에 추가하지 않는다. 별도 provider/callback smoke test와 운영 관측으로 검증한다.
 
-I05 검증에는 최소한 빈 bearer token 거부, provider별 조건부 secret, DSN/token 마스킹, PostgreSQL 정상·장애, liveness 정상인데 PostgreSQL이 실패하는 경우를 포함한다. readiness 구현 변경 시 `tests/test_readiness.py`도 같은 변경에서 갱신한다.
+후속 검증에는 인증 없는 request·callback 거부, DSN/token 마스킹, PostgreSQL 정상·장애,
+liveness 정상인데 PostgreSQL이 실패하는 경우를 포함한다. readiness 구현 변경 시
+`tests/test_readiness.py`도 같은 변경에서 갱신한다.
 
 ## P01 Docker 검증 결과
 
@@ -122,4 +124,7 @@ I05 검증에는 최소한 빈 bearer token 거부, provider별 조건부 secret
 - PostgreSQL 중단: `/health`는 계속 200이지만 readiness는 `not ready: OperationalError`·exit 1, healthcheck 실패 3회 뒤 Docker 상태 `unhealthy`
 - 검증용 container와 network는 결과 확인 뒤 제거
 
-이 결과는 AI image와 PostgreSQL에 한정된다. P03 Compose가 정한 실제 service name·credential·dependency condition을 사용한 AI·Backend·Redis·PostgreSQL 전체 clean start와 종료 순서는 P04가 G1에서 다시 검증해야 한다. 실제 LLM provider 호출과 Backend callback도 I05 transport 구현 뒤 별도 smoke test가 필요하다.
+이 P01 결과는 AI image와 PostgreSQL에 한정된 역사적 기록이다. G1에서 실제 Compose
+service name·credential·dependency condition을 사용한 AI·Backend·Redis·PostgreSQL
+전체 clean start와 장애 복구·종료를 다시 검증했다. 실제 LLM provider 호출과 Backend
+callback은 후속 transport 구현 뒤 별도 smoke test가 필요하다.

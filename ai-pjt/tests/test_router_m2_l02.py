@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 import unittest
 
-from router_evaluation import load_evaluation_fixture
+from router_evaluation import load_contract_step_candidates, load_evaluation_fixture
 
 
-I03_TESTS_ENABLED = os.environ.get("AI_I03_ROUTER_TESTS") == "1"
+ROUTER_TESTS_ENABLED = os.environ.get("AI_M2_L02_ROUTER_TESTS") == "1"
 
 
 class FakeClassifier:
@@ -25,16 +25,17 @@ class FakeClassifier:
 
 
 @unittest.skipUnless(
-    I03_TESTS_ENABLED,
-    "I03에서 pure router 구현 뒤 AI_I03_ROUTER_TESTS=1로 활성화",
+    ROUTER_TESTS_ENABLED,
+    "M2-L02에서 pure router 구현 뒤 AI_M2_L02_ROUTER_TESTS=1로 활성화",
 )
-class I03PureRouterContractTests(unittest.TestCase):
+class M2L02PureRouterContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         from graph.router import select_route
 
         cls.select_route = staticmethod(select_route)
         cls.fixture = load_evaluation_fixture()
+        cls.step_candidates = load_contract_step_candidates()
 
     def test_evaluation_cases_match_agent_and_reason_code(self) -> None:
         for case in self.fixture["cases"]:
@@ -43,7 +44,7 @@ class I03PureRouterContractTests(unittest.TestCase):
                 decision = self.select_route(
                     step_id=case["step_id"],
                     message=case["message"],
-                    step_candidates=self.fixture["step_candidates"],
+                    step_candidates=self.step_candidates,
                     classifier=classifier,
                 )
                 self.assertEqual(decision, case["expected"])
@@ -53,7 +54,7 @@ class I03PureRouterContractTests(unittest.TestCase):
                 if classifier.calls:
                     self.assertEqual(
                         classifier.calls[0]["candidates"],
-                        tuple(self.fixture["step_candidates"][case["step_id"]]),
+                        tuple(self.step_candidates[case["step_id"]]),
                     )
 
 

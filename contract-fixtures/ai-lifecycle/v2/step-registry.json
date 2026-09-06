@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "contract_version": "2.0",
+  "fixture_kind": "ai-step-registry",
+  "fallback_agent": "fallback",
+  "agents": [
+    "qa",
+    "input_assist",
+    "error_review",
+    "chart_interpret",
+    "elicit",
+    "fallback"
+  ],
+  "steps": [
+    {"step_id": "intro", "allowed_agents": ["qa", "fallback"]},
+    {"step_id": "collection", "allowed_agents": ["qa", "fallback"]},
+    {"step_id": "basic-info", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "financial-mindset", "allowed_agents": ["qa", "input_assist", "elicit", "error_review", "fallback"]},
+    {"step_id": "financial-satisfaction", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "financial-info", "allowed_agents": ["qa", "fallback"]},
+    {"step_id": "financial-assets", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "pension-assets", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "real-estate", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "liabilities", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "income", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "expenses", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "financial-goals", "allowed_agents": ["qa", "input_assist", "error_review", "fallback"]},
+    {"step_id": "presentation", "allowed_agents": ["qa", "fallback"]},
+    {"step_id": "balance-sheet", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "cash-flow", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "financial-indicators", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "financial-goal-result", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "retirement-fund", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "retirement-readiness", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "pension-schedule", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "lifetime-cashflow", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "required-savings", "allowed_agents": ["qa", "chart_interpret", "fallback"]}
+  ]
+}

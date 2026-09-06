@@ -8,10 +8,12 @@ WORKDIR /app
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 
-COPY requirements.lock ./requirements.lock
+COPY ai-pjt/requirements.lock ./requirements.lock
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 
-COPY --chown=app:app . .
+COPY --chown=app:app ai-pjt/ .
+COPY --chown=app:app contract-fixtures/ai-lifecycle/v2/step-registry.json \
+    ./contract-fixtures/ai-lifecycle/v2/step-registry.json
 
 USER app
 
