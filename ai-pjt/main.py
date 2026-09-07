@@ -31,7 +31,6 @@ app = FastAPI(title="RetireWise AI Service", lifespan=lifespan)
 
 _PUBLIC_STREAM_NODES = {"merge", "run"}
 
-
 def _verify_internal_secret(value: str | None) -> None:
     if settings.ai_callback_secret and not secrets.compare_digest(
         value or "",
@@ -62,6 +61,7 @@ def _message_chunk_text(content: Any) -> str:
 
 def _graph_input(request: ChatRequest | ChatStreamRequest) -> dict[str, Any]:
     return {
+        "request_id": request.request_id,
         "message": request.message,
         "step_id": request.step_id,
         "customer_info": request.customer_info,

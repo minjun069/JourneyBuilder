@@ -16,6 +16,7 @@ class PersistedConversationState(TypedDict):
 
 
 class ChatState(TypedDict):
+    request_id: NotRequired[str]
     message: str
     step_id: str
     customer_info: dict
@@ -24,3 +25,9 @@ class ChatState(TypedDict):
     output: dict  # 에이전트 응답 — input_assist는 FormChangeAction 포함
     context_scope: NotRequired[ContextScopeState]
     conversation_context: NotRequired[PersistedConversationState]
+    route: NotRequired[dict[str, Any]]
+    route_plan: NotRequired[dict[str, Any]]
+    current_task: NotRequired[dict[str, Any]]
+    task_results: NotRequired[dict[str, dict[str, Any]]]
+    bound_inputs: NotRequired[dict[str, Any]]
+    plan_issues: NotRequired[list[dict[str, str]]]
