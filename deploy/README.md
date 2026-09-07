@@ -1,7 +1,6 @@
 # 배포 운영 안내 (deploy/)
 
 배포 담당: 고우정. 이 문서는 서버(EC2 `j15b109.p.ssafy.io`)를 처음부터 다시 세울 수 있는 수준을 목표로 한다.
-참고 세팅: 이전 프로젝트 S15P11B204(`.gitlab-ci.yml` deploy 1스테이지 · shell 러너 · 서버 secrets 파일 · 호스트 nginx+certbot).
 
 ## 구성 한눈에
 
