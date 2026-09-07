@@ -135,12 +135,17 @@ def _proxy_ai_stream(session, ai_payload, step_id, user_message_id):
                 },
                 step_id=step_id,
             )
+            stored_action = (assistant_message.extracted_data or {}).get('action')
+            client_output = {
+                **output,
+                **({'action': stored_action} if stored_action else {}),
+            }
             yield encode_sse('done', {
                 'request_id': request_id,
                 'session_id': session.id,
                 'thread_id': ai_payload['thread_id'],
                 'message_id': assistant_message.id,
-                'output': output,
+                'output': client_output,
             })
             return
 

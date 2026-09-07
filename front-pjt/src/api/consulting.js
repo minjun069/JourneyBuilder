@@ -1,5 +1,6 @@
 import api from '@/api'
 import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
+import { readSSEStream, validateSSEEvents } from '@/api/sse'
 
 // ── Session ──────────────────────────────────────────────────
 export const getSessions   = ()              => api.get('/consultations/')
@@ -13,6 +14,42 @@ export const postMessage = (sid, body)     => api.post(`/consultations/${sid}/me
 export const getMessage = (sid, rid)       => api.get(`/consultations/${sid}/ai-responses/${rid}/`)
 export const approveAiAction = (sid, messageId) => api.post(`/consultations/${sid}/ai-actions/approve/`, { message_id: messageId })
 export const rejectAiAction = (sid, messageId) => api.post(`/consultations/${sid}/ai-actions/reject/`, { message_id: messageId })
+
+export async function* streamMessages(sid, body, { signal } = {}) {
+  const baseUrl = String(api.defaults.baseURL ?? '').replace(/\/$/, '')
+  const token = localStorage.getItem('access_token')
+  const headers = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const response = await fetch(`${baseUrl}/consultations/${sid}/messages/stream/`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!response.ok) {
+    let message = 'AI 스트림 요청에 실패했습니다.'
+    try {
+      const payload = await response.json()
+      if (typeof payload?.error === 'string') message = payload.error
+    } catch {
+      // JSON 오류 응답이 아니면 안전한 기본 메시지를 사용한다.
+    }
+    const error = new Error(message)
+    error.status = response.status
+    throw error
+  }
+
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('text/event-stream')) {
+    throw new Error('AI 스트림 응답 형식이 올바르지 않습니다.')
+  }
+
+  yield* validateSSEEvents(readSSEStream(response.body))
+}
 
 // ── 1:1 Form data ────────────────────────────────────────────
 export const getBasicInfo = (sid)       => api.get(`/consultations/${sid}/data/basic-info/`)
