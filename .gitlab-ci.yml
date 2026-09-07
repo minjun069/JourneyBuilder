@@ -34,7 +34,10 @@ variables:
 
 workflow:
   rules:
+    # MR 이 열린 브랜치는 MR 파이프라인만 돌린다 (브랜치 + MR 이중 실행 방지)
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
     - if: $CI_COMMIT_BRANCH
 
 # ── 결정적 검사: 산출물 정합성 (Makefile g1-foundation). 표준 라이브러리 + git 만 필요 → 호스트 python3 ──
