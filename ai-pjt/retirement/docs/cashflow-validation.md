@@ -2,10 +2,11 @@
 
 ## 실행 범위와 결과
 
-2026-09-07, Python 3.13.13에서 현금흐름 브랜치의 3번 작업을 검증했다.
-전용 테스트 **68개 통과**: 기존 모델 32개, 기본 현금흐름 5개, 경계·오류 26개,
-합성 입력·기존 실행기 5개. subtest 조합은 테스트 메서드 개수에 더하지 않는다.
-계산 샘플 실행 검증은 4번 작업에서 추가한다.
+2026-09-07, Python 3.13.13에서 현금흐름 브랜치의 2·3·4번 작업을 검증했다.
+최종 전용 테스트 **73개 통과**: 기존 모델 32개, 기본 현금흐름 5개, 경계·오류 26개,
+합성 입력·계산 실행기 10개. subtest 조합은 테스트 메서드 개수에 더하지 않는다.
+단계별 통과 수는 2번 42개 → 3번 68개 → 4번 73개다. 기존 입력 모델 테스트는
+그대로 유지하고 샘플 실행 테스트는 입력 검증 전용에서 실제 계산 출력 검증으로 갱신했다.
 
 저장소 루트에서 다음 명령을 재실행할 수 있다.
 
@@ -38,6 +39,9 @@ git diff --check
 | 변환·연 금액·수익·물가 거듭제곱·잔액 누적의 overflow | `CashflowArithmeticTests`의 `test_overflow_at_each_calculation_stage_is_explicit_and_safe` |
 | 0원 생활비·은퇴 후 적립·범위 밖 연금의 불필요한 계산 없음 | `CashflowArithmeticTests`의 `test_zero_expenses_skip_unused_inflation_overflow`, `test_unused_retired_savings_and_inactive_pensions_do_not_overflow` |
 | 별도 Decimal 참조값과 여러 경로 비교 | `CashflowArithmeticTests`의 `test_non_binary_rates_match_independent_decimal_reference_grid` |
+| 샘플 실제 엔진 호출·별도 합계 검산·범위 안내 | [샘플 테스트](../tests/test_samples.py)의 `test_runner_calls_real_engine_once_per_case`, `test_sample_balances_match_independent_zero_rate_totals`, `test_runner_reports_fixed_results_with_scope_and_shortfall_notices` |
+| 상세 106개 연도 행·반복 출력·반올림과 고갈 구분 | 샘플 테스트의 `test_detail_output_contains_every_year_and_is_repeatable`, `test_display_rounding_does_not_hide_depletion_age` |
+| 추가 패키지 없는 CLI 실행·옵션 도움말 | 샘플 테스트의 `test_package_and_samples_run_without_site_packages`, `test_cli_help_documents_details_option` |
 
 Decimal 참조 검증은 물가 3가지 × 연도별 수익률 경로 81가지 = **243개 조합**이다.
 엔진을 참조값 생성에 사용하지 않고 50자리 Decimal과 별도 연 현금흐름 상수를
@@ -48,6 +52,12 @@ overflow 테스트는 첫해 입력 변환뿐 아니라 중간 연도 오류도 
 나이, 민감한 원문을 메시지에 포함하지 않는 성질을 확인하고, 부분 결과 대신 예외가
 발생해야 한다. 모든 예외가 금융 입력을 로깅해도 안전하다는 의미는 아니므로 실제
 서비스 연결 시 요청·로컬 변수·추적 도구의 로깅 정책은 별도로 검토해야 한다.
+
+`ai-pjt/`에서 `python3 -S -B -m retirement.samples`와 `--details` 실행을 확인했다.
+상세 출력의 51+23+32=106개 연도 행을 결과 모델과 비교하고, 합성 샘플의 기말 합계는
+별도 산술식으로 검산했다. [사용 가이드](cashflow-engine.md)의 Python 예시도 실행해
+assertion 통과를 확인했고, README·계산 규칙·엔진 가이드·검증 기록의 내부 상대
+링크 27개가 실제 파일을 가리키는지 검사했다.
 
 ## 검증하지 않은 것
 

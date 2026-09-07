@@ -164,7 +164,8 @@ class SimulationAssumptions:
 
 annual_return_mean refers to an arithmetic simple-return mean, not a log-return
 parameter. Distribution choice and rate conversion belong to later stages.
-num_paths has a provisional resource cap; no paths are allocated at this stage.
+num_paths has a provisional cap for future multi-path execution. Validation
+allocates no paths; the deterministic engine ignores this count.
 """
 
     annual_return_mean: float
