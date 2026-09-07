@@ -139,7 +139,7 @@ class Settings:
             "AI_CALLBACK_SECRET", ""
         ).strip()
         self.callback_timeout_seconds = float(
-            active_environ.get("AI_CALLBACK_TIMEOUT_SECONDS", "10")
+            active_environ.get("AI_CALLBACK_TIMEOUT_SECONDS", "5")
         )
 
         self.langfuse_enabled = _read_bool(
