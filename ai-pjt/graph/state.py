@@ -12,6 +12,7 @@ class PersistedConversationState(TypedDict):
     summary: dict[str, Any]
     structured_context: list[dict[str, Any]]
     turns: list[dict[str, Any]]
+    turn_digests: list[list[str]]
 
 
 class ChatState(TypedDict):

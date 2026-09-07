@@ -29,7 +29,7 @@
     {"id": "correction-05", "primary_category": "correction", "turn_count": 4, "variant": "explicit-null", "expected": "current_form_wins"},
     {"id": "correction-06", "primary_category": "correction", "turn_count": 5, "variant": "non-active-form-value", "expected": "saved_data_wins"},
     {"id": "correction-07", "primary_category": "correction", "turn_count": 4, "variant": "active-form-missing", "expected": "saved_data_wins"},
-    {"id": "budget-01", "primary_category": "budget", "turn_count": 3, "variant": "turn-cap", "expected": "bounded_suffix_and_summary"},
+    {"id": "budget-01", "primary_category": "budget", "turn_count": 3, "variant": "token-overflow", "expected": "bounded_suffix_and_summary"},
     {"id": "budget-02", "primary_category": "budget", "turn_count": 4, "variant": "unit-cap", "expected": "bounded_suffix_and_summary"},
     {"id": "budget-03", "primary_category": "budget", "turn_count": 5, "variant": "summary-cap", "expected": "bounded_suffix_and_summary"},
     {"id": "budget-04", "primary_category": "budget", "turn_count": 5, "variant": "latest-correction-under-cap", "expected": "bounded_suffix_and_summary"},
