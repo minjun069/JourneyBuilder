@@ -31,6 +31,7 @@ variables:
   CI_POSTGRES_PASSWORD: "ci-only-postgres-password"
   CI_AI_SERVICE_BEARER_TOKEN: "ci-only-ai-bearer-token"
   CI_GOOGLE_API_KEY: "ci-only-dummy-google-key"   # ai 설정 검증(validate_runtime) 통과용. 실제 호출 없음
+  CI_DATABASE_URL: "postgresql://ci:ci-only-db-password@localhost:5432/ci"   # 동일. 로컬에선 루트 .env 가 load_dotenv 로 잡혀 통과했지만 CI 에는 .env 가 없다
 
 workflow:
   rules:
@@ -74,6 +75,7 @@ test:ai:
       -v "$CI_PROJECT_DIR:/src" -w /src/ai-pjt
       -e AI_SERVICE_BEARER_TOKEN="$CI_AI_SERVICE_BEARER_TOKEN"
       -e GOOGLE_API_KEY="$CI_GOOGLE_API_KEY"
+      -e DATABASE_URL="$CI_DATABASE_URL"
       ci-ai:$CI_COMMIT_SHORT_SHA
       sh -c "
         python -m unittest discover -s tests -v &&
