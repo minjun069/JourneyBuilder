@@ -24,3 +24,7 @@ class ChatState(TypedDict):
     output: dict  # 에이전트 응답 — input_assist는 FormChangeAction 포함
     context_scope: NotRequired[ContextScopeState]
     conversation_context: NotRequired[PersistedConversationState]
+    route: NotRequired[dict[str, Any]]
+    route_plan: NotRequired[dict[str, Any]]
+    current_task: NotRequired[dict[str, Any]]
+    task_results: NotRequired[dict[str, dict[str, Any]]]
