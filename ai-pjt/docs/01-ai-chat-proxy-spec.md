@@ -230,18 +230,14 @@ AI 서버는 요청을 받으면 `202 Accepted`로 즉시 응답하고, 실제 �
   "request_id": "ai_req_6f9c4b7e6e984bb3a7c3df6d91e58c1a",
   "session_id": 1,
   "status": "completed",
-  "content": "월 소득 300만원, 은퇴 희망 나이 60세로 이해했어요. 이대로 입력할까요?",
-  "extracted_data": {
+  "thread_id": "user-3-session-1",
+  "output": {
+    "response": "월 소득 300만원, 은퇴 희망 나이 60세로 이해했어요. 이대로 입력할까요?",
     "intent": "input_assist",
-    "requires_approval": true,
-    "pending_changes": [
-      {
-        "section": "basic_info",
-        "field": "monthly_income",
-        "value": 3000000,
-        "label": "월 소득"
-      }
-    ]
+    "update": {
+      "monthly_income": 3000000,
+      "retirement_age": 60
+    }
   }
 }
 ```
@@ -253,11 +249,11 @@ AI 서버는 요청을 받으면 `202 Accepted`로 즉시 응답하고, 실제 �
   "request_id": "ai_req_...",
   "session_id": 1,
   "status": "completed",
-  "content": "은퇴 희망 나이는 예상 생활비, 건강 상태, 국민연금 수령 시점 등을 함께 고려해 정하면 좋습니다.",
-  "extracted_data": {
+  "thread_id": "user-3-session-1",
+  "output": {
+    "response": "은퇴 희망 나이는 예상 생활비, 건강 상태, 국민연금 수령 시점 등을 함께 고려해 정하면 좋습니다.",
     "intent": "qa",
-    "requires_approval": false,
-    "pending_changes": []
+    "update": {}
   }
 }
 ```
@@ -269,7 +265,7 @@ AI 서버는 요청을 받으면 `202 Accepted`로 즉시 응답하고, 실제 �
   "request_id": "ai_req_...",
   "session_id": 1,
   "status": "failed",
-  "error": "LLM 호출 실패"
+  "error_code": "AI_PROCESSING_FAILED"
 }
 ```
 
@@ -315,18 +311,18 @@ AI가 폼 입력값을 추출해도 바로 DB에 저장하지 않습니다.
 
 | 변수 | 예시 | 설명 |
 |---|---|---|
-| `BACKEND_URL` | `http://backend:8000` | `callback_url`이 없을 때 사용할 Django 기본 주소 |
 | `AI_CALLBACK_SECRET` | `...` | 선택. Django callback에 보낼 내부 시크릿 |
+| `AI_CALLBACK_TIMEOUT_SECONDS` | `10` | Django callback 요청 제한 시간 |
 
 ## 9. 백엔드 구현 체크리스트
 
-- [ ] Redis 연결 설정
-- [ ] `request_id` 생성
-- [ ] 메시지 POST 시 사용자 메시지 DB 저장
-- [ ] Redis에 `processing` 상태 저장
-- [ ] Django -> ai-pjt `/chat` 요청
-- [ ] polling GET API 구현
-- [ ] `/api/ai/callback/` 구현
-- [ ] callback 완료 시 assistant 메시지 DB 저장
-- [ ] Redis에 `completed`/`failed` 상태 저장
-- [ ] `input_assist` approve/reject API 구현
+- [x] Redis 연결 설정
+- [x] `request_id` 생성
+- [x] 메시지 POST 시 사용자 메시지 DB 저장
+- [x] Redis에 `processing` 상태 저장
+- [x] Django -> ai-pjt `/chat` 요청
+- [x] polling GET API 구현
+- [x] `/api/ai/callback/` 구현
+- [x] callback 완료 시 assistant 메시지 DB 저장
+- [x] Redis에 `completed`/`failed` 상태 저장
+- [x] `input_assist` approve/reject API 구현

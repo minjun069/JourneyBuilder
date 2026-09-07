@@ -1,11 +1,10 @@
 from django.db import transaction
-from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
-import json
+import logging
 
 from django.conf import settings
 
@@ -49,6 +48,9 @@ from .serializers import (
     FinancialGoalPeriodSerializer,
     FinancialGoalMilestoneSerializer,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 # 공통 유틸
@@ -174,9 +176,11 @@ class MessageListCreateView(APIView):
             save_ai_request_state(request_id, state_payload)
             dispatch_ai_request(ai_payload)
         except Exception as exc:
+            logger.exception('AI 요청 전송 실패', extra={'request_id': request_id})
             state_payload.update({
                 'status': AI_STATUS_FAILED,
-                'error': str(exc),
+                'error_code': 'AI_SERVICE_UNAVAILABLE',
+                'error': 'AI 서비스에 일시적으로 연결할 수 없습니다.',
             })
             try:
                 save_ai_request_state(request_id, state_payload)
@@ -198,8 +202,14 @@ class MessageListCreateView(APIView):
             {
                 'success': True,
                 'data': {
+                    'message': MessageSerializer(user_message).data,
+                    'ai_request': {
+                        'request_id': request_id,
+                        'status': AI_STATUS_PROCESSING,
+                    },
                     'user_message_id': user_message.id,
                     'request_id': request_id,
+                    'status': AI_STATUS_PROCESSING,
                 },
             },
             status=status.HTTP_202_ACCEPTED,
@@ -218,8 +228,9 @@ class AIResponsePollingView(APIView):
         try:
             request_state = get_ai_request_state(request_id)
         except Exception as exc:
+            logger.exception('AI 작업 상태 조회 실패', extra={'request_id': request_id})
             return Response(
-                {'success': False, 'error': f'AI 작업 상태 저장소를 조회할 수 없습니다: {exc}'},
+                {'success': False, 'error': 'AI 작업 상태를 조회할 수 없습니다.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -276,8 +287,9 @@ class AICallbackView(APIView):
             try:
                 request_state = get_ai_request_state(request_id)
             except Exception as exc:
+                logger.exception('AI callback 상태 조회 실패', extra={'request_id': request_id})
                 return Response(
-                    {'success': False, 'error': f'AI 작업 상태 저장소를 조회할 수 없습니다: {exc}'},
+                    {'success': False, 'error': 'AI 작업 상태를 조회할 수 없습니다.'},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
 
@@ -293,8 +305,9 @@ class AICallbackView(APIView):
             try:
                 request_state = get_ai_request_state_by_thread_id(thread_id)
             except Exception as exc:
+                logger.exception('AI callback thread 상태 조회 실패', extra={'thread_id': thread_id})
                 return Response(
-                    {'success': False, 'error': f'AI 작업 상태 저장소를 조회할 수 없습니다: {exc}'},
+                    {'success': False, 'error': 'AI 작업 상태를 조회할 수 없습니다.'},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )
 
@@ -330,8 +343,9 @@ class AICallbackView(APIView):
                 'user_id': session.user_id,
             }
         except Exception as exc:
+            logger.exception('AI callback 상태 복원 실패', extra={'request_id': request_id})
             return Response(
-                {'success': False, 'error': f'AI 작업 상태 저장소를 조회할 수 없습니다: {exc}'},
+                {'success': False, 'error': 'AI 작업 상태를 조회할 수 없습니다.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
@@ -342,9 +356,17 @@ class AICallbackView(APIView):
             )
 
         if callback_status == AI_STATUS_FAILED:
+            logger.warning(
+                'AI 처리 실패 callback 수신',
+                extra={
+                    'request_id': request_id,
+                    'error_code': request.data.get('error_code', 'AI_PROCESSING_FAILED'),
+                },
+            )
             request_state.update({
                 'status': AI_STATUS_FAILED,
-                'error': request.data.get('error', 'AI 응답 생성에 실패했습니다.'),
+                'error_code': request.data.get('error_code', 'AI_PROCESSING_FAILED'),
+                'error': 'AI 응답 생성에 실패했습니다. 다시 시도해주세요.',
             })
             save_ai_request_state(request_id, request_state)
             return Response({'success': True, 'data': {'request_id': request_id, 'status': AI_STATUS_FAILED}})
@@ -472,10 +494,10 @@ class MessageStreamView(APIView):
         if session.status in (ConsultingSession.Status.COMPLETED, ConsultingSession.Status.ABANDONED):
             return Response({'success': False, 'error': '종료된 세션에는 메시지를 보낼 수 없습니다.'}, status=status.HTTP_409_CONFLICT)
 
-        response = StreamingHttpResponse(_stream_ai_response(session), content_type='text/event-stream')
-        response['Cache-Control'] = 'no-cache'
-        response['X-Accel-Buffering'] = 'no'
-        return response
+        return Response(
+            {'success': False, 'error': 'AI 스트리밍은 아직 사용할 수 없습니다.'},
+            status=status.HTTP_501_NOT_IMPLEMENTED,
+        )
 
 
 # 기본 정보
@@ -821,23 +843,3 @@ class GoalPeriodsView(APIView):
         }
         ordered = [refreshed[period.id] for period in saved_periods]
         return Response({'success': True, 'data': FinancialGoalPeriodSerializer(ordered, many=True).data})
-
-
-# 임시 stream 내부 함수 
-def _stream_ai_response(session):
-    dummy_tokens = ['안녕하세요! ', '재무 목표를 ', '말씀해주세요.']
-    full_content = ''
-
-    for token in dummy_tokens:
-        full_content += token
-        data = json.dumps({'type': 'text', 'content': token}, ensure_ascii=False)
-        yield f'event: delta\ndata: {data}\n\n'
-
-    ai_message = Message.objects.create(
-        session=session,
-        role=Message.Role.ASSISTANT,
-        content=full_content,
-    )
-
-    done_data = json.dumps({'message_id': ai_message.id}, ensure_ascii=False)
-    yield f'event: done\ndata: {done_data}\n\n'

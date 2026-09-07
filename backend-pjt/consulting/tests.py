@@ -1,9 +1,13 @@
 from collections import Counter
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from .field_registry import ALLOWED_OPERATIONS, FIELDS, SECTION_META
 from .form_actions import normalize_form_action
+from .ai_services import build_ai_request_payload, normalize_change_value
 from .models import BasicInfo
 from .serializers import (
     BasicInfoWriteSerializer,
@@ -12,6 +16,7 @@ from .serializers import (
     FinancialSatisfactionSerializer,
     parse_korean_money,
 )
+from .views import AICallbackView, MessageStreamView
 
 
 class CanonicalFieldRegistryTests(SimpleTestCase):
@@ -143,3 +148,108 @@ class FormActionPolicyTests(SimpleTestCase):
                     }],
                 },
             }, 'basic-info')
+
+
+class AIRequestContractTests(SimpleTestCase):
+    def test_monthly_income_suggestion_is_normalized_to_won(self):
+        self.assertEqual(
+            normalize_change_value('basic_info', 'monthly_income', '300'),
+            3_000_000,
+        )
+
+    @override_settings(AI_CALLBACK_URL='http://backend:8000/api/ai/callback/')
+    @patch('consulting.ai_services.build_customer_info')
+    def test_ai_payload_contains_routing_and_callback_fields(self, build_customer_info):
+        build_customer_info.return_value = {
+            'saved_data': {},
+            'current_form': {'monthly_income': 3_000_000},
+        }
+        session = SimpleNamespace(id=12)
+        user = SimpleNamespace(id=3)
+
+        payload = build_ai_request_payload(
+            request_id='ai_req_test',
+            session=session,
+            user=user,
+            message='은퇴 준비 상태를 알려줘',
+            step_id='basic-info',
+            form_data={'monthly_income': 3_000_000},
+        )
+
+        self.assertEqual(payload['request_id'], 'ai_req_test')
+        self.assertEqual(payload['session_id'], 12)
+        self.assertEqual(payload['thread_id'], 'user-3-session-12')
+        self.assertEqual(payload['callback_url'], 'http://backend:8000/api/ai/callback/')
+        self.assertEqual(
+            payload['customer_info']['current_form']['monthly_income'],
+            3_000_000,
+        )
+
+
+class AICallbackContractTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+    @override_settings(AI_CALLBACK_SECRET='expected-secret')
+    def test_callback_rejects_invalid_internal_secret(self):
+        request = self.factory.post(
+            '/api/ai/callback/',
+            {'request_id': 'ai_req_test'},
+            format='json',
+            HTTP_X_INTERNAL_SECRET='wrong-secret',
+        )
+
+        response = AICallbackView.as_view()(request)
+
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(AI_CALLBACK_SECRET='')
+    @patch('consulting.views.save_ai_request_state')
+    @patch('consulting.views.get_ai_request_state')
+    @patch('consulting.views.ConsultingSession.objects.filter')
+    def test_failed_callback_stores_safe_public_error(
+        self,
+        session_filter,
+        get_request_state,
+        save_request_state,
+    ):
+        session_filter.return_value.first.return_value = SimpleNamespace(id=12, user_id=3)
+        get_request_state.return_value = {
+            'request_id': 'ai_req_test',
+            'session_id': 12,
+            'user_id': 3,
+            'status': 'processing',
+        }
+        request = self.factory.post(
+            '/api/ai/callback/',
+            {
+                'request_id': 'ai_req_test',
+                'session_id': 12,
+                'status': 'failed',
+                'error_code': 'AI_PROCESSING_FAILED',
+            },
+            format='json',
+        )
+
+        response = AICallbackView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        saved_state = save_request_state.call_args.args[1]
+        self.assertEqual(saved_state['status'], 'failed')
+        self.assertEqual(saved_state['error_code'], 'AI_PROCESSING_FAILED')
+        self.assertNotIn('traceback', saved_state['error'].lower())
+
+
+class DisabledSSEEndpointTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+
+    @patch('consulting.views.get_session_or_404')
+    def test_temporary_sse_endpoint_does_not_store_dummy_message(self, get_session):
+        get_session.return_value = SimpleNamespace(status='in_progress')
+        request = self.factory.get('/messages/stream/')
+        force_authenticate(request, user=SimpleNamespace(is_authenticated=True))
+
+        response = MessageStreamView.as_view()(request, session_id=12)
+
+        self.assertEqual(response.status_code, 501)

@@ -76,9 +76,17 @@ export const useAiStore = defineStore('ai', () => {
   async function receiveMessage() {
     if (!sessionId.value || !requestId.value) return null
     const { data: res } = await getMessage(sessionId.value, requestId.value)
+    if (res.data?.status === 'failed') {
+      return { status: 'failed', error: res.data.error }
+    }
     const message = res.data?.message
     if (!message) return null
-    return { messageId: message.id, message: message.content, action: message.extracted_data?.action ?? null }
+    return {
+      status: res.data?.status ?? 'completed',
+      messageId: message.id,
+      message: message.content,
+      action: message.extracted_data?.action ?? null,
+    }
   }
 
   async function approveAction(messageId) {
