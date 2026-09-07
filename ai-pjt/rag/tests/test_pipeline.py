@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from rag.pipeline.chunking import DeterministicChunker, MarkdownStructureChunker
 from rag.pipeline.cli import main as cli_main
@@ -328,6 +329,51 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                 payload["active_collection"],
                 "synthetic_financial_knowledge__v1",
             )
+
+    def test_catalog_dry_run_evaluates_all_58_queries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = ["run-catalog-dry-run", "--workspace", directory]
+            with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                result = cli_main(arguments)
+
+            self.assertEqual(result, 0)
+            interface = json.loads(
+                (
+                    Path(directory)
+                    / "interface-guides__catalog-2-1-0-report.json"
+                ).read_text(encoding="utf-8")
+            )
+            financial = json.loads(
+                (
+                    Path(directory)
+                    / "financial-knowledge__catalog-2-1-0-report.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(interface["evaluation"]["query_count"], 20)
+            self.assertEqual(financial["evaluation"]["query_count"], 38)
+            self.assertTrue(interface["evaluation"]["passed"])
+            self.assertTrue(financial["evaluation"]["passed"])
+            self.assertEqual(financial["evaluation"]["false_evidence_count"], 0)
+
+    def test_financial_operational_promotion_requires_calculator_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            errors = io.StringIO()
+            with patch.dict(
+                "os.environ",
+                {"DATABASE_URL": "postgresql://unused/test"},
+                clear=True,
+            ), redirect_stdout(io.StringIO()), redirect_stderr(errors):
+                result = cli_main(
+                    [
+                        "run-operational",
+                        "--report-dir",
+                        directory,
+                        "--promote",
+                    ]
+                )
+
+            self.assertEqual(result, 2)
+            self.assertIn("calculator alignment", errors.getvalue())
 
     def test_negative_query_fails_when_retriever_returns_false_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
