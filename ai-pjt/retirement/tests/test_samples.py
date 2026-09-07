@@ -54,7 +54,7 @@ class SampleTests(unittest.TestCase):
             main()
         text = output.getvalue()
         self.assertEqual(text.count("input validation OK"), 3)
-        self.assertIn("Simulation engines are not implemented yet.", text)
+        self.assertIn("This runner validates inputs only.", text)
         self.assertNotIn("100000000", text)
         self.assertNotIn("probability", text)
 

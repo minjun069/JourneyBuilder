@@ -94,7 +94,7 @@ def main() -> None:
     cases = build_sample_cases()
     for case in cases:
         print(f"{case.name}: input validation OK")
-    print(f"Validated {len(cases)} synthetic cases. Simulation engines are not implemented yet.")
+    print(f"Validated {len(cases)} synthetic cases. This runner validates inputs only.")
 
 
 if __name__ == "__main__":
