@@ -57,6 +57,29 @@ app = FastAPI(title="RetireWise AI Service", lifespan=lifespan)
 
 _PUBLIC_STREAM_NODES = {"merge", "run"}
 
+
+def _v2_validation_error(exc: ValidationError) -> ServiceContractError:
+    first = exc.errors(include_url=False)[0]
+    field = str(first.get("loc", ("request",))[0])
+    error_type = first.get("type")
+    if field == "contract_version" and error_type == "literal_error":
+        return ServiceContractError(
+            status_code=422,
+            code="CONTRACT_VERSION_UNSUPPORTED",
+            message="지원하지 않는 계약 버전입니다.",
+        )
+    if error_type == "missing":
+        message = f"{field}는 필수입니다."
+    elif field == "session_id" and error_type in {"int_type", "int_parsing"}:
+        message = "session_id는 정수여야 합니다."
+    else:
+        message = "AI 요청 스키마가 올바르지 않습니다."
+    return ServiceContractError(
+        status_code=422,
+        code="REQUEST_SCHEMA_INVALID",
+        message=message,
+    )
+
 def _verify_internal_secret(value: str | None) -> None:
     if settings.ai_callback_secret and not secrets.compare_digest(
         value or "",
@@ -142,7 +165,9 @@ async def chat_v2(
     try:
         raw_payload = await raw_request.json()
         request = ChatV2Request.model_validate(raw_payload)
-    except (ValueError, ValidationError):
+    except ValidationError as exc:
+        raise _v2_validation_error(exc) from None
+    except ValueError:
         raise ServiceContractError(
             status_code=422,
             code="REQUEST_SCHEMA_INVALID",

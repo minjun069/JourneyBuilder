@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test src/api/aiLifecycle.test.js src/api/sse.test.js src/utils/canonicalMoney.test.js src/utils/formActionsContract.test.js src/utils/stepRegistryContract.test.js",
+    "test": "node --test src/api/aiLifecycle.test.js src/api/aiLifecycleContract.test.js src/api/sse.test.js src/utils/canonicalMoney.test.js src/utils/formActionsContract.test.js src/utils/stepRegistryContract.test.js",
     "preview": "vite preview",
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
