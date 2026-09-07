@@ -1,8 +1,11 @@
-"""Synthetic input examples only; running this file does not simulate results."""
+"""Executable synthetic fixed-assumption examples, never real customer data."""
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
+
+from .cashflow import calculate_cashflow
 
 from .models import (
     PensionIncome,
@@ -90,11 +93,36 @@ def build_sample_cases() -> tuple[SampleCase, ...]:
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Run synthetic fixed-assumption retirement cashflow examples (KRW).",
+    )
+    parser.add_argument(
+        "--details", action="store_true", help="show the annual calculation ledger for each case",
+    )
+    options = parser.parse_args(argv)
     cases = build_sample_cases()
+    print("Synthetic fixed-assumption cashflow examples (KRW). Not market forecasts.")
     for case in cases:
-        print(f"{case.name}: input validation OK")
-    print(f"Validated {len(cases)} synthetic cases. Simulation engines are not implemented yet.")
+        result = calculate_cashflow(case.profile, case.assumptions)
+        depletion = "none" if result.first_depletion_age is None else str(result.first_depletion_age)
+        print(
+            f"{case.name}: years={len(result.years)}, "
+            f"final_balance={result.final_balance:,.2f}, "
+            f"final_shortfall={result.final_shortfall:,.2f}, "
+            f"first_depletion_age={depletion}"
+        )
+        if options.details:
+            print("age | opening | rate | return | savings | pension | expenses | closing | shortfall")
+            for year in result.years:
+                print(
+                    f"{year.age} | {year.opening_balance:,.2f} | {year.annual_return_rate:.6f} | "
+                    f"{year.investment_return:,.2f} | {year.savings:,.2f} | "
+                    f"{year.pension_income:,.2f} | {year.expenses:,.2f} | "
+                    f"{year.closing_balance:,.2f} | {year.shortfall:,.2f}"
+                )
+    print(f"Calculated {len(cases)} synthetic cases. Monte Carlo, What-if, and service integration are not implemented.")
+    print("Negative balances are unmet funding gaps, not loan balances. Display rounding does not change depletion.")
 
 
 if __name__ == "__main__":
