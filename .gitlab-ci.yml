@@ -1,7 +1,7 @@
 # GitLab CI — S15P21B109
 #
 # 러너: EC2 self-hosted, shell executor (태그 ssafy-ec2). 잡은 호스트 docker 를 직접 쓴다.
-# 설계 근거·서버 세팅 절차: deploy/README.md (S15P21B109-122), 참고 세팅: 이전 프로젝트 S15P11B204.
+# 설계 근거·서버 세팅 절차: deploy/README.md (S15P21B109-122).
 #
 # 스테이지
 #   test   — 모든 브랜치 push 와 MR 에서 실행. 팀 Makefile 의 g1-* 검사를 그대로 옮겼다.
@@ -12,7 +12,7 @@
 #   - 테스트는 체크아웃된 저장소를 컨테이너에 마운트해서 돈다. 이미지는 의존성 확보용이다.
 #     backend 이미지는 .dockerignore 가 tests/ 를 제외하고, contract_tests 는 저장소 루트의
 #     contract-fixtures/ 를 상대 경로로 읽으므로 저장소 전체를 /src 에 마운트하고 하위 디렉터리에서 실행한다.
-#   - 비밀값은 CI Variables 에 두지 않는다(204 패턴, 서버 /srv/s15p21b109/secrets). 테스트용 더미는 여기 평문으로 둔다 —
+#   - 비밀값은 CI Variables 에 두지 않는다(서버 /srv/s15p21b109/secrets 파일에서 주입). 테스트용 더미는 여기 평문으로 둔다 —
 #     runtime_env.INSECURE_SECRET_VALUES 에 걸리지 않는 값이면 되고, 운영 값과 무관하다. 외부 호출은 테스트가 모킹한다.
 #   - shell 러너는 잡마다 같은 체크아웃 디렉터리를 재사용한다. 컨테이너가 root 로 파일을 만들면(npm ci 의 node_modules 등)
 #     다음 잡의 git clean 이 Permission denied 로 실패한다 → 마운트는 :ro 로, 쓰기가 필요한 컨테이너는 --user 러너 uid 로 실행.
