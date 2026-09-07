@@ -1,0 +1,50 @@
+# 운영(EC2) 전용 override. 루트 docker-compose.yml(팀 P03 실행환경) 위에 겹쳐서 쓴다.
+#
+#   docker compose --env-file /srv/s15p21b109/secrets/app.env \
+#     -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# 루트 compose 는 건드리지 않는다(ai-docs/architecture/overview.md §3). 여기서 추가하는 것은 세 가지뿐:
+#   1. web — front-pjt 이미지(nginx: SPA 정적 + /api·/admin → backend 프록시). 호스트에 바인딩되는 유일한 서비스.
+#      호스트 nginx(TLS 종단, S15P21B109-123)가 127.0.0.1:8080 으로 넘긴다. 외부에 직접 열리지 않는다.
+#   2. restart 정책 — 서버 재부팅·프로세스 종료 후 자동 복구. migrate 는 one-shot 이므로 제외.
+#   3. 로그 상한 — 디스크가 로그로 차는 것을 막는다.
+#
+# 로컬에서도 같은 명령(--env-file 대신 .env)으로 운영과 같은 경로를 재현할 수 있다: http://localhost:8080
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  web:
+    build:
+      context: ./front-pjt
+      args:
+        # nginx 가 /api 를 backend 로 넘기므로 도메인과 무관한 상대 경로
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-/api}"
+    <<: [*restart, *logging]
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-8080}:80"
+    networks:
+      - application
+
+  postgres:
+    <<: [*restart, *logging]
+
+  redis:
+    <<: [*restart, *logging]
+
+  backend:
+    <<: [*restart, *logging]
+
+  ai-pjt:
+    <<: [*restart, *logging]
