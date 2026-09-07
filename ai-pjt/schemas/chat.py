@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 
-class ChatRequest(BaseModel):
+class ChatInput(BaseModel):
     request_id: str
     session_id: int
     thread_id: str
@@ -9,4 +9,11 @@ class ChatRequest(BaseModel):
     message: str
     customer_info: dict
     field_registry: list[dict] = Field(default_factory=list)
+
+
+class ChatRequest(ChatInput):
     callback_url: str
+
+
+class ChatStreamRequest(ChatInput):
+    pass
