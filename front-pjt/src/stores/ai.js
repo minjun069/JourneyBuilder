@@ -4,6 +4,8 @@ import {
   getSessions, createSession,
   getMessages, streamMessages,
   approveAiAction, rejectAiAction,
+  postAsyncMessage, getAsyncMessage,
+  approveAsyncChange, rejectAsyncChange,
   getBasicInfo,
   putBasicInfo, putFinancialMindset, putFinancialSatisfaction,
   putFinancialAssets, putPensionAssets, putRealEstateAssets,
@@ -15,6 +17,14 @@ import {
   mapGoalPeriods, mapGoalMilestones,
   mapCurrentForm,
 } from '@/api/consulting'
+import {
+  createIdempotencyKey,
+  lifecycleErrorFromResponse,
+  pollUntilTerminal,
+  terminalLifecycleError,
+  validateAcceptedEnvelope,
+  validateDecisionEnvelope,
+} from '@/api/aiLifecycle'
 import { getReports } from '@/api/reports'
 import { MOCK_PRESENTATION_DATA } from '@/mock/aiData'
 import { normalizePresentationData } from '@/utils/reportData'
@@ -29,6 +39,7 @@ export const useAiStore = defineStore('ai', () => {
   const loading          = ref(false)
   const error            = ref(null)
   let activeStreamController = null
+  const decisionIdempotencyKeys = new Map()
 
   // 새 상담 시작: 항상 신규 세션 생성
   async function initSession() {
@@ -66,7 +77,53 @@ export const useAiStore = defineStore('ai', () => {
     chatMessages.value = res.data
   }
 
-  // 사용자 메시지 전송 및 AI SSE 응답 수신
+  // frozen v2 기본 경로: 접수 후 3초 간격으로 최대 90초 polling
+  async function sendMessage(content, { stepId, form = null } = {}) {
+    if (!sessionId.value) return null
+    cancelActiveStream()
+    const controller = new AbortController()
+    activeStreamController = controller
+
+    try {
+      const response = await postAsyncMessage(
+        sessionId.value,
+        {
+          content,
+          step_id: stepId,
+          form_data: mapCurrentForm(stepId, form ?? {}),
+        },
+        {
+          idempotencyKey: createIdempotencyKey(),
+          signal: controller.signal,
+        },
+      )
+      const accepted = validateAcceptedEnvelope(response.data)
+      requestId.value = accepted.request_id
+      const terminal = await pollUntilTerminal({
+        requestId: accepted.request_id,
+        signal: controller.signal,
+        poll: async (currentRequestId, options) => {
+          const pollingResponse = await getAsyncMessage(
+            sessionId.value,
+            currentRequestId,
+            options,
+          )
+          return pollingResponse.data
+        },
+      })
+      if (terminal.status !== 'completed') throw terminalLifecycleError(terminal)
+      return terminal.message
+    } catch (requestError) {
+      throw lifecycleErrorFromResponse(
+        requestError,
+        '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',
+      )
+    } finally {
+      if (activeStreamController === controller) activeStreamController = null
+    }
+  }
+
+  // v1 SSE는 장애 전환과 비교 검증을 위한 호환 경로다.
   async function* streamMessage(content, { stepId, form = null } = {}) {
     if (!sessionId.value) return
     cancelActiveStream()
@@ -106,6 +163,33 @@ export const useAiStore = defineStore('ai', () => {
     if (!sessionId.value) return
     return rejectAiAction(sessionId.value, messageId)
   }
+
+  async function decideChange(actionId, changeId, decision) {
+    if (!sessionId.value) return null
+    const key = `${actionId}:${changeId}:${decision}`
+    const idempotencyKey = decisionIdempotencyKeys.get(key) ?? createIdempotencyKey()
+    decisionIdempotencyKeys.set(key, idempotencyKey)
+    const requester = decision === 'approve' ? approveAsyncChange : rejectAsyncChange
+    try {
+      const response = await requester(
+        sessionId.value,
+        actionId,
+        changeId,
+        { idempotencyKey },
+      )
+      decisionIdempotencyKeys.delete(key)
+      return validateDecisionEnvelope(response.data, { actionId, changeId, decision })
+    } catch (requestError) {
+      if (requestError?.response) decisionIdempotencyKeys.delete(key)
+      throw lifecycleErrorFromResponse(
+        requestError,
+        'AI 변경 제안을 처리하지 못했습니다. 다시 시도해주세요.',
+      )
+    }
+  }
+
+  const approveChange = (actionId, changeId) => decideChange(actionId, changeId, 'approve')
+  const rejectChange = (actionId, changeId) => decideChange(actionId, changeId, 'reject')
 
   function syncIds(sourceRows, savedRows) {
     ;(sourceRows ?? []).forEach((row, index) => {
@@ -195,6 +279,7 @@ export const useAiStore = defineStore('ai', () => {
     sessions.value         = []
     presentationData.value = null
     error.value            = null
+    decisionIdempotencyKeys.clear()
   }
 
   return {
@@ -204,7 +289,8 @@ export const useAiStore = defineStore('ai', () => {
     presentationData,
     loading, error,
     initSession, loadSessions, continueLatestSession,
-    loadMessages, streamMessage, cancelActiveStream, approveAction, rejectAction,
+    loadMessages, sendMessage, streamMessage, cancelActiveStream,
+    approveAction, rejectAction, approveChange, rejectChange,
     saveFormData, loadBasicInfo,
     fetchPresentationData,
     clearSession,

@@ -9,6 +9,9 @@ from langgraph.graph import END, START, StateGraph
 
 from core.context import (
     ConversationContext,
+    ConversationTurn,
+    ContextScope,
+    advance_context,
     build_context_window,
     resolve_confirmed_facts,
 )
@@ -231,6 +234,12 @@ def build_graph(
             return {"task_results": {}, "output": state["output"]}
         customer_info = state.get("customer_info", {})
         registry = state.get("field_registry", [])
+        budget_state = state.get("execution_budget", {})
+        task_limit = (
+            budget_state.get("task_limit", 3)
+            if isinstance(budget_state, Mapping)
+            else 3
+        )
         report = await execute_route_plan(
             plan=state["route_plan"],
             step_id=state["step_id"],
@@ -238,18 +247,64 @@ def build_graph(
             field_registry=registry if isinstance(registry, list) else [],
             agent_executors=agent_executors,
             tool_executors=active_tools,
+            task_limit=task_limit,
+        )
+        updated_budget = (
+            {**budget_state, "tasks_used": report.tasks_used}
+            if isinstance(budget_state, Mapping)
+            else {"task_limit": task_limit, "tasks_used": report.tasks_used}
         )
         return {
             "task_results": report.task_results,
             "output": report.output,
+            "execution_budget": updated_budget,
         }
+
+    def persist_context(state: ChatState) -> dict[str, Any]:
+        scope_payload = state.get("context_scope")
+        context_payload = state.get("conversation_context")
+        if not isinstance(scope_payload, Mapping) or not isinstance(
+            context_payload,
+            Mapping,
+        ):
+            return {}
+        ContextScope.from_state(scope_payload)
+        context = ConversationContext.from_state(context_payload)
+        output = state.get("output", {})
+        response = output.get("response", "") if isinstance(output, Mapping) else ""
+        request_id = state.get("request_id")
+        if not isinstance(request_id, str) or not request_id.strip():
+            return {}
+        customer_info = state.get("customer_info", {})
+        registry = state.get("field_registry", [])
+        confirmed_facts = (
+            _flatten_customer_info(
+                customer_info,
+                field_registry=registry if isinstance(registry, list) else [],
+                step_id=state["step_id"],
+            )
+            if isinstance(customer_info, Mapping)
+            else {}
+        )
+        updated = advance_context(
+            context=context,
+            new_turn=ConversationTurn(
+                turn_id=request_id,
+                user_message=state["message"],
+                assistant_message=response if isinstance(response, str) else "",
+                confirmed_facts=confirmed_facts,
+            ),
+        )
+        return {"conversation_context": updated.to_state()}
 
     builder = StateGraph(ChatState)
     builder.add_node("plan", plan_request)
     builder.add_node("execute", execute_plan)
     builder.add_node("validate", validate_form_update)
+    builder.add_node("persist_context", persist_context)
     builder.add_edge(START, "plan")
     builder.add_edge("plan", "execute")
     builder.add_edge("execute", "validate")
-    builder.add_edge("validate", END)
+    builder.add_edge("validate", "persist_context")
+    builder.add_edge("persist_context", END)
     return builder.compile(checkpointer=checkpointer)

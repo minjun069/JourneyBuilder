@@ -6,14 +6,27 @@ import secrets
 from typing import Any, AsyncIterator
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
 
-from core.checkpointer import get_checkpointer
+from core.checkpointer import build_context_state_api, get_checkpointer
 from core.config import settings
+from core.context import ContextScope
 from core.monitoring import get_callbacks
 from graph.builder import build_graph
 from schemas.chat import ChatRequest, ChatStreamRequest
+from transport.contracts import (
+    ChatV2Request,
+    ServiceContractError,
+    verify_service_authorization,
+)
+from transport.runtime import (
+    AsyncChatTransport,
+    CallbackClient,
+    ExecutionBudget,
+    PostgresRequestCheckpointStore,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -24,12 +37,51 @@ async def lifespan(app: FastAPI):
     settings.validate_runtime()
     async with get_checkpointer() as checkpointer:
         app.state.chat_graph = build_graph(checkpointer)
+        app.state.context_api = build_context_state_api(checkpointer)
+        request_store = PostgresRequestCheckpointStore(settings.db_url)
+        await request_store.setup()
+        app.state.v2_transport = AsyncChatTransport(
+            checkpoint_store=request_store,
+            processor=_process_v2_graph,
+            callback_client=CallbackClient(
+                url=(
+                    f"{settings.backend_url.rstrip('/')}"
+                    "/api/v2/internal/ai/callback/"
+                ),
+                bearer_token=settings.ai_service_bearer_token,
+                timeout_seconds=settings.callback_timeout_seconds,
+            ),
+        )
         yield
 
 
 app = FastAPI(title="RetireWise AI Service", lifespan=lifespan)
 
 _PUBLIC_STREAM_NODES = {"merge", "run"}
+
+
+def _v2_validation_error(exc: ValidationError) -> ServiceContractError:
+    first = exc.errors(include_url=False)[0]
+    field = str(first.get("loc", ("request",))[0])
+    error_type = first.get("type")
+    if field == "contract_version" and error_type == "literal_error":
+        return ServiceContractError(
+            status_code=422,
+            code="CONTRACT_VERSION_UNSUPPORTED",
+            message="지원하지 않는 계약 버전입니다.",
+        )
+    if error_type == "missing":
+        message = f"{field}는 필수입니다."
+    elif field == "session_id" and error_type in {"int_type", "int_parsing"}:
+        message = "session_id는 정수여야 합니다."
+    else:
+        message = "AI 요청 스키마가 올바르지 않습니다."
+    return ServiceContractError(
+        status_code=422,
+        code="REQUEST_SCHEMA_INVALID",
+        message=message,
+    )
+
 
 def _verify_internal_secret(value: str | None) -> None:
     if settings.ai_callback_secret and not secrets.compare_digest(
@@ -60,13 +112,20 @@ def _message_chunk_text(content: Any) -> str:
 
 
 def _graph_input(request: ChatRequest | ChatStreamRequest) -> dict[str, Any]:
-    return {
+    customer_info = request.customer_info
+    if hasattr(customer_info, "model_dump"):
+        customer_info = customer_info.model_dump(mode="json")
+    payload = {
         "request_id": request.request_id,
         "message": request.message,
         "step_id": request.step_id,
-        "customer_info": request.customer_info,
+        "customer_info": customer_info,
         "field_registry": request.field_registry,
     }
+    chart_payload = getattr(request, "chart_payload", None)
+    if chart_payload is not None:
+        payload["chart_payload"] = chart_payload
+    return payload
 
 
 def _graph_config(request: ChatRequest | ChatStreamRequest) -> dict[str, Any]:
@@ -74,6 +133,70 @@ def _graph_config(request: ChatRequest | ChatStreamRequest) -> dict[str, Any]:
         "configurable": {"thread_id": request.thread_id},
         "callbacks": get_callbacks(),
     }
+
+
+async def _process_v2_graph(
+    request: ChatV2Request,
+    budget: ExecutionBudget,
+) -> dict[str, Any]:
+    budget.require_time()
+    scope = ContextScope(request.session_id, request.thread_id)
+    context_api = app.state.context_api
+    context = await context_api.read_context(scope)
+    graph_input = {
+        **_graph_input(request),
+        **context_api.state_channels(scope, context),
+        "execution_budget": budget.to_state(),
+    }
+    graph_config = {
+        **context_api.config_for(scope),
+        "callbacks": get_callbacks(),
+    }
+    result = await app.state.chat_graph.ainvoke(
+        graph_input,
+        config=graph_config,
+    )
+    output = result.get("output", {})
+    if not isinstance(output, dict):
+        raise ValueError("graph output must be an object")
+    return output
+
+
+@app.exception_handler(ServiceContractError)
+async def service_contract_error_handler(
+    _request: Request,
+    exc: ServiceContractError,
+):
+    return JSONResponse(status_code=exc.status_code, content=exc.envelope())
+
+
+@app.post("/v2/chat", status_code=202)
+async def chat_v2(
+    raw_request: Request,
+    background_tasks: BackgroundTasks,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    verify_service_authorization(
+        authorization,
+        settings.ai_service_bearer_token,
+    )
+    try:
+        raw_payload = await raw_request.json()
+        request = ChatV2Request.model_validate(raw_payload)
+    except ValidationError as exc:
+        raise _v2_validation_error(exc) from None
+    except ValueError:
+        raise ServiceContractError(
+            status_code=422,
+            code="REQUEST_SCHEMA_INVALID",
+            message="AI 요청 스키마가 올바르지 않습니다.",
+        ) from None
+
+    accepted = await app.state.v2_transport.accept(
+        request,
+        background_tasks.add_task,
+    )
+    return accepted.model_dump(mode="json")
 
 
 async def _stream_chat_events(graph, request: ChatStreamRequest) -> AsyncIterator[str]:

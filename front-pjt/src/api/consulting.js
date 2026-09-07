@@ -1,6 +1,11 @@
 import api from '@/api'
 import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
 import { readSSEStream, validateSSEEvents } from '@/api/sse'
+import {
+  AI_CONTRACT_VERSION,
+  createIdempotencyKey,
+  deriveV2BaseURL,
+} from '@/api/aiLifecycle'
 
 // ── Session ──────────────────────────────────────────────────
 export const getSessions   = ()              => api.get('/consultations/')
@@ -15,6 +20,46 @@ export const getMessage = (sid, rid)       => api.get(`/consultations/${sid}/ai-
 export const approveAiAction = (sid, messageId) => api.post(`/consultations/${sid}/ai-actions/approve/`, { message_id: messageId })
 export const rejectAiAction = (sid, messageId) => api.post(`/consultations/${sid}/ai-actions/reject/`, { message_id: messageId })
 
+const V2_BASE_URL = deriveV2BaseURL(api.defaults.baseURL)
+
+export const postAsyncMessage = (
+  sid,
+  body,
+  { idempotencyKey = createIdempotencyKey(), signal } = {},
+) => api.post(
+  `/consultations/${sid}/messages/`,
+  { ...body, contract_version: AI_CONTRACT_VERSION },
+  {
+    baseURL: V2_BASE_URL,
+    headers: { 'Idempotency-Key': idempotencyKey },
+    signal,
+  },
+)
+
+export const getAsyncMessage = (sid, requestId, { signal } = {}) => api.get(
+  `/consultations/${sid}/ai-responses/${requestId}/`,
+  { baseURL: V2_BASE_URL, signal },
+)
+
+function decideAsyncChange(sid, actionId, changeId, decision, idempotencyKey) {
+  return api.post(
+    `/consultations/${sid}/ai-actions/${actionId}/changes/${changeId}/${decision}/`,
+    {},
+    {
+      baseURL: V2_BASE_URL,
+      headers: { 'Idempotency-Key': idempotencyKey ?? createIdempotencyKey() },
+    },
+  )
+}
+
+export const approveAsyncChange = (sid, actionId, changeId, options = {}) => (
+  decideAsyncChange(sid, actionId, changeId, 'approve', options.idempotencyKey)
+)
+export const rejectAsyncChange = (sid, actionId, changeId, options = {}) => (
+  decideAsyncChange(sid, actionId, changeId, 'reject', options.idempotencyKey)
+)
+
+// v1 SSE는 장애 전환과 비교 검증을 위한 호환 경로로 유지한다.
 export async function* streamMessages(sid, body, { signal } = {}) {
   const baseUrl = String(api.defaults.baseURL ?? '').replace(/\/$/, '')
   const token = localStorage.getItem('access_token')

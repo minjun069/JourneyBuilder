@@ -240,11 +240,29 @@ function showInitialMessages() {
   streamAiMessages(initialMessages)
 }
 
+function toChatMessage(message) {
+  const bubble = {
+    role: message.role === 'assistant' ? 'ai' : message.role,
+    text: message.content,
+  }
+  const action = message.extracted_data?.action
+  if (
+    action?.type === 'form_change'
+    && typeof action.action_id === 'string'
+    && Array.isArray(action.changes)
+    && action.changes.length > 0
+  ) {
+    bubble.action = {
+      ...action,
+      type: 'form-update',
+      messageId: message.id,
+    }
+  }
+  return bubble
+}
+
 function restoreStoredMessages() {
-  messages.value = aiStore.chatMessages.map((msg) => ({
-    role: msg.role === 'assistant' ? 'ai' : msg.role,
-    text: msg.content,
-  }))
+  messages.value = aiStore.chatMessages.map(toChatMessage)
 }
 
 async function startNewConsultation() {
@@ -294,71 +312,18 @@ async function sendMessage() {
   scrollToBottom()
   isTyping.value = true
   isStreamingResponse.value = true
-  let streamedMessage = null
-
-  function ensureStreamedMessage() {
-    if (streamedMessage) return streamedMessage
-    isTyping.value = false
-    messages.value.push({
-      role: 'ai',
-      text: '',
-      displayText: '',
-      streaming: true,
-    })
-    streamedMessage = messages.value[messages.value.length - 1]
-    return streamedMessage
-  }
 
   try {
-    for await (const { event, data } of aiStore.streamMessage(text, {
+    const assistantMessage = await aiStore.sendMessage(text, {
       stepId: currentStepId.value,
       form: activeFormRef.value?.form ?? null,
-    })) {
-      if (event === 'start') continue
-
-      if (event === 'delta') {
-        if (typeof data.content !== 'string') {
-          throw new Error('AI 스트림 응답 형식이 올바르지 않습니다.')
-        }
-        const message = ensureStreamedMessage()
-        message.text += data.content
-        message.displayText = message.text
-        scrollToBottom(false, true)
-        continue
-      }
-
-      if (event === 'error') {
-        throw new Error(data.message ?? 'AI 응답 생성에 실패했습니다.')
-      }
-
-      if (event === 'done') {
-        const message = ensureStreamedMessage()
-        const responseText = data.output?.response
-        if (typeof responseText === 'string' && responseText) {
-          message.text = responseText
-          message.displayText = responseText
-        }
-        const action = data.output?.action
-        if (action?.type === 'form_change' && Array.isArray(action.changes) && action.changes.length) {
-          message.action = {
-            ...action,
-            type: 'form-update',
-            messageId: data.message_id,
-            fields: action.changes
-              .map((change) => change.label ?? `${change.section}.${change.path}`)
-              .join(', '),
-          }
-        }
-        message.streaming = false
-        scrollToBottom(false, true)
-        return
-      }
-    }
-
-    throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
+    })
+    if (!assistantMessage) throw new Error('완료된 AI 메시지가 없습니다.')
+    isTyping.value = false
+    messages.value.push(toChatMessage(assistantMessage))
+    scrollToBottom(false, true)
   } catch (error) {
     if (error?.name === 'AbortError') return
-    if (streamedMessage) streamedMessage.streaming = false
     messages.value.push({
       role: 'ai',
       text: error?.message ?? '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',
@@ -395,37 +360,46 @@ function dismissAction(msg) {
   if (idx !== -1) messages.value[idx] = { ...messages.value[idx], action: undefined }
 }
 
-async function approveFormUpdate(msg) {
+function decisionStatusLabel(status) {
+  if (status === 'approved') return '승인됨'
+  if (status === 'rejected') return '거절됨'
+  return '확인 필요'
+}
+
+async function decideFormChange(msg, change, decision) {
   const action = msg.action
-  if (action.target === 'draft_form') {
-    if (action.step_id !== currentStepId.value || !activeFormRef.value?.form) return
-    try {
-      applyCanonicalChanges(action.step_id, activeFormRef.value.form, action.changes)
-      dismissAction(msg)
-    } catch {
-      sessionError.value = '현재 폼에서 AI 제안 대상을 찾지 못했습니다. 다시 요청해주세요.'
-    }
+  if (change.decision_status !== 'pending' || change.deciding) return
+  if (
+    decision === 'approved'
+    && action.target === 'draft_form'
+    && (action.step_id !== currentStepId.value || !activeFormRef.value?.form)
+  ) {
+    sessionError.value = '제안이 만들어진 입력 단계에서 승인해주세요.'
     return
   }
+  change.deciding = true
   try {
-    await aiStore.approveAction(action.messageId)
-    dismissAction(msg)
+    const result = decision === 'approved'
+      ? await aiStore.approveChange(action.action_id, change.change_id)
+      : await aiStore.rejectChange(action.action_id, change.change_id)
+    change.decision_status = result.decision_status
+    action.status = result.action_status
+    if (decision === 'approved' && action.target === 'draft_form') {
+      try {
+        applyCanonicalChanges(action.step_id, activeFormRef.value.form, [result.change])
+      } catch {
+        sessionError.value = '승인 기록은 완료됐지만 현재 폼에 값을 반영하지 못했습니다. 직접 확인해주세요.'
+      }
+    }
   } catch {
-    streamAiMessages([{ text: 'AI 입력 제안을 저장하지 못했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
+    streamAiMessages([{ text: 'AI 입력 제안을 처리하지 못했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
+  } finally {
+    change.deciding = false
   }
 }
 
-async function rejectFormUpdate(msg) {
-  const action = msg.action
-  try {
-    if (action.target !== 'draft_form') {
-      await aiStore.rejectAction(action.messageId)
-    }
-    dismissAction(msg)
-  } catch {
-    streamAiMessages([{ text: 'AI 입력 제안을 거절 처리하지 못했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
-  }
-}
+const approveFormChange = (msg, change) => decideFormChange(msg, change, 'approved')
+const rejectFormChange = (msg, change) => decideFormChange(msg, change, 'rejected')
 
 function handleConsent() {
   for (let i = messages.value.length - 1; i >= 0; i--) {
@@ -630,10 +604,34 @@ onBeforeUnmount(() => {
                       <button class="action-btn" type="button" @click="handleConsent">개인정보 수집 및 이용에 동의합니다.</button>
                     </div>
                     <div v-else-if="msg.action.type === 'form-update'" class="update-card">
-                      <p class="update-desc"><strong>{{ msg.action.fields }}</strong>에 대해 수정을 제안합니다. 승인하시겠습니까?</p>
-                      <div class="update-actions">
-                        <button class="action-btn action-btn--secondary" type="button" @click="rejectFormUpdate(msg)">거절</button>
-                        <button class="action-btn" type="button" @click="approveFormUpdate(msg)">승인</button>
+                      <p class="update-desc">아래 변경을 항목별로 확인해주세요.</p>
+                      <div
+                        v-for="change in msg.action.changes"
+                        :key="change.change_id"
+                        class="update-change"
+                      >
+                        <div class="update-change-copy">
+                          <strong>{{ change.label ?? `${change.section}.${change.path}` }}</strong>
+                          <span>{{ change.value }}</span>
+                          <small v-if="change.reason">{{ change.reason }}</small>
+                        </div>
+                        <div v-if="change.decision_status === 'pending'" class="update-actions">
+                          <button
+                            class="action-btn action-btn--secondary"
+                            type="button"
+                            :disabled="change.deciding"
+                            @click="rejectFormChange(msg, change)"
+                          >거절</button>
+                          <button
+                            class="action-btn"
+                            type="button"
+                            :disabled="change.deciding"
+                            @click="approveFormChange(msg, change)"
+                          >승인</button>
+                        </div>
+                        <span v-else class="update-decision" :class="`update-decision--${change.decision_status}`">
+                          {{ decisionStatusLabel(change.decision_status) }}
+                        </span>
                       </div>
                     </div>
                     <button v-else class="action-btn" type="button" @click="executeAction(msg.action)">
