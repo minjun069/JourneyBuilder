@@ -167,9 +167,11 @@ SIMPLE_JWT = {
 }
 
 AI_SERVICE_URL = os.environ.get('AI_SERVICE_URL', 'http://localhost:8001/chat')
+AI_SERVICE_STREAM_URL = os.environ.get('AI_SERVICE_STREAM_URL', 'http://localhost:8001/chat/stream')
 AI_CALLBACK_URL = os.environ.get('AI_CALLBACK_URL', 'http://localhost:8000/api/ai/callback/')
 AI_CALLBACK_SECRET = os.environ.get('AI_CALLBACK_SECRET', '')
 AI_SERVICE_BEARER_TOKEN = require_secret('AI_SERVICE_BEARER_TOKEN')
 AI_REQUEST_TTL_SECONDS = read_positive_int('AI_REQUEST_TTL_SECONDS', 600)
 AI_SERVICE_TIMEOUT_SECONDS = read_positive_float('AI_SERVICE_TIMEOUT_SECONDS', 5)
+AI_STREAM_READ_TIMEOUT_SECONDS = read_positive_float('AI_STREAM_READ_TIMEOUT_SECONDS', 120)
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')

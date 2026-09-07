@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
@@ -21,6 +22,7 @@ from .ai_services import (
     get_ai_request_state_by_thread_id,
     mark_message_action,
     save_ai_request_state,
+    stream_ai_response,
 )
 from .models import (
     ConsultingSession, Message,
@@ -48,9 +50,107 @@ from .serializers import (
     FinancialGoalPeriodSerializer,
     FinancialGoalMilestoneSerializer,
 )
+from .sse import SSEProtocolError, encode_sse, iter_sse_events
 
 
 logger = logging.getLogger(__name__)
+
+_AI_STREAM_EVENTS = {'start', 'delta', 'done', 'error'}
+
+
+def _validate_stream_identity(data, ai_payload):
+    expected = {
+        'request_id': ai_payload['request_id'],
+        'session_id': ai_payload['session_id'],
+        'thread_id': ai_payload['thread_id'],
+    }
+    for field, expected_value in expected.items():
+        if field in data and data[field] != expected_value:
+            raise SSEProtocolError(f'{field} does not match the stream request')
+
+
+def _stream_error(request_id, code='AI_STREAM_FAILED'):
+    return encode_sse('error', {
+        'request_id': request_id,
+        'code': code,
+        'message': 'AI 응답 생성에 실패했습니다.',
+    })
+
+
+def _proxy_ai_stream(session, ai_payload, step_id, user_message_id):
+    request_id = ai_payload['request_id']
+    yield encode_sse('start', {
+        'request_id': request_id,
+        'session_id': session.id,
+        'user_message_id': user_message_id,
+    })
+
+    chunks: list[str] = []
+    try:
+        for event_name, data in iter_sse_events(stream_ai_response(ai_payload)):
+            if event_name not in _AI_STREAM_EVENTS:
+                raise SSEProtocolError(f'unsupported SSE event: {event_name}')
+            _validate_stream_identity(data, ai_payload)
+
+            if event_name == 'start':
+                continue
+
+            if event_name == 'delta':
+                content = data.get('content')
+                if not isinstance(content, str):
+                    raise SSEProtocolError('delta content must be a string')
+                if content:
+                    chunks.append(content)
+                    yield encode_sse('delta', {
+                        'request_id': request_id,
+                        'content': content,
+                    })
+                continue
+
+            if event_name == 'error':
+                code = data.get('code')
+                if not isinstance(code, str) or not code:
+                    code = 'AI_STREAM_FAILED'
+                yield _stream_error(request_id, code=code)
+                return
+
+            output = data.get('output')
+            if not isinstance(output, dict):
+                raise SSEProtocolError('done output must be an object')
+            response_text = output.get('response')
+            if not isinstance(response_text, str) or not response_text:
+                response_text = ''.join(chunks)
+                if not response_text:
+                    raise SSEProtocolError('done output has no response')
+                output = {**output, 'response': response_text}
+
+            assistant_message = create_assistant_message_from_callback(
+                session,
+                {
+                    'request_id': request_id,
+                    'session_id': session.id,
+                    'thread_id': ai_payload['thread_id'],
+                    'status': AI_STATUS_COMPLETED,
+                    'output': output,
+                },
+                step_id=step_id,
+            )
+            yield encode_sse('done', {
+                'request_id': request_id,
+                'session_id': session.id,
+                'thread_id': ai_payload['thread_id'],
+                'message_id': assistant_message.id,
+                'output': output,
+            })
+            return
+
+        yield _stream_error(request_id, code='AI_STREAM_INCOMPLETE')
+    except GeneratorExit:
+        logger.info('Django SSE 클라이언트 연결 종료', extra={'request_id': request_id})
+        raise
+    except Exception:
+        logger.exception('Django AI stream 프록시 실패', extra={'request_id': request_id})
+        yield _stream_error(request_id)
 
 
 # 공통 유틸
@@ -486,7 +586,7 @@ class AIActionRejectView(APIView):
 class MessageStreamView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, session_id):
+    def post(self, request, session_id):
         session = get_session_or_404(session_id, request.user)
         if not session:
             return session_not_found()
@@ -494,10 +594,36 @@ class MessageStreamView(APIView):
         if session.status in (ConsultingSession.Status.COMPLETED, ConsultingSession.Status.ABANDONED):
             return Response({'success': False, 'error': '종료된 세션에는 메시지를 보낼 수 없습니다.'}, status=status.HTTP_409_CONFLICT)
 
-        return Response(
-            {'success': False, 'error': 'AI 스트리밍은 아직 사용할 수 없습니다.'},
-            status=status.HTTP_501_NOT_IMPLEMENTED,
+        serializer = MessageCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {'success': False, 'error': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user_message = Message.objects.create(
+            session=session,
+            role=Message.Role.USER,
+            content=serializer.validated_data['content'],
         )
+        request_id = generate_request_id()
+        step_id = serializer.validated_data.get('step_id') or 'general'
+        ai_payload = build_ai_request_payload(
+            request_id=request_id,
+            session=session,
+            user=request.user,
+            message=user_message.content,
+            step_id=step_id,
+            form_data=serializer.validated_data.get('form_data') or {},
+        )
+
+        response = StreamingHttpResponse(
+            _proxy_ai_stream(session, ai_payload, step_id, user_message.id),
+            content_type='text/event-stream',
+        )
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+        return response
 
 
 # 기본 정보
