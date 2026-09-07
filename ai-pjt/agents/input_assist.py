@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal, TypedDict, Union
+from typing import Any, Literal, NotRequired, TypedDict, Union
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -23,6 +23,8 @@ class InputAssistState(TypedDict):
     customer_info: dict
     next: str
     field_registry: list[dict]
+    # executor가 검증한 선행 typed artifact의 명시적 binding
+    bound_inputs: NotRequired[dict[str, Any]]
     # identify 출력 (Django canonical registry)
     guideline: str
     field_spec: str
@@ -135,7 +137,7 @@ _RESOLVE_SYSTEM = """\
 {hint}"""
 
 _RESOLVE_INTENT_INSTRUCTIONS: dict[str, str] = {
-    "fill_avg": "참고 자료를 바탕으로 이 항목에 적절한 평균값·추천값을 찾아 반환하세요. 참고 자료에 없는 값을 임의로 생성하지 마세요.",
+    "fill_avg": "executor가 검증해 전달한 binding 값만 사용하세요. binding 값이 없으면 평균값·추천값을 임의로 생성하지 마세요.",
     "find_field": "발췌 내용에서 이 항목에 해당하는 값을 직접 추출하여 반환하세요.",
     "organize": "발췌 내용을 이 항목의 type·unit·constraints 에 맞게 정리하여 반환하세요.",
 }
@@ -245,6 +247,11 @@ async def _error_check_1(state: InputAssistState) -> dict:
         reason = "AI 쓰기가 허용되지 않은 canonical 필드"
     elif item["operation"] not in field_spec.get("operations", []):
         reason = "허용되지 않은 form operation"
+    elif (
+        state.get("bound_inputs", {}).get("unit") is not None
+        and state["bound_inputs"]["unit"] != field_spec.get("unit", "none")
+    ):
+        reason = "선행 조회 결과와 canonical 필드의 단위 불일치"
     else:
         reason = ""
 
@@ -289,6 +296,21 @@ async def _resolve(state: InputAssistState) -> dict:
     ), {})
     field_spec = json.dumps(field_spec, ensure_ascii=False, indent=2)
 
+    bound_inputs = state.get("bound_inputs", {})
+    if "value" in bound_inputs:
+        return {
+            "resolution": bound_inputs["value"],
+            "resolution_confidence": 1.0,
+            "field_spec": field_spec,
+        }
+    if state["classification"] == "fill_avg":
+        return {
+            "resolution": None,
+            "resolution_confidence": 0.0,
+            "field_spec": field_spec,
+            "validation_reason": "검증된 선행 기준값 binding 없음",
+        }
+
     result = await _resolve_chain.ainvoke([
         SystemMessage(content=_RESOLVE_SYSTEM.format(
             field_spec=field_spec,
@@ -306,6 +328,51 @@ async def _resolve(state: InputAssistState) -> dict:
 
 async def _error_check_2(state: InputAssistState) -> dict:
     item = state["identification"][state["cur_index"]]
+
+    bound_inputs = state.get("bound_inputs", {})
+    if "value" in bound_inputs:
+        source_id = bound_inputs.get("source_id")
+        reason = "검증된 선행 task artifact binding"
+        if source_id:
+            reason = f"{reason} ({source_id})"
+        return {
+            "partial_results": state["partial_results"] + [{
+                "section": item["section"],
+                "path": item["path"],
+                "operation": item["operation"],
+                "item_id": item.get("item_id"),
+                "client_item_id": item.get("client_item_id"),
+                "excerpt": item["excerpt"],
+                "resolution": bound_inputs["value"],
+                "parent_item_id": item.get("parent_item_id"),
+                "parent_client_item_id": item.get("parent_client_item_id"),
+                "success": True,
+                "reason": reason,
+                "confidence": 1.0,
+                "bound_unit": bound_inputs.get("unit"),
+            }],
+            "cur_index": state["cur_index"] + 1,
+            "resolution_retries": 0,
+            "validation_type": "ok",
+            "validation_reason": "",
+        }
+    if state["classification"] == "fill_avg":
+        reason = "승인된 조회 결과가 없어 평균값을 생성하지 않음"
+        return {
+            "partial_results": state["partial_results"] + [{
+                "section": item["section"],
+                "path": item["path"],
+                "operation": item["operation"],
+                "excerpt": item["excerpt"],
+                "resolution": None,
+                "success": False,
+                "reason": reason,
+            }],
+            "cur_index": state["cur_index"] + 1,
+            "resolution_retries": 0,
+            "validation_type": "hallucination",
+            "validation_reason": reason,
+        }
 
     result = await _error_check_2_chain.ainvoke([
         SystemMessage(content=_ERROR_CHECK_2_SYSTEM.format(
@@ -387,6 +454,8 @@ async def _merge(state: InputAssistState) -> dict:
                 "value": item["resolution"],
                 "reason": item["reason"],
             }
+            if item.get("bound_unit") is not None:
+                change["unit"] = item["bound_unit"]
             if item.get("item_id") is not None:
                 change["item_id"] = item["item_id"]
             if item.get("client_item_id"):

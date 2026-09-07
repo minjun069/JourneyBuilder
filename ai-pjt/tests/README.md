@@ -69,6 +69,21 @@ classifier는 `task`와 현재 단계의 `candidates`를 keyword 인자로 받�
 
 `elicit`은 모호성을 처리하는 Agent가 아니다. `financial-mindset` 단계에서 목표·가치관·걱정 같은 정성정보를 한 항목씩 수집해 달라는 명시적 의도가 `matched`로 분류됐을 때만 선택한다.
 
+## F03 의존 작업 계획·실행 검사
+
+- `test_planner.py`: 최대 3개 task, 앞선 task만 참조하는 DAG, 명시적 binding과 runtime 라우팅을 검사한다.
+- `test_task_contracts.py`: `completed`·`failed`·`blocked` 결과와 typed artifact·binding 계약을 검사한다.
+- `test_executor.py`: 선행 결과 주입, 선행 실패 시 후속 차단, 독립 task 지속, 변경안 값 일치와 충돌 집계를 검사한다.
+- `test_graph_execution.py`: 실제 LangGraph에서 planner→순차 executor→공통 validator 연결을 검사한다.
+- `test_agent_bindings.py`: `qa`와 `input_assist`가 검증된 binding을 재조회·재생성하지 않는 경계를 검사한다.
+
+마지막 두 파일은 LangGraph·LangChain이 없는 호스트에서는 skip된다. AI runtime 이미지에서는 다음처럼 실행한다.
+
+```bash
+python -m unittest discover -s tests -p 'test_graph_execution.py' -v
+python -m unittest discover -s tests -p 'test_agent_bindings.py' -v
+```
+
 ## 모델·의존성 평가
 
 실제 모델, prompt, LangChain adapter를 사용하는 정확도 평가는 deterministic M2-L02

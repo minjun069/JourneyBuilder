@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+import json
+from typing import Any, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -22,6 +23,8 @@ class QAState(TypedDict):
     step_id: str
     customer_info: dict
     next: str
+    # executor가 검증한 선행 typed artifact의 명시적 binding
+    bound_inputs: NotRequired[dict[str, Any]]
     # specify 출력
     search_queries: list[str]
     query_index: int
@@ -86,11 +89,13 @@ _ANSWER_SYSTEM = """\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 제공된 승인 문서 근거만 사용해 사용자 질문에 정확하고 이해하기 쉽게 답변하세요.
 문서에 없는 내용은 추측하지 말고 현재 근거로 확인할 수 없다고 밝히세요.
-사실을 설명할 때는 참고 문서에 표시된 문서 제목과 원문 위치를 함께 인용하세요."""
+사실을 설명할 때는 참고 문서에 표시된 문서 제목과 원문 위치를 함께 인용하세요.
+검증된 선행 task 입력이 있으면 그 값·단위·출처를 그대로 사용하고 다시 계산하거나 바꾸지 마세요."""
 
 _DIRECT_ANSWER_SYSTEM = """\
 당신은 은퇴 설계 전문 AI 상담사입니다.
-사용자 질문에 정확하고 이해하기 쉽게 답변하세요."""
+사용자 질문에 정확하고 이해하기 쉽게 답변하세요.
+검증된 선행 task 입력이 있으면 그 값·단위·출처를 그대로 사용하고 다시 조회·추정·계산하지 마세요."""
 
 _MERGE_SYSTEM = """\
 아래 부분 답변들을 하나의 완결된 답변으로 통합하세요.
@@ -144,6 +149,8 @@ def _next_query(state: QAState) -> dict:
 
 
 async def _decide(state: QAState) -> dict:
+    if state.get("bound_inputs"):
+        return {"need_retrieval": False}
     decision = await _decision_chain.ainvoke([
         SystemMessage(content=_DECIDE_SYSTEM),
         HumanMessage(content=(
@@ -179,6 +186,12 @@ async def _generate(state: QAState) -> dict:
             f"질문: {state['message']}",
         ]
         system = _DIRECT_ANSWER_SYSTEM
+    bound_inputs = state.get("bound_inputs", {})
+    if bound_inputs:
+        human_parts.append(
+            "검증된 선행 task 입력:\n"
+            + json.dumps(bound_inputs, ensure_ascii=False, sort_keys=True)
+        )
     if state["retry_hint"]:
         human_parts.append(f"이전 답변 실패 이유: {state['retry_hint']}")
     result = await llm.ainvoke([
@@ -189,10 +202,12 @@ async def _generate(state: QAState) -> dict:
 
 
 async def _judge(state: QAState) -> dict:
+    bound_inputs = state.get("bound_inputs", {})
     result = await _judge_chain.ainvoke([
         SystemMessage(content=_JUDGE_SYSTEM),
         HumanMessage(content=(
             f"질문: {state['message']}\n"
+            f"검증된 선행 task 입력: {json.dumps(bound_inputs, ensure_ascii=False, sort_keys=True)}\n"
             f"답변: {state['current_answer']}"
         )),
     ])

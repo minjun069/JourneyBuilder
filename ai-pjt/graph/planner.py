@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from core.context import ContextWindow
 from core.step_registry import load_step_candidates
@@ -133,6 +134,19 @@ PLANNER_PROMPT = """\
 - depends_on은 반드시 앞에 선언한 task만 참조
 - 선행 결과 사용은 bindings의 task_id와 path로 명시
 - 실행 결과 값, Agent 이름, 도구 handler 이름은 생성하지 않음
+
+각 task의 허용 field:
+- id: plan 안에서만 쓰는 고유 문자열
+- type: 허용 task type 중 하나
+- description: 원문 중 이 task가 수행할 구체적인 요청
+- depends_on: 앞서 선언한 task id 문자열 배열
+- bindings: 입력 이름을 {{"task_id": "선행 id", "path": "artifact field"}}에 연결한 object
+
+의존 요청 예시:
+{{"tasks": [
+  {{"id": "lookup", "type": "lookup_reference_value", "description": "승인된 기준값 조회", "depends_on": [], "bindings": {{}}}},
+  {{"id": "fill", "type": "propose_form_change", "description": "조회 값으로 변경안 제안", "depends_on": ["lookup"], "bindings": {{"value": {{"task_id": "lookup", "path": "value"}}}}}}
+]}}
 
 현재 단계: {step_id}
 제한된 대화 문맥: {context}
@@ -425,6 +439,7 @@ def create_route_plan(
     classifier: TaskClassifier,
     step_candidates: Mapping[str, Sequence[str]] | None = None,
     registered_tool_capabilities: Sequence[str] = (),
+    plan_id: str | None = None,
 ) -> RoutePlanValidation:
     """Plan with bounded context, validate, then route every canonical task."""
 
@@ -442,6 +457,7 @@ def create_route_plan(
 
     active_candidates = step_candidates or load_step_candidates()
     planned = deepcopy(validation.plan)
+    planned["plan_id"] = plan_id or f"plan-{uuid4()}"
     for task in planned["tasks"]:
         task["route"] = select_route(
             task=task,
