@@ -10,8 +10,9 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
-from core.checkpointer import get_checkpointer
+from core.checkpointer import build_context_state_api, get_checkpointer
 from core.config import settings
+from core.context import ContextScope
 from core.monitoring import get_callbacks
 from graph.builder import build_graph
 from schemas.chat import ChatRequest, ChatStreamRequest
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI):
     settings.validate_runtime()
     async with get_checkpointer() as checkpointer:
         app.state.chat_graph = build_graph(checkpointer)
+        app.state.context_api = build_context_state_api(checkpointer)
         request_store = PostgresRequestCheckpointStore(settings.db_url)
         await request_store.setup()
         app.state.v2_transport = AsyncChatTransport(
@@ -80,6 +82,7 @@ def _v2_validation_error(exc: ValidationError) -> ServiceContractError:
         message=message,
     )
 
+
 def _verify_internal_secret(value: str | None) -> None:
     if settings.ai_callback_secret and not secrets.compare_digest(
         value or "",
@@ -109,11 +112,14 @@ def _message_chunk_text(content: Any) -> str:
 
 
 def _graph_input(request: ChatRequest | ChatStreamRequest) -> dict[str, Any]:
+    customer_info = request.customer_info
+    if hasattr(customer_info, "model_dump"):
+        customer_info = customer_info.model_dump(mode="json")
     payload = {
         "request_id": request.request_id,
         "message": request.message,
         "step_id": request.step_id,
-        "customer_info": request.customer_info,
+        "customer_info": customer_info,
         "field_registry": request.field_registry,
     }
     chart_payload = getattr(request, "chart_payload", None)
@@ -134,9 +140,21 @@ async def _process_v2_graph(
     budget: ExecutionBudget,
 ) -> dict[str, Any]:
     budget.require_time()
+    scope = ContextScope(request.session_id, request.thread_id)
+    context_api = app.state.context_api
+    context = await context_api.read_context(scope)
+    graph_input = {
+        **_graph_input(request),
+        **context_api.state_channels(scope, context),
+        "execution_budget": budget.to_state(),
+    }
+    graph_config = {
+        **context_api.config_for(scope),
+        "callbacks": get_callbacks(),
+    }
     result = await app.state.chat_graph.ainvoke(
-        _graph_input(request),
-        config=_graph_config(request),
+        graph_input,
+        config=graph_config,
     )
     output = result.get("output", {})
     if not isinstance(output, dict):

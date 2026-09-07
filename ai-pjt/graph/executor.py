@@ -26,6 +26,7 @@ RuntimeExecutor = Callable[[dict[str, Any]], Awaitable[Mapping[str, Any]]]
 class ExecutionReport:
     task_results: dict[str, dict[str, Any]]
     output: dict[str, Any]
+    tasks_used: int
 
 
 def validate_agent_executor_registry(
@@ -53,6 +54,7 @@ async def execute_route_plan(
     field_registry: list[dict[str, Any]],
     agent_executors: Mapping[str, RuntimeExecutor],
     tool_executors: Mapping[str, RuntimeExecutor],
+    task_limit: int = 3,
 ) -> ExecutionReport:
     """Run validated tasks in source order and pass only explicit bindings.
 
@@ -62,6 +64,13 @@ async def execute_route_plan(
     """
 
     task_results: dict[str, dict[str, Any]] = {}
+    tasks_used = 0
+    if (
+        isinstance(task_limit, bool)
+        or not isinstance(task_limit, int)
+        or task_limit <= 0
+    ):
+        raise ValueError("task_limit must be a positive integer")
     raw_tasks = plan.get("tasks", [])
     tasks = raw_tasks if isinstance(raw_tasks, list) else []
 
@@ -131,6 +140,14 @@ async def execute_route_plan(
             )
             continue
 
+        if tasks_used >= task_limit:
+            task_results[task_id] = failed_task_result(
+                task_id,
+                "task_budget_exhausted",
+            )
+            continue
+        tasks_used += 1
+
         execution_input = {
             "task": deepcopy(dict(task)),
             "task_input": {
@@ -170,7 +187,11 @@ async def execute_route_plan(
         step_id=step_id,
         field_registry=field_registry,
     )
-    return ExecutionReport(task_results=task_results, output=output)
+    return ExecutionReport(
+        task_results=task_results,
+        output=output,
+        tasks_used=tasks_used,
+    )
 
 
 def aggregate_task_results(
@@ -331,6 +352,7 @@ def _failure_message(reason_code: str) -> str:
         "executor_error": "요청 처리 중 오류가 발생해 해당 결과를 제외했습니다.",
         "route_missing": "안전한 실행 경로를 확인하지 못해 해당 요청을 처리하지 않았습니다.",
         "binding_resolution_failed": "선행 결과를 후속 입력으로 안전하게 연결하지 못했습니다.",
+        "task_budget_exhausted": "요청당 실행 가능한 작업 수를 초과했습니다.",
     }
     return messages.get(reason_code, "요청의 일부를 완료하지 못했습니다.")
 

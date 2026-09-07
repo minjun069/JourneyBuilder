@@ -259,6 +259,54 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.task_results["task-2"]["status"], "blocked")
         self.assertIsNone(report.output["action"])
 
+    async def test_task_budget_stops_execution_after_limit(self) -> None:
+        calls: list[str] = []
+
+        async def qa(payload: dict) -> dict:
+            task_id = payload["task"]["id"]
+            calls.append(task_id)
+            return {
+                "task_id": task_id,
+                "status": "completed",
+                "artifact": {"type": "text_response", "text": task_id},
+            }
+
+        tasks = [
+            {
+                "id": f"task-{index}",
+                "type": "answer_question",
+                "description": f"독립 질문 {index}",
+                "depends_on": [],
+                "bindings": {},
+                "executor_kind": "agent",
+                "produces": "text_response",
+                "route": {
+                    "task_id": f"task-{index}",
+                    "executor_kind": "agent",
+                    "executor": "qa",
+                    "reason_code": "intent_match",
+                },
+            }
+            for index in range(1, 5)
+        ]
+        report = await execute_route_plan(
+            plan={"tasks": tasks},
+            step_id="financial-goals",
+            customer_info={},
+            field_registry=[FIELD_SPEC],
+            agent_executors={"qa": qa},
+            tool_executors={},
+            task_limit=3,
+        )
+
+        self.assertEqual(calls, ["task-1", "task-2", "task-3"])
+        self.assertEqual(report.tasks_used, 3)
+        self.assertEqual(report.task_results["task-4"]["status"], "failed")
+        self.assertEqual(
+            report.task_results["task-4"]["reason_code"],
+            "task_budget_exhausted",
+        )
+
 
 class AggregationTests(unittest.TestCase):
     def test_conflicting_changes_are_removed_from_public_action(self) -> None:

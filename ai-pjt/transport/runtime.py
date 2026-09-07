@@ -80,6 +80,15 @@ class ExecutionBudget:
     def consume_retry(self) -> "ExecutionBudget":
         return replace(self, retries_used=self.retries_used + 1)
 
+    def to_state(self) -> dict[str, Any]:
+        return {
+            "deadline_at": self.deadline_at.astimezone(timezone.utc).isoformat(),
+            "task_limit": self.task_limit,
+            "tasks_used": self.tasks_used,
+            "tool_calls_used": self.tool_calls_used,
+            "retries_used": self.retries_used,
+        }
+
 
 @dataclass(frozen=True)
 class RequestCheckpoint:

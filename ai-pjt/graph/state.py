@@ -15,6 +15,14 @@ class PersistedConversationState(TypedDict):
     turn_digests: list[list[str]]
 
 
+class ExecutionBudgetState(TypedDict):
+    deadline_at: str
+    task_limit: int
+    tasks_used: int
+    tool_calls_used: int
+    retries_used: int
+
+
 class ChatState(TypedDict):
     request_id: NotRequired[str]
     message: str
@@ -31,3 +39,4 @@ class ChatState(TypedDict):
     task_results: NotRequired[dict[str, dict[str, Any]]]
     bound_inputs: NotRequired[dict[str, Any]]
     plan_issues: NotRequired[list[dict[str, str]]]
+    execution_budget: NotRequired[ExecutionBudgetState]
