@@ -12,7 +12,9 @@ import unicodedata
 
 MESSAGE_OVERHEAD_UNITS = 4
 CONTEXT_SCHEMA_VERSION = "1.0"
-CONTEXT_CHECKPOINT_NAMESPACE = "ai-context-v1"
+# LangGraph reserves the empty namespace for a top-level compiled graph. Schema
+# versioning stays in the opaque thread key and embedded state instead.
+CONTEXT_CHECKPOINT_NAMESPACE = ""
 
 
 def _freeze_facts(facts: Mapping[str, Any]) -> Mapping[str, Any]:
