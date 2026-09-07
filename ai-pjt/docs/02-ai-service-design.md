@@ -32,7 +32,11 @@ Django (backend-pjt)
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/chat` | AI 작업 요청 수신 후 background task 등록 |
+| POST | `/chat/stream` | 사용자에게 표시할 최종 답변을 SSE로 스트리밍 |
 | GET | `/health` | 컨테이너 헬스체크 |
+
+`/chat/stream`의 요청 및 이벤트 형식은 `03-ai-sse-contract.md`를 따릅니다.
+기존 `/chat` callback 방식과 SSE 방식은 함께 유지하며, 호출 목적에 따라 Django가 선택합니다.
 
 ## 4. `/chat` 요청 스키마
 
