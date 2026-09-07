@@ -11,6 +11,7 @@
 | `front-pjt/` | Vue 사용자 화면 | 별도 Vite 개발 서버 |
 | `backend-pjt/` | Django 업무 API와 AI 요청 상태 | 루트 Compose의 `backend` |
 | `ai-pjt/` | FastAPI·LangGraph 상담 서비스 | 루트 Compose의 `ai-pjt` |
+| `ai-docs/` | AI 요구사항·아키텍처·계약·평가·보안 공유 문서 | [문서 읽기 시작점](ai-docs/README.md) |
 | `db/` | 애플리케이션 PostgreSQL 초기화 | 루트 Compose의 `postgres` |
 
 루트 `docker-compose.yml`은 Backend·AI·PostgreSQL·Redis의 통합 실행 진입점이다. 기존 뉴스 분석과 Kafka·Flink·배치 데이터 파이프라인은 이번 프로젝트에서 폐기됐으며, `data-pjt/`, `docker-compose-kafka.yml`, `docker-compose-flink.yml`, `db/docker-compose.yml` 등 남아 있는 산출물은 현재 실행 경로에서 사용하지 않는다. 이 비활성 산출물의 삭제는 별도 정리 작업에서 수행한다.
@@ -74,7 +75,7 @@ G1은 빈 volume·clean image에서 migration, 두 애플리케이션 readiness,
 이 G1 결과는 동결된 D1 v2 HTTP·AI lifecycle의 제품 구현 완료를 뜻하지 않는다.
 현재 `/chat`, legacy callback과 메시지 단위 승인 흐름을 v2 request·callback·polling·change별
 결정으로 전환하는 작업은 F04와 F12에 남아 있다. 정확한 현재/목표 차이는 공유 계약 문서의
-`contracts/current-state.md`, 입력별 활성 상태는
+`ai-docs/contracts/current-state.md`, 입력별 활성 상태는
 `contract-fixtures/g1/artifact-consistency.json`을 따른다.
 
 ## 개발 원칙
