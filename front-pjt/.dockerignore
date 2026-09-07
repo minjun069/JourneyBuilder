@@ -1,0 +1,15 @@
+.git
+.gitignore
+node_modules
+dist
+.vite
+.vitest
+coverage
+tests
+src/__tests__
+**/*.spec.js
+**/*.test.js
+.env
+.env.*
+README.md
+docs
