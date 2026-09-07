@@ -48,7 +48,7 @@ class IndexPipeline:
         store: IndexStore,
         chunker: DeterministicChunker,
         embedding: EmbeddingAdapter,
-        approved_sources: dict[str, str] | None = None,
+        approved_sources: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         self.store = store
         self.chunker = chunker
@@ -156,11 +156,11 @@ class IndexPipeline:
                 f"{document.metadata.source_id}@{document.metadata.version}"
                 for document in documents
                 if self.approved_sources.get(document.metadata.source_id)
-                != document.metadata.version
+                != (document.metadata.version, document.metadata.sha256)
             ]
             if invalid_versions:
                 raise ValueError(
-                    "operational target contains an unapproved source id/version: "
+                    "operational target contains an unapproved source id/version/hash: "
                     f"{sorted(invalid_versions)}"
                 )
             invalid = [

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -120,6 +121,13 @@ class SourceDocument:
 
     def __post_init__(self) -> None:
         _require_text("text", self.text)
+        if self.metadata.review_status == "approved":
+            actual = hashlib.sha256(self.text.encode("utf-8")).hexdigest()
+            if actual != self.metadata.sha256:
+                raise ValueError(
+                    f"approved source content hash differs from metadata: "
+                    f"{self.metadata.source_id}"
+                )
 
 
 @dataclass(frozen=True)

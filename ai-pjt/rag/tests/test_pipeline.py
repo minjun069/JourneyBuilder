@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 import tempfile
 import unittest
@@ -39,6 +40,7 @@ def make_document(
     review_status: str = "synthetic",
     collection: str = "synthetic_financial",
 ) -> SourceDocument:
+    content_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return SourceDocument(
         metadata=DocumentMetadata(
             source_id=source_id,
@@ -55,7 +57,7 @@ def make_document(
             collection=collection,
             license="synthetic only",
             sensitivity="public",
-            sha256=("0" * 64 if review_status != "synthetic" else ""),
+            sha256=(content_sha256 if review_status != "synthetic" else ""),
             catalog_document_id=f"catalog-{source_id}",
             file_path=f"synthetic/{source_id}.md",
         ),
@@ -132,7 +134,12 @@ class PipelineTestCase(unittest.TestCase):
             store=self.store,
             chunker=self.chunker,
             embedding=self.embedding,
-            approved_sources={"pending": "1.0"},
+            approved_sources={
+                "pending": (
+                    "1.0",
+                    hashlib.sha256("검토 전 문서".encode("utf-8")).hexdigest(),
+                )
+            },
         )
         with self.assertRaisesRegex(ValueError, "unapproved"):
             operational.build(
@@ -150,9 +157,14 @@ class PipelineTestCase(unittest.TestCase):
             store=self.store,
             chunker=self.chunker,
             embedding=self.embedding,
-            approved_sources={"approved": "2.0"},
+            approved_sources={
+                "approved": (
+                    "2.0",
+                    hashlib.sha256("승인 문서".encode("utf-8")).hexdigest(),
+                )
+            },
         )
-        with self.assertRaisesRegex(ValueError, "source id/version"):
+        with self.assertRaisesRegex(ValueError, "source id/version/hash"):
             wrong_version.build(
                 [approved],
                 IndexTarget("financial-knowledge", "v1", operational=True),

@@ -174,7 +174,10 @@ def run_catalog_dry_run(args: argparse.Namespace) -> int:
         chunker=MarkdownStructureChunker(args.chunk_size, args.overlap),
         embedding=embedding,
         approved_sources={
-            document.metadata.source_id: document.metadata.version
+            document.metadata.source_id: (
+                document.metadata.version,
+                document.metadata.sha256,
+            )
             for document in catalog.documents
         },
     )
@@ -248,7 +251,10 @@ def run_operational(args: argparse.Namespace) -> int:
         chunker=MarkdownStructureChunker(args.chunk_size, args.overlap),
         embedding=embedding,
         approved_sources={
-            document.metadata.source_id: document.metadata.version
+            document.metadata.source_id: (
+                document.metadata.version,
+                document.metadata.sha256,
+            )
             for document in catalog.documents
         },
     )

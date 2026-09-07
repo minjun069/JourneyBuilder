@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import unittest
 from pathlib import Path
 
@@ -34,7 +35,7 @@ def make_document(version: str, text: str) -> SourceDocument:
             collection="financial-knowledge",
             license="test only",
             sensitivity="public",
-            sha256="0" * 64,
+            sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
             catalog_document_id="postgres-smoke",
             file_path="test/postgres-smoke.md",
         ),
@@ -52,7 +53,10 @@ class PostgresStoreIntegrationTests(unittest.TestCase):
             repository_root=repository_root,
         )
         approved_sources = {
-            document.metadata.source_id: document.metadata.version
+            document.metadata.source_id: (
+                document.metadata.version,
+                document.metadata.sha256,
+            )
             for document in catalog.documents
         }
         store = PostgresIndexStore(DATABASE_URL)
@@ -107,7 +111,12 @@ class PostgresStoreIntegrationTests(unittest.TestCase):
             store=store,
             chunker=MarkdownStructureChunker(),
             embedding=embedding,
-            approved_sources={"postgres-smoke-source": "1.0.0"},
+            approved_sources={
+                "postgres-smoke-source": (
+                    "1.0.0",
+                    v1_document.metadata.sha256,
+                )
+            },
         )
         v1 = v1_pipeline.build(
             [v1_document],
@@ -137,7 +146,12 @@ class PostgresStoreIntegrationTests(unittest.TestCase):
             store=store,
             chunker=MarkdownStructureChunker(),
             embedding=embedding,
-            approved_sources={"postgres-smoke-source": "2.0.0"},
+            approved_sources={
+                "postgres-smoke-source": (
+                    "2.0.0",
+                    v2_document.metadata.sha256,
+                )
+            },
         )
         v2 = v2_pipeline.build(
             [v2_document],
