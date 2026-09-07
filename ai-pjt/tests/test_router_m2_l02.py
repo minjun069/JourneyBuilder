@@ -14,8 +14,8 @@ class FakeClassifier:
         self.result = result
         self.calls: list[dict] = []
 
-    def __call__(self, *, message: str, candidates: tuple[str, ...]) -> dict:
-        self.calls.append({"message": message, "candidates": candidates})
+    def __call__(self, *, task: dict, candidates: tuple[str, ...]) -> dict:
+        self.calls.append({"task": task, "candidates": candidates})
         if self.result["status"] == "error":
             raise RuntimeError(self.result.get("error", "classifier error"))
         return {
@@ -42,12 +42,20 @@ class M2L02PureRouterContractTests(unittest.TestCase):
             classifier = FakeClassifier(case["classifier"])
             with self.subTest(case=case["id"]):
                 decision = self.select_route(
+                    task={
+                        "id": case["id"],
+                        "type": case["kind"],
+                        "description": case["message"],
+                        "executor_kind": "agent",
+                    },
                     step_id=case["step_id"],
-                    message=case["message"],
                     step_candidates=self.step_candidates,
                     classifier=classifier,
                 )
-                self.assertEqual(decision, case["expected"])
+                self.assertEqual(decision["executor"], case["expected"]["agent"])
+                self.assertEqual(
+                    decision["reason_code"], case["expected"]["reason_code"]
+                )
 
                 expected_calls = case.get("expected_classifier_calls", 1)
                 self.assertEqual(len(classifier.calls), expected_calls)

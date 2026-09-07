@@ -25,9 +25,9 @@ P06에서는 production router를 import하거나 실제 모델을 호출하지 
 `test_router_m2_l02.py`는 W1-L02가 production pure router를 구현할 때까지 명시적으로
 skip된다. W1-L02 완료 결과를 검증하는 M2-L02 담당자는 다음 순서로 활성화한다.
 
-1. `graph.router.select_route`를 외부 상태를 사용하지 않는 함수로 구현한다.
+1. `graph.router.select_route`를 task 하나만 처리하는 순수 함수로 구현한다.
 2. allowlist와 classifier를 keyword 인자로 주입받게 한다.
-3. 반환값에 `agent`와 `reason_code`를 포함한다.
+3. 반환값에 `task_id`, 실행 대상과 `reason_code`를 포함한다.
 4. `AI_M2_L02_ROUTER_TESTS=1`을 설정해 skip을 해제한다.
 5. AI 의존성을 설치한 환경에서 아래 명령을 실행하고 M2-L02 증거로 남긴다.
 
@@ -40,14 +40,19 @@ production 함수의 예정된 호출 형태는 다음과 같다.
 
 ```python
 select_route(
+    task={
+        "id": "task-1",
+        "type": "qualitative_collection",
+        "description": "은퇴 후 삶의 우선순위를 하나씩 물어봐 줘",
+        "executor_kind": "agent",
+    },
     step_id="financial-mindset",
-    message="은퇴 후 삶의 우선순위를 하나씩 물어봐 줘",
     step_candidates=step_candidates,
     classifier=fake_classifier,
 )
 ```
 
-classifier는 `message`와 현재 단계의 `candidates`를 keyword 인자로 받고 `status`와 `agent`를 반환한다. `status`는 `matched`, `ambiguous`, `unsupported` 중 하나다. `M2-L02`의 LLM adapter는 모델 출력을 이 작은 내부 계약으로 정규화해야 한다.
+classifier는 `task`와 현재 단계의 `candidates`를 keyword 인자로 받고 `status`와 `agent`를 반환한다. `status`는 `matched`, `ambiguous`, `unsupported` 중 하나다. `M2-L02`의 LLM adapter는 모델 출력을 이 작은 내부 계약으로 정규화해야 한다. 도구 실행 task는 구체적인 handler 이름 대신 capability를 사용하며 미등록 capability는 `capability_unavailable`로 닫는다.
 
 ## 선택 근거 코드
 
