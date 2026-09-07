@@ -5,7 +5,8 @@
 이 문서는 Django가 FastAPI AI 서비스의 답변을 실시간으로 중계할 때 사용하는 최소 SSE 계약을 정의합니다.
 브라우저는 AI 서비스를 직접 호출하지 않으며, Django가 인증·상담 세션 검증·메시지 저장을 담당합니다.
 
-이번 범위는 FastAPI의 `POST /chat/stream`까지입니다. Django 프록시와 프런트엔드 스트림 수신은 다음 작업에서 구현합니다.
+FastAPI는 `POST /chat/stream`으로 토큰을 생성하고, Django는 인증된 `POST /api/v1/consultations/{session_id}/messages/stream/` 요청을 받아 스트림을 중계합니다.
+프런트엔드 스트림 수신은 다음 작업에서 구현합니다.
 기존 비동기 callback 엔드포인트인 `POST /chat`은 그대로 유지합니다.
 
 ## 2. 요청
@@ -116,3 +117,31 @@ data: {"request_id":"ai_req_...","code":"AI_STREAM_FAILED","message":"AI 응답 
 - 스트리밍 미지원 모델에서도 `start -> delta -> done` 계약을 지킨다.
 - 실패 응답에 내부 오류 상세가 포함되지 않는다.
 - 기존 `POST /chat` callback 처리가 그대로 동작한다.
+
+## 7. Browser -> Django 프록시 요청
+
+### Endpoint
+
+`POST /api/v1/consultations/{session_id}/messages/stream/`
+
+### Body
+
+```json
+{
+  "step_id": "basic-info",
+  "content": "월급은 300만원이에요.",
+  "form_data": {"monthly_income": 3000000}
+}
+```
+
+Django는 JWT와 상담 세션 소유권을 검증하고 사용자 메시지를 먼저 저장합니다. 이후 FastAPI 스트림을 중계하며, `done` 이벤트를 받은 경우에만 Assistant 메시지를 저장합니다.
+
+Django가 브라우저에 보내는 `start`에는 저장된 `user_message_id`가 추가되고, `done`에는 저장된 `message_id`가 추가됩니다.
+
+```text
+event: done
+data: {"request_id":"ai_req_...","session_id":1,"thread_id":"user-3-session-1","message_id":42,"output":{"response":"월급 정보를 확인했습니다.","action":null}}
+
+```
+
+연결 종료, 잘못된 upstream 이벤트, AI 오류가 발생하면 불완전한 Assistant 메시지는 저장하지 않습니다.

@@ -240,16 +240,14 @@ class AICallbackContractTests(SimpleTestCase):
         self.assertNotIn('traceback', saved_state['error'].lower())
 
 
-class DisabledSSEEndpointTests(SimpleTestCase):
+class SSEEndpointMethodTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
-    @patch('consulting.views.get_session_or_404')
-    def test_temporary_sse_endpoint_does_not_store_dummy_message(self, get_session):
-        get_session.return_value = SimpleNamespace(status='in_progress')
+    def test_sse_endpoint_rejects_legacy_get_method(self):
         request = self.factory.get('/messages/stream/')
         force_authenticate(request, user=SimpleNamespace(is_authenticated=True))
 
         response = MessageStreamView.as_view()(request, session_id=12)
 
-        self.assertEqual(response.status_code, 501)
+        self.assertEqual(response.status_code, 405)

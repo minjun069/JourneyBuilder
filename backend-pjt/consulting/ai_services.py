@@ -184,6 +184,38 @@ def dispatch_ai_request(payload):
     response.raise_for_status()
 
 
+def stream_ai_response(payload):
+    try:
+        import httpx
+    except ImportError as exc:
+        raise RuntimeError('httpx 패키지가 설치되어 있지 않습니다.') from exc
+
+    headers = {'Accept': 'text/event-stream'}
+    if settings.AI_CALLBACK_SECRET:
+        headers['X-Internal-Secret'] = settings.AI_CALLBACK_SECRET
+
+    stream_payload = {
+        key: value
+        for key, value in payload.items()
+        if key != 'callback_url'
+    }
+    timeout = httpx.Timeout(
+        connect=settings.AI_SERVICE_TIMEOUT_SECONDS,
+        read=settings.AI_STREAM_READ_TIMEOUT_SECONDS,
+        write=settings.AI_SERVICE_TIMEOUT_SECONDS,
+        pool=settings.AI_SERVICE_TIMEOUT_SECONDS,
+    )
+    with httpx.stream(
+        'POST',
+        settings.AI_SERVICE_STREAM_URL,
+        json=stream_payload,
+        headers=headers,
+        timeout=timeout,
+    ) as response:
+        response.raise_for_status()
+        yield from response.iter_lines()
+
+
 def normalize_pending_changes(update, default_section=None):
     if isinstance(update, list):
         changes = update
@@ -255,12 +287,13 @@ def apply_pending_changes(session, message):
     return applied
 
 
-def create_assistant_message_from_callback(session, payload):
+def create_assistant_message_from_callback(session, payload, step_id=None):
     output = payload.get('output') or {}
     content = payload.get('content') or output.get('response') or ''
     extracted_data = payload.get('extracted_data')
-    request_state = get_ai_request_state(payload.get('request_id')) or {}
-    step_id = request_state.get('step_id') or output.get('step_id')
+    if step_id is None:
+        request_state = get_ai_request_state(payload.get('request_id')) or {}
+        step_id = request_state.get('step_id') or output.get('step_id')
     form_action = normalize_form_action(output, step_id) if step_id else None
 
     if form_action:
