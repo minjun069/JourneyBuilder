@@ -84,8 +84,9 @@ _DECIDE_SYSTEM = """\
 
 _ANSWER_SYSTEM = """\
 당신은 은퇴 설계 전문 AI 상담사입니다.
-참고 문서를 바탕으로 사용자 질문에 정확하고 이해하기 쉽게 답변하세요.
-문서에 없는 내용은 추측하지 말고 모른다고 하세요."""
+제공된 승인 문서 근거만 사용해 사용자 질문에 정확하고 이해하기 쉽게 답변하세요.
+문서에 없는 내용은 추측하지 말고 현재 근거로 확인할 수 없다고 밝히세요.
+사실을 설명할 때는 참고 문서에 표시된 문서 제목과 원문 위치를 함께 인용하세요."""
 
 _DIRECT_ANSWER_SYSTEM = """\
 당신은 은퇴 설계 전문 AI 상담사입니다.
@@ -158,7 +159,10 @@ async def _generate(state: QAState) -> dict:
     if state["need_retrieval"]:
         context = state["current_context"]
         if not context:
-            nodes = await get_retriever().aretrieve(state["current_query"])
+            try:
+                nodes = await get_retriever().aretrieve(state["current_query"])
+            except RuntimeError:
+                nodes = []
             context = format_docs(nodes)
             update["current_context"] = context
         human_parts = [
