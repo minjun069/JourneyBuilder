@@ -1,6 +1,6 @@
 # 은퇴 현금흐름 엔진 개발·사용 가이드
 
-상태: 엔진·기본 테스트 구현. 경계 검증과 샘플 실행 확장은 후속 작업이다.
+상태: 엔진·기본·경계 조건 테스트 구현. 샘플 실행 확장은 후속 작업이다.
 이 문서는 팀원이 독립 모듈의 호출 위치, 결과 의미, 향후 연결 경계를 확인하기 위한
 개발 문서다. 현재 서비스에서 이 엔진을 호출하는 것은 아니다.
 
@@ -11,6 +11,7 @@
 | [models.py](../models.py) | 기존 내부 입력 모델·검증, `AssetPoint` |
 | [cashflow.py](../cashflow.py) | 단일 경로 계산, 결과 모델, 계산 오류 |
 | [test_cashflow.py](../tests/test_cashflow.py) | 손계산 A/B, 수익률 경로 대체·동등성, 기말 자산 경로 |
+| [test_cashflow_edges.py](../tests/test_cashflow_edges.py) | 손계산 C, 경계·오류·불변성, Decimal 참조 검산 |
 | [samples.py](../samples.py) | 현재 합성 입력 생성·검증; 실제 계산 출력은 후속 작업 |
 | [cashflow-rules.md](cashflow-rules.md) | 연간 순서·물가·부족액 이월의 계산 명세 |
 
@@ -116,9 +117,11 @@ assert same == result
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s ai-pjt/retirement/tests -v
 ```
 
-기본 테스트는 계산 규칙의 A/B를 독립적인 숫자 기대값으로 검증한다. 경로의 연도
-순서, 평균 대체, 고정 경로 동등성, 연말 점 개수도 확인한다. 고갈·경계·오류·
-반복 호출 검증과 실제 샘플 실행은 다음 작업에서 추가한다.
+기본 테스트는 계산 규칙의 A/B를 독립적인 숫자 기대값으로 검증한다. 경계 테스트는
+C의 고갈·회복, 입력·출력 불변성, 연금 일정·물가, 잘못된 경로, 비유한 계산을
+검증한다. Decimal 별도 참조 계산과 243가지 경로·물가 조합도 비교한다.
+상세 매핑과 명령은 [검증 기록](cashflow-validation.md)에 있다. 실제 샘플 실행은
+다음 작업에서 추가한다.
 
 다음 기능은 이 브랜치에서 구현하지 않는다.
 
