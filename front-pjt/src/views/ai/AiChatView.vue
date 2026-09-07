@@ -147,6 +147,7 @@ const chatListRef            = ref(null)
 const chatSpacerRef          = ref(null)
 const chatInputRef           = ref(null)
 const isTyping               = ref(false)
+const isStreamingResponse    = ref(false)
 const sessionLoading         = ref(false)
 const sessionError           = ref('')
 
@@ -228,6 +229,7 @@ function resetConversationState() {
   basicInfoData.value = null
   formWarningShown.value = false
   isTyping.value = false
+  isStreamingResponse.value = false
   leftWidth.value = 71.4
   rightWidth.value = 28.6
   aiStore.presentationData = null
@@ -285,52 +287,87 @@ async function continueConsultation() {
 
 async function sendMessage() {
   const text = draftMessage.value.trim()
-  if (!text || isTyping.value || !hasActiveSession.value) return
+  if (!text || isTyping.value || isStreamingResponse.value || !hasActiveSession.value) return
   messages.value.push({ role: 'user', text })
   draftMessage.value = ''
   resizeChatInput()
   scrollToBottom()
   isTyping.value = true
+  isStreamingResponse.value = true
+  let streamedMessage = null
+
+  function ensureStreamedMessage() {
+    if (streamedMessage) return streamedMessage
+    isTyping.value = false
+    messages.value.push({
+      role: 'ai',
+      text: '',
+      displayText: '',
+      streaming: true,
+    })
+    streamedMessage = messages.value[messages.value.length - 1]
+    return streamedMessage
+  }
 
   try {
-    await aiStore.sendMessage(text, {
+    for await (const { event, data } of aiStore.streamMessage(text, {
       stepId: currentStepId.value,
-      form:   activeFormRef.value?.form ?? null,
-    })
-  } catch {
-    streamAiMessages([{ text: '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
-    return
-  }
+      form: activeFormRef.value?.form ?? null,
+    })) {
+      if (event === 'start') continue
 
-  const deadline = Date.now() + 60_000
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 3000))
-    try {
-      const result = await aiStore.receiveMessage()
-      if (result?.status === 'failed') {
-        streamAiMessages([{ text: result.error ?? 'AI 응답 생성에 실패했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
-        return
+      if (event === 'delta') {
+        if (typeof data.content !== 'string') {
+          throw new Error('AI 스트림 응답 형식이 올바르지 않습니다.')
+        }
+        const message = ensureStreamedMessage()
+        message.text += data.content
+        message.displayText = message.text
+        scrollToBottom(false, true)
+        continue
       }
-      if (result) {
-        const { messageId, message, action } = result
-        const proposal = action?.type === 'form_change' ? action : null
-        streamAiMessages([{
-          text: message,
-          ...(proposal ? { action: {
+
+      if (event === 'error') {
+        throw new Error(data.message ?? 'AI 응답 생성에 실패했습니다.')
+      }
+
+      if (event === 'done') {
+        const message = ensureStreamedMessage()
+        const responseText = data.output?.response
+        if (typeof responseText === 'string' && responseText) {
+          message.text = responseText
+          message.displayText = responseText
+        }
+        const action = data.output?.action
+        if (action?.type === 'form_change' && Array.isArray(action.changes) && action.changes.length) {
+          message.action = {
+            ...action,
             type: 'form-update',
-            messageId,
-            ...proposal,
-            fields: proposal.changes.map((change) => change.label ?? `${change.section}.${change.path}`).join(', '),
-          } } : {}),
-        }], { typingDelay: 0 })
+            messageId: data.message_id,
+            fields: action.changes
+              .map((change) => change.label ?? `${change.section}.${change.path}`)
+              .join(', '),
+          }
+        }
+        message.streaming = false
+        scrollToBottom(false, true)
         return
       }
-    } catch {
-      // 일시적 오류 → 계속 폴링
     }
-  }
 
-  streamAiMessages([{ text: '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.' }], { typingDelay: 0 })
+    throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
+  } catch (error) {
+    if (error?.name === 'AbortError') return
+    if (streamedMessage) streamedMessage.streaming = false
+    messages.value.push({
+      role: 'ai',
+      text: error?.message ?? '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',
+    })
+    scrollToBottom(false, true)
+  } finally {
+    isTyping.value = false
+    isStreamingResponse.value = false
+  }
 }
 
 function handleKeydown(event) {
@@ -541,6 +578,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  aiStore.cancelActiveStream()
   window.removeEventListener('mousemove', onResizeMove)
   window.removeEventListener('mouseup', stopResize)
   document.body.style.cursor = ''
@@ -617,11 +655,11 @@ onBeforeUnmount(() => {
                 class="chat-input"
                 rows="1"
                 :placeholder="isPresentationPhase ? 'AI에게 질문해보세요.' : 'AI에게 질문해보세요. 예: 은퇴 계획 세워줘'"
-                :disabled="isTyping"
+                :disabled="isTyping || isStreamingResponse"
                 @input="resizeChatInput"
                 @keydown="handleKeydown"
               ></textarea>
-              <button class="primary-button" type="button" :disabled="isTyping" @click="sendMessage">전송</button>
+              <button class="primary-button" type="button" :disabled="isTyping || isStreamingResponse" @click="sendMessage">전송</button>
             </div>
           </article>
 

@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   getSessions, createSession,
-  getMessages, postMessage, getMessage,
+  getMessages, streamMessages,
   approveAiAction, rejectAiAction,
   getBasicInfo,
   putBasicInfo, putFinancialMindset, putFinancialSatisfaction,
@@ -28,6 +28,7 @@ export const useAiStore = defineStore('ai', () => {
   const presentationData = ref(null)
   const loading          = ref(false)
   const error            = ref(null)
+  let activeStreamController = null
 
   // 새 상담 시작: 항상 신규 세션 생성
   async function initSession() {
@@ -65,28 +66,35 @@ export const useAiStore = defineStore('ai', () => {
     chatMessages.value = res.data
   }
 
-  // 사용자 메시지 전송
-  async function sendMessage(content, { stepId, form = null } = {}) {
+  // 사용자 메시지 전송 및 AI SSE 응답 수신
+  async function* streamMessage(content, { stepId, form = null } = {}) {
     if (!sessionId.value) return
-    const { data: res } = await postMessage(sessionId.value, { content, step_id: stepId, form_data: mapCurrentForm(stepId, form ?? {}) })
-    return (requestId.value = res.data.request_id)
+    cancelActiveStream()
+    const controller = new AbortController()
+    activeStreamController = controller
+
+    try {
+      const events = streamMessages(
+        sessionId.value,
+        {
+          content,
+          step_id: stepId,
+          form_data: mapCurrentForm(stepId, form ?? {}),
+        },
+        { signal: controller.signal },
+      )
+      for await (const event of events) {
+        if (event.data?.request_id) requestId.value = event.data.request_id
+        yield event
+      }
+    } finally {
+      if (activeStreamController === controller) activeStreamController = null
+    }
   }
 
-  // AI 메시지 수신 
-  async function receiveMessage() {
-    if (!sessionId.value || !requestId.value) return null
-    const { data: res } = await getMessage(sessionId.value, requestId.value)
-    if (res.data?.status === 'failed') {
-      return { status: 'failed', error: res.data.error }
-    }
-    const message = res.data?.message
-    if (!message) return null
-    return {
-      status: res.data?.status ?? 'completed',
-      messageId: message.id,
-      message: message.content,
-      action: message.extracted_data?.action ?? null,
-    }
+  function cancelActiveStream() {
+    activeStreamController?.abort()
+    activeStreamController = null
   }
 
   async function approveAction(messageId) {
@@ -180,6 +188,7 @@ export const useAiStore = defineStore('ai', () => {
 
   // 로그아웃 시 실행
   function clearSession() {
+    cancelActiveStream()
     sessionId.value        = null
     requestId.value        = null
     chatMessages.value     = []
@@ -195,7 +204,7 @@ export const useAiStore = defineStore('ai', () => {
     presentationData,
     loading, error,
     initSession, loadSessions, continueLatestSession,
-    loadMessages, sendMessage, receiveMessage, approveAction, rejectAction,
+    loadMessages, streamMessage, cancelActiveStream, approveAction, rejectAction,
     saveFormData, loadBasicInfo,
     fetchPresentationData,
     clearSession,

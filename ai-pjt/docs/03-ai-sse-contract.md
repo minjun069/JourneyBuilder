@@ -6,7 +6,7 @@
 브라우저는 AI 서비스를 직접 호출하지 않으며, Django가 인증·상담 세션 검증·메시지 저장을 담당합니다.
 
 FastAPI는 `POST /chat/stream`으로 토큰을 생성하고, Django는 인증된 `POST /api/v1/consultations/{session_id}/messages/stream/` 요청을 받아 스트림을 중계합니다.
-프런트엔드 스트림 수신은 다음 작업에서 구현합니다.
+프런트엔드는 JWT를 포함한 `fetch()` POST 요청으로 Django 스트림을 수신합니다.
 기존 비동기 callback 엔드포인트인 `POST /chat`은 그대로 유지합니다.
 
 ## 2. 요청
@@ -145,3 +145,12 @@ data: {"request_id":"ai_req_...","session_id":1,"thread_id":"user-3-session-1","
 ```
 
 연결 종료, 잘못된 upstream 이벤트, AI 오류가 발생하면 불완전한 Assistant 메시지는 저장하지 않습니다.
+
+## 8. Frontend 수신 규칙
+
+- `EventSource` 대신 POST 본문과 JWT 헤더를 지원하는 `fetch()`와 `ReadableStream`을 사용합니다.
+- `delta.content`는 현재 AI 말풍선에 순서대로 추가합니다.
+- `done.output.response`를 최종 표시 문자열로 사용하고, Django가 저장 시 정규화한 `done.output.action`을 승인·거절 UI로 연결합니다.
+- `error` 수신 또는 완료 이벤트 없는 연결 종료는 사용자에게 재시도 가능한 오류로 표시합니다.
+- 화면 이탈, 로그아웃, 상담 세션 초기화 시 `AbortController`로 연결을 종료합니다.
+- 자동 재연결은 하지 않습니다. 재시도는 새로운 사용자 요청으로 처리합니다.

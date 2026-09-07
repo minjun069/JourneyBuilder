@@ -90,7 +90,17 @@ class SSEProxyTests(SimpleTestCase):
             'data: {"request_id":"ai_req_stream_test","session_id":12,"thread_id":"user-3-session-12","output":{"response":"안녕","action":null}}',
             '',
         ])
-        create_message.return_value = SimpleNamespace(id=99)
+        create_message.return_value = SimpleNamespace(
+            id=99,
+            extracted_data={
+                'action': {
+                    'type': 'form_change',
+                    'target': 'draft_form',
+                    'step_id': 'general',
+                    'changes': [],
+                },
+            },
+        )
 
         frames = [
             parse_frame(frame)
@@ -106,6 +116,7 @@ class SSEProxyTests(SimpleTestCase):
         self.assertEqual(frames[0][1]['user_message_id'], 41)
         self.assertEqual(frames[1][1]['content'], '안녕')
         self.assertEqual(frames[2][1]['message_id'], 99)
+        self.assertEqual(frames[2][1]['output']['action']['step_id'], 'general')
         create_message.assert_called_once()
         self.assertEqual(create_message.call_args.kwargs['step_id'], 'general')
 
