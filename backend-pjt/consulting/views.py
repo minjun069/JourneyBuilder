@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 import logging
 
+from asgiref.sync import sync_to_async
 from django.conf import settings
 
 from .ai_services import (
@@ -50,7 +51,7 @@ from .serializers import (
     FinancialGoalPeriodSerializer,
     FinancialGoalMilestoneSerializer,
 )
-from .sse import SSEProtocolError, encode_sse, iter_sse_events
+from .sse import SSEProtocolError, aiter_sse_events, encode_sse
 
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ def _stream_error(request_id, code='AI_STREAM_FAILED'):
     })
 
 
-def _proxy_ai_stream(session, ai_payload, step_id, user_message_id):
+async def _proxy_ai_stream(session, ai_payload, step_id, user_message_id):
     request_id = ai_payload['request_id']
     yield encode_sse('start', {
         'request_id': request_id,
@@ -87,7 +88,7 @@ def _proxy_ai_stream(session, ai_payload, step_id, user_message_id):
 
     chunks: list[str] = []
     try:
-        for event_name, data in iter_sse_events(stream_ai_response(ai_payload)):
+        async for event_name, data in aiter_sse_events(stream_ai_response(ai_payload)):
             if event_name not in _AI_STREAM_EVENTS:
                 raise SSEProtocolError(f'unsupported SSE event: {event_name}')
             _validate_stream_identity(data, ai_payload)
@@ -124,7 +125,10 @@ def _proxy_ai_stream(session, ai_payload, step_id, user_message_id):
                     raise SSEProtocolError('done output has no response')
                 output = {**output, 'response': response_text}
 
-            assistant_message = create_assistant_message_from_callback(
+            assistant_message = await sync_to_async(
+                create_assistant_message_from_callback,
+                thread_sensitive=True,
+            )(
                 session,
                 {
                     'request_id': request_id,

@@ -6,7 +6,7 @@
 
 - Python: 3.13.14
 - Container port: 8000
-- Application command: `gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2`
+- Application command: `uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers 2`
 - Required runtime dependencies: PostgreSQL, Redis
 - Migration command: `python manage.py migrate --noinput`
 
@@ -34,7 +34,7 @@ uv pip compile \
 | 현재 사용 | `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS` | 명시적으로 파싱하고 안전한 기본값 유지 |
 | 현재 사용 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | Django `DATABASES`의 단일 입력 |
 | 현재 필수 | `REDIS_URL` | AI request 상태 저장과 readiness가 사용하는 Redis URL |
-| 현재 사용 | `AI_SERVICE_URL`, `AI_CALLBACK_URL`, `AI_REQUEST_TTL_SECONDS`, `AI_SERVICE_TIMEOUT_SECONDS` | Backend의 AI 호출·callback 설정 |
+| 현재 사용 | `AI_SERVICE_URL`, `AI_SERVICE_STREAM_URL`, `AI_CALLBACK_URL`, `AI_REQUEST_TTL_SECONDS`, `AI_SERVICE_TIMEOUT_SECONDS`, `AI_STREAM_READ_TIMEOUT_SECONDS` | Backend의 AI 호출·SSE·callback 설정 |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 빈 값·placeholder 거부. 양방향 서비스 인증 연결은 후속 작업 범위 |
 | legacy | `AI_CALLBACK_SECRET` | 현재 선택값. v2 bearer 전환 뒤 제거 후보 |
 | readiness | `READINESS_HOST`, `READINESS_PORT`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `127.0.0.1:8000`, 2초 |
@@ -72,11 +72,16 @@ docker run --rm \
   retirewise-backend:d2
 ```
 
+Compose의 `gateway` 서비스는 기본적으로 호스트의 8080 포트에서 API를 받는다.
+SSE 경로에는 Nginx buffering/cache/gzip을 끄고 read/send timeout을 130초로 설정한다.
+이는 Backend의 기본 upstream read timeout 120초보다 길어, Nginx가 정상적인 장기 응답을
+먼저 종료하지 않도록 하기 위한 값이다. 포트는 `API_GATEWAY_PORT`로 변경할 수 있다.
+
 ## Liveness와 readiness
 
 현재 Backend에는 전용 HTTP health endpoint가 없으므로 `readiness.py`는 다음 순서로 판정한다.
 
-1. 컨테이너 내부 WSGI port가 TCP 연결을 수락한다.
+1. 컨테이너 내부 ASGI port가 TCP 연결을 수락한다.
 2. Django가 실제 사용하는 PostgreSQL connection에서 `SELECT 1`이 성공한다.
 3. Django migration graph에 미적용 migration이 없다.
 4. 현재 AI request 상태 저장소인 Redis가 `PING`에 성공한다.
@@ -108,7 +113,7 @@ P04 clean-start 담당자는 빈 환경에서 lock 설치 또는 image build, Po
 - PostgreSQL credential·host 누락 또는 잘못된 값
 - PostgreSQL 연결 중단과 미적용 migration
 - Redis 연결 중단
-- WSGI process 중단
+- ASGI process 중단
 - 0 이하·10초 초과·숫자가 아닌 readiness timeout과 잘못된 port
 - 빈 `DJANGO_SECRET_KEY`와 `AI_SERVICE_BEARER_TOKEN`의 startup 거부
 
@@ -127,7 +132,7 @@ lifecycle 구현에는 다음 항목이 남아 있다.
 완료됐다. 위 항목은 readiness가 아니라 아직 구현되지 않은 v2 Backend lifecycle의
 후속 인수 조건이다.
 
-## P02 검증 결과
+## P02 당시 검증 결과
 
 2026-09-04에 Docker client·server 29.7.2에서 다음 범위를 직접 검증했다.
 
@@ -145,3 +150,5 @@ lifecycle 구현에는 다음 항목이 남아 있다.
 이 P02 기록에서 사용한 임시 overlay는 branch에 남기지 않았다. 이후 G1에서 실제
 `config/settings.py`, Compose service name·credential·dependency condition을 사용한
 clean start, Docker 연속 실패 뒤 `unhealthy` 전환, 장애 복구와 cleanup을 다시 검증했다.
+현재 runtime은 SSE 스트리밍을 위해 Gunicorn WSGI에서 Uvicorn ASGI로 전환되었으므로,
+위 Gunicorn 항목은 당시 검증 이력이며 현재 실행 명령이 아니다.
