@@ -40,7 +40,9 @@ uv pip compile \
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부. 실제 request·callback 인증 연결은 후속 transport 작업 범위 |
 | legacy | `AI_CALLBACK_SECRET` | 현재 코드가 읽는 선택값. F04-T01·F12-T02의 v2 bearer 전환 뒤 제거 후보 |
-| 선택 | `RAG_*`, `EMBED_DIM`, `LANGFUSE_*` | 검색·관측 조정값 |
+| 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
+| 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.30 |
+| 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM`, `LANGFUSE_*` | retired 인덱스 30일 보관, embedding 차원, 관측 조정값 |
 | readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/health`, 2초 |
 | 미래 선택 | `REDIS_URL` | 현재 AI runtime과 readiness는 사용하지 않음 |
 

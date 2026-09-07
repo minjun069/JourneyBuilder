@@ -7,9 +7,9 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from rag.pipeline.chunking import DeterministicChunker
+from rag.pipeline.chunking import DeterministicChunker, MarkdownStructureChunker
 from rag.pipeline.cli import main as cli_main
-from rag.pipeline.corpus import load_corpus, load_gold_queries
+from rag.pipeline.corpus import load_approved_catalog, load_corpus, load_gold_queries
 from rag.pipeline.embeddings import (
     DeterministicHashEmbedding,
     LlamaIndexEmbeddingAdapter,
@@ -34,22 +34,29 @@ def make_document(
     text: str,
     *,
     version: str = "1.0",
-    kind: str = "financial_knowledge",
+    kind: str = "financial-knowledge",
     review_status: str = "synthetic",
+    collection: str = "synthetic_financial",
 ) -> SourceDocument:
     return SourceDocument(
         metadata=DocumentMetadata(
             source_id=source_id,
             title=f"{source_id} title",
-            issuer="Synthetic Authority",
-            source_uri=f"synthetic://{source_id}",
+            publisher="Synthetic Authority",
+            source_locators=(f"synthetic://{source_id}",),
             published_at="2026-01-01",
-            as_of="2026-01-01",
+            as_of_date="2026-01-01",
             version=version,
             scope="test only",
             review_status=review_status,
             reviewed_by="synthetic-test",
             document_kind=kind,
+            collection=collection,
+            license="synthetic only",
+            sensitivity="public",
+            sha256=("0" * 64 if review_status != "synthetic" else ""),
+            catalog_document_id=f"catalog-{source_id}",
+            file_path=f"synthetic/{source_id}.md",
         ),
         text=text,
     )
@@ -79,6 +86,19 @@ class PipelineTestCase(unittest.TestCase):
         self.assertEqual([chunk.end_offset for chunk in first], [80, 150])
         self.assertTrue(all(chunk.text == document.text[chunk.start_offset:chunk.end_offset] for chunk in first))
 
+    def test_markdown_chunker_preserves_heading_and_complete_table(self) -> None:
+        text = "# 지표\n\n설명입니다.\n\n| 연령 | 기준 |\n|---|---|\n| 30대 | 70% |\n\n## 해석\n\n후속 설명"
+        document = make_document("markdown", text)
+        chunks = MarkdownStructureChunker(chunk_size=45, overlap=8).chunk_document(
+            document
+        )
+
+        table = "| 연령 | 기준 |\n|---|---|\n| 30대 | 70% |"
+        self.assertTrue(any(table in chunk.text for chunk in chunks))
+        self.assertTrue(
+            all(chunk.text == text[chunk.start_offset:chunk.end_offset] for chunk in chunks)
+        )
+
     def test_build_uses_idempotent_upsert(self) -> None:
         documents = [make_document("source-a", "연금저축 세액공제 안내")]
         target = IndexTarget("synthetic_financial", "v1")
@@ -97,7 +117,7 @@ class PipelineTestCase(unittest.TestCase):
     def test_collection_policy_rejects_mixed_or_unapproved_documents(self) -> None:
         mixed = [
             make_document("finance", "금융 지식"),
-            make_document("guide", "필드 가이드", kind="interface_guide"),
+            make_document("guide", "필드 가이드", kind="interface-guide"),
         ]
         with self.assertRaisesRegex(ValueError, "separate collections"):
             self.pipeline.build(mixed, IndexTarget("synthetic_mixed", "v1"))
@@ -107,10 +127,34 @@ class PipelineTestCase(unittest.TestCase):
         ]
         with self.assertRaisesRegex(ValueError, "non-synthetic"):
             self.pipeline.build(pending, IndexTarget("synthetic_financial", "v1"))
+        operational = IndexPipeline(
+            store=self.store,
+            chunker=self.chunker,
+            embedding=self.embedding,
+            approved_sources={"pending": "1.0"},
+        )
         with self.assertRaisesRegex(ValueError, "unapproved"):
-            self.pipeline.build(
+            operational.build(
                 pending,
-                IndexTarget("financial_knowledge", "v1", operational=True),
+                IndexTarget("financial-knowledge", "v1", operational=True),
+            )
+
+        approved = make_document(
+            "approved",
+            "승인 문서",
+            review_status="approved",
+            collection="financial-knowledge",
+        )
+        wrong_version = IndexPipeline(
+            store=self.store,
+            chunker=self.chunker,
+            embedding=self.embedding,
+            approved_sources={"approved": "2.0"},
+        )
+        with self.assertRaisesRegex(ValueError, "source id/version"):
+            wrong_version.build(
+                [approved],
+                IndexTarget("financial-knowledge", "v1", operational=True),
             )
 
         duplicate_versions = [
@@ -134,7 +178,7 @@ class PipelineTestCase(unittest.TestCase):
         failing = evaluate_retriever(
             retriever=retriever,
             manifest=manifest,
-            gold_queries=[GoldQuery("missing", "없는 근거", ("not-indexed",))],
+            gold_queries=[GoldQuery("missing", "없는 근거", ("pension",))],
             top_k=2,
             thresholds=EvaluationThresholds(0.85, 0.70),
         )
@@ -201,6 +245,34 @@ class PipelineTestCase(unittest.TestCase):
 
 
 class FixtureAndAdapterTestCase(unittest.TestCase):
+    def test_domain_approved_catalog_maps_all_files_and_provenance(self) -> None:
+        repository_root = RAG_DIR.parents[1]
+        catalog = load_approved_catalog(
+            RAG_DIR / "data" / "catalog.json",
+            repository_root=repository_root,
+        )
+
+        self.assertEqual(catalog.catalog_version, "2.1.0")
+        self.assertEqual(len(catalog.for_collection("interface-guides")), 10)
+        self.assertEqual(len(catalog.for_collection("financial-knowledge")), 14)
+        self.assertTrue(
+            all(document.metadata.review_status == "approved" for document in catalog.documents)
+        )
+        self.assertTrue(
+            all(len(document.metadata.sha256) == 64 for document in catalog.documents)
+        )
+
+    def test_catalog_rejects_unapproved_acceptance_before_reading_files(self) -> None:
+        payload = json.loads(
+            (RAG_DIR / "data" / "catalog.json").read_text(encoding="utf-8")
+        )
+        payload["acceptance"]["status"] = "pending"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "catalog.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "domain-approved"):
+                load_approved_catalog(path, repository_root=RAG_DIR.parents[1])
+
     def test_synthetic_fixtures_are_valid_and_evaluable(self) -> None:
         documents = load_corpus(SYNTHETIC_DIR / "corpus.json")
         gold = load_gold_queries(SYNTHETIC_DIR / "gold.json")
@@ -256,6 +328,36 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                 payload["active_collection"],
                 "synthetic_financial_knowledge__v1",
             )
+
+    def test_negative_query_fails_when_retriever_returns_false_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = JsonVectorStore(Path(directory))
+            embedding = DeterministicHashEmbedding(64)
+            pipeline = IndexPipeline(
+                store=store,
+                chunker=DeterministicChunker(80, 10),
+                embedding=embedding,
+            )
+            manifest = pipeline.build(
+                [make_document("pension", "퇴직연금 제도 안내")],
+                IndexTarget("synthetic_financial", "v1"),
+            )
+            report = evaluate_retriever(
+                retriever=IndexedRetriever(
+                    store=store,
+                    embedding=embedding,
+                    minimum_dense_score=0.0,
+                ),
+                manifest=manifest,
+                gold_queries=[
+                    GoldQuery("positive", "퇴직연금", ("pension",)),
+                    GoldQuery("negative", "오늘 날씨", (), category="no_result"),
+                ],
+                top_k=1,
+            )
+
+            self.assertEqual(report.false_evidence_count, 1)
+            self.assertFalse(report.passed)
 
 
 if __name__ == "__main__":
