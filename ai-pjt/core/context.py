@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
+from hashlib import sha256
 from math import ceil
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Protocol
@@ -9,8 +10,9 @@ import json
 import unicodedata
 
 
-ScopePart = str | int
 MESSAGE_OVERHEAD_UNITS = 4
+CONTEXT_SCHEMA_VERSION = "1.0"
+CONTEXT_CHECKPOINT_NAMESPACE = "ai-context-v1"
 
 
 def _freeze_facts(facts: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -24,27 +26,117 @@ def _freeze_facts(facts: Mapping[str, Any]) -> Mapping[str, Any]:
 
 @dataclass(frozen=True)
 class ContextScope:
-    """Internal isolation key awaiting the F02 Django-owned identity adapter.
+    """Django-owned session and opaque conversation identity.
 
-    The D1 ``thread_id`` is an opaque user/session composite. F02 must bind it
-    to a Django-validated owner and session; AI code must not parse raw IDs from
-    the string itself.
+    Django validates the user/session ownership before issuing ``thread_id``.
+    AI code deliberately does not parse a user identifier from that value.
     """
 
-    user_id: ScopePart
-    session_id: ScopePart
-    thread_id: ScopePart
+    session_id: int
+    thread_id: str
 
     def __post_init__(self) -> None:
-        for name, value in (
-            ("user_id", self.user_id),
-            ("session_id", self.session_id),
-            ("thread_id", self.thread_id),
-        ):
-            if isinstance(value, bool) or not isinstance(value, (str, int)):
-                raise TypeError(f"{name} must be a string or integer")
-            if isinstance(value, str) and not value.strip():
-                raise ValueError(f"{name} must not be blank")
+        if isinstance(self.session_id, bool) or not isinstance(self.session_id, int):
+            raise TypeError("session_id must be an integer")
+        if self.session_id <= 0:
+            raise ValueError("session_id must be greater than 0")
+        if not isinstance(self.thread_id, str):
+            raise TypeError("thread_id must be a string")
+        if not self.thread_id.strip():
+            raise ValueError("thread_id must not be blank")
+
+    def to_state(self) -> dict[str, Any]:
+        return {
+            "schema_version": CONTEXT_SCHEMA_VERSION,
+            "session_id": self.session_id,
+            "thread_id": self.thread_id,
+        }
+
+    @classmethod
+    def from_state(cls, payload: Mapping[str, Any]) -> ContextScope:
+        if payload.get("schema_version") != CONTEXT_SCHEMA_VERSION:
+            raise ContextIsolationError("unsupported context scope schema")
+        return cls(
+            session_id=payload.get("session_id"),
+            thread_id=payload.get("thread_id"),
+        )
+
+
+class ContextIsolationError(RuntimeError):
+    """Raised when persisted state is not bound to the requested scope."""
+
+
+def checkpoint_thread_key(scope: ContextScope) -> str:
+    """Return a stable, opaque checkpointer key for exactly one scope."""
+
+    canonical = json.dumps(
+        {"session_id": scope.session_id, "thread_id": scope.thread_id},
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return f"ai-context-v1:{sha256(canonical).hexdigest()}"
+
+
+def checkpoint_config(scope: ContextScope) -> dict[str, dict[str, str]]:
+    """Build the only supported LangGraph checkpoint configuration."""
+
+    return {
+        "configurable": {
+            "thread_id": checkpoint_thread_key(scope),
+            "checkpoint_ns": CONTEXT_CHECKPOINT_NAMESPACE,
+        }
+    }
+
+
+def validate_persisted_scope(
+    payload: Mapping[str, Any],
+    expected: ContextScope,
+) -> None:
+    """Fail closed when a checkpoint claims a different session/thread scope."""
+
+    persisted = ContextScope.from_state(payload)
+    if persisted != expected:
+        raise ContextIsolationError("persisted context scope does not match request")
+
+
+class AsyncContextCheckpointer(Protocol):
+    async def aget_tuple(self, config: Mapping[str, Any]) -> Any:
+        """Read the latest checkpoint tuple for a graph config."""
+
+    async def adelete_thread(self, thread_id: str) -> None:
+        """Delete every checkpoint namespace and write for a thread key."""
+
+
+class ContextStateAPI:
+    """Small state boundary shared by transport, graph, and deletion adapters."""
+
+    def __init__(self, checkpointer: AsyncContextCheckpointer) -> None:
+        self._checkpointer = checkpointer
+
+    @staticmethod
+    def config_for(scope: ContextScope) -> dict[str, dict[str, str]]:
+        return checkpoint_config(scope)
+
+    async def read_values(self, scope: ContextScope) -> Mapping[str, Any] | None:
+        checkpoint_tuple = await self._checkpointer.aget_tuple(checkpoint_config(scope))
+        if checkpoint_tuple is None:
+            return None
+
+        checkpoint = getattr(checkpoint_tuple, "checkpoint", None)
+        if not isinstance(checkpoint, Mapping):
+            raise ContextIsolationError("checkpoint tuple has no readable checkpoint")
+        values = checkpoint.get("channel_values")
+        if not isinstance(values, Mapping):
+            raise ContextIsolationError("checkpoint has no readable channel values")
+        persisted_scope = values.get("context_scope")
+        if not isinstance(persisted_scope, Mapping):
+            raise ContextIsolationError("checkpoint has no context scope")
+        validate_persisted_scope(persisted_scope, scope)
+        return MappingProxyType(deepcopy(dict(values)))
+
+    async def delete_scope(self, scope: ContextScope) -> None:
+        await self._checkpointer.adelete_thread(checkpoint_thread_key(scope))
 
 
 @dataclass(frozen=True)

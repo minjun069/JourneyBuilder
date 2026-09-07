@@ -12,11 +12,16 @@ sys.path.insert(0, str(AI_PROJECT_ROOT))
 
 from core.context import (  # noqa: E402
     ApproximateUnitCounter,
+    CONTEXT_CHECKPOINT_NAMESPACE,
     ContextBudgetPolicy,
+    ContextIsolationError,
     ContextScope,
+    ContextStateAPI,
     ConversationTurn,
     FakeContextStore,
     build_context_window,
+    checkpoint_config,
+    checkpoint_thread_key,
     resolve_confirmed_facts,
 )
 
@@ -65,11 +70,87 @@ class ApproximateUnitCounterTests(unittest.TestCase):
 
 
 class ContextScopeTests(unittest.TestCase):
-    def test_rejects_blank_or_boolean_scope_parts(self) -> None:
+    def test_rejects_invalid_scope_parts(self) -> None:
         with self.assertRaises(ValueError):
-            ContextScope(user_id="", session_id=1, thread_id="thread")
+            ContextScope(session_id=0, thread_id="thread")
         with self.assertRaises(TypeError):
-            ContextScope(user_id=True, session_id=1, thread_id="thread")
+            ContextScope(session_id=True, thread_id="thread")
+        with self.assertRaises(ValueError):
+            ContextScope(session_id=1, thread_id="")
+
+    def test_checkpoint_key_is_stable_opaque_and_scope_specific(self) -> None:
+        first = ContextScope(session_id=1, thread_id="user-3-session-1")
+        same = ContextScope(session_id=1, thread_id="user-3-session-1")
+        other_session = ContextScope(session_id=2, thread_id="user-3-session-1")
+
+        self.assertEqual(checkpoint_thread_key(first), checkpoint_thread_key(same))
+        self.assertNotEqual(
+            checkpoint_thread_key(first),
+            checkpoint_thread_key(other_session),
+        )
+        self.assertNotIn(first.thread_id, checkpoint_thread_key(first))
+        self.assertEqual(
+            checkpoint_config(first)["configurable"]["checkpoint_ns"],
+            CONTEXT_CHECKPOINT_NAMESPACE,
+        )
+
+
+class ContextStateAPITests(unittest.IsolatedAsyncioTestCase):
+    class FakeCheckpointer:
+        def __init__(self, values: dict[str, object] | None = None) -> None:
+            if values is None:
+                self.result = None
+            else:
+                self.result = type(
+                    "CheckpointTuple",
+                    (),
+                    {"checkpoint": {"channel_values": values}},
+                )()
+            self.read_configs: list[object] = []
+            self.deleted_thread_ids: list[str] = []
+
+        async def aget_tuple(self, config):
+            self.read_configs.append(config)
+            return self.result
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            self.deleted_thread_ids.append(thread_id)
+
+    async def test_reads_only_state_bound_to_requested_scope(self) -> None:
+        scope = ContextScope(session_id=1, thread_id="thread-a")
+        checkpointer = self.FakeCheckpointer(
+            {
+                "context_scope": scope.to_state(),
+                "conversation_context": {"schema_version": "1.0"},
+            }
+        )
+        api = ContextStateAPI(checkpointer)
+
+        values = await api.read_values(scope)
+
+        self.assertEqual(values["context_scope"], scope.to_state())
+        self.assertEqual(checkpointer.read_configs, [checkpoint_config(scope)])
+
+    async def test_rejects_checkpoint_with_mismatched_embedded_scope(self) -> None:
+        requested = ContextScope(session_id=1, thread_id="thread-a")
+        foreign = ContextScope(session_id=2, thread_id="thread-a")
+        api = ContextStateAPI(
+            self.FakeCheckpointer({"context_scope": foreign.to_state()})
+        )
+
+        with self.assertRaises(ContextIsolationError):
+            await api.read_values(requested)
+
+    async def test_deletes_all_checkpoints_for_the_opaque_scope_key(self) -> None:
+        scope = ContextScope(session_id=1, thread_id="thread-a")
+        checkpointer = self.FakeCheckpointer()
+
+        await ContextStateAPI(checkpointer).delete_scope(scope)
+
+        self.assertEqual(
+            checkpointer.deleted_thread_ids,
+            [checkpoint_thread_key(scope)],
+        )
 
 
 class ConfirmedFactResolutionTests(unittest.TestCase):
@@ -112,7 +193,7 @@ class ConfirmedFactResolutionTests(unittest.TestCase):
 class FakeContextStoreTests(unittest.TestCase):
     def test_same_turn_is_idempotent_but_conflict_is_rejected(self) -> None:
         store = FakeContextStore()
-        scope = ContextScope("user-a", "session-a", "thread-a")
+        scope = ContextScope(session_id=1, thread_id="thread-a")
         original = _turn("turn-1", facts={"income.monthly": 100})
 
         store.append(scope, original)
@@ -124,9 +205,9 @@ class FakeContextStoreTests(unittest.TestCase):
 
     def test_composite_scope_prevents_user_and_session_leaks(self) -> None:
         store = FakeContextStore()
-        target = ContextScope("user-a", "session-a", "thread-shared")
-        other_user = ContextScope("user-b", "session-a", "thread-shared")
-        other_session = ContextScope("user-a", "session-b", "thread-shared")
+        target = ContextScope(session_id=1, thread_id="user-a-thread")
+        other_user = ContextScope(session_id=1, thread_id="user-b-thread")
+        other_session = ContextScope(session_id=2, thread_id="user-a-thread")
 
         store.append(target, _turn("target", facts={"target.value": 1}))
         store.append(other_user, _turn("other-user", facts={"secret.user": 2}))
@@ -149,7 +230,7 @@ class ContextWindowTests(unittest.TestCase):
                 return 10
 
         store = FakeContextStore()
-        scope = ContextScope("user", "session", "thread")
+        scope = ContextScope(session_id=1, thread_id="thread")
         store.append(scope, _turn("turn-1"))
 
         window = build_context_window(
@@ -169,7 +250,7 @@ class ContextWindowTests(unittest.TestCase):
 
     def test_latest_fact_and_current_snapshot_win(self) -> None:
         store = FakeContextStore()
-        scope = ContextScope("user", "session", "thread")
+        scope = ContextScope(session_id=1, thread_id="thread")
         for index, amount in enumerate((100, 200, 300), start=1):
             store.append(
                 scope,
@@ -192,7 +273,7 @@ class ContextWindowTests(unittest.TestCase):
 
     def test_turn_limit_keeps_a_contiguous_recent_suffix(self) -> None:
         store = FakeContextStore()
-        scope = ContextScope("user", "session", "thread")
+        scope = ContextScope(session_id=1, thread_id="thread")
         for index in range(6):
             store.append(
                 scope,
@@ -218,7 +299,7 @@ class ContextWindowTests(unittest.TestCase):
 
     def test_unit_limit_never_skips_newest_turn_for_an_older_one(self) -> None:
         store = FakeContextStore()
-        scope = ContextScope("user", "session", "thread")
+        scope = ContextScope(session_id=1, thread_id="thread")
         store.append(scope, _turn("short-old", user_message="짧음"))
         store.append(scope, _turn("long-new", user_message="긴메시지" * 20))
 
@@ -239,7 +320,7 @@ class ContextWindowTests(unittest.TestCase):
 
     def test_summary_does_not_repeat_a_fact_superseded_by_retained_history(self) -> None:
         store = FakeContextStore()
-        scope = ContextScope("user", "session", "thread")
+        scope = ContextScope(session_id=1, thread_id="thread")
         store.append(scope, _turn("old", facts={"income.monthly": 100}))
         store.append(scope, _turn("new", facts={"income.monthly": 200}))
 
@@ -289,7 +370,7 @@ class ScenarioMatrixTests(unittest.TestCase):
         turn_count = int(scenario["turn_count"])
         scenario_id = str(scenario["id"])
         store = FakeContextStore()
-        target = ContextScope("user-a", "session-a", "thread-shared")
+        target = ContextScope(session_id=1, thread_id="user-a-thread")
 
         for index in range(turn_count):
             facts: dict[str, object] = {}
@@ -344,9 +425,9 @@ class ScenarioMatrixTests(unittest.TestCase):
 
         if category in {"user_isolation", "session_isolation"}:
             if category == "user_isolation":
-                foreign = ContextScope("user-b", "session-a", "thread-shared")
+                foreign = ContextScope(session_id=1, thread_id="user-b-thread")
             else:
-                foreign = ContextScope("user-a", "session-b", "thread-shared")
+                foreign = ContextScope(session_id=2, thread_id="user-a-thread")
             store.append(
                 foreign,
                 _turn(
