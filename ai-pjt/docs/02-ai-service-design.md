@@ -137,11 +137,11 @@ AI 처리가 완료되면 `callback_url`로 POST합니다.
   "request_id": "ai_req_...",
   "session_id": 1,
   "status": "completed",
-  "content": "은퇴 희망 나이는 예상 생활비와 국민연금 수령 시점을 함께 고려해 정하면 좋습니다.",
-  "extracted_data": {
+  "thread_id": "user-3-session-1",
+  "output": {
+    "response": "은퇴 희망 나이는 예상 생활비와 국민연금 수령 시점을 함께 고려해 정하면 좋습니다.",
     "intent": "qa",
-    "requires_approval": false,
-    "pending_changes": []
+    "update": {}
   }
 }
 ```
@@ -153,18 +153,13 @@ AI 처리가 완료되면 `callback_url`로 POST합니다.
   "request_id": "ai_req_...",
   "session_id": 1,
   "status": "completed",
-  "content": "월 소득 300만원, 은퇴 희망 나이 60세로 이해했어요. 이대로 입력할까요?",
-  "extracted_data": {
+  "thread_id": "user-3-session-1",
+  "output": {
+    "response": "월 소득 300만원, 은퇴 희망 나이 60세로 이해했어요. 이대로 입력할까요?",
     "intent": "input_assist",
-    "requires_approval": true,
-    "pending_changes": [
-      {
-        "section": "basic_info",
-        "field": "monthly_income",
-        "value": 3000000,
-        "label": "monthly_income"
-      }
-    ]
+    "update": {
+      "monthly_income": 3000000
+    }
   }
 }
 ```
@@ -176,7 +171,7 @@ AI 처리가 완료되면 `callback_url`로 POST합니다.
   "request_id": "ai_req_...",
   "session_id": 1,
   "status": "failed",
-  "error": "LLM 호출 실패"
+  "error_code": "AI_PROCESSING_FAILED"
 }
 ```
 
@@ -201,5 +196,5 @@ AI 처리가 완료되면 `callback_url`로 POST합니다.
 | `LLM_MODEL` | `gpt-4o-mini` | 사용할 모델명 |
 | `DATABASE_URL` | `postgresql://...` | Checkpointer용 PostgreSQL |
 | `REDIS_URL` | `redis://redis:6379` | Redis 전환 시 사용 |
-| `BACKEND_URL` | `http://backend:8000` | callback_url이 없을 때 사용할 Django 주소 |
 | `AI_CALLBACK_SECRET` | - | 선택. callback 요청에 포함할 내부 시크릿 |
+| `AI_CALLBACK_TIMEOUT_SECONDS` | `10` | Django callback 요청 제한 시간 |

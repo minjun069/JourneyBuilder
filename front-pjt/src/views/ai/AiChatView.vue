@@ -307,6 +307,10 @@ async function sendMessage() {
     await new Promise((r) => setTimeout(r, 3000))
     try {
       const result = await aiStore.receiveMessage()
+      if (result?.status === 'failed') {
+        streamAiMessages([{ text: result.error ?? 'AI 응답 생성에 실패했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
+        return
+      }
       if (result) {
         const { messageId, message, action } = result
         const proposal = action?.type === 'form_change' ? action : null
@@ -366,16 +370,24 @@ async function approveFormUpdate(msg) {
     }
     return
   }
-  await aiStore.approveAction(action.messageId)
-  dismissAction(msg)
+  try {
+    await aiStore.approveAction(action.messageId)
+    dismissAction(msg)
+  } catch {
+    streamAiMessages([{ text: 'AI 입력 제안을 저장하지 못했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
+  }
 }
 
 async function rejectFormUpdate(msg) {
   const action = msg.action
-  if (action.target !== 'draft_form') {
-    await aiStore.rejectAction(action.messageId)
+  try {
+    if (action.target !== 'draft_form') {
+      await aiStore.rejectAction(action.messageId)
+    }
+    dismissAction(msg)
+  } catch {
+    streamAiMessages([{ text: 'AI 입력 제안을 거절 처리하지 못했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
   }
-  dismissAction(msg)
 }
 
 function handleConsent() {

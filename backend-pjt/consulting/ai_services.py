@@ -155,11 +155,13 @@ def build_customer_info(session, form_data=None):
 def build_ai_request_payload(request_id, session, user, message, step_id, form_data=None):
     return {
         'request_id': request_id,
+        'session_id': session.id,
         'thread_id': build_thread_id(user, session),
         'step_id': step_id,
         'message': message,
         'customer_info': build_customer_info(session, form_data),
         'field_registry': get_step_field_registry(step_id),
+        'callback_url': settings.AI_CALLBACK_URL,
     }
 
 

@@ -110,6 +110,9 @@ class Settings:
         self.ai_callback_secret = active_environ.get(
             "AI_CALLBACK_SECRET", ""
         ).strip()
+        self.callback_timeout_seconds = float(
+            active_environ.get("AI_CALLBACK_TIMEOUT_SECONDS", "10")
+        )
 
         self.langfuse_enabled = _read_bool(
             "LANGFUSE_ENABLED", False, active_environ
