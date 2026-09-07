@@ -32,8 +32,11 @@ class M2L02PureRouterContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         from graph.router import select_route
+        from graph.task_contracts import blocked_task_result, validate_task_result
 
         cls.select_route = staticmethod(select_route)
+        cls.blocked_task_result = staticmethod(blocked_task_result)
+        cls.validate_task_result = staticmethod(validate_task_result)
         cls.fixture = load_evaluation_fixture()
         cls.step_candidates = load_contract_step_candidates()
 
@@ -64,6 +67,43 @@ class M2L02PureRouterContractTests(unittest.TestCase):
                         classifier.calls[0]["candidates"],
                         tuple(self.step_candidates[case["step_id"]]),
                     )
+
+    def test_typed_result_and_dependency_failure_smoke(self) -> None:
+        lookup_task = {
+            "id": "task-1",
+            "depends_on": [],
+            "produces": "reference_value",
+        }
+        completed = self.validate_task_result(
+            task=lookup_task,
+            result={
+                "task_id": "task-1",
+                "status": "completed",
+                "artifact": {
+                    "type": "reference_value",
+                    "value": 2_500_000,
+                    "unit": "KRW",
+                    "period": "month",
+                    "population": "40대",
+                    "source_id": "approved-statistics-2026",
+                    "as_of": "2026-06-30",
+                },
+            },
+            step_id="financial-goals",
+        )
+        self.assertTrue(completed.valid)
+
+        dependent_task = {
+            "id": "task-2",
+            "depends_on": ["task-1"],
+            "produces": "form_change",
+        }
+        blocked = self.validate_task_result(
+            task=dependent_task,
+            result=self.blocked_task_result("task-2", "task-1"),
+            step_id="financial-goals",
+        )
+        self.assertTrue(blocked.valid)
 
 
 if __name__ == "__main__":
