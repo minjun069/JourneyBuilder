@@ -116,8 +116,9 @@ class ContextScopeTests(unittest.TestCase):
         self.assertNotIn(first.thread_id, checkpoint_thread_key(first))
         self.assertEqual(
             checkpoint_config(first)["configurable"]["checkpoint_ns"],
-            CONTEXT_CHECKPOINT_NAMESPACE,
+            "",
         )
+        self.assertEqual(CONTEXT_CHECKPOINT_NAMESPACE, "")
 
 
 class ContextStateAPITests(unittest.IsolatedAsyncioTestCase):
