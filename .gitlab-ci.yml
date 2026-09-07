@@ -41,9 +41,12 @@ workflow:
       when: never
     - if: $CI_COMMIT_BRANCH
 
-# ── 결정적 검사: 산출물 정합성 (Makefile g1-foundation). 표준 라이브러리 + git 만 필요 → 호스트 python3 ──
+# ── 산출물 정합성 게이트 (Makefile g1-foundation, g1_gate.py — 강병민 작성 2026-09-06) ──
+# AI 문서·매니페스트·RAG 해시 거버넌스를 검사한다. 작성자 개인 규율 도구 성격이라 다른 팀원의 MR 을 막지 않도록
+# allow_failure 로 둔다(결과는 보임). 팀 게이트로 쓰기로 합의(A18)되면 allow_failure 를 제거한다.
 test:foundation:
   stage: test
+  allow_failure: true
   script:
     - python3 --version
     - python3 g1_gate.py
