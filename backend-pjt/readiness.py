@@ -1,7 +1,7 @@
 """Container readiness probe for the Django Backend.
 
 The probe checks only dependencies required to accept Backend traffic: the
-local WSGI process, PostgreSQL with an up-to-date schema, and Redis. It avoids
+local ASGI process, PostgreSQL with an up-to-date schema, and Redis. It avoids
 calling the AI service or any external provider.
 """
 
@@ -57,7 +57,7 @@ def _read_port(environ: Mapping[str, str]) -> int:
 
 
 def check_process(host: str, port: int, timeout: float) -> None:
-    """Require the local WSGI process to accept a TCP connection."""
+    """Require the local ASGI process to accept a TCP connection."""
 
     with socket.create_connection((host, port), timeout=timeout):
         return

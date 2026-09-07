@@ -1,5 +1,5 @@
 import json
-from collections.abc import Iterable, Iterator
+from collections.abc import AsyncIterable, AsyncIterator, Iterable, Iterator
 from typing import Any
 
 
@@ -17,6 +17,36 @@ def iter_sse_events(lines: Iterable[str | bytes]) -> Iterator[tuple[str, dict[st
     data_lines: list[str] = []
 
     for raw_line in lines:
+        line = raw_line.decode('utf-8') if isinstance(raw_line, bytes) else raw_line
+        if line == '':
+            if data_lines:
+                yield event_name, _decode_data(data_lines)
+            event_name = 'message'
+            data_lines = []
+            continue
+
+        if line.startswith(':'):
+            continue
+
+        field, separator, value = line.partition(':')
+        if separator and value.startswith(' '):
+            value = value[1:]
+        if field == 'event':
+            event_name = value
+        elif field == 'data':
+            data_lines.append(value)
+
+    if data_lines:
+        yield event_name, _decode_data(data_lines)
+
+
+async def aiter_sse_events(
+    lines: AsyncIterable[str | bytes],
+) -> AsyncIterator[tuple[str, dict[str, Any]]]:
+    event_name = 'message'
+    data_lines: list[str] = []
+
+    async for raw_line in lines:
         line = raw_line.decode('utf-8') if isinstance(raw_line, bytes) else raw_line
         if line == '':
             if data_lines:

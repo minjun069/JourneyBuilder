@@ -1,11 +1,12 @@
 import json
+import asyncio
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from .sse import SSEProtocolError, encode_sse, iter_sse_events
+from .sse import SSEProtocolError, aiter_sse_events, encode_sse, iter_sse_events
 from .ai_services import stream_ai_response
 from .views import MessageStreamView, _proxy_ai_stream
 
@@ -13,6 +14,15 @@ from .views import MessageStreamView, _proxy_ai_stream
 def parse_frame(frame):
     lines = frame.rstrip('\n').splitlines()
     return lines[0].removeprefix('event: '), json.loads(lines[1].removeprefix('data: '))
+
+
+async def async_items(items):
+    for item in items:
+        yield item
+
+
+async def collect_async(iterable):
+    return [item async for item in iterable]
 
 
 def ai_payload():
@@ -44,6 +54,15 @@ class SSEParserTests(SimpleTestCase):
         with self.assertRaises(SSEProtocolError):
             list(iter_sse_events(['event: delta', 'data: ["invalid"]', '']))
 
+    def test_async_parser_decodes_events_without_buffering_the_stream(self):
+        events = asyncio.run(collect_async(aiter_sse_events(async_items([
+            'event: delta',
+            'data: {"content":"은퇴"}',
+            '',
+        ]))))
+
+        self.assertEqual(events, [('delta', {'content': '은퇴'})])
+
 
 class AIStreamClientTests(SimpleTestCase):
     @override_settings(
@@ -52,23 +71,30 @@ class AIStreamClientTests(SimpleTestCase):
         AI_STREAM_READ_TIMEOUT_SECONDS=120,
         AI_CALLBACK_SECRET='internal-secret',
     )
-    @patch('httpx.stream')
-    def test_stream_client_uses_stream_url_and_excludes_callback(self, httpx_stream):
+    @patch('httpx.AsyncClient')
+    def test_stream_client_uses_stream_url_and_excludes_callback(self, async_client_class):
+        client = MagicMock()
         response = MagicMock()
-        response.iter_lines.return_value = iter(['event: done', 'data: {}', ''])
-        httpx_stream.return_value.__enter__.return_value = response
+        response.aiter_lines.return_value = async_items(['event: done', 'data: {}', ''])
+        stream_context = MagicMock()
+        stream_context.__aenter__ = AsyncMock(return_value=response)
+        stream_context.__aexit__ = AsyncMock(return_value=None)
+        client.stream.return_value = stream_context
+        async_client_class.return_value.__aenter__ = AsyncMock(return_value=client)
+        async_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        lines = list(stream_ai_response(ai_payload()))
+        lines = asyncio.run(collect_async(stream_ai_response(ai_payload())))
 
         self.assertEqual(lines, ['event: done', 'data: {}', ''])
         response.raise_for_status.assert_called_once_with()
-        kwargs = httpx_stream.call_args.kwargs
-        self.assertEqual(httpx_stream.call_args.args[:2], ('POST', 'http://ai-pjt:8001/chat/stream'))
+        kwargs = client.stream.call_args.kwargs
+        self.assertEqual(client.stream.call_args.args[:2], ('POST', 'http://ai-pjt:8001/chat/stream'))
         self.assertNotIn('callback_url', kwargs['json'])
         self.assertEqual(kwargs['headers']['Accept'], 'text/event-stream')
         self.assertEqual(kwargs['headers']['X-Internal-Secret'], 'internal-secret')
-        self.assertEqual(kwargs['timeout'].connect, 5)
-        self.assertEqual(kwargs['timeout'].read, 120)
+        timeout = async_client_class.call_args.kwargs['timeout']
+        self.assertEqual(timeout.connect, 5)
+        self.assertEqual(timeout.read, 120)
 
 
 class SSEProxyTests(SimpleTestCase):
@@ -79,7 +105,7 @@ class SSEProxyTests(SimpleTestCase):
         stream_ai_response,
         create_message,
     ):
-        stream_ai_response.return_value = iter([
+        stream_ai_response.return_value = async_items([
             'event: start',
             'data: {"request_id":"ai_req_stream_test","session_id":12}',
             '',
@@ -102,15 +128,14 @@ class SSEProxyTests(SimpleTestCase):
             },
         )
 
-        frames = [
-            parse_frame(frame)
-            for frame in _proxy_ai_stream(
+        frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
+            _proxy_ai_stream(
                 SimpleNamespace(id=12),
                 ai_payload(),
                 'general',
                 41,
             )
-        ]
+        ))]
 
         self.assertEqual([event for event, _ in frames], ['start', 'delta', 'done'])
         self.assertEqual(frames[0][1]['user_message_id'], 41)
@@ -127,21 +152,20 @@ class SSEProxyTests(SimpleTestCase):
         stream_ai_response,
         create_message,
     ):
-        stream_ai_response.return_value = iter([
+        stream_ai_response.return_value = async_items([
             'event: delta',
             'data: {"request_id":"another_request","content":"잘못된 응답"}',
             '',
         ])
 
-        frames = [
-            parse_frame(frame)
-            for frame in _proxy_ai_stream(
+        frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
+            _proxy_ai_stream(
                 SimpleNamespace(id=12),
                 ai_payload(),
                 'general',
                 41,
             )
-        ]
+        ))]
 
         self.assertEqual([event for event, _ in frames], ['start', 'error'])
         self.assertNotIn('another_request', str(frames))
@@ -154,7 +178,7 @@ class SSEProxyTests(SimpleTestCase):
         stream_ai_response,
         create_message,
     ):
-        stream_ai_response.return_value = iter([
+        stream_ai_response.return_value = async_items([
             'event: delta',
             'data: {"request_id":"ai_req_stream_test","content":"일부"}',
             '',
@@ -163,15 +187,14 @@ class SSEProxyTests(SimpleTestCase):
             '',
         ])
 
-        frames = [
-            parse_frame(frame)
-            for frame in _proxy_ai_stream(
+        frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
+            _proxy_ai_stream(
                 SimpleNamespace(id=12),
                 ai_payload(),
                 'general',
                 41,
             )
-        ]
+        ))]
 
         self.assertEqual([event for event, _ in frames], ['start', 'delta', 'error'])
         self.assertNotIn('internal detail', str(frames))
@@ -199,7 +222,9 @@ class MessageStreamViewTests(SimpleTestCase):
         get_session.return_value = session
         create_user_message.return_value = SimpleNamespace(id=41, content='은퇴 준비를 알려줘')
         build_payload.return_value = ai_payload()
-        proxy_stream.return_value = iter([encode_sse('start', {'request_id': 'ai_req_stream_test'})])
+        proxy_stream.return_value = async_items([
+            encode_sse('start', {'request_id': 'ai_req_stream_test'}),
+        ])
         user = SimpleNamespace(id=3, is_authenticated=True)
         request = self.factory.post(
             '/messages/stream/',
@@ -209,7 +234,7 @@ class MessageStreamViewTests(SimpleTestCase):
         force_authenticate(request, user=user)
 
         response = MessageStreamView.as_view()(request, session_id=12)
-        body = b''.join(response.streaming_content).decode('utf-8')
+        body = b''.join(asyncio.run(collect_async(response.streaming_content))).decode('utf-8')
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response['Content-Type'].startswith('text/event-stream'))

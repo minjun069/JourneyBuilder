@@ -184,7 +184,7 @@ def dispatch_ai_request(payload):
     response.raise_for_status()
 
 
-def stream_ai_response(payload):
+async def stream_ai_response(payload):
     try:
         import httpx
     except ImportError as exc:
@@ -205,15 +205,16 @@ def stream_ai_response(payload):
         write=settings.AI_SERVICE_TIMEOUT_SECONDS,
         pool=settings.AI_SERVICE_TIMEOUT_SECONDS,
     )
-    with httpx.stream(
-        'POST',
-        settings.AI_SERVICE_STREAM_URL,
-        json=stream_payload,
-        headers=headers,
-        timeout=timeout,
-    ) as response:
-        response.raise_for_status()
-        yield from response.iter_lines()
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        async with client.stream(
+            'POST',
+            settings.AI_SERVICE_STREAM_URL,
+            json=stream_payload,
+            headers=headers,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                yield line
 
 
 def normalize_pending_changes(update, default_section=None):
