@@ -1,7 +1,20 @@
 {
-  "catalog_version": "1.0.0",
-  "as_of_date": "2026-09-04",
+  "catalog_version": "2.1.0",
+  "as_of_date": "2026-09-07",
   "hash_algorithm": "sha256",
+  "acceptance": {
+    "status": "domain-approved",
+    "approved_at": "2026-09-07",
+    "approved_scope": [
+      "required",
+      "recommended"
+    ],
+    "service_boundary": "재무정보 수집·현황 분석·재무목표·은퇴진단까지. 보험·교육·상속·투자상품 전용 설계와 상품 추천·실행은 제외",
+    "reviewed_by": "product-domain-owner",
+    "license": "프로젝트가 작성한 요약·사실 문서만 적재하며 외부 원문은 복제하지 않음",
+    "sensitivity": "public",
+    "source_material_policy": "공식 1차 출처와 사용자 제공 참고자료를 검토하되 사용자별 재무정보와 외부 원문 파일은 적재하지 않음"
+  },
   "collections": [
     {
       "id": "interface-guides",
@@ -20,7 +33,7 @@
       "consumers": [
         "qa"
       ],
-      "purpose": "공식 출처로 확인한 금융 제도·세제 지식 제공"
+      "purpose": "공식 출처로 확인한 금융 사실과 승인된 내부 진단·가정·상담 정책 제공"
     }
   ],
   "documents": [
@@ -285,8 +298,8 @@
       "document_type": "financial-knowledge",
       "collection": "financial-knowledge",
       "path": "ai-pjt/rag/data/financial-knowledge/national-pension-old-age.md",
-      "as_of_date": "2026-09-04",
-      "version": "1.0.0",
+      "as_of_date": "2026-09-07",
+      "version": "2.0.0",
       "applies_to": {
         "country": "KR",
         "topic": "national-pension-old-age"
@@ -299,7 +312,7 @@
         ]
       },
       "retire_when": "현행 국민연금법 또는 국민연금공단의 대체 안내와 내용이 달라질 때",
-      "sha256": "e1c81419a27c6566704c6de6abe249af1b637330a2f1f082cfc395929795b9e9"
+      "sha256": "b36c6ef0ee750d12d1d4db05c7ede2266f1d422eeb1ea2361dda43e240791cb6"
     },
     {
       "id": "knowledge-pension-account-tax-credit",
@@ -308,15 +321,15 @@
       "publisher": "국가법령정보센터·국세청",
       "source_locator": [
         "https://law.go.kr/lsLinkCommonInfo.do?lsJoLnkSeq=1019370223&print=print",
-        "https://b.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7875&mi=6596"
+        "https://g.nts.go.kr/nts/cm/cntnts/cntntsView.do?cntntsId=7875&mi=6596"
       ],
       "published_at": null,
       "publication_date_note": "국세청 상시 안내와 현행 법령 조문에 단일 발행일이 없어 null로 기록",
       "document_type": "financial-knowledge",
       "collection": "financial-knowledge",
       "path": "ai-pjt/rag/data/financial-knowledge/pension-account-tax-credit.md",
-      "as_of_date": "2026-09-04",
-      "version": "1.0.0",
+      "as_of_date": "2026-09-07",
+      "version": "2.0.0",
       "applies_to": {
         "country": "KR",
         "topic": "pension-account-tax-credit"
@@ -329,7 +342,7 @@
         ]
       },
       "retire_when": "현행 세법의 한도·비율과 내용이 다르거나 새 과세연도 문서가 대체할 때",
-      "sha256": "8de2d8d364a379a2150cbd6060ada316c013fd78c586e805c1eacca6cfab59f7"
+      "sha256": "de3a5771737a322c62498b4b6c9fcb8d3b5f6025e31bd770c8e5af6a479c264d"
     },
     {
       "id": "knowledge-deposit-protection-limit",
@@ -344,7 +357,7 @@
       "document_type": "financial-knowledge",
       "collection": "financial-knowledge",
       "path": "ai-pjt/rag/data/financial-knowledge/deposit-protection-limit.md",
-      "as_of_date": "2026-09-04",
+      "as_of_date": "2026-09-07",
       "version": "1.0.0",
       "applies_to": {
         "country": "KR",
@@ -358,7 +371,337 @@
         ]
       },
       "retire_when": "현행 법령의 보호한도 또는 적용 범위와 내용이 다를 때",
-      "sha256": "07dc22f5f412de8270cce4ea446d985eb47c836f29b97559786ffb700ff20063"
+      "sha256": "a5b02adc8a327d0c9ca474ddafd71fd29949cbe0d6a44918ff6e1c5cd1184fca"
+    },
+    {
+      "id": "knowledge-financial-planning-practice-and-ethics",
+      "title": "은퇴진단 상담 업무수행 원칙과 윤리",
+      "source_id": "retirewise-financial-planning-practice-ethics",
+      "publisher": "S15P21B109",
+      "source_locator": [
+        "https://www.fpsbkorea.org/download?attach_file_usn=10596&data_usn=2697",
+        "https://www.fpsbkorea.org/download?attach_file_usn=10651&data_usn=156664",
+        "https://www.fsc.go.kr/po010105/75631"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/financial-planning-practice-and-ethics.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "financial-planning-practice-and-ethics"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "한국FPSB 윤리규정 또는 업무수행기준 변경",
+          "금융소비자보호 제도 또는 서비스 책임범위 변경"
+        ]
+      },
+      "retire_when": "서비스가 상품 추천·판매·실행으로 확장되거나 승인된 상담 정책이 대체될 때",
+      "sha256": "5dbc92b6075785041b7e255c03222ca5b136252760af56e63b733e7d204d9148"
+    },
+    {
+      "id": "knowledge-household-balance-and-cash-flow",
+      "title": "가계 재무상태표와 현금흐름",
+      "source_id": "retirewise-household-balance-cash-flow",
+      "publisher": "S15P21B109",
+      "source_locator": [
+        "backend-pjt/reports/calculators.py",
+        "https://www.kostat.go.kr/board.es?act=view&bid=215&list_no=439535&mainXml=Y&mid=b80501010000"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/household-balance-and-cash-flow.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "household-balance-and-cash-flow"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "재무정보 필드 또는 보고서 산식 변경",
+          "가계금융복지조사 기준 개편"
+        ]
+      },
+      "retire_when": "재무상태표·현금흐름 분류와 산식을 새 도메인 문서가 대체할 때",
+      "sha256": "739b6b67c8b953c67b8687ccb7cfad0026df6529f5b6c4a750a3721bf690a5c0"
+    },
+    {
+      "id": "knowledge-household-financial-indicators",
+      "title": "가계재무지표 산식과 내부 진단 기준",
+      "source_id": "retirewise-household-financial-indicator-policy",
+      "publisher": "S15P21B109",
+      "source_locator": [
+        "domain-decision:2026-09-07",
+        "https://www.fpkorea.com/data/board/%EC%9E%AC%EB%AC%B4%EB%B9%84%EC%9C%A8%EA%B0%80%EC%9D%B4%EB%93%9C%EB%9D%BC%EC%9D%B8%280%29.pdf",
+        "https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=ART001971087",
+        "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=3&cciNo=1&cnpClsNo=3&csmSeq=1122",
+        "https://www.nps.or.kr/pnsinfo/ntpsklg/getOHAF0056M0.do?menuId=MN24001118",
+        "https://www.finra.org/investors/insights/prepare-survive-financial-hardship",
+        "https://www.fsc.go.kr/no010101/86914?srchText=DSR"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/household-financial-indicators.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.1.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "household-financial-indicator-policy"
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "내부 지표 산식·연령구간·기준값 변경",
+          "법정 정년 또는 국민연금 지급개시연령 변경"
+        ]
+      },
+      "retire_when": "승인된 내부 가계재무지표 정책이 새 버전으로 대체될 때",
+      "sha256": "79bf929e563b13df6599d86537a7510daf635ba58ab467f89674b82b13c193f7"
+    },
+    {
+      "id": "knowledge-debt-and-dsr",
+      "title": "부채, 상환방식과 DSR",
+      "source_id": "retirewise-debt-repayment-dsr",
+      "publisher": "S15P21B109·금융위원회",
+      "source_locator": [
+        "https://www.fsc.go.kr/no010101/86914?srchText=DSR",
+        "https://www.fsc.go.kr/no040101?cnId=2035&srchKey=sj&srchText=DSR",
+        "https://www.fpkorea.com/data/board/%EC%9E%AC%EB%AC%B4%EB%B9%84%EC%9C%A8%EA%B0%80%EC%9D%B4%EB%93%9C%EB%9D%BC%EC%9D%B8%280%29.pdf",
+        "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=3&cciNo=1&cnpClsNo=3&csmSeq=1122",
+        "https://www.nps.or.kr/pnsinfo/ntpsklg/getOHAF0056M0.do?menuId=MN24001118"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/debt-and-dsr.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.1.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "debt-and-dsr"
+      },
+      "refresh": {
+        "cadence_days": 90,
+        "triggers": [
+          "DSR 또는 스트레스 DSR 제도 변경",
+          "내부 총부채상환지표 변경"
+        ]
+      },
+      "retire_when": "부채 분류·상환 산식·DSR 정책이 새 버전으로 대체될 때",
+      "sha256": "8ca49ae76fee5f8c6f526ceee5f2d096db15fecb5e3477450d88fe8ea38e8dd1"
+    },
+    {
+      "id": "knowledge-financial-assets-risk-and-diversification",
+      "title": "금융자산의 위험, 수익과 분산투자",
+      "source_id": "retirewise-financial-assets-risk-diversification",
+      "publisher": "S15P21B109·금융위원회",
+      "source_locator": [
+        "https://easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=1&cciNo=1&cnpClsNo=2&csmSeq=1771&popMenu=ov",
+        "https://www.fsc.go.kr/po010105/75631"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/financial-assets-risk-and-diversification.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "financial-assets-risk-and-diversification"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "금융소비자보호 또는 예금자보호 범위 변경",
+          "서비스 금융자산 분류·상담 경계 변경"
+        ]
+      },
+      "retire_when": "상품 추천 기능 도입으로 별도 적합성·설명의무 정책이 승인될 때",
+      "sha256": "2675912cee8310f9ebba1cb377b002004c8ad18223917103f09fa26d45c51299"
+    },
+    {
+      "id": "knowledge-real-estate-and-rental-cash-flow",
+      "title": "부동산 자산과 임대 현금흐름",
+      "source_id": "retirewise-real-estate-rental-cash-flow",
+      "publisher": "S15P21B109·한국부동산원",
+      "source_locator": [
+        "https://www.reb.or.kr/reb/cm/cntnts/cntntsView.do?cntntsId=1033&mi=10333&statId=S234820263",
+        "https://www.reb.or.kr/r-one/portal/main/indexPage.do"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/real-estate-and-rental-cash-flow.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "real-estate-and-rental-cash-flow"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "부동산·임대 필드 또는 현금흐름 산식 변경",
+          "가격·임대료·공실 기본 가정 변경"
+        ]
+      },
+      "retire_when": "부동산 전용 설계 모듈이 승인된 전문 문서로 이 내용을 대체할 때",
+      "sha256": "05fc5eaf9c69565433e7ec565b3865483a1e6c995b29821bd1e9e8759b0e7cfa"
+    },
+    {
+      "id": "knowledge-financial-goals-and-time-value",
+      "title": "재무목표와 화폐의 시간가치",
+      "source_id": "retirewise-financial-goals-time-value",
+      "publisher": "S15P21B109",
+      "source_locator": [
+        "https://www.fpsbkorea.org/download?attach_file_usn=10651&data_usn=156664",
+        "https://www.bok.or.kr/portal/main/contents.do?menuNo=200291"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/financial-goals-and-time-value.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "financial-goals-and-time-value"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "목표 데이터 구조 또는 미래가치 산식 변경",
+          "물가·수익률 기본 가정 변경"
+        ]
+      },
+      "retire_when": "재무목표 또는 전용 목적자금 모듈의 승인 문서가 이 내용을 대체할 때",
+      "sha256": "e4e83ddc9e42165194f61243d21a32e6f183e8062151f473b2ca4418e6f8af05"
+    },
+    {
+      "id": "knowledge-planning-assumptions-and-economic-indicators",
+      "title": "은퇴진단 기본 가정과 경제지표",
+      "source_id": "retirewise-planning-assumptions-2026",
+      "publisher": "S15P21B109",
+      "source_locator": [
+        "https://www.bok.or.kr/portal/main/contents.do?menuNo=200291",
+        "https://laborstat.moel.go.kr/hmp/index.do",
+        "https://www.nps.or.kr/comm/quick/getOHAH0011P0.do",
+        "https://www.mohw.go.kr/menu.es?mid=a10714010200"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/planning-assumptions-and-economic-indicators.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "planning-assumptions-and-economic-indicators"
+      },
+      "refresh": {
+        "cadence_days": 90,
+        "triggers": [
+          "연금·세법·공식 통계 또는 계산식 변경",
+          "프로젝트 기본 시나리오 변경"
+        ]
+      },
+      "retire_when": "새 기준일의 승인된 기본값 문서가 이 버전을 대체할 때",
+      "sha256": "d6a011103b2c99566e758bbb56f5931546196da547f3a2f5ba7d73be933735d8"
+    },
+    {
+      "id": "knowledge-retirement-planning-and-report-interpretation",
+      "title": "은퇴설계와 은퇴진단 보고서 해석",
+      "source_id": "retirewise-retirement-planning-report-interpretation",
+      "publisher": "S15P21B109",
+      "source_locator": [
+        "https://www.mods.go.kr/boardDownload.es?bid=208&list_no=439533&seq=1",
+        "https://www.nhis.or.kr/static/html/wbda/c/wbdac01.html",
+        "https://m.nps.or.kr/cmuctjng/offer/getOHAD0011M1.do?menuId=MN24001572&pageIndex=1"
+      ],
+      "published_at": "2026-09-07",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/retirement-planning-and-report-interpretation.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "retirement-planning-and-report-interpretation"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "은퇴 보고서 산식·연금 데이터 구조 변경",
+          "생명표·의료·장기요양 제도 변경"
+        ]
+      },
+      "retire_when": "은퇴진단 보고서 구조와 해석 정책을 새 승인 문서가 대체할 때",
+      "sha256": "b9be78f56d69ef7accfab7c0fbcc5da7facfb958debf4938749d65fcfe62c477"
+    },
+    {
+      "id": "knowledge-retirement-pension-basics",
+      "title": "퇴직급여, DB·DC·IRP 기본 지식",
+      "source_id": "moel-retirement-pension-basics",
+      "publisher": "고용노동부",
+      "source_locator": "https://www.moel.go.kr/retirementpay.do",
+      "published_at": null,
+      "publication_date_note": "고용노동부 상시 안내 페이지에 단일 발행일이 표시되지 않아 null로 기록",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/retirement-pension-basics.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "retirement-pension-basics"
+      },
+      "refresh": {
+        "cadence_days": 90,
+        "triggers": [
+          "근로자퇴직급여 보장법 또는 IRP 이전·수령 요건 변경",
+          "서비스 퇴직연금 필드 변경"
+        ]
+      },
+      "retire_when": "퇴직연금 제도 또는 서비스 데이터 모델을 새 승인 문서가 대체할 때",
+      "sha256": "c66cd6d4586da064bb80849478552f2d5411be92fec60a3782d73fc6b9ef4550"
+    },
+    {
+      "id": "knowledge-housing-pension",
+      "title": "주택연금 기본 요건과 은퇴진단 적용",
+      "source_id": "hf-housing-pension-eligibility-2026",
+      "publisher": "한국주택금융공사",
+      "source_locator": [
+        "https://www.hf.go.kr/ko/sub03/sub03_01_01_01.do",
+        "https://www.hf.go.kr/ko/sub03/sub03_01_01_02.do"
+      ],
+      "published_at": null,
+      "publication_date_note": "한국주택금융공사 상시 안내 페이지에 단일 발행일이 표시되지 않아 null로 기록",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/housing-pension.md",
+      "as_of_date": "2026-09-07",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "housing-pension"
+      },
+      "refresh": {
+        "cadence_days": 90,
+        "triggers": [
+          "가입연령·가격한도·대상주택·지급방식 변경",
+          "한국주택금융공사 월지급금표 변경"
+        ]
+      },
+      "retire_when": "주택연금 공식 요건 또는 별도 주거자산 모듈의 승인 문서가 대체할 때",
+      "sha256": "40274f05659bd7a19921f2cdc8ebdff0b37f8d4872c4035b561565881ca1f163"
     }
   ]
 }

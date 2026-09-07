@@ -64,6 +64,21 @@ def _read_bool(
     raise RuntimeConfigurationError(f"{name} must be true or false")
 
 
+def _read_unit_float(
+    name: str,
+    default: float,
+    environ: Mapping[str, str],
+) -> float:
+    raw_value = environ.get(name, str(default))
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise RuntimeConfigurationError(f"{name} must be a number") from exc
+    if value < 0.0 or value > 1.0:
+        raise RuntimeConfigurationError(f"{name} must be between 0 and 1")
+    return value
+
+
 class Settings:
     def __init__(self, environ: Mapping[str, str] | None = None) -> None:
         active_environ = os.environ if environ is None else environ
@@ -91,10 +106,23 @@ class Settings:
             "REDIS_URL", "redis://redis:6379"
         ).strip()
 
-        self.rag_collection = active_environ.get(
-            "RAG_COLLECTION", "retirement_docs"
+        self.rag_financial_collection = active_environ.get(
+            "RAG_FINANCIAL_COLLECTION", "financial-knowledge"
         ).strip()
+        self.rag_interface_collection = active_environ.get(
+            "RAG_INTERFACE_COLLECTION", "interface-guides"
+        ).strip()
+        self.rag_collection = self.rag_financial_collection
         self.rag_top_k = _read_positive_int("RAG_TOP_K", 5, active_environ)
+        self.rag_fetch_k = _read_positive_int("RAG_FETCH_K", 10, active_environ)
+        if self.rag_fetch_k < self.rag_top_k:
+            raise RuntimeConfigurationError("RAG_FETCH_K must be at least RAG_TOP_K")
+        self.rag_min_dense_score = _read_unit_float(
+            "RAG_MIN_DENSE_SCORE", 0.30, active_environ
+        )
+        self.rag_index_retention_days = _read_positive_int(
+            "RAG_INDEX_RETENTION_DAYS", 30, active_environ
+        )
         self.embed_dim = _read_positive_int(
             "EMBED_DIM",
             _EMBED_DIM_DEFAULTS.get(self.embedding_provider, 3072),
@@ -145,6 +173,14 @@ class Settings:
             raise RuntimeConfigurationError("LLM_MODEL is required")
         if not self.embedding_model:
             raise RuntimeConfigurationError("EMBEDDING_MODEL is required")
+        if self.rag_financial_collection != "financial-knowledge":
+            raise RuntimeConfigurationError(
+                "RAG_FINANCIAL_COLLECTION must be financial-knowledge"
+            )
+        if self.rag_interface_collection != "interface-guides":
+            raise RuntimeConfigurationError(
+                "RAG_INTERFACE_COLLECTION must be interface-guides"
+            )
 
         self._require_runtime_value("DATABASE_URL", self.db_url)
         self._require_runtime_value(

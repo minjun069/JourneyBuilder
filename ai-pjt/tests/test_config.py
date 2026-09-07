@@ -27,6 +27,10 @@ class SettingsTests(unittest.TestCase):
         settings.validate_runtime()
 
         self.assertEqual(settings.rag_top_k, 5)
+        self.assertEqual(settings.rag_fetch_k, 10)
+        self.assertEqual(settings.rag_min_dense_score, 0.30)
+        self.assertEqual(settings.rag_financial_collection, "financial-knowledge")
+        self.assertEqual(settings.rag_interface_collection, "interface-guides")
         self.assertEqual(settings.embed_dim, 3072)
         self.assertFalse(settings.langfuse_enabled)
 
@@ -61,6 +65,10 @@ class SettingsTests(unittest.TestCase):
             Settings({**BASE_ENV, "LANGFUSE_ENABLED": "yes"})
         with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_TOP_K"):
             Settings({**BASE_ENV, "RAG_TOP_K": "0"})
+        with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_FETCH_K"):
+            Settings({**BASE_ENV, "RAG_TOP_K": "5", "RAG_FETCH_K": "4"})
+        with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_MIN_DENSE_SCORE"):
+            Settings({**BASE_ENV, "RAG_MIN_DENSE_SCORE": "1.1"})
 
 
 if __name__ == "__main__":
