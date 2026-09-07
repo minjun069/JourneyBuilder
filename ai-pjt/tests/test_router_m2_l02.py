@@ -31,12 +31,18 @@ class FakeClassifier:
 class M2L02PureRouterContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        from core.context import ContextScope, ContextStateAPI, ConversationContext
         from graph.router import select_route
         from graph.task_contracts import blocked_task_result, validate_task_result
+        from tools.output_validation import validate_form_update_contract
 
+        cls.ContextScope = ContextScope
+        cls.ContextStateAPI = ContextStateAPI
+        cls.ConversationContext = ConversationContext
         cls.select_route = staticmethod(select_route)
         cls.blocked_task_result = staticmethod(blocked_task_result)
         cls.validate_task_result = staticmethod(validate_task_result)
+        cls.validate_form_update_contract = staticmethod(validate_form_update_contract)
         cls.fixture = load_evaluation_fixture()
         cls.step_candidates = load_contract_step_candidates()
 
@@ -104,6 +110,40 @@ class M2L02PureRouterContractTests(unittest.TestCase):
             step_id="financial-goals",
         )
         self.assertTrue(blocked.valid)
+
+    def test_context_route_and_output_contracts_share_graph_state(self) -> None:
+        scope = self.ContextScope(session_id=7, thread_id="thread-7")
+        context_channels = self.ContextStateAPI.state_channels(
+            scope,
+            self.ConversationContext(),
+        )
+        decision = self.select_route(
+            task={
+                "id": "task-1",
+                "type": "role_success",
+                "description": "서비스 이용 방법을 설명해 줘.",
+                "executor_kind": "agent",
+            },
+            step_id="intro",
+            step_candidates=self.step_candidates,
+            classifier=FakeClassifier({"status": "matched", "agent": "qa"}),
+        )
+        graph_state = {
+            **context_channels,
+            "step_id": "intro",
+            "route": decision,
+            "field_registry": [],
+            "output": {
+                "response": "서비스 이용 방법을 안내합니다.",
+                "step_id": "intro",
+                "action": None,
+            },
+        }
+        output = self.validate_form_update_contract(graph_state)
+
+        self.assertTrue(output.valid)
+        self.assertEqual(graph_state["context_scope"]["session_id"], 7)
+        self.assertEqual(graph_state["route"]["executor"], "qa")
 
 
 if __name__ == "__main__":
