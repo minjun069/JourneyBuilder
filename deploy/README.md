@@ -62,8 +62,39 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 - 오염됐을 때 복구: `sudo chown -R gitlab-runner:gitlab-runner /home/gitlab-runner/builds`
 - 상태: `sudo gitlab-runner verify`, `systemctl status gitlab-runner`
 
+## HTTPS · 호스트 nginx (S15P21B109-123, 2026-09-07 완료)
+
+- 사이트 설정 사본: `deploy/nginx-host.conf` → 서버 `/etc/nginx/sites-available/s15p21b109` (`sites-enabled` 링크, `default` 해제)
+  - `/api/` → `127.0.0.1:8081` **gateway**(루트 compose 의 nginx, SSE 튠은 그 conf 가 단일 기준) · `/` → `127.0.0.1:8080` **web**
+  - 운영 `app.env`: `API_GATEWAY_PORT=127.0.0.1:8081`, `WEB_HOST_PORT=8080`
+- 인증서: `certbot --nginx -d j15b109.p.ssafy.io --register-unsafely-without-email --agree-tos --redirect` (이메일 미등록 — 알림 대신 아래 점검)
+  - 발급 2026-09-07, 만료 2026-12-06. 443 블록·80→443 리다이렉트는 certbot 이 사이트 파일에 추가
+  - 자동 갱신: `certbot.timer`(하루 2회). 점검: `sudo certbot renew --dry-run`, `sudo certbot certificates`, `systemctl list-timers certbot.timer`
+- 서버 conf 를 바꿀 때: 저장소 `deploy/nginx-host.conf` 를 먼저 고치고 MR → 서버에 복사 → `sudo nginx -t && sudo systemctl reload nginx`. certbot 이 넣은 443 블록은 사본에 없으므로 복사 시 덮어쓰지 말고 `/api/`·`/` location 만 반영한다
+
+## 배포 스크립트 (S15P21B109-124)
+
+`deploy/deploy.sh` — CI deploy 잡이 러너 체크아웃에서 실행한다. 사람이 서버에서 직접 실행해도 동일.
+
+```
+deploy/deploy.sh                       # /srv/s15p21b109/secrets/app.env, 빌드 포함
+deploy/deploy.sh --no-build            # 재기동만
+ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 서버 상태 파일과 분리)
+```
+
+| 단계 | 내용 |
+|---|---|
+| 사전 점검 | env 파일 읽기 가능, `compose config --quiet` |
+| 직전 기록 | 떠 있는 web·backend·ai-pjt·migrate 컨테이너의 이미지 ID (롤백 대상). 첫 배포면 없음 |
+| 기동 | `compose build --pull` → `up -d --remove-orphans`. migrate one-shot → backend 순서는 compose `depends_on` 이 보장 |
+| 헬스체크 | 최대 150s: `web`·`backend` 컨테이너 healthy **and** `GET http://127.0.0.1:8080/` 200. **ai-pjt 는 판정에 넣지 않고 상태만 경고**(`--ai-required` 로 필수 전환) |
+| 성공 | `/srv/s15p21b109/state/last_good_images` 갱신, `docker image prune -f`, exit 0 |
+| 실패 | backend 로그 20줄 출력 → 직전 이미지 ID 를 compose 이미지 이름에 다시 태그 → `up -d --no-build` → exit 1 (파이프라인 failed) |
+
+- 하지 않는 것: 볼륨 삭제(`-v`), DB 스키마 롤백. 마이그레이션은 앞으로만 간다. 스키마를 되돌려야 하면 사람이 한다
+- 롤백은 "이미지" 롤백이다. 직전 배포와 이미지가 같으면(코드 변경 없는 재배포) 복원 로그가 없는 것이 정상
+- 검증 기록(2026-09-07, 로컬): 성공 경로 exit 0 · last_good 4개 기록 / 닫힌 포트를 헬스 URL 로 준 실패 경로 → 롤백 분기 → exit 1, 서비스 유지 / **E2E 롤백**: `s15p21b109-web` 태그를 CMD 없는 alpine 으로 바꿔 배포 → web `restarting` 감지 → 4개 서비스 태그를 직전 ID 로 복원 → `up` → web healthy·8080 200, exit 1
+
 ## 이후 절 (해당 이슈에서 채움)
-- HTTPS·호스트 nginx 사이트 — S15P21B109-123
-- 배포 스크립트·롤백 — S15P21B109-124
 - deploy 스테이지 — S15P21B109-125
 - 데이터 배치 컨테이너·보호 브랜치·알림 — S15P21B109-126
