@@ -2,9 +2,11 @@
 
 상태: **브랜치 4번 작업 완료 — 조합형 독립 검산·상한·수치 오류·재현성 검증 확대.**
 
-2026-09-08, Miniforge `retirewise-ai`의 Python 3.13.15에서 독립 모듈 테스트
+2026-09-08, 4번 작업 완료 시점에 Miniforge `retirewise-ai`의 Python 3.13.15에서 독립 모듈 테스트
 **162개 통과: 기존 136개 + 신규 경계 테스트 26개**를 확인했다.
 subtest 조합은 테스트 메서드 개수에 더하지 않는다.
+후속 5번 샘플 CLI의 19개 검사를 더한 현재 전체는 181개이며
+[샘플 가이드](monte-carlo-samples.md)에 정리한다.
 
 신규 테스트는 [`test_monte_carlo_edges.py`](../tests/test_monte_carlo_edges.py)에 있다.
 [3번 기본 테스트](../tests/test_monte_carlo.py), 수익률 생성기·현금흐름·모델·기존
@@ -128,8 +130,9 @@ Decimal에는 전달된 float의 값을 그대로 변환한다. 금액 대조의
 ## 4. 남은 작업
 
 이번 결과는 [정의된 계산 규칙](monte-carlo-rules.md)에 대한 회귀 검증이다.
-다음은 **5번: 합성 입력의 실제 몬테카를로 실행·가정과 결과·한계 안내를 출력하는
-전용 샘플 CLI와 사용 문서**다. 기존 `retirement.samples`는 고정 현금흐름용으로 유지된다.
+후속 **5번: 합성 입력의 실제 몬테카를로 실행·가정과 결과·한계 안내를 출력하는
+전용 샘플 CLI와 사용 문서**도 완료했으며 [샘플 가이드](monte-carlo-samples.md)를 참고한다.
+기존 `retirement.samples`는 고정 현금흐름용으로 유지된다.
 
 다음 항목은 완료하지 않았다.
 

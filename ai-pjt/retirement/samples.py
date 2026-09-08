@@ -121,7 +121,9 @@ def main(argv: list[str] | None = None) -> None:
                     f"{year.pension_income:,.2f} | {year.expenses:,.2f} | "
                     f"{year.closing_balance:,.2f} | {year.shortfall:,.2f}"
                 )
-    print(f"Calculated {len(cases)} synthetic cases. Monte Carlo, What-if, and service integration are not implemented.")
+    print(f"Calculated {len(cases)} synthetic cases. This CLI runs fixed cashflow only.")
+    print("Monte Carlo samples: python -m retirement.monte_carlo_samples. "
+          "What-if and service integration are not implemented.")
     print("Negative balances are unmet funding gaps, not loan balances. Display rounding does not change depletion.")
 
 
