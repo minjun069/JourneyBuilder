@@ -34,6 +34,14 @@
         <option value="">자산규모 전체</option>
         <option v-for="opt in NET_WORTH_BANDS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
       </select>
+      <select v-model="tendencyFilter" class="filter-select" @change="resetToFirstPage">
+        <option value="">성향 전체</option>
+        <option v-for="opt in TENDENCIES" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+      </select>
+      <select v-model="healthFilter" class="filter-select" @change="resetToFirstPage">
+        <option value="">건전성 전체</option>
+        <option v-for="opt in HEALTHS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+      </select>
     </div>
 
     <div class="table-card">
@@ -106,6 +114,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCustomers } from '@/api/admin'
+import { usePolling } from '@/composables/usePolling'
 import { formatEok } from '@/utils/money'
 
 const STATUS_OPTIONS = [
@@ -135,6 +144,18 @@ const NET_WORTH_BANDS = [
   { value: '500m_1b', label: '5억~10억' },
   { value: 'over_1b', label: '10억+' },
 ]
+const TENDENCIES = [
+  { value: 'stable', label: '안정형' },
+  { value: 'balanced', label: '균형형' },
+  { value: 'aggressive', label: '공격형' },
+  { value: 'unknown', label: '미입력' },
+]
+const HEALTHS = [
+  { value: 'healthy', label: '건전' },
+  { value: 'caution', label: '주의' },
+  { value: 'risky', label: '위험' },
+  { value: 'unknown', label: '미입력' },
+]
 const COLUMNS = [
   { key: 'name', label: '이름', sortable: true },
   { key: 'age', label: '나이', sortable: true, numeric: true },
@@ -157,6 +178,8 @@ const statusFilter = ref(route.query.status ?? '')
 const needFilter = ref(route.query.need ?? '')
 const ageBandFilter = ref(route.query.age_band ?? '')
 const netWorthBandFilter = ref(route.query.net_worth_band ?? '')
+const tendencyFilter = ref(route.query.tendency ?? '')
+const healthFilter = ref(route.query.health ?? '')
 const ordering = ref(route.query.ordering ?? '-last_activity')
 const page = ref(Number(route.query.page) || 1)
 
@@ -213,6 +236,8 @@ async function load() {
       need: needFilter.value || undefined,
       age_band: ageBandFilter.value || undefined,
       net_worth_band: netWorthBandFilter.value || undefined,
+      tendency: tendencyFilter.value || undefined,
+      health: healthFilter.value || undefined,
       ordering: ordering.value || undefined,
       page: page.value,
     })
@@ -229,10 +254,26 @@ async function load() {
 }
 
 watch(
-  [appliedSearch, statusFilter, needFilter, ageBandFilter, netWorthBandFilter, ordering, page],
+  [appliedSearch, statusFilter, needFilter, ageBandFilter, netWorthBandFilter,
+   tendencyFilter, healthFilter, ordering, page],
   load,
   { immediate: true },
 )
+
+// 크로스 필터(FR-07)로 같은 라우트에 쿼리만 바뀌어 들어와도 필터를 동기화
+watch(() => route.query, query => {
+  search.value = query.search ?? ''
+  appliedSearch.value = query.search ?? ''
+  statusFilter.value = query.status ?? ''
+  needFilter.value = query.need ?? ''
+  ageBandFilter.value = query.age_band ?? ''
+  netWorthBandFilter.value = query.net_worth_band ?? ''
+  tendencyFilter.value = query.tendency ?? ''
+  healthFilter.value = query.health ?? ''
+})
+
+usePolling(load) // FR-09: 60초 주기 자동 갱신
+
 </script>
 
 <style scoped>

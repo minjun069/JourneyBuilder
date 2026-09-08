@@ -263,6 +263,51 @@ class SummaryApiTests(TestCase):
         self.assertEqual(len(body['data']['recent_activities']), 1)
 
 
+class TendencyClassificationTests(TestCase):
+    def test_majority_and_tie_rules(self):
+        from .services import classify_tendency
+        self.assertEqual(classify_tendency(['안전 최우선', '안정 추구', '단기 지향']), 'stable')
+        self.assertEqual(classify_tendency(['균형 추구']), 'balanced')
+        self.assertEqual(classify_tendency(['성장 추구', '위험 감수']), 'aggressive')
+        # 동률(1:1) → 균형형
+        self.assertEqual(classify_tendency(['안전 최우선', '수익 중시']), 'balanced')
+        self.assertIsNone(classify_tendency([]))
+        self.assertIsNone(classify_tendency(['알 수 없는 태그']))
+
+
+class SegmentsApiTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.pb = User.objects.create_user(email='pb@test.com', password='pb-pass-1234', name='PB')
+        cls.pb.is_staff = True
+        cls.pb.save(update_fields=['is_staff'])
+        cls.full = make_full_customer()
+        User.objects.create_user(email='empty@test.com', password='pass-1234-ok', name='무세션')
+
+    def setUp(self):
+        self.client = bearer_client(self.pb)
+
+    def test_axes_and_scatter(self):
+        body = self.client.get('/api/v1/admin/analytics/segments/').json()
+        data = body['data']
+        self.assertEqual(set(data['axes'].keys()), {
+            'age_band', 'need', 'tendency_group', 'net_worth_band', 'health', 'session_status'})
+        age = {b['bucket']: b['count'] for b in data['axes']['age_band']}
+        self.assertEqual(age['30s'], 1)       # 고객A (35세)
+        self.assertEqual(age['unknown'], 1)   # 무세션 고객
+        health = {b['bucket']: b['count'] for b in data['axes']['health']}
+        self.assertEqual(health['caution'], 1)  # 위험지표 2개 → 주의
+        self.assertEqual(len(data['indicator_risk']), 7)
+        self.assertEqual(len(data['scatter']), 1)
+        self.assertEqual(data['scatter'][0]['net_worth'], 150_000_000)
+
+    def test_health_filter_on_list(self):
+        rows = self.client.get(CUSTOMERS, {'health': 'caution'}).json()['data']
+        self.assertEqual([r['user_id'] for r in rows], [self.full.id])
+        rows = self.client.get(CUSTOMERS, {'need': 'unknown'}).json()['data']
+        self.assertTrue(all(r['need'] is None for r in rows))
+
+
 class SeedDemoCommandTests(TestCase):
     def test_seed_creates_consistent_demo_data(self):
         call_command('seed_demo', '--count', '10', verbosity=0)

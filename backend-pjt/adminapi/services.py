@@ -35,6 +35,39 @@ NET_WORTH_BANDS = (
     ('over_1b', None),
 )
 
+# S3 투자 성향 태그 → 3그룹 (요구사항 7절)
+TENDENCY_GROUPS = {
+    'stable': ('안전 최우선', '안정 추구', '유동성 중시'),
+    'balanced': ('균형 추구', '장기 지향'),
+    'aggressive': ('성장 추구', '위험 감수', '수익 중시', '단기 지향'),
+}
+
+
+def classify_tendency(tags):
+    """복수 태그는 다수결, 동률이면 균형형. 태그 없으면 None (S3)."""
+    if not tags:
+        return None
+    counts = {
+        group: sum(1 for tag in tags if tag in group_tags)
+        for group, group_tags in TENDENCY_GROUPS.items()
+    }
+    best = max(counts.values())
+    if best == 0:
+        return None
+    winners = [group for group, count in counts.items() if count == best]
+    return winners[0] if len(winners) == 1 else 'balanced'
+
+
+def health_bucket(risk_count):
+    """S5 재무 건전성: 위험 지표 0개=건전 / 1~2개=주의 / 3개+=위험."""
+    if risk_count is None:
+        return None
+    if risk_count == 0:
+        return 'healthy'
+    if risk_count <= 2:
+        return 'caution'
+    return 'risky'
+
 
 def customers_queryset():
     """고객(일반 유저) 목록 — 계산기가 순회하는 모든 하위 테이블을 일괄 로드 (NFR-03)."""
@@ -139,8 +172,11 @@ def _last_activity(user):
     return max(candidates) if candidates else None
 
 
-def build_customer_row(user):
-    """FR-03 고객 리스트 한 행. 세션 없는 고객은 지표를 공란(None) 처리 (NFR-04)."""
+def build_customer_row(user, with_indicators=False):
+    """FR-03 고객 리스트 한 행. 세션 없는 고객은 지표를 공란(None) 처리 (NFR-04).
+
+    with_indicators=True 면 세그먼트 집계용으로 지표 등급 목록을 '_indicators' 에 담는다.
+    """
     session = representative_session(user)
     basic = _rel(session, 'basic_info') if session else None
     age = customer_age(user, basic)
@@ -153,12 +189,14 @@ def build_customer_row(user):
         'age_band': age_bracket(age) if age else None,
         'job': basic.job if basic else None,
         'need': basic.need if basic else None,
+        'tendency_group': classify_tendency(basic.tendency if basic else None),
         'session_status': _session_status(user, session),
         'progress_pct': session.get_progress_pct() if session else 0,
         'net_worth': None,
         'net_worth_band': None,
         'monthly_surplus': None,
         'risk_count': None,
+        'health': None,
         'last_activity': _last_activity(user),
     }
 
@@ -169,6 +207,9 @@ def build_customer_row(user):
             row['net_worth_band'] = net_worth_band(row['net_worth'])
             row['monthly_surplus'] = snapshot['cash_flow']['net_cash_flow']
             row['risk_count'] = snapshot['risk_count']
+            row['health'] = health_bucket(row['risk_count'])
+            if with_indicators:
+                row['_indicators'] = snapshot['indicators']
     return row
 
 
@@ -259,6 +300,59 @@ def build_summary():
             }
             for session in recent_sessions
         ],
+    }
+
+
+# 세그먼트 축별 버킷 순서 (없는 버킷은 count 0 으로 채운다). 'unknown' = 미입력
+SEGMENT_AXES = {
+    'age_band': ('20s', '30s', '40s', '50s', '65+', 'unknown'),
+    'need': ('은퇴', '투자', '주택자금', '교육자금', '보장', '기타', 'unknown'),
+    'tendency_group': ('stable', 'balanced', 'aggressive', 'unknown'),
+    'net_worth_band': tuple(key for key, _ in NET_WORTH_BANDS) + ('unknown',),
+    'health': ('healthy', 'caution', 'risky', 'unknown'),
+    'session_status': ('onboarding', 'in_progress', 'completed', 'abandoned', SESSION_NONE),
+}
+
+
+def build_segments():
+    """FR-07: 6개 축 분포 + 지표별 등급 스택 + 연령×순자산 산점도."""
+    rows = []
+    indicator_stack = {}
+    scatter = []
+
+    for user in customers_queryset():
+        row = build_customer_row(user, with_indicators=True)
+        for indicator in row.pop('_indicators', []):
+            stack = indicator_stack.setdefault(
+                indicator['key'], {'양호': 0, '주의': 0, '위험': 0})
+            stack[indicator['grade']] += 1
+        rows.append(row)
+        if row['age'] is not None and row['net_worth'] is not None:
+            scatter.append({
+                'user_id': row['user_id'],
+                'name': row['name'],
+                'age': row['age'],
+                'net_worth': row['net_worth'],
+                'need': row['need'],
+                'monthly_surplus': row['monthly_surplus'],
+            })
+
+    axes = {}
+    for axis, buckets in SEGMENT_AXES.items():
+        counts = {bucket: 0 for bucket in buckets}
+        for row in rows:
+            bucket = row[axis] if row[axis] is not None else 'unknown'
+            counts[bucket] = counts.get(bucket, 0) + 1
+        axes[axis] = [
+            {'bucket': bucket, 'count': count} for bucket, count in counts.items()
+        ]
+
+    return {
+        'axes': axes,
+        'indicator_risk': [
+            {'key': key, **stack} for key, stack in indicator_stack.items()
+        ],
+        'scatter': scatter,
     }
 
 

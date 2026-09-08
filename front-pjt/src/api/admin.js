@@ -16,3 +16,8 @@ export async function getSummary() {
   const { data } = await api.get('/admin/analytics/summary/')
   return data
 }
+
+export async function getSegments() {
+  const { data } = await api.get('/admin/analytics/segments/')
+  return data
+}

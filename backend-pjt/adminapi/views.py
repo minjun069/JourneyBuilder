@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from .services import (
     build_customer_detail,
     build_customer_row,
+    build_segments,
     build_summary,
     customers_queryset,
 )
@@ -20,8 +21,15 @@ ORDERABLE_FIELDS = {
     'name', 'age', 'net_worth', 'monthly_surplus',
     'risk_count', 'progress_pct', 'last_activity',
 }
-# 값이 같은 문자열이면 일치로 보는 필터 (row 키 == 쿼리 파라미터 이름)
-EQUALITY_FILTERS = ('status', 'need', 'age_band', 'net_worth_band')
+# 동등 비교 필터: 쿼리 파라미터 → row 키. 값 'unknown' 은 미입력(None) 과 일치
+EQUALITY_FILTERS = {
+    'status': 'session_status',
+    'need': 'need',
+    'age_band': 'age_band',
+    'net_worth_band': 'net_worth_band',
+    'tendency': 'tendency_group',
+    'health': 'health',
+}
 
 
 class AdminAPIView(APIView):
@@ -68,10 +76,13 @@ class CustomerListView(AdminAPIView):
 
     @staticmethod
     def _filter(rows, params):
-        for param in EQUALITY_FILTERS:
+        for param, row_key in EQUALITY_FILTERS.items():
             value = params.get(param)
-            if value:
-                row_key = 'session_status' if param == 'status' else param
+            if not value:
+                continue
+            if value == 'unknown':
+                rows = [row for row in rows if row[row_key] is None]
+            else:
                 rows = [row for row in rows if row[row_key] == value]
         return rows
 
@@ -130,3 +141,10 @@ class SummaryView(AdminAPIView):
 
     def get(self, request):
         return self.envelope(build_summary())
+
+
+class SegmentsView(AdminAPIView):
+    """FR-07 세그먼트 분포(6축) + 지표 등급 스택 + 연령×순자산 산점도."""
+
+    def get(self, request):
+        return self.envelope(build_segments())
