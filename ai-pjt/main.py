@@ -17,7 +17,10 @@ from core.monitoring import get_callbacks
 from graph.builder import build_graph
 from schemas.chat import ChatRequest, ChatStreamRequest
 from transport.contracts import (
+    CallbackError,
     ChatV2Request,
+    CompletedCallback,
+    FailedCallback,
     ServiceContractError,
     verify_service_authorization,
 )
@@ -26,6 +29,7 @@ from transport.runtime import (
     CallbackClient,
     ExecutionBudget,
     PostgresRequestCheckpointStore,
+    utc_now,
 )
 
 
@@ -111,7 +115,7 @@ def _message_chunk_text(content: Any) -> str:
     return "".join(parts)
 
 
-def _graph_input(request: ChatRequest | ChatStreamRequest) -> dict[str, Any]:
+def _graph_input(request: ChatRequest | ChatStreamRequest | ChatV2Request) -> dict[str, Any]:
     customer_info = request.customer_info
     if hasattr(customer_info, "model_dump"):
         customer_info = customer_info.model_dump(mode="json")
@@ -128,7 +132,7 @@ def _graph_input(request: ChatRequest | ChatStreamRequest) -> dict[str, Any]:
     return payload
 
 
-def _graph_config(request: ChatRequest | ChatStreamRequest) -> dict[str, Any]:
+def _graph_config(request: ChatRequest | ChatStreamRequest | ChatV2Request) -> dict[str, Any]:
     return {
         "configurable": {"thread_id": request.thread_id},
         "callbacks": get_callbacks(),
@@ -170,6 +174,20 @@ async def service_contract_error_handler(
     return JSONResponse(status_code=exc.status_code, content=exc.envelope())
 
 
+async def _parse_v2_request(raw_request: Request) -> ChatV2Request:
+    try:
+        raw_payload = await raw_request.json()
+        return ChatV2Request.model_validate(raw_payload)
+    except ValidationError as exc:
+        raise _v2_validation_error(exc) from None
+    except ValueError:
+        raise ServiceContractError(
+            status_code=422,
+            code="REQUEST_SCHEMA_INVALID",
+            message="AI 요청 스키마가 올바르지 않습니다.",
+        ) from None
+
+
 @app.post("/v2/chat", status_code=202)
 async def chat_v2(
     raw_request: Request,
@@ -180,23 +198,156 @@ async def chat_v2(
         authorization,
         settings.ai_service_bearer_token,
     )
-    try:
-        raw_payload = await raw_request.json()
-        request = ChatV2Request.model_validate(raw_payload)
-    except ValidationError as exc:
-        raise _v2_validation_error(exc) from None
-    except ValueError:
-        raise ServiceContractError(
-            status_code=422,
-            code="REQUEST_SCHEMA_INVALID",
-            message="AI 요청 스키마가 올바르지 않습니다.",
-        ) from None
+    request = await _parse_v2_request(raw_request)
 
     accepted = await app.state.v2_transport.accept(
         request,
         background_tasks.add_task,
     )
     return accepted.model_dump(mode="json")
+
+
+async def _stream_v2_chat_events(
+    graph,
+    context_api,
+    request: ChatV2Request,
+) -> AsyncIterator[str]:
+    identity = {
+        "contract_version": "2.0",
+        "request_id": request.request_id,
+        "session_id": request.session_id,
+        "thread_id": request.thread_id,
+    }
+    yield _encode_sse("start", identity)
+
+    streamed_text = ""
+    final_state: dict[str, Any] = {}
+    try:
+        budget = ExecutionBudget.from_request(request)
+        budget.require_time()
+        scope = ContextScope(request.session_id, request.thread_id)
+        context = await context_api.read_context(scope)
+        graph_input = {
+            **_graph_input(request),
+            **context_api.state_channels(scope, context),
+            "execution_budget": budget.to_state(),
+        }
+        graph_config = {
+            **context_api.config_for(scope),
+            "callbacks": get_callbacks(),
+        }
+
+        async with asyncio.timeout(budget.remaining_seconds()):
+            async for graph_event in graph.astream_events(
+                graph_input,
+                config=graph_config,
+                version="v2",
+            ):
+                if graph_event.get("event") == "on_chat_model_stream":
+                    node = graph_event.get("metadata", {}).get("langgraph_node")
+                    if node not in _PUBLIC_STREAM_NODES:
+                        continue
+                    chunk = graph_event.get("data", {}).get("chunk")
+                    content = _message_chunk_text(getattr(chunk, "content", ""))
+                    if content:
+                        streamed_text += content
+                        yield _encode_sse(
+                            "delta",
+                            {
+                                "contract_version": "2.0",
+                                "request_id": request.request_id,
+                                "content": content,
+                            },
+                        )
+                    continue
+
+                if (
+                    graph_event.get("event") == "on_chain_end"
+                    and not graph_event.get("parent_ids")
+                ):
+                    output = graph_event.get("data", {}).get("output")
+                    if isinstance(output, dict):
+                        final_state = output
+
+        output = final_state.get("output", {})
+        if not isinstance(output, dict):
+            raise ValueError("graph output must be an object")
+        response = output.get("response", "")
+        if not streamed_text and isinstance(response, str) and response:
+            yield _encode_sse(
+                "delta",
+                {
+                    "contract_version": "2.0",
+                    "request_id": request.request_id,
+                    "content": response,
+                },
+            )
+
+        terminal = CompletedCallback(
+            request_id=request.request_id,
+            session_id=request.session_id,
+            thread_id=request.thread_id,
+            completed_at=utc_now(),
+            output=output,
+        ).model_dump(mode="json")
+        yield _encode_sse("done", terminal)
+    except asyncio.CancelledError:
+        logger.info("AI v2 stream 연결 종료", extra={"request_id": request.request_id})
+        raise
+    except (TimeoutError, asyncio.TimeoutError):
+        terminal = FailedCallback(
+            request_id=request.request_id,
+            session_id=request.session_id,
+            thread_id=request.thread_id,
+            completed_at=utc_now(),
+            error=CallbackError(
+                code="LLM_TIMEOUT",
+                message="AI 응답 생성 시간이 초과되었습니다.",
+                retryable=True,
+            ),
+        ).model_dump(mode="json")
+        yield _encode_sse("error", terminal)
+    except Exception:
+        logger.exception(
+            "AI v2 stream 처리 실패",
+            extra={"request_id": request.request_id},
+        )
+        terminal = FailedCallback(
+            request_id=request.request_id,
+            session_id=request.session_id,
+            thread_id=request.thread_id,
+            completed_at=utc_now(),
+            error=CallbackError(
+                code="INTERNAL_ERROR",
+                message="AI 응답 생성에 실패했습니다.",
+                retryable=False,
+            ),
+        ).model_dump(mode="json")
+        yield _encode_sse("error", terminal)
+
+
+@app.post("/v2/chat/stream")
+async def chat_v2_stream(
+    raw_request: Request,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    verify_service_authorization(
+        authorization,
+        settings.ai_service_bearer_token,
+    )
+    request = await _parse_v2_request(raw_request)
+    return StreamingResponse(
+        _stream_v2_chat_events(
+            app.state.chat_graph,
+            app.state.context_api,
+            request,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 async def _stream_chat_events(graph, request: ChatStreamRequest) -> AsyncIterator[str]:
