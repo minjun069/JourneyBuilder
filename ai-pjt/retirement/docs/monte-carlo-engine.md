@@ -1,10 +1,10 @@
 # 몬테카를로 계산·집계 엔진 가이드
 
-상태: **브랜치 3번 작업 — 계산·집계·결과 모델과 기본 테스트 구현.**
+상태: **계산·집계·결과 모델 구현, 4번 확대 경계 검증 완료. 전용 샘플 CLI는 후속 작업.**
 
 [`monte_carlo.py`](../monte_carlo.py)는 기존 수익률 생성기와 현금흐름 엔진을
 호출해 [계산 규칙](monte-carlo-rules.md)에 따른 집계를 만든다. 현금흐름 공식을
-복제하지 않는다. 확대 경계 검증·전용 샘플 CLI·What-if·실제 데이터 및 서비스 연결은
+복제하지 않는다. 전용 샘플 CLI·What-if·실제 데이터 및 서비스 연결은
 남아 있으며, 아래 예시는 시장 전망이 아닌 합성 검산 자료다.
 
 ## 1. 두 가지 실행 방식
@@ -166,9 +166,11 @@ print(f"provided_success={provided.success_probability:.2f}, generated_paths={ge
 
 ## 6. 검증 기록과 남은 검증
 
-2026-09-08, Miniforge `retirewise-ai`의 Python 3.13.15에서 전용 테스트
+2026-09-08, 3번 작업 완료 시점에 Miniforge `retirewise-ai`의 Python 3.13.15에서
 **136개 통과: 기존 102개 + 신규 34개**를 확인했다.
-신규 자동 테스트는 [`test_monte_carlo.py`](../tests/test_monte_carlo.py)에 있다.
+아래는 [`test_monte_carlo.py`](../tests/test_monte_carlo.py)의 기본 검사다.
+후속 4번에서 경계 테스트 26개를 추가해 현재 전체는 **162개 통과**이며,
+세부 범위는 [몬테카를로 검증 기록](monte-carlo-validation.md)에 정리한다.
 
 | 그룹 | 개수 | 주요 검증 |
 |---|---:|---|
@@ -194,8 +196,8 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement/tests -p test_monte_carlo.py -v
 ```
 
-다음 4번 작업에서는 다양한 재무 일정·기간·반복 수·수치 경계 조합의 독립 대조와
-회귀 검증을 확대한다. 5번 전용 샘플 CLI, 시장 가정 보정·신뢰구간, What-if·실제
+4번에서 다양한 재무 일정·기간·반복 수·수치 경계 조합의 독립 대조와 회귀 검증을
+확대했다. 다음 5번 전용 샘플 CLI, 시장 가정 보정·신뢰구간, What-if·실제
 입력 연결·서비스 통합·전체 AI/BE/FE 테스트는 아직 완료한 것이 아니다.
 
 생성 경로와 나이별 잔액 표본은 `O(N×T)` 공간을 사용한다. 각 나이를 정렬하므로

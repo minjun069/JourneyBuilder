@@ -151,9 +151,9 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 ## 6. 남은 작업과 자원 한계
 
 3번의 기존 현금흐름 반복 호출·성공확률·고갈·분위수 집계와 결과 메타데이터는
-[집계 엔진 가이드](monte-carlo-engine.md)에 정리한다. 4번에서는 그 집계까지 포함한
-경계 조건 검증을 확대하고, 5번에서 실제
-몬테카를로 샘플 실행을 제공한다. What-if·실제 snapshot adapter·서비스 통합은
+[집계 엔진 가이드](monte-carlo-engine.md)에 정리한다. 4번에서 집계까지 포함한
+경계 조건 검증을 확대했으며 [검증 기록](monte-carlo-validation.md)을 참고한다.
+다음 5번에서 실제 몬테카를로 샘플 실행을 제공한다. What-if·실제 snapshot adapter·서비스 통합은
 여전히 별도 기능이며, 전체 AI/BE/FE 테스트 통과를 주장하지 않는다.
 
 현재 생성 API는 전체 경로를 보관한다. 비영 변동성의 시간·수익률 저장 공간은
