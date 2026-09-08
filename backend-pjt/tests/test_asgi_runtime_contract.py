@@ -28,6 +28,7 @@ class ASGIRuntimeContractTests(unittest.TestCase):
         )
 
         self.assertIn("/messages/stream/", nginx)
+        self.assertIn("/api/v(1|2)/", nginx)
         self.assertIn("proxy_buffering off;", nginx)
         self.assertIn("proxy_cache off;", nginx)
         self.assertIn("proxy_read_timeout 130s;", nginx)
