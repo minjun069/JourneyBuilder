@@ -54,7 +54,7 @@ log "저장소 $(git rev-parse --short HEAD 2>/dev/null || echo '?') · env $ENV
 # ── 2. 롤백 대상 기록: 지금 떠 있는 컨테이너의 이미지 ID 와 그 컨테이너가 쓴 이미지 이름(태그) ─────
 # 이미지 이름은 compose 가 붙인 것(예: s15p21b109-web)을 컨테이너 설정에서 읽는다 — build-only 서비스는
 # compose config 출력에 image 키가 없어서 거기서 읽을 수 없다.
-declare -A PREV PREV_REF
+declare -A PREV=() PREV_REF=()   # 반드시 빈 값으로 초기화 — 선언만 된 빈 연관배열은 set -u 에서 ${#PREV[@]} 가 unbound 오류(첫 배포 경로, 어제 로컬 검증은 컨테이너가 있는 상태여서 미노출)
 for svc in "${BUILT_SERVICES[@]}"; do
   cid="$(compose ps -aq "$svc" 2>/dev/null | head -1 || true)"
   if [ -n "$cid" ]; then

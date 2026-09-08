@@ -22,7 +22,7 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 | 어디 | 파일 | 만드는 법 | 횟수 |
 |---|---|---|---|
 | 로컬 개발 | 저장소 루트 `.env` | `bash deploy/make-env.sh` | PC 당 1회 |
-| 서버 | `/srv/s15p21b109/secrets/app.env` (root 600) | `sudo bash deploy/make-env.sh --output /srv/s15p21b109/secrets/app.env` | 1회 |
+| 서버 | `/srv/s15p21b109/secrets/app.env` (root:gitlab-runner 640 — deploy 잡의 러너가 읽어야 한다) | `sudo bash deploy/make-env.sh --output /srv/s15p21b109/secrets/app.env` | 1회 |
 | CI | 없음 — `.gitlab-ci.yml` 의 `ci-only-*` 더미 | 자동 | 매 실행 |
 
 `make-env.sh` 는 `.env.example` 을 복사해 필수 4개를 채운다.
@@ -49,7 +49,7 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 | Docker | 공식 apt 저장소 → docker-ce 29.8 + compose v5.5. `ubuntu`, `gitlab-runner` 를 docker 그룹에 | 완료 |
 | GitLab Runner | 공식 apt 저장소 → 19.3.1. 프로젝트 러너 등록(shell executor, 태그 `ssafy-ec2`, untagged 금지). 토큰은 `/etc/gitlab-runner/config.toml`(root) | 완료 |
 | 호스트 nginx | apt nginx 1.24. 사이트 설정·HTTPS 는 S15P21B109-123 | 설치만 |
-| secrets | `/srv/s15p21b109/secrets/` root 700, `app.env` 서식 600 | 값 입력 대기 |
+| secrets | `/srv/s15p21b109/secrets/` root:gitlab-runner 750, `app.env` 640, `app.env.bak` root 600. 러너 그룹 읽기 허용은 S15P21B109-125 에서(deploy 잡이 `--env-file` 로 읽음) | 값 입력 완료(GOOGLE_API_KEY 제외) |
 | ufw | 22 만 개방 상태. 80/443 은 S15P21B109-123 에서 `sudo ufw allow 80/tcp`, `443/tcp` (SSH 세션 2개 유지) | 대기 |
 
 ### 서버 작업 금지 사항 (SSAFY 공지 — 위반 시 초기화 외 복구 불가)
@@ -95,6 +95,24 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 - 롤백은 "이미지" 롤백이다. 직전 배포와 이미지가 같으면(코드 변경 없는 재배포) 복원 로그가 없는 것이 정상
 - 검증 기록(2026-09-07, 로컬): 성공 경로 exit 0 · last_good 4개 기록 / 닫힌 포트를 헬스 URL 로 준 실패 경로 → 롤백 분기 → exit 1, 서비스 유지 / **E2E 롤백**: `s15p21b109-web` 태그를 CMD 없는 alpine 으로 바꿔 배포 → web `restarting` 감지 → 4개 서비스 태그를 직전 ID 로 복원 → `up` → web healthy·8080 200, exit 1
 
+## deploy 스테이지 — master 자동 배포 (S15P21B109-125)
+
+`.gitlab-ci.yml` 의 `deploy:production` 잡. master 파이프라인에서 test 스테이지가 통과하면 러너 체크아웃에서 `bash deploy/deploy.sh` 를 실행한다. 러너가 곧 배포 서버라서 SSH 키·이미지 레지스트리·CI Variables 가 없다.
+
+| 항목 | 값 |
+|---|---|
+| 트리거 | `master` 브랜치 파이프라인, test 통과 후 자동. MR 파이프라인에서는 실행하지 않음 |
+| 실행 위치 | 러너 체크아웃 `/home/gitlab-runner/builds/<id>/0/s15-fintech-finance-sub1/S15P21B109` (러너 사용자 `gitlab-runner`, docker 그룹, sudo 없음) |
+| 비밀값 | `/srv/s15p21b109/secrets/app.env` — root:gitlab-runner 640. deploy.sh 가 `--env-file` 로 읽는다. 백업 `app.env.bak` 은 root 600 유지 |
+| 상태 파일 | `/srv/s15p21b109/state/last_good_images` (디렉터리 gitlab-runner 소유) |
+| 동시성 | `resource_group: production` — 배포 잡은 한 번에 하나. `interruptible: false` — 새 커밋이 와도 진행 중 배포는 끊지 않음 |
+| 환경 | GitLab Environment `production`, URL `https://j15b109.p.ssafy.io` (Deployments → Environments 에서 배포 이력 확인) |
+| 실패 | deploy.sh 가 롤백 후 exit 1 → 잡 failed. 파이프라인 알림은 S15P21B109-126 |
+
+- **재배포(코드 변경 없음, env 만 바뀐 경우)**: master 최신 파이프라인의 `deploy:production` 잡을 GitLab 에서 Retry. 또는 서버에서 러너 체크아웃 디렉터리로 가서 `bash deploy/deploy.sh --no-build`
+- **ai 컨테이너만 재기동(LLM 키 입력·회전 후)**: 러너 체크아웃 디렉터리에서 `docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate ai-pjt`
+- **주의**: `master` 는 아직 보호 브랜치가 아니고 "파이프라인 통과 시 머지" 조건도 없다. 빨간불 MR 을 머지하면 test 가 실패해 deploy 는 실행되지 않지만(스테이지 순서), 테스트가 잡지 못하는 결함은 그대로 배포된다. 보호 브랜치 설정은 S15P21B109-126
+- 검증 기록(2026-09-08, 서버): 기능 브랜치에서 `when: manual` 로 실행. 1차(파이프라인 #183374) 2초 실패 — 첫 배포 경로 `PREV: unbound variable` → deploy.sh 수정. 2차(파이프라인 #183408, 잡 #495972) **62초 성공**: 이미지 3종 빌드 → postgres·redis healthy → migrate 완료 → backend healthy → web healthy → 8080 200 → last_good 4개 기록. `https://j15b109.p.ssafy.io` 502 → **200**. ai-pjt 는 `GOOGLE_API_KEY is required` 로 재시작 반복(예상된 상태, LLM 키 조합 확정 후 입력). 호스트 노출 포트는 22/80/443 과 127.0.0.1 의 8080/8081 만
+
 ## 이후 절 (해당 이슈에서 채움)
-- deploy 스테이지 — S15P21B109-125
 - 데이터 배치 컨테이너·보호 브랜치·알림 — S15P21B109-126

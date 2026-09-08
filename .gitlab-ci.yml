@@ -6,7 +6,8 @@
 # 스테이지
 #   test   — 모든 브랜치 push 와 MR 에서 실행. 팀 Makefile 의 g1-* 검사를 그대로 옮겼다.
 #            이미지 빌드가 곧 빌드 검증이므로 별도 build 스테이지는 두지 않는다(서버에서 --build).
-#   deploy — master 머지 시에만. S15P21B109-125 에서 추가한다.
+#   deploy — master 파이프라인의 test 통과 후 자동 실행(S15P21B109-125). 러너 체크아웃에서 deploy/deploy.sh 를 돌린다.
+#            빌드·기동·헬스체크·롤백은 전부 스크립트 안에 있고 잡은 호출만 한다. 자세한 절차: deploy/README.md
 #
 # 원칙
 #   - 테스트는 체크아웃된 저장소를 컨테이너에 마운트해서 돈다. 이미지는 의존성 확보용이다.
@@ -20,6 +21,7 @@
 
 stages:
   - test
+  - deploy
 
 default:
   tags: [ssafy-ec2]
@@ -108,3 +110,25 @@ test:front:
       -v "$CI_PROJECT_DIR:/workspace:ro" -w /workspace
       node:22-bookworm
       node --test front-pjt/tests/e2e/p07/p07-preparation.test.mjs
+
+# ── deploy: master 에 머지되면 서버에 배포 (S15P21B109-125) ──
+# 러너가 곧 배포 서버(shell executor)라서 SSH·이미지 레지스트리 없이 체크아웃 디렉터리에서 compose 를 올린다.
+# 비밀값은 /srv/s15p21b109/secrets/app.env (root:gitlab-runner 640) 를 deploy.sh 가 --env-file 로 읽는다.
+# 실패하면 deploy.sh 가 직전 이미지로 롤백하고 exit 1 → 잡 failed. 첫 배포는 롤백 대상이 없어 중단만 한다.
+deploy:production:
+  stage: deploy
+  interruptible: false          # 배포 도중 새 커밋이 와도 이 잡은 끊지 않는다 (compose 가 반만 올라간 상태 방지)
+  resource_group: production    # 배포 잡은 동시에 하나만 (러너 concurrent=1 이지만 명시)
+  environment:
+    name: production
+    url: https://j15b109.p.ssafy.io
+    deployment_tier: production
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never                # MR 파이프라인에서는 배포하지 않는다
+    - if: $CI_COMMIT_BRANCH == "master"
+      when: on_success           # test 스테이지 통과 시 자동. 그 외 브랜치에서는 잡이 생성되지 않는다
+  script:
+    - bash deploy/deploy.sh
+  after_script:
+    - docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml ps || true
