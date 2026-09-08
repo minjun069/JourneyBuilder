@@ -17,7 +17,8 @@ async function handleLogin() {
   loading.value  = true
   try {
     await auth.login(email.value, password.value)
-    const redirect = route.query.redirect || '/'
+    // FR-01: PB(is_staff)는 명시적 redirect가 없으면 PB 대시보드로 이동
+    const redirect = route.query.redirect || (auth.isStaff ? '/pb' : '/')
     router.push(redirect)
   } catch (err) {
     errorMsg.value = err.response?.data?.detail || '이메일 또는 비밀번호를 확인해주세요.'

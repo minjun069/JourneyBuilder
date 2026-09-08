@@ -41,18 +41,29 @@
 
 
 <script setup>
-import { ref } from 'vue'
+import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
 
-const menuItems = ref([
-  { name: 'AI 상담', path: '/ai' },
-  { name: '대시보드', path: '/dashboard' },
-  { name: '커뮤니티', path: '/community' },
-])
+// 앱 부팅 시 토큰이 있으면 프로필을 복원해 PB 메뉴 노출 여부를 결정 (FR-01)
+if (auth.hasSession && !auth.user) {
+  auth.ensureUser()
+}
+
+const menuItems = computed(() => {
+  const items = [
+    { name: 'AI 상담', path: '/ai' },
+    { name: '대시보드', path: '/dashboard' },
+    { name: '커뮤니티', path: '/community' },
+  ]
+  if (auth.isStaff) {
+    items.push({ name: 'PB 대시보드', path: '/pb' })
+  }
+  return items
+})
 
 async function handleLogout() {
   await auth.logout()

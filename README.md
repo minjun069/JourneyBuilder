@@ -22,12 +22,15 @@ Compose는 다음 순서로 준비 상태를 확인한다.
 
 ```text
 PostgreSQL healthy ─┬─→ AI
-                    └─→ Django migration 완료 ─→ Backend
+                    └─→ Django migration 완료 ─→ Backend ─→ Gateway(nginx)
 Redis healthy ─────────────────────────────────→ Backend
 ```
 
 - 서비스 간 연결은 `postgres`, `redis`, `backend`, `ai-pjt`라는 내부 DNS를 사용한다.
-- host 포트는 기본 공개하지 않는다. 필요한 개발 포트는 별도 override에서 loopback에만 공개한다.
+- host 포트는 API 진입점인 `gateway`(nginx)만 공개한다 — `API_GATEWAY_PORT`(기본 `8080`, 0.0.0.0 바인딩).
+  로컬 개발은 `.env`에서 `API_GATEWAY_PORT=127.0.0.1:8081` 처럼 loopback으로 제한하고,
+  프론트 `front-pjt/.env`의 `VITE_API_BASE_URL`을 같은 주소(`http://localhost:8081/api/v1`)로 맞춘다.
+  그 외 서비스(postgres·redis·backend·ai)는 host 포트를 공개하지 않는다.
 - PostgreSQL과 Redis 데이터는 Compose project별 named volume에 저장된다.
 - PostgreSQL 초기화 SQL은 새 `postgres_data` volume을 만들 때만 실행된다.
 - secret에는 동작 가능한 기본값이 없다. 실제 값은 커밋하지 않은 루트 `.env` 또는 실행 환경에서 주입한다.
@@ -77,6 +80,35 @@ G1은 빈 volume·clean image에서 migration, 두 애플리케이션 readiness,
 결정으로 전환하는 작업은 F04와 F12에 남아 있다. 정확한 현재/목표 차이는 공유 계약 문서의
 `ai-docs/contracts/current-state.md`, 입력별 활성 상태는
 `contract-fixtures/g1/artifact-consistency.json`을 따른다.
+
+## PB 관리자 대시보드
+
+PB(프라이빗 뱅커)가 전체 고객의 재무 데이터를 통합 조회하는 화면이다. 프론트 라우트는
+`/pb`(개요·고객 리스트·고객 상세·세그먼트), API 는 `backend-pjt/adminapi/` 의
+`/api/v1/admin/*` 전체가 `IsAdminUser`(is_staff) 로 보호되며 v1 은 조회 전용(GET)이다.
+로그인 후 `GET /api/v1/auth/me/` 의 `is_staff` 로 역할을 판별한다.
+집계는 요청 시 계산이라 PB 화면의 60초 폴링만으로 최신 DB 상태가 반영된다.
+
+로컬 시연 환경은 명령 한 번으로 세팅한다 — 팀 공용 PB 계정과 시드 고객 40명이 생성된다.
+
+```bash
+docker compose exec backend python manage.py bootstrap_demo
+```
+
+| 구분 | 값 |
+|---|---|
+| PB 계정 | `admin1234@naver.com` / `admin1234` |
+| 시드 고객 | `demo001~040@retirewise.demo` / 공통 `demo-pass-2026!` |
+
+- 계정·시드는 DB(볼륨)에 저장되므로 환경(팀원)마다 한 번씩 실행한다. 재실행해도 안전하다
+  (데모 계정만 재생성, 실제 가입 고객 데이터는 건드리지 않음).
+- 데모가 아닌 실제 고객이 있는 DB에서는 오염 방지를 위해 `--yes` 를 붙여야 실행된다.
+- **운영 서버에서는 사용 금지** — PB 계정은 `create_pb` 로 강한 비밀번호를 지정해 개별 생성한다.
+
+```bash
+# 운영용 PB 계정 생성 (회원가입 화면으로는 만들 수 없다)
+docker compose exec backend python manage.py create_pb pb@example.com --name "김PB" --password "..."
+```
 
 ## 개발 원칙
 
