@@ -54,6 +54,9 @@ Thumbs.db
 # =========================
 *.pid
 
+# 로컬 개발 전용 compose 오버라이드 (소스 바인드 마운트 + 자동 리로드)
+docker-compose.override.yml
+
 # PostgreSQL local volume/data
 postgres_data/
 

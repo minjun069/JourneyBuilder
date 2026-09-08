@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/ai/callback', AICallbackView.as_view(), name='ai-callback-no-slash'),
     path('api/v2/internal/ai/callback/', V2CallbackView.as_view(), name='v2-ai-callback'),
     path('api/v2/', include('consulting.v2_urls')),
+    path('api/v1/admin/', include('adminapi.urls')),
     path('api/v1/auth/', include('accounts.urls')),
     path('api/v1/', include('consulting.urls')),
     path('api/v1/', include('reports.urls')),
