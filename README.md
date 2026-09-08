@@ -22,12 +22,15 @@ Compose는 다음 순서로 준비 상태를 확인한다.
 
 ```text
 PostgreSQL healthy ─┬─→ AI
-                    └─→ Django migration 완료 ─→ Backend
+                    └─→ Django migration 완료 ─→ Backend ─→ Gateway(nginx)
 Redis healthy ─────────────────────────────────→ Backend
 ```
 
 - 서비스 간 연결은 `postgres`, `redis`, `backend`, `ai-pjt`라는 내부 DNS를 사용한다.
-- host 포트는 기본 공개하지 않는다. 필요한 개발 포트는 별도 override에서 loopback에만 공개한다.
+- host 포트는 API 진입점인 `gateway`(nginx)만 공개한다 — `API_GATEWAY_PORT`(기본 `8080`, 0.0.0.0 바인딩).
+  로컬 개발은 `.env`에서 `API_GATEWAY_PORT=127.0.0.1:8081` 처럼 loopback으로 제한하고,
+  프론트 `front-pjt/.env`의 `VITE_API_BASE_URL`을 같은 주소(`http://localhost:8081/api/v1`)로 맞춘다.
+  그 외 서비스(postgres·redis·backend·ai)는 host 포트를 공개하지 않는다.
 - PostgreSQL과 Redis 데이터는 Compose project별 named volume에 저장된다.
 - PostgreSQL 초기화 SQL은 새 `postgres_data` volume을 만들 때만 실행된다.
 - secret에는 동작 가능한 기본값이 없다. 실제 값은 커밋하지 않은 루트 `.env` 또는 실행 환경에서 주입한다.
@@ -94,7 +97,15 @@ docker compose exec backend python manage.py create_pb pb@example.com --name "�
 docker compose exec backend python manage.py seed_demo --count 40
 ```
 
-상세 요구사항·세그먼트 축 정의는 PB 대시보드 요구사항 정의서(내부 아티팩트 v0.3)를 따른다.
+로컬 시연용 PB 계정:
+
+| 이메일 | 비밀번호 |
+|---|---|
+| `admin1234@naver.com` | `admin1234` |
+
+PB 계정은 DB(볼륨)에 저장되므로 위 계정은 이 계정을 만든 로컬 DB에서만 유효하다.
+새로 받은 환경이라면 위 `create_pb` 명령으로 직접 생성한다. 시드 고객 40명의 로그인
+비밀번호는 공통으로 `demo-pass-2026!` 이다.
 
 ## 개발 원칙
 
