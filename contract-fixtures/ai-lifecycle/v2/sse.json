@@ -1,0 +1,125 @@
+{
+  "contract_version": "2.0",
+  "browser_endpoint": "/api/v2/consultations/{session_id}/messages/stream/",
+  "ai_endpoint": "/v2/chat/stream",
+  "required_browser_headers": ["Authorization", "Idempotency-Key", "Accept"],
+  "required_service_headers": ["Authorization", "Accept"],
+  "content_type": "text/event-stream",
+  "terminal_events": ["done", "error"],
+  "allowed_events": ["start", "delta", "done", "error"],
+  "browser_request": {
+    "contract_version": "2.0",
+    "content": "월급은 세후 300만 원이에요.",
+    "step_id": "basic-info",
+    "form_data": {}
+  },
+  "ai_request": {
+    "contract_version": "2.0",
+    "request_id": "ai_req_fixture",
+    "session_id": 1,
+    "thread_id": "user-3-session-1",
+    "step_id": "basic-info",
+    "message": "월급은 세후 300만 원이에요.",
+    "deadline_at": "2026-09-08T00:01:00Z",
+    "customer_info": {"saved_data": {}, "current_form": {}},
+    "field_registry": [],
+    "chart_payload": null
+  },
+  "ai_events": [
+    {
+      "event": "start",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "session_id": 1,
+        "thread_id": "user-3-session-1"
+      }
+    },
+    {
+      "event": "delta",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "content": "월급 정보를 확인했습니다."
+      }
+    },
+    {
+      "event": "done",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "status": "completed",
+        "completed_at": "2026-09-08T00:00:01Z",
+        "output": {
+          "response": "월급 정보를 확인했습니다.",
+          "step_id": "basic-info",
+          "action": null
+        }
+      }
+    }
+  ],
+  "browser_events": [
+    {
+      "event": "start",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "user_message_id": 41
+      }
+    },
+    {
+      "event": "delta",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "content": "월급 정보를 확인했습니다."
+      }
+    },
+    {
+      "event": "done",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "status": "completed",
+        "message": {
+          "id": 42,
+          "role": "assistant",
+          "content": "월급 정보를 확인했습니다.",
+          "extracted_data": {"action": null}
+        }
+      }
+    }
+  ],
+  "error_event": {
+    "event": "error",
+    "data": {
+      "contract_version": "2.0",
+      "request_id": "ai_req_fixture",
+      "session_id": 1,
+      "thread_id": "user-3-session-1",
+      "status": "failed",
+      "completed_at": "2026-09-08T00:00:01Z",
+      "error": {
+        "code": "INTERNAL_ERROR",
+        "message": "AI 응답 생성에 실패했습니다.",
+        "retryable": true
+      }
+    }
+  },
+  "idempotency": {
+    "same_key_processing": {"http_status": 409, "code": "AI_STREAM_IN_PROGRESS"},
+    "same_key_completed": {"replay_events": ["start", "done"]},
+    "same_key_changed_payload": {"http_status": 409, "code": "IDEMPOTENCY_CONFLICT"},
+    "ttl_seconds": 86400
+  },
+  "timeouts_seconds": {
+    "service_connect": 5,
+    "stream_read_idle": 60,
+    "gateway_proxy": 130,
+    "host_proxy": 140
+  }
+}

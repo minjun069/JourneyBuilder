@@ -4,6 +4,10 @@
 
 이 문서는 Django→AI 작업 요청, AI→Django callback, 서비스 인증·상태·오류·호환성과 step별 Agent allowlist를 소유한다. Browser↔Django 계약은 [Django HTTP API](http-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
+일반 AI 상담의 `POST /v2/chat/stream` 요청과 이벤트는
+[AI 상담 SSE v2 계약](sse-v2.md)을 따른다. 기존 `POST /v2/chat`과 callback은
+초기 장애 전환 경로로 유지한다.
+
 ## 호출 주체와 책임
 
 Browser는 AI 서버를 직접 호출하지 않는다. Django가 사용자 인증, 상담 세션 소유권, canonical snapshot, 작업 상태, callback 검증, change별 승인·거절 감사와 최종 폼 저장을 담당한다.
