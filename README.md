@@ -78,6 +78,24 @@ G1은 빈 volume·clean image에서 migration, 두 애플리케이션 readiness,
 `ai-docs/contracts/current-state.md`, 입력별 활성 상태는
 `contract-fixtures/g1/artifact-consistency.json`을 따른다.
 
+## PB 관리자 대시보드
+
+PB(프라이빗 뱅커)가 전체 고객의 재무 데이터를 통합 조회하는 화면이다. 프론트 라우트는
+`/pb`(개요·고객 리스트·고객 상세·세그먼트), API 는 `backend-pjt/adminapi/` 의
+`/api/v1/admin/*` 전체가 `IsAdminUser`(is_staff) 로 보호되며 v1 은 조회 전용(GET)이다.
+로그인 후 `GET /api/v1/auth/me/` 의 `is_staff` 로 역할을 판별한다.
+집계는 요청 시 계산이라 PB 화면의 60초 폴링만으로 최신 DB 상태가 반영된다.
+
+```bash
+# PB 계정 생성 (회원가입 화면으로는 만들 수 없다)
+docker compose exec backend python manage.py create_pb pb@example.com --name "김PB" --password "..."
+
+# 시연용 가상 고객 시드 (이메일 @retirewise.demo 계정만 생성·재생성)
+docker compose exec backend python manage.py seed_demo --count 40
+```
+
+상세 요구사항·세그먼트 축 정의는 PB 대시보드 요구사항 정의서(내부 아티팩트 v0.3)를 따른다.
+
 ## 개발 원칙
 
 - AI는 Django 업무 테이블을 직접 수정하지 않는다.
