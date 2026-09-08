@@ -127,11 +127,7 @@ deploy:production:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       when: never                # MR 파이프라인에서는 배포하지 않는다
     - if: $CI_COMMIT_BRANCH == "master"
-      when: on_success           # test 스테이지 통과 시 자동
-    # 1차 검증용: 기능 브랜치에서 수동 1회 실행. master 자동 전환 시 이 규칙을 제거한다
-    - if: $CI_COMMIT_BRANCH
-      when: manual
-      allow_failure: true        # 수동 잡이 파이프라인 상태를 blocked 로 만들지 않게
+      when: on_success           # test 스테이지 통과 시 자동. 그 외 브랜치에서는 잡이 생성되지 않는다
   script:
     - bash deploy/deploy.sh
   after_script:
