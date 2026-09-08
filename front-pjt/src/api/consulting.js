@@ -1,6 +1,6 @@
 import api from '@/api'
 import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
-import { readSSEStream, validateSSEEvents } from '@/api/sse'
+import { readSSEStream, validateSSEEvents, validateV2SSEEvents } from '@/api/sse'
 import {
   AI_CONTRACT_VERSION,
   createIdempotencyKey,
@@ -58,6 +58,49 @@ export const approveAsyncChange = (sid, actionId, changeId, options = {}) => (
 export const rejectAsyncChange = (sid, actionId, changeId, options = {}) => (
   decideAsyncChange(sid, actionId, changeId, 'reject', options.idempotencyKey)
 )
+
+export async function* streamMessagesV2(
+  sid,
+  body,
+  { idempotencyKey = createIdempotencyKey(), signal } = {},
+) {
+  const token = localStorage.getItem('access_token')
+  const headers = {
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
+    'Idempotency-Key': idempotencyKey,
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const response = await fetch(`${V2_BASE_URL}/consultations/${sid}/messages/stream/`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ...body, contract_version: AI_CONTRACT_VERSION }),
+    signal,
+  })
+  if (!response.ok) {
+    let publicError = null
+    try {
+      const payload = await response.json()
+      if (payload?.success === false && typeof payload.error === 'object') {
+        publicError = payload.error
+      }
+    } catch {
+      // JSON 오류 응답이 아니면 안전한 기본 메시지를 사용한다.
+    }
+    const error = new Error(publicError?.message ?? 'AI 스트림 요청에 실패했습니다.')
+    error.code = publicError?.code ?? 'AI_STREAM_REQUEST_FAILED'
+    error.retryable = publicError?.retryable ?? true
+    error.status = response.status
+    throw error
+  }
+
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('text/event-stream')) {
+    throw new Error('AI 스트림 응답 형식이 올바르지 않습니다.')
+  }
+  yield* validateV2SSEEvents(readSSEStream(response.body))
+}
 
 // v1 SSE는 장애 전환과 비교 검증을 위한 호환 경로로 유지한다.
 export async function* streamMessages(sid, body, { signal } = {}) {

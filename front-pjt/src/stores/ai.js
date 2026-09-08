@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   getSessions, createSession,
-  getMessages, streamMessages,
+  getMessages, streamMessages, streamMessagesV2,
   approveAiAction, rejectAiAction,
   postAsyncMessage, getAsyncMessage,
   approveAsyncChange, rejectAsyncChange,
@@ -139,6 +139,35 @@ export const useAiStore = defineStore('ai', () => {
           form_data: mapCurrentForm(stepId, form ?? {}),
         },
         { signal: controller.signal },
+      )
+      for await (const event of events) {
+        if (event.data?.request_id) requestId.value = event.data.request_id
+        yield event
+      }
+    } finally {
+      if (activeStreamController === controller) activeStreamController = null
+    }
+  }
+
+  // 일반 AI 상담 기본 경로: v2 인증·멱등성 계약을 유지하며 SSE로 수신한다.
+  async function* streamMessageV2(content, { stepId, form = null } = {}) {
+    if (!sessionId.value) return
+    cancelActiveStream()
+    const controller = new AbortController()
+    activeStreamController = controller
+
+    try {
+      const events = streamMessagesV2(
+        sessionId.value,
+        {
+          content,
+          step_id: stepId,
+          form_data: mapCurrentForm(stepId, form ?? {}),
+        },
+        {
+          idempotencyKey: createIdempotencyKey(),
+          signal: controller.signal,
+        },
       )
       for await (const event of events) {
         if (event.data?.request_id) requestId.value = event.data.request_id
@@ -289,7 +318,7 @@ export const useAiStore = defineStore('ai', () => {
     presentationData,
     loading, error,
     initSession, loadSessions, continueLatestSession,
-    loadMessages, sendMessage, streamMessage, cancelActiveStream,
+    loadMessages, sendMessage, streamMessage, streamMessageV2, cancelActiveStream,
     approveAction, rejectAction, approveChange, rejectChange,
     saveFormData, loadBasicInfo,
     fetchPresentationData,

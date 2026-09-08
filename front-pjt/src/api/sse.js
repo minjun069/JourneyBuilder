@@ -109,3 +109,42 @@ export async function* validateSSEEvents(events) {
   }
   throw new SSEProtocolError('SSE 연결이 완료 이벤트 없이 종료되었습니다.')
 }
+
+
+export async function* validateV2SSEEvents(events) {
+  for await (const event of validateSSEEvents(events)) {
+    if (event.data.contract_version !== '2.0') {
+      throw new SSEProtocolError('SSE contract_version이 올바르지 않습니다.')
+    }
+    if (event.event === 'delta' && typeof event.data.content !== 'string') {
+      throw new SSEProtocolError('SSE delta content가 올바르지 않습니다.')
+    }
+    if (event.event === 'done') {
+      const message = event.data.message
+      if (
+        event.data.status !== 'completed'
+        || message == null
+        || typeof message !== 'object'
+        || !Number.isInteger(message.id)
+        || message.role !== 'assistant'
+        || typeof message.content !== 'string'
+      ) {
+        throw new SSEProtocolError('SSE 완료 메시지 형식이 올바르지 않습니다.')
+      }
+    }
+    if (event.event === 'error') {
+      const error = event.data.error
+      if (
+        event.data.status !== 'failed'
+        || error == null
+        || typeof error !== 'object'
+        || typeof error.code !== 'string'
+        || typeof error.message !== 'string'
+        || typeof error.retryable !== 'boolean'
+      ) {
+        throw new SSEProtocolError('SSE 오류 형식이 올바르지 않습니다.')
+      }
+    }
+    yield event
+  }
+}
