@@ -312,18 +312,55 @@ async function sendMessage() {
   scrollToBottom()
   isTyping.value = true
   isStreamingResponse.value = true
+  let streamedMessage = null
+
+  function ensureStreamedMessage() {
+    if (streamedMessage) return streamedMessage
+    isTyping.value = false
+    messages.value.push({
+      role: 'ai',
+      text: '',
+      displayText: '',
+      streaming: true,
+    })
+    streamedMessage = messages.value[messages.value.length - 1]
+    return streamedMessage
+  }
 
   try {
-    const assistantMessage = await aiStore.sendMessage(text, {
+    for await (const { event, data } of aiStore.streamMessageV2(text, {
       stepId: currentStepId.value,
       form: activeFormRef.value?.form ?? null,
-    })
-    if (!assistantMessage) throw new Error('완료된 AI 메시지가 없습니다.')
-    isTyping.value = false
-    messages.value.push(toChatMessage(assistantMessage))
-    scrollToBottom(false, true)
+    })) {
+      if (event === 'start') continue
+      if (event === 'delta') {
+        const message = ensureStreamedMessage()
+        message.text += data.content
+        message.displayText = message.text
+        scrollToBottom(false, true)
+        continue
+      }
+      if (event === 'error') {
+        const error = new Error(data.error.message)
+        error.code = data.error.code
+        error.retryable = data.error.retryable
+        throw error
+      }
+      if (event === 'done') {
+        const finalMessage = toChatMessage(data.message)
+        const message = ensureStreamedMessage()
+        message.text = finalMessage.text
+        message.displayText = finalMessage.text
+        message.streaming = false
+        if (finalMessage.action) message.action = finalMessage.action
+        scrollToBottom(false, true)
+        return
+      }
+    }
+    throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
   } catch (error) {
     if (error?.name === 'AbortError') return
+    if (streamedMessage) streamedMessage.streaming = false
     messages.value.push({
       role: 'ai',
       text: error?.message ?? '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',

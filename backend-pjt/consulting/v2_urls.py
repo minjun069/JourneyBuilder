@@ -4,6 +4,7 @@ from .v2_views import (
     V2ChangeApproveView,
     V2ChangeRejectView,
     V2MessageCreateView,
+    V2MessageStreamView,
     V2PollingView,
 )
 
@@ -13,6 +14,11 @@ urlpatterns = [
         'consultations/<int:session_id>/messages/',
         V2MessageCreateView.as_view(),
         name='v2-consultation-messages',
+    ),
+    path(
+        'consultations/<int:session_id>/messages/stream/',
+        V2MessageStreamView.as_view(),
+        name='v2-consultation-messages-stream',
     ),
     path(
         'consultations/<int:session_id>/ai-responses/<str:request_id>/',

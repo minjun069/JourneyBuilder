@@ -4,6 +4,10 @@
 
 이 문서는 Browser↔Django 메시지 접수·polling·change별 결정의 endpoint, envelope, 상태·오류와 호환성을 소유한다. Django↔AI 서비스 경계는 [AI 서비스 API](ai-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
+일반 AI 상담의 기본 응답 채널은 ADR-0002에 따라 v2 SSE로 확장한다. 스트리밍
+endpoint와 이벤트·멱등성 계약은 [AI 상담 SSE v2 계약](sse-v2.md)이 소유하며,
+이 문서의 callback + polling 계약은 장애 전환 경로로 유지한다.
+
 ## 공통 규칙
 
 - Browser는 `/api/v2` 아래 Django API만 호출한다. AI 서버와 MCP 서버는 직접 호출하지 않는다.
@@ -151,4 +155,4 @@ POST /api/v2/consultations/{session_id}/ai-actions/{action_id}/changes/{change_i
 
 ## 남은 범위
 
-전체 제품 API의 날짜·timezone 정책 적용 결과와 AI 상담 외 endpoint의 v2 전환은 별도 확인이 필요하다. AI 상담 상태 갱신은 v2에서 polling으로 동결하며 SSE 전환은 후속 breaking 또는 별도 endpoint 결정으로 다룬다.
+전체 제품 API의 날짜·timezone 정책 적용 결과와 AI 상담 외 endpoint의 v2 전환은 별도 확인이 필요하다. 일반 상담은 별도 v2 SSE endpoint를 사용하며 callback + polling은 초기 장애 전환 경로로 유지한다.

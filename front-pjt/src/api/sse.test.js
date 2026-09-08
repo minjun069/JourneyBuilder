@@ -6,6 +6,7 @@ import {
   createSSEParser,
   readSSEStream,
   validateSSEEvents,
+  validateV2SSEEvents,
 } from './sse.js'
 
 
@@ -71,5 +72,64 @@ test('request_id가 변경되면 스트림을 거절한다', async () => {
 
   await assert.rejects(async () => {
     for await (const event of validateSSEEvents(source())) void event
+  }, SSEProtocolError)
+})
+
+
+test('v2 SSE 완료 이벤트는 저장된 assistant message를 검증한다', async () => {
+  async function* source() {
+    yield {
+      event: 'start',
+      data: { contract_version: '2.0', request_id: 'req-v2' },
+    }
+    yield {
+      event: 'delta',
+      data: { contract_version: '2.0', request_id: 'req-v2', content: '답변' },
+    }
+    yield {
+      event: 'done',
+      data: {
+        contract_version: '2.0',
+        request_id: 'req-v2',
+        status: 'completed',
+        message: {
+          id: 42,
+          role: 'assistant',
+          content: '답변',
+          extracted_data: { action: null },
+        },
+      },
+    }
+  }
+
+  const events = []
+  for await (const event of validateV2SSEEvents(source())) events.push(event)
+
+  assert.deepEqual(events.map(({ event }) => event), ['start', 'delta', 'done'])
+})
+
+
+test('v2 SSE는 contract version과 terminal error 구조를 강제한다', async () => {
+  async function* invalidVersion() {
+    yield { event: 'start', data: { contract_version: '1.0', request_id: 'req-v2' } }
+  }
+  await assert.rejects(async () => {
+    for await (const event of validateV2SSEEvents(invalidVersion())) void event
+  }, SSEProtocolError)
+
+  async function* invalidError() {
+    yield { event: 'start', data: { contract_version: '2.0', request_id: 'req-v2' } }
+    yield {
+      event: 'error',
+      data: {
+        contract_version: '2.0',
+        request_id: 'req-v2',
+        status: 'failed',
+        error: { code: 'INTERNAL_ERROR', message: '실패' },
+      },
+    }
+  }
+  await assert.rejects(async () => {
+    for await (const event of validateV2SSEEvents(invalidError())) void event
   }, SSEProtocolError)
 })

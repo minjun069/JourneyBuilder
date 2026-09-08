@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from django.db import transaction
+from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -29,6 +30,7 @@ from .ai_lifecycle import (
     verify_service_bearer,
 )
 from .models import ConsultingSession, Message
+from .v2_sse import proxy_v2_ai_stream, replay_v2_stream
 
 
 def error_response(error):
@@ -157,6 +159,115 @@ class V2MessageCreateView(V2APIView):
                 },
             )
             return Response(response_body, status=response_status)
+        except LifecycleError as exc:
+            return error_response(exc)
+        except Exception:
+            return error_response(
+                LifecycleError(
+                    503,
+                    'AI_STATE_UNAVAILABLE',
+                    'AI 작업 상태 저장소를 사용할 수 없습니다.',
+                    True,
+                )
+            )
+
+
+class V2MessageStreamView(V2APIView):
+    permission_classes = [IsAuthenticated]
+
+    @staticmethod
+    def _stream_response(iterator):
+        response = StreamingHttpResponse(iterator, content_type='text/event-stream')
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+        return response
+
+    def post(self, request, session_id):
+        session = get_owned_session(session_id, request.user)
+        if session is None:
+            return error_response(
+                LifecycleError(404, 'SESSION_NOT_FOUND', '상담 세션을 찾을 수 없습니다.')
+            )
+        if session.status in (
+            ConsultingSession.Status.COMPLETED,
+            ConsultingSession.Status.ABANDONED,
+        ):
+            return error_response(
+                LifecycleError(409, 'SESSION_CLOSED', '종료된 상담입니다.')
+            )
+
+        try:
+            body = validate_browser_message(request.data)
+            key = require_idempotency_key(request)
+            store = RedisLifecycleStore()
+            digest = canonical_digest(body)
+            replay = store.get_idempotency(request.user.id, session.id, key)
+            if replay is not None:
+                if replay.get('payload_digest') != digest or replay.get('transport') != 'sse':
+                    raise LifecycleError(
+                        409,
+                        'IDEMPOTENCY_CONFLICT',
+                        '같은 idempotency key의 요청 내용 또는 전송 방식이 다릅니다.',
+                    )
+                state = store.get_request(replay.get('request_id'))
+                if state is None:
+                    raise LifecycleError(
+                        503,
+                        'AI_STATE_UNAVAILABLE',
+                        'AI 작업 상태를 사용할 수 없습니다.',
+                        True,
+                    )
+                if state['status'] == 'processing':
+                    raise LifecycleError(
+                        409,
+                        'AI_STREAM_IN_PROGRESS',
+                        '같은 AI 스트림 요청이 처리 중입니다.',
+                        True,
+                    )
+                message = None
+                if state['status'] == 'completed':
+                    message = Message.objects.filter(
+                        id=state.get('assistant_message_id'),
+                        session=session,
+                    ).first()
+                return self._stream_response(replay_v2_stream(state, message))
+
+            user_message = Message.objects.create(
+                session=session,
+                role=Message.Role.USER,
+                content=body['content'],
+            )
+            request_id = new_request_id()
+            ai_payload = build_v2_ai_payload(
+                request_id=request_id,
+                session=session,
+                user=request.user,
+                message=body['content'],
+                step_id=body['step_id'],
+                form_data=body['form_data'],
+            )
+            state = make_processing_state(
+                request_id=request_id,
+                session=session,
+                user=request.user,
+                user_message_id=user_message.id,
+                thread_id=ai_payload['thread_id'],
+                step_id=body['step_id'],
+            )
+            store.save_active(state)
+            store.save_idempotency(
+                request.user.id,
+                session.id,
+                key,
+                {
+                    'transport': 'sse',
+                    'payload_digest': digest,
+                    'request_id': request_id,
+                },
+            )
+            return self._stream_response(
+                proxy_v2_ai_stream(session, ai_payload, state, store)
+            )
         except LifecycleError as exc:
             return error_response(exc)
         except Exception:
