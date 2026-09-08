@@ -1,7 +1,7 @@
 # What-if 비교 계산 가이드
 
-상태: **3번 공통 경로 비교·결과 모델·기본 테스트 구현 완료.**
-4번 확대 경계 검증·5번 전용 CLI와 실제 데이터·서비스 연결은 남아 있다.
+상태: **3번 공통 경로 비교·결과 모델·기본 테스트, 4번 확대 경계 검증 완료.**
+5번 전용 CLI와 실제 데이터·서비스 연결은 남아 있다.
 
 [`what_if_engine.py`](../what_if_engine.py)는 [변경안 생성기](what-if-scenarios.md)와
 [몬테카를로 엔진](monte-carlo-engine.md)을 조합한다. 현금흐름·분포·분위수 공식을
@@ -179,7 +179,7 @@ CLI는 변경하지 않았으며 What-if 전용 CLI는 5번에서 추가한다.
 
 ## 6. 검증 기록·자원·남은 범위
 
-2026-09-08, Python 3.13.15·Miniforge `retirewise-ai`에서 기존 219개에
+3번 완료 시점인 2026-09-08, Python 3.13.15·Miniforge `retirewise-ai`에서 기존 219개에
 [`test_what_if_engine.py`](../tests/test_what_if_engine.py)의 32개를 추가해
 **전체 251개 테스트**가 일반 실행과 `-S` 실행 모두 통과했다.
 전체 테스트의 역순 실행도 통과했고, 5절의 예시 코드를 그대로 실행해 기대 출력을 확인했다.
@@ -198,10 +198,11 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement/tests -p test_what_if_engine.py -v
 ```
 
-검산 예시와 고정/비영 변동성·물가의 기존 엔진 대조는 기본 검증이다. 다양한 은퇴·생활비·
-수치 범위 조합의 확대 검증은 4번에서 진행한다. 시장 적합성·통계적 신뢰구간·운영 성능
-검증 완료를 의미하지 않는다. 수동 합성 요약을 사용한 차이 overflow 검사는 오류 처리
-검증용이며 실제 고객 계산 결과로 표시하지 않는다.
+후속 4번에서 독립 Decimal 검산·은퇴/생활비·고갈/회복·순서/재현성·수치 오류·개별 상한
+테스트 25개를 추가해 현재는 **전체 276개 통과**다. 상세 범위와 명령은
+[What-if 검증 기록](what-if-validation.md)을 참고한다. 양쪽 계산은 유한하지만 차이가
+overflow하는 실제 입력도 검증했다. 기존 수동 합성 요약 오류 검사는 유지하며 실제 고객
+결과로 표시하지 않는다. 시장 적합성·통계적 신뢰구간·운영 성능 검증 완료를 의미하지 않는다.
 
 변경안 수 `S`, 경로 수 `N`, 연도 수 `T`일 때 대략 `O((S+1)×T×N log N)` 시간과
 `O(N×T + S×T)` 공간을 사용한다. 공통 경로·현재 실행의 표본을 보관하고, 끝난 안은
