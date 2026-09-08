@@ -123,7 +123,7 @@ def main(argv: list[str] | None = None) -> None:
                 )
     print(f"Calculated {len(cases)} synthetic cases. This CLI runs fixed cashflow only.")
     print("Monte Carlo samples: python -m retirement.monte_carlo_samples. "
-          "What-if and service integration are not implemented.")
+          "What-if samples: python -m retirement.what_if_samples. Service integration is not implemented.")
     print("Negative balances are unmet funding gaps, not loan balances. Display rounding does not change depletion.")
 
 

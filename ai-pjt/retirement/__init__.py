@@ -1,4 +1,4 @@
-"""Standalone retirement cashflow and Monte Carlo, without an Agent or HTTP API."""
+"""Standalone retirement engines and What-if inputs, without an Agent or HTTP API."""
 
 from .cashflow import (
     CashflowCalculationError,
@@ -30,14 +30,33 @@ from .monte_carlo import (
     calculate_monte_carlo_paths,
 )
 
+from .what_if import WhatIfChanges, create_what_if_profile
+
+from .what_if_engine import (
+    MAX_WHAT_IF_SCENARIOS,
+    AmountPercentileDelta,
+    AssetPercentileDelta,
+    FirstDepletionDelta,
+    WhatIfCalculationError,
+    WhatIfResult,
+    WhatIfScenario,
+    WhatIfScenarioResult,
+    calculate_what_if,
+    calculate_what_if_paths,
+)
+
 __all__ = [
+    "MAX_WHAT_IF_SCENARIOS",
+    "AmountPercentileDelta",
     "AmountPercentiles",
+    "AssetPercentileDelta",
     "AssetPercentiles",
     "AssetPoint",
     "CashflowCalculationError",
     "CashflowResult",
     "CashflowYear",
     "FirstDepletionCount",
+    "FirstDepletionDelta",
     "ModelValidationError",
     "MonteCarloCalculationError",
     "MonteCarloMetadata",
@@ -47,9 +66,17 @@ __all__ = [
     "RetirementProfile",
     "ReturnPathGenerationError",
     "SimulationAssumptions",
+    "WhatIfCalculationError",
+    "WhatIfChanges",
+    "WhatIfResult",
+    "WhatIfScenario",
+    "WhatIfScenarioResult",
     "calculate_cashflow",
     "calculate_cashflow_path",
     "calculate_monte_carlo",
     "calculate_monte_carlo_paths",
+    "calculate_what_if",
+    "calculate_what_if_paths",
+    "create_what_if_profile",
     "generate_return_paths",
 ]
