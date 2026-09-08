@@ -1,7 +1,8 @@
 # What-if 시나리오 생성 가이드
 
 상태: **2번 시나리오 생성·입력 검증·기본 테스트 구현 완료.**
-공통 시장 경로를 만드는 비교 계산기·결과 모델·전용 CLI·서비스 연결은 아직 없다.
+후속 3번에서 공통 시장 경로 비교·결과 모델을 구현했다.
+[비교 계산 가이드](what-if-engine.md)를 참고한다. 전용 CLI·서비스 연결은 남아 있다.
 
 [`what_if.py`](../what_if.py)는 [계산·비교 규칙](what-if-rules.md)의 입력 변경 부분만
 구현한다. 기존 `RetirementProfile` 검증을 재사용하며 계산·난수 생성·저장 작업을 하지 않는다.
@@ -19,8 +20,9 @@ from retirement import WhatIfChanges, create_what_if_profile
 | `create_what_if_profile(profile, changes) -> RetirementProfile` | 기준 프로필과 변경 조건을 받아 검증된 새 불변 프로필 반환. 두 인자 모두 필수 |
 
 한 번 호출할 때 변경안 하나를 만든다. 여러 안은 **동일한 기준 프로필**에 각각 적용한다.
-이 함수는 이전 호출의 결과·고객 상태를 기억하지 않는다. 복수 시나리오의 식별자·개수
-상한·배치 비교 입구는 3번에서 정한다. 현재 입력에는 라벨이나 고객 ID를 넣지 않는다.
+이 함수는 이전 호출의 결과·고객 상태를 기억하지 않는다. 복수 비교는 3번의
+`WhatIfScenario`로 식별자를 붙여 1~10개씩 전달한다. `WhatIfChanges`나 이 생성 함수에
+식별자·라벨·고객 ID를 추가한 것은 아니다. 구체적인 배치 규격은 비교 계산 가이드에 있다.
 
 ### 선택 필드
 
@@ -146,7 +148,7 @@ for candidate, expected in zip((baseline, saving_more, retiring_early), expected
 | `WhatIfProfileTests` | 24 | 동시 변경·전체 일정 교체·구간·은퇴 제한·원본 보존·반복 독립성·오류·계산/RNG 미호출 |
 | `WhatIfCashflowCompatibilityTests` | 5 | 규칙 A~C의 프로필 생성 후 기존 엔진 실행, 물가 기준 유지·은퇴 후 적립 없음 |
 
-전체는 기존 181개 + 신규 38개 = **219개**이며 일반 실행과 `-S` 실행 모두 통과했다.
+2번 완료 시 전체는 기존 181개 + 신규 38개 = **219개**였으며 일반·`-S` 실행 모두 통과했다.
 3절의 예시 코드도 그대로 실행해 손계산 기대값과 일치함을 확인했다. 저장소 루트에서:
 
 ```bash
@@ -155,6 +157,7 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement/tests -p test_what_if.py -v
 ```
 
-기본 테스트는 공개 생성 함수를 실제 호출한다. 확률·분위수 차이·출처 모델·공통 경로
-생성 횟수·비교 도중 수치 오류는 **3번 비교 계산기 구현 후** 검증한다. 4번의 확대 경계
-검증과 5번 전용 샘플도 남아 있다. API·Agent·실제 입력 adapter·서비스 연결은 변경하지 않았다.
+기본 테스트는 공개 생성 함수를 실제 호출한다. 후속 3번에서 확률·분위수 차이·출처·
+공통 경로 생성 횟수·비교 오류 검증 32개를 추가해 현재 전체는 **251개 통과**다.
+4번 확대 경계 검증과 5번 전용 샘플은 남아 있다. API·Agent·실제 입력 adapter·서비스
+연결은 변경하지 않았다.

@@ -1,7 +1,8 @@
 """Immutable What-if inputs; no calculation, RNG, context, or service changes.
 
 See docs/what-if-rules.md for absolute-value overrides, full expense replacement,
-and restrictions on changing past retirement ages. Comparison is a later step.
+and restrictions on changing past retirement ages. Comparison lives separately
+in what_if_engine; profile creation itself does not run calculations.
 """
 
 from __future__ import annotations
