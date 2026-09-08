@@ -5,12 +5,17 @@
 #   ENV_FILE=.env deploy/deploy.sh                    # 로컬 재현
 #   deploy/deploy.sh --no-build                       # 이미지 재빌드 없이 재기동만
 #   deploy/deploy.sh --health-url http://127.0.0.1:8080/ --timeout 180
+#   deploy/deploy.sh --api-health-url http://127.0.0.1:8080/api/v1/consultations/
 #
 # 흐름
 #   1. 사전 점검: env 파일, compose 병합(config)
 #   2. 현재 기동 중인 빌드 이미지 ID 기록 (롤백 대상)
 #   3. build → up -d --remove-orphans   (migrate one-shot → backend 순서는 compose 가 보장)
-#   4. 헬스체크: web·backend 컨테이너 healthy + web HTTP 200. ai-pjt 는 상태만 보고(AI_REQUIRED=1 이면 필수)
+#      → gateway 재시작. gateway(nginx) 는 고정 upstream 이라 기동 시점의 backend IP 를 계속 쓴다.
+#        backend 가 재생성되면 IP 가 바뀌어 /api 가 502 가 되므로 up 뒤에 항상 다시 해석시킨다.
+#   4. 헬스체크: web·backend 컨테이너 healthy + web HTTP 200 + API 경로가 5xx 가 아닌 응답
+#      (API 프로브는 host→web→gateway→backend 전 구간을 검사한다. 인증 필요 경로라 401 이 정상 응답)
+#      ai-pjt 는 상태만 보고(AI_REQUIRED=1 이면 필수)
 #   5. 실패 → 직전 이미지로 태그를 되돌려 up -d --no-build, exit 1 (파이프라인 failed)
 #      성공 → 이미지 ID 를 last_good 에 저장, dangling 이미지 정리
 #
@@ -20,6 +25,7 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/srv/s15p21b109/secrets/app.env}"
 STATE_DIR="${STATE_DIR:-/srv/s15p21b109/state}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/}"
+API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8080/api/v1/consultations/}"   # 로그인 필요 경로 → 정상이면 401
 TIMEOUT="${TIMEOUT:-150}"
 AI_REQUIRED="${AI_REQUIRED:-0}"
 BUILD=1
@@ -29,6 +35,7 @@ while [ $# -gt 0 ]; do
     --env-file) ENV_FILE="$2"; shift 2 ;;
     --state-dir) STATE_DIR="$2"; shift 2 ;;
     --health-url) HEALTH_URL="$2"; shift 2 ;;
+    --api-health-url) API_HEALTH_URL="$2"; shift 2 ;;
     --timeout) TIMEOUT="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
     --ai-required) AI_REQUIRED=1; shift ;;
@@ -41,6 +48,11 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 compose() { docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
 log() { printf '[deploy %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+# gateway(nginx, 외부 이미지)는 up 에서 재생성되지 않는데 conf 의 upstream 이 고정이라 옛 backend IP 를 물고 있다 →
+# up 뒤에 재시작해서 다시 해석시킨다(1~2초 단절). web 의 nginx 는 resolver 방식이라 대상이 아니다.
+refresh_gateway() { compose restart gateway >/dev/null 2>&1 && log "gateway 재시작(upstream 재해석)" || log "경고: gateway 재시작 실패"; }
+# HTTP 상태코드가 "서버가 응답했다"를 뜻하는지 — 5xx 와 000(연결 실패)만 실패로 본다
+responded() { case "$1" in 000|5??) return 1 ;; *) return 0 ;; esac; }
 
 # 빌드하는 서비스만 롤백 대상 (외부 이미지 postgres/redis/gateway 는 태그가 고정이라 제외)
 BUILT_SERVICES=(web backend ai-pjt migrate)
@@ -75,6 +87,7 @@ if [ "$BUILD" = 1 ]; then
 fi
 log "compose up"
 compose up -d --remove-orphans
+refresh_gateway
 
 # ── 4. 헬스체크 ──────────────────────────────────────────────────────────
 health_of() {  # 컨테이너 Health.Status (healthcheck 없으면 running 여부)
@@ -83,17 +96,18 @@ health_of() {  # 컨테이너 Health.Status (healthcheck 없으면 running 여�
   docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid"
 }
 
-log "헬스체크 (최대 ${TIMEOUT}s): web·backend healthy + GET $HEALTH_URL"
+log "헬스체크 (최대 ${TIMEOUT}s): web·backend healthy + GET $HEALTH_URL 200 + GET $API_HEALTH_URL 이 5xx 아님"
 deadline=$(( $(date +%s) + TIMEOUT ))
 ok=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
   w="$(health_of web)"; b="$(health_of backend)"
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" 2>/dev/null)" || code="${code:-000}"
-  if [ "$w" = healthy ] && [ "$b" = healthy ] && [ "$code" = 200 ]; then ok=1; break; fi
+  api="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$API_HEALTH_URL" 2>/dev/null)" || api="${api:-000}"
+  if [ "$w" = healthy ] && [ "$b" = healthy ] && [ "$code" = 200 ] && responded "$api"; then ok=1; break; fi
   sleep 5
 done
 a="$(health_of ai-pjt)"
-log "결과: web=$w backend=$b http=$code ai-pjt=$a"
+log "결과: web=$w backend=$b http=$code api=$api ai-pjt=$a"
 if [ "$AI_REQUIRED" = 1 ] && [ "$a" != healthy ]; then ok=0; log "ai-pjt 가 필수인데 healthy 가 아님"; fi
 if [ "$a" != healthy ]; then log "경고: ai-pjt 상태 '$a' — GOOGLE_API_KEY 등 env 를 확인하세요 (배포 판정에는 미포함)"; fi
 
@@ -124,7 +138,9 @@ for svc in "${!PREV[@]}"; do
   fi
 done
 compose up -d --no-build --remove-orphans
+refresh_gateway
 sleep 10
 code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" 2>/dev/null)" || code="${code:-000}"
-log "롤백 후 상태: web=$(health_of web) backend=$(health_of backend) http=$code"
+api="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$API_HEALTH_URL" 2>/dev/null)" || api="${api:-000}"
+log "롤백 후 상태: web=$(health_of web) backend=$(health_of backend) http=$code api=$api"
 exit 1
