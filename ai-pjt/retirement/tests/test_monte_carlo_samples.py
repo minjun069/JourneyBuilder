@@ -144,7 +144,8 @@ class MonteCarloSampleOutputTests(unittest.TestCase):
             "not a single trajectory or a confidence interval", "0%/100% are not guarantees",
             "BE readiness scores", "same inputs, code, Python version and execution environment",
             "same seed across different horizons does not align paths",
-            "What-if, real-data adapters and service integration are not implemented",
+            "What-if samples: python -m retirement.what_if_samples",
+            "Real-data adapters and service integration are not implemented",
         ):
             with self.subTest(notice=notice):
                 self.assertIn(notice, output)

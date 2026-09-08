@@ -148,7 +148,8 @@ def main(argv: list[str] | None = None) -> int:
           "0%/100% are not guarantees or BE readiness scores.")
     print("Reproducibility requires the same inputs, code, Python version and execution environment.")
     print("The same seed across different horizons does not align paths for What-if comparisons.")
-    print("What-if, real-data adapters and service integration are not implemented.")
+    print("What-if samples: python -m retirement.what_if_samples. "
+          "Real-data adapters and service integration are not implemented.")
     return 0
 
 
