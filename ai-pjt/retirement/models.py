@@ -163,8 +163,8 @@ class SimulationAssumptions:
     """Explicit model parameters, not recommended or inferred market values.
 
 annual_return_mean refers to an arithmetic simple-return mean, not a log-return
-parameter. Distribution choice and rate conversion belong to later stages.
-num_paths has a provisional cap for future multi-path execution. Validation
+parameter. Conversion and sampling live in return_paths, not in these models.
+num_paths has a provisional cap for multi-path generation. Validation
 allocates no paths; the deterministic engine ignores this count.
 """
 
