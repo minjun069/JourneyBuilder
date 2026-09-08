@@ -1,4 +1,4 @@
-"""Standalone retirement models and cashflow engine, not an Agent or HTTP API."""
+"""Standalone retirement models, cashflow, and return paths; no Agent or HTTP API."""
 
 from .cashflow import (
     CashflowCalculationError,
@@ -17,6 +17,8 @@ from .models import (
     SimulationAssumptions,
 )
 
+from .return_paths import ReturnPathGenerationError, generate_return_paths
+
 __all__ = [
     "AssetPoint",
     "CashflowCalculationError",
@@ -26,7 +28,9 @@ __all__ = [
     "PensionIncome",
     "RetirementExpensePeriod",
     "RetirementProfile",
+    "ReturnPathGenerationError",
     "SimulationAssumptions",
     "calculate_cashflow",
     "calculate_cashflow_path",
+    "generate_return_paths",
 ]
