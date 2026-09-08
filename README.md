@@ -89,23 +89,26 @@ PB(프라이빗 뱅커)가 전체 고객의 재무 데이터를 통합 조회하
 로그인 후 `GET /api/v1/auth/me/` 의 `is_staff` 로 역할을 판별한다.
 집계는 요청 시 계산이라 PB 화면의 60초 폴링만으로 최신 DB 상태가 반영된다.
 
-```bash
-# PB 계정 생성 (회원가입 화면으로는 만들 수 없다)
-docker compose exec backend python manage.py create_pb pb@example.com --name "김PB" --password "..."
+로컬 시연 환경은 명령 한 번으로 세팅한다 — 팀 공용 PB 계정과 시드 고객 40명이 생성된다.
 
-# 시연용 가상 고객 시드 (이메일 @retirewise.demo 계정만 생성·재생성)
-docker compose exec backend python manage.py seed_demo --count 40
+```bash
+docker compose exec backend python manage.py bootstrap_demo
 ```
 
-로컬 시연용 PB 계정:
-
-| 이메일 | 비밀번호 |
+| 구분 | 값 |
 |---|---|
-| `admin1234@naver.com` | `admin1234` |
+| PB 계정 | `admin1234@naver.com` / `admin1234` |
+| 시드 고객 | `demo001~040@retirewise.demo` / 공통 `demo-pass-2026!` |
 
-PB 계정은 DB(볼륨)에 저장되므로 위 계정은 이 계정을 만든 로컬 DB에서만 유효하다.
-새로 받은 환경이라면 위 `create_pb` 명령으로 직접 생성한다. 시드 고객 40명의 로그인
-비밀번호는 공통으로 `demo-pass-2026!` 이다.
+- 계정·시드는 DB(볼륨)에 저장되므로 환경(팀원)마다 한 번씩 실행한다. 재실행해도 안전하다
+  (데모 계정만 재생성, 실제 가입 고객 데이터는 건드리지 않음).
+- 데모가 아닌 실제 고객이 있는 DB에서는 오염 방지를 위해 `--yes` 를 붙여야 실행된다.
+- **운영 서버에서는 사용 금지** — PB 계정은 `create_pb` 로 강한 비밀번호를 지정해 개별 생성한다.
+
+```bash
+# 운영용 PB 계정 생성 (회원가입 화면으로는 만들 수 없다)
+docker compose exec backend python manage.py create_pb pb@example.com --name "김PB" --password "..."
+```
 
 ## 개발 원칙
 

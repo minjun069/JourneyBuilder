@@ -336,6 +336,48 @@ class SeedDemoCommandTests(TestCase):
             User.objects.filter(email__endswith='@retirewise.demo').count(), 6)
 
 
+class BootstrapDemoCommandTests(TestCase):
+    def test_creates_pb_and_seed_in_one_shot(self):
+        call_command('bootstrap_demo', '--count', '6', verbosity=0)
+        pb = User.objects.get(email='admin1234@naver.com')
+        self.assertTrue(pb.is_staff)
+        self.assertTrue(pb.check_password('admin1234'))
+        self.assertEqual(pb.name, 'pb')
+        self.assertEqual(
+            User.objects.filter(email__endswith='@retirewise.demo').count(), 6)
+
+    def test_rerun_is_idempotent_and_resets_pb_password(self):
+        call_command('bootstrap_demo', '--count', '4', verbosity=0)
+        pb = User.objects.get(email='admin1234@naver.com')
+        pb.set_password('changed-by-someone-1')
+        pb.save(update_fields=['password'])
+        call_command('bootstrap_demo', '--count', '4', verbosity=0)
+        pb.refresh_from_db()
+        self.assertTrue(pb.check_password('admin1234'))
+        self.assertEqual(User.objects.filter(email='admin1234@naver.com').count(), 1)
+        self.assertEqual(
+            User.objects.filter(email__endswith='@retirewise.demo').count(), 4)
+
+    def test_guard_blocks_db_with_real_customers(self):
+        User.objects.create_user(email='real@user.com', password='real-pass-1234', name='실사용자')
+        with self.assertRaises(CommandError):
+            call_command('bootstrap_demo', '--count', '4', verbosity=0)
+        # 가드 발동 시 아무것도 만들지 않는다
+        self.assertFalse(User.objects.filter(email='admin1234@naver.com').exists())
+        # --yes 로 명시하면 실행되고, 실사용자 데이터는 건드리지 않는다
+        call_command('bootstrap_demo', '--count', '4', '--yes', verbosity=0)
+        self.assertTrue(User.objects.filter(email='real@user.com').exists())
+        self.assertEqual(
+            User.objects.filter(email__endswith='@retirewise.demo').count(), 4)
+
+    def test_staff_only_db_needs_no_flag(self):
+        pb = User.objects.create_user(email='other-pb@test.com', password='pb-pass-1234', name='PB')
+        pb.is_staff = True
+        pb.save(update_fields=['is_staff'])
+        call_command('bootstrap_demo', '--count', '4', verbosity=0)  # 가드 미발동
+        self.assertTrue(User.objects.filter(email='admin1234@naver.com').exists())
+
+
 class CreatePbCommandTests(TestCase):
     def test_creates_new_pb_account(self):
         call_command('create_pb', 'new-pb@test.com', '--name', '김PB', '--password', 'pb-pass-1234')
