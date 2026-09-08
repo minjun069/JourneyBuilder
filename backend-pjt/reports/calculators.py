@@ -1215,7 +1215,9 @@ def _average_monthly_retirement_expense(session):
     weighted_total = 0
     total_years = 0
 
-    for period in session.goal_periods.filter(phase='after').prefetch_related('items'):
+    # .all() 순회로 prefetch 캐시를 활용한다 (PB 리스트처럼 세션 다건을 다룰 때 N+1 방지)
+    after_periods = [period for period in session.goal_periods.all() if period.phase == 'after']
+    for period in after_periods:
         years = max(1, _to_int(period.to_age) - _to_int(period.from_age) + 1)
         monthly_total = sum(_to_int(item.amount) for item in period.items.all())
         weighted_total += monthly_total * years
