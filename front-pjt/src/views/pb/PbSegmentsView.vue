@@ -1,10 +1,18 @@
 <template>
   <div class="segments">
     <div class="page-head">
-      <h2 class="page-title">세그먼트 분석</h2>
+      <div>
+        <h2 class="page-title">세그먼트 분석</h2>
+        <p class="page-sub">고객군을 6개 축으로 나눠 인사이트를 찾습니다</p>
+      </div>
       <div class="refresh-area">
-        <span v-if="generatedAt" class="refreshed-at">마지막 갱신 {{ refreshedLabel }}</span>
-        <button type="button" class="btn-refresh" :disabled="loading" @click="load">새로고침</button>
+        <span v-if="generatedAt" class="refreshed-at">{{ refreshedLabel }} 갱신</span>
+        <button type="button" class="btn-refresh" :disabled="loading" @click="load">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" />
+          </svg>
+          새로고침
+        </button>
       </div>
     </div>
 
@@ -32,7 +40,7 @@
 
         <section class="card">
           <h3 class="card-title">
-            연령 × 순자산 산점도
+            연령 × 순자산
             <span class="title-sub">색 = 니즈 · 크기 = 월 잉여 · 점 클릭 → 고객 상세</span>
           </h3>
           <VChart class="chart" :option="scatterOption" autoresize @click="onScatterClick" />
@@ -59,15 +67,14 @@ import { getSegments } from '@/api/admin'
 import { usePolling } from '@/composables/usePolling'
 import { formatEok } from '@/utils/money'
 import { AXIS_LABELS, AXIS_QUERY_PARAM, bucketLabel } from './pbLabels'
+import { AXIS_TEXT, CHART_COLORS, GRADE_COLORS, SPLIT_LINE } from './pbTheme'
 
 use([CanvasRenderer, BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent])
 
-const AXIS_BAR_COLOR = '#5e5ce6'
 const NEED_COLORS = {
-  은퇴: '#5e5ce6', 투자: '#4bc0c0', 주택자금: '#ff9f40',
-  교육자금: '#ff6384', 보장: '#36a2eb', 기타: '#9ca3af',
+  은퇴: CHART_COLORS[0], 투자: CHART_COLORS[1], 주택자금: CHART_COLORS[2],
+  교육자금: CHART_COLORS[3], 보장: CHART_COLORS[4], 기타: CHART_COLORS[5],
 }
-const GRADE_COLORS = { 양호: '#66bb6a', 주의: '#ffa726', 위험: '#ef5350' }
 
 const router = useRouter()
 
@@ -86,17 +93,20 @@ const activeBuckets = computed(() => axes.value?.[activeAxis.value] ?? [])
 
 const axisBarOption = computed(() => ({
   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: '{b}: {c}명' },
-  grid: { left: 8, right: 16, top: 12, bottom: 0, containLabel: true },
+  grid: { left: 8, right: 16, top: 14, bottom: 0, containLabel: true },
   xAxis: {
     type: 'category',
     data: activeBuckets.value.map(b => bucketLabel(activeAxis.value, b.bucket)),
-    axisLabel: { fontSize: 11, interval: 0 },
+    axisLabel: { ...AXIS_TEXT, interval: 0 },
+    axisLine: { lineStyle: { color: '#e6e6f0' } },
+    axisTick: { show: false },
   },
-  yAxis: { type: 'value', minInterval: 1 },
+  yAxis: { type: 'value', minInterval: 1, axisLabel: AXIS_TEXT, splitLine: SPLIT_LINE },
   series: [{
     type: 'bar',
-    barWidth: '55%',
-    itemStyle: { color: AXIS_BAR_COLOR, borderRadius: [4, 4, 0, 0] },
+    barWidth: '52%',
+    itemStyle: { color: '#8280ee', borderRadius: [5, 5, 0, 0] },
+    emphasis: { itemStyle: { color: '#5e5ce6' } },
     data: activeBuckets.value.map(b => ({ value: b.count, bucket: b.bucket })),
   }],
 }))
@@ -113,21 +123,26 @@ const scatterOption = computed(() => {
     tooltip: {
       trigger: 'item',
       formatter: p => {
-        const d = p.data.meta
+        const d = p?.data?.meta
+        if (!d) return ''
         return `${d.name}<br/>${d.age}세 · 순자산 ${formatEok(d.net_worth)}<br/>월 잉여 ${formatEok(d.monthly_surplus)}`
       },
     },
-    legend: { top: 0, textStyle: { fontSize: 11 } },
-    grid: { left: 8, right: 20, top: 30, bottom: 0, containLabel: true },
-    xAxis: { type: 'value', name: '나이', min: 18, max: 80 },
+    legend: { top: 0, icon: 'circle', itemWidth: 9, itemHeight: 9, textStyle: { fontSize: 11, color: '#565a6e' } },
+    grid: { left: 8, right: 20, top: 32, bottom: 0, containLabel: true },
+    xAxis: {
+      type: 'value', name: '나이', min: 18, max: 80,
+      nameTextStyle: AXIS_TEXT, axisLabel: AXIS_TEXT, splitLine: SPLIT_LINE,
+    },
     yAxis: {
       type: 'value', name: '순자산',
-      axisLabel: { formatter: value => `${(value / 100_000_000).toFixed(0)}억` },
+      nameTextStyle: AXIS_TEXT, splitLine: SPLIT_LINE,
+      axisLabel: { ...AXIS_TEXT, formatter: value => `${(value / 100_000_000).toFixed(0)}억` },
     },
     series: [...groups.entries()].map(([need, points]) => ({
       name: need,
       type: 'scatter',
-      itemStyle: { color: NEED_COLORS[need] ?? '#d7d7e8', opacity: 0.75 },
+      itemStyle: { color: NEED_COLORS[need] ?? '#d0d1de', opacity: 0.78 },
       symbolSize: (value, params) => {
         const surplus = Math.abs(params?.data?.meta?.monthly_surplus ?? 0)
         return 8 + Math.min(16, surplus / 250_000)
@@ -142,20 +157,25 @@ const scatterOption = computed(() => {
 
 const indicatorStackOption = computed(() => ({
   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-  legend: { top: 0, textStyle: { fontSize: 12 } },
-  grid: { left: 8, right: 16, top: 28, bottom: 0, containLabel: true },
-  xAxis: { type: 'value', minInterval: 1 },
+  legend: { top: 0, icon: 'circle', itemWidth: 9, itemHeight: 9, textStyle: { fontSize: 12, color: '#565a6e' } },
+  grid: { left: 8, right: 16, top: 30, bottom: 0, containLabel: true },
+  xAxis: { type: 'value', minInterval: 1, axisLabel: AXIS_TEXT, splitLine: SPLIT_LINE },
   yAxis: {
     type: 'category',
     data: indicatorRisk.value.map(item => item.key),
-    axisLabel: { fontSize: 11 },
+    axisLabel: { ...AXIS_TEXT, fontSize: 11.5 },
+    axisLine: { show: false },
+    axisTick: { show: false },
   },
-  series: ['양호', '주의', '위험'].map(grade => ({
+  series: ['양호', '주의', '위험'].map((grade, i) => ({
     name: grade,
     type: 'bar',
     stack: 'total',
-    barWidth: 14,
-    itemStyle: { color: GRADE_COLORS[grade] },
+    barWidth: 13,
+    itemStyle: {
+      color: GRADE_COLORS[grade],
+      borderRadius: i === 2 ? [0, 3, 3, 0] : i === 0 ? [3, 0, 0, 3] : 0,
+    },
     data: indicatorRisk.value.map(item => item[grade]),
   })),
 }))
@@ -196,22 +216,39 @@ usePolling(load)
 </script>
 
 <style scoped>
-.page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-.page-title { font-size: 22px; font-weight: 700; color: #1a1a2e; margin: 0; }
-.refresh-area { display: flex; align-items: center; gap: 10px; }
-.refreshed-at { font-size: 12.5px; color: #888; }
-.btn-refresh {
-  border: 1px solid #d9d8f5; background: #fff; color: #5e5ce6;
-  font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 20px;
 }
-.btn-refresh:hover:not(:disabled) { background: #f3f3ff; }
+.page-title { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; color: #191a2b; margin: 0; }
+.page-sub { font-size: 13px; color: #9a9cb0; margin: 5px 0 0; }
+.refresh-area { display: flex; align-items: center; gap: 12px; }
+.refreshed-at { font-size: 12px; color: #a2a4b8; font-variant-numeric: tabular-nums; }
+.btn-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e3e2f4;
+  background: #fff;
+  color: #55538a;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-refresh svg { width: 13px; height: 13px; }
+.btn-refresh:hover:not(:disabled) { border-color: #c5c3ee; box-shadow: 0 1px 6px rgba(94, 92, 230, 0.12); }
 .btn-refresh:disabled { opacity: 0.5; }
 
 .axis-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .axis-chip {
-  border: 1px solid #e0dff7;
+  border: 1px solid #e6e6f0;
   background: #fff;
-  color: #555;
+  color: #565a6e;
   font-size: 13px;
   font-weight: 600;
   padding: 8px 16px;
@@ -219,28 +256,34 @@ usePolling(load)
   cursor: pointer;
   transition: all 0.15s ease;
 }
-.axis-chip:hover { border-color: #5e5ce6; color: #5e5ce6; }
-.axis-chip.active { background: #5e5ce6; border-color: #5e5ce6; color: #fff; }
+.axis-chip:hover { border-color: #c5c3ee; color: #5e5ce6; }
+.axis-chip.active {
+  background: #5e5ce6;
+  border-color: #5e5ce6;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(94, 92, 230, 0.28);
+}
 
 .chart-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .card {
   background: #fff;
-  border: 1px solid #ebebf5;
+  border: 1px solid #ebebf2;
   border-radius: 14px;
   padding: 20px 24px;
+  box-shadow: 0 1px 3px rgba(25, 26, 43, 0.04);
 }
-.card-title { font-size: 16px; font-weight: 700; color: #1a1a2e; margin: 0 0 12px; }
-.title-sub { font-size: 12px; font-weight: 400; color: #999; margin-left: 8px; }
+.card-title { font-size: 15px; font-weight: 700; color: #191a2b; margin: 0 0 12px; }
+.title-sub { font-size: 12px; font-weight: 400; color: #a2a4b8; margin-left: 8px; }
 
 .chart { height: 300px; }
 .chart.stack { height: 280px; }
 
-.placeholder { color: #888; font-size: 14px; }
-.placeholder.error { color: #d43a3a; }
+.placeholder { color: #9a9cb0; font-size: 14px; }
+.placeholder.error { color: #d64550; }
 </style>

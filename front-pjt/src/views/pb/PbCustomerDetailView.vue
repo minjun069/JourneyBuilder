@@ -8,13 +8,18 @@
     <template v-else-if="detail">
       <!-- FR-04 프로필 헤더 -->
       <header class="profile-head">
-        <div>
-          <h2 class="name">{{ detail.profile.name }}</h2>
+        <span class="profile-avatar" :style="avatarStyle(detail.profile.name)">
+          {{ initialOf(detail.profile.name) }}
+        </span>
+        <div class="profile-main">
+          <h2 class="name">
+            {{ detail.profile.name }}
+            <span v-if="detail.basic_info?.need" class="need-chip">{{ detail.basic_info.need }}</span>
+          </h2>
           <p class="sub">
             {{ detail.basic_info?.age ?? '—' }}세 ·
             {{ detail.basic_info?.job ?? '직업 미입력' }} ·
-            {{ detail.basic_info?.marital_status ?? '—' }} ·
-            니즈: {{ detail.basic_info?.need ?? '—' }}
+            {{ detail.basic_info?.marital_status ?? '—' }}
           </p>
           <p class="sub muted">
             {{ detail.profile.email }}
@@ -198,6 +203,7 @@ import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue
 import { makeIndicator } from '@/components/charts/financialIndicatorSchema'
 import { getCustomer } from '@/api/admin'
 import { formatEok } from '@/utils/money'
+import { avatarStyle, initialOf } from './pbTheme'
 
 const STATUS_META = {
   completed:   { label: '상담 완료', cls: 'done' },
@@ -353,17 +359,51 @@ onMounted(async () => {
 .profile-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  gap: 18px;
   background: #fff;
-  border: 1px solid #ebebf5;
+  border: 1px solid #ebebf2;
   border-radius: 14px;
   padding: 22px 26px;
   margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(25, 26, 43, 0.04);
 }
 
-.name { font-size: 22px; font-weight: 700; color: #1a1a2e; margin: 0 0 6px; }
-.sub { font-size: 14px; color: #555; margin: 0 0 4px; }
-.sub.muted { color: #999; font-size: 12.5px; margin-bottom: 10px; }
+.profile-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.profile-main { flex: 1; min-width: 0; }
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: #191a2b;
+  margin: 0 0 5px;
+}
+
+.need-chip {
+  font-size: 12px;
+  font-weight: 600;
+  color: #55538a;
+  background: #f3f3fc;
+  border-radius: 6px;
+  padding: 3px 9px;
+}
+
+.sub { font-size: 13.5px; color: #565a6e; margin: 0 0 3px; }
+.sub.muted { color: #a2a4b8; font-size: 12.5px; margin-bottom: 10px; }
 
 .tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .tag {
@@ -418,14 +458,15 @@ onMounted(async () => {
 
 .card {
   background: #fff;
-  border: 1px solid #ebebf5;
+  border: 1px solid #ebebf2;
   border-radius: 14px;
   padding: 20px 24px;
   margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(25, 26, 43, 0.04);
 }
 
-.card-title { font-size: 16px; font-weight: 700; color: #1a1a2e; margin: 0 0 14px; }
-.title-sub { font-size: 12px; font-weight: 400; color: #999; }
+.card-title { font-size: 15px; font-weight: 700; color: #191a2b; margin: 0 0 14px; }
+.title-sub { font-size: 12px; font-weight: 400; color: #a2a4b8; }
 
 .gauge-grid {
   display: grid;
