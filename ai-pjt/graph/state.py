@@ -20,6 +20,7 @@ class ExecutionBudgetState(TypedDict):
     task_limit: int
     tasks_used: int
     tool_calls_used: int
+    tool_call_limit: NotRequired[int]
     retries_used: int
 
 
@@ -29,6 +30,7 @@ class ChatState(TypedDict):
     step_id: str
     customer_info: dict
     field_registry: list[dict]
+    tool_context: NotRequired[dict[str, Any]]
     next: str   # 라우터가 결정한 다음 에이전트 노드명
     output: dict  # 에이전트 응답 — input_assist는 FormChangeAction 포함
     context_scope: NotRequired[ContextScopeState]

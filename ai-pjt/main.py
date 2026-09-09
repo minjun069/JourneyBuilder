@@ -129,6 +129,13 @@ def _graph_input(request: ChatRequest | ChatStreamRequest | ChatV2Request) -> di
     chart_payload = getattr(request, "chart_payload", None)
     if chart_payload is not None:
         payload["chart_payload"] = chart_payload
+    tool_context = getattr(request, "tool_context", None)
+    if tool_context is not None:
+        payload["tool_context"] = (
+            tool_context.model_dump(mode="json")
+            if hasattr(tool_context, "model_dump")
+            else tool_context
+        )
     return payload
 
 

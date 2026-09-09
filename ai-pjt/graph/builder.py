@@ -25,6 +25,7 @@ from graph.router import classify_task_with_model
 from graph.state import ChatState
 from graph.task_contracts import failed_task_result
 from tools.output_validation import validate_form_update, validate_form_update_contract
+from tools.runtime import ToolCallBudget
 
 
 SAFE_PLAN_FAILURE_RESPONSE = (
@@ -248,9 +249,37 @@ def build_graph(
             agent_executors=agent_executors,
             tool_executors=active_tools,
             task_limit=task_limit,
+            request_id=str(state.get("request_id", "request-unknown")),
+            deadline_at=(
+                str(budget_state.get("deadline_at"))
+                if isinstance(budget_state, Mapping)
+                and budget_state.get("deadline_at") is not None
+                else None
+            ),
+            tool_context=(
+                state.get("tool_context", {})
+                if isinstance(state.get("tool_context", {}), Mapping)
+                else {}
+            ),
+            tool_call_budget=ToolCallBudget(
+                limit=(
+                    int(budget_state.get("tool_call_limit", 3))
+                    if isinstance(budget_state, Mapping)
+                    else 3
+                ),
+                used=(
+                    int(budget_state.get("tool_calls_used", 0))
+                    if isinstance(budget_state, Mapping)
+                    else 0
+                ),
+            ),
         )
         updated_budget = (
-            {**budget_state, "tasks_used": report.tasks_used}
+            {
+                **budget_state,
+                "tasks_used": report.tasks_used,
+                "tool_calls_used": report.tool_calls_used,
+            }
             if isinstance(budget_state, Mapping)
             else {"task_limit": task_limit, "tasks_used": report.tasks_used}
         )

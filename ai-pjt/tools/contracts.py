@@ -15,6 +15,7 @@ class ToolErrorCode(str, Enum):
     FORBIDDEN = "TOOL_FORBIDDEN"
     INVALID_ARGUMENTS = "INVALID_TOOL_ARGUMENTS"
     DEADLINE_EXCEEDED = "TOOL_TIMEOUT"
+    BUDGET_EXCEEDED = "TOOL_BUDGET_EXCEEDED"
     NOT_FOUND = "TOOL_RESOURCE_NOT_FOUND"
     DEPENDENCY_UNAVAILABLE = "TOOL_DEPENDENCY_UNAVAILABLE"
     INVALID_RESULT = "INVALID_TOOL_RESULT"
@@ -59,24 +60,30 @@ class ToolCallResult:
 @dataclass(frozen=True)
 class ToolAuditEvent:
     request_id: str
+    plan_id: str
+    task_id: str
     tool_name: str
     tool_version: str
     agent: str
     status: str
     duration_ms: int
     argument_classes: tuple[str, ...]
+    call_source: str
     error_code: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         # Deliberately excludes raw arguments and tool result values.
         return {
             "request_id": self.request_id,
+            "plan_id": self.plan_id,
+            "task_id": self.task_id,
             "tool_name": self.tool_name,
             "tool_version": self.tool_version,
             "agent": self.agent,
             "status": self.status,
             "duration_ms": self.duration_ms,
             "argument_classes": list(self.argument_classes),
+            "call_source": self.call_source,
             "error_code": self.error_code,
         }
 
@@ -95,6 +102,9 @@ class ToolExecutionContext:
     request_id: str
     step_id: str
     agent: str
+    plan_id: str = "plan-unknown"
+    task_id: str = "task-unknown"
+    call_source: str = "graph_task"
     field_registry: tuple[dict[str, Any], ...] = ()
     dashboard_metrics: Mapping[str, dict[str, Any]] = field(default_factory=dict)
     retirement_scenarios: Mapping[str, dict[str, Any]] = field(default_factory=dict)

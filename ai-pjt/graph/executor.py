@@ -27,6 +27,7 @@ class ExecutionReport:
     task_results: dict[str, dict[str, Any]]
     output: dict[str, Any]
     tasks_used: int
+    tool_calls_used: int = 0
 
 
 def validate_agent_executor_registry(
@@ -55,6 +56,10 @@ async def execute_route_plan(
     agent_executors: Mapping[str, RuntimeExecutor],
     tool_executors: Mapping[str, RuntimeExecutor],
     task_limit: int = 3,
+    request_id: str = "request-unknown",
+    deadline_at: str | None = None,
+    tool_context: Mapping[str, Any] | None = None,
+    tool_call_budget: Any = None,
 ) -> ExecutionReport:
     """Run validated tasks in source order and pass only explicit bindings.
 
@@ -149,6 +154,8 @@ async def execute_route_plan(
         tasks_used += 1
 
         execution_input = {
+            "request_id": request_id,
+            "plan_id": str(plan.get("plan_id", "plan-unknown")),
             "task": deepcopy(dict(task)),
             "task_input": {
                 "description": str(task.get("description", "")),
@@ -160,6 +167,9 @@ async def execute_route_plan(
             "field_registry": deepcopy(field_registry),
             "bound_inputs": deepcopy(bound_inputs),
             "next": str(executor_name),
+            "deadline_at": deadline_at,
+            "tool_context": deepcopy(dict(tool_context or {})),
+            "tool_call_budget": tool_call_budget,
         }
         try:
             raw_result = await executor(execution_input)
@@ -191,6 +201,11 @@ async def execute_route_plan(
         task_results=task_results,
         output=output,
         tasks_used=tasks_used,
+        tool_calls_used=(
+            tool_call_budget.used
+            if hasattr(tool_call_budget, "used")
+            else 0
+        ),
     )
 
 

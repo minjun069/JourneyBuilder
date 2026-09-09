@@ -52,6 +52,7 @@ class ExecutionBudget:
     task_limit: int = 3
     tasks_used: int = 0
     tool_calls_used: int = 0
+    tool_call_limit: int = 3
     retries_used: int = 0
 
     @classmethod
@@ -86,6 +87,7 @@ class ExecutionBudget:
             "task_limit": self.task_limit,
             "tasks_used": self.tasks_used,
             "tool_calls_used": self.tool_calls_used,
+            "tool_call_limit": self.tool_call_limit,
             "retries_used": self.retries_used,
         }
 
