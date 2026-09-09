@@ -100,6 +100,12 @@ class Settings:
             "https://gms.ssafy.io/gmsapi/api.openai.com/v1",
         ).strip()
         self.gemini_api_key = active_environ.get("GOOGLE_API_KEY", "").strip()
+        # Gemini 요청을 프록시로 보낼 때 쓴다(GMS 등). 임베딩은 google-genai SDK 가 이 환경변수를
+        # 직접 읽지만, ChatGoogleGenerativeAI 는 읽지 않으므로 llm.py 가 이 값을 넘겨준다.
+        # 비어 있으면 Google 로 직접 간다(기존 동작).
+        self.gemini_base_url = active_environ.get(
+            "GOOGLE_GEMINI_BASE_URL", ""
+        ).strip()
 
         self.db_url = active_environ.get("DATABASE_URL", "").strip()
         self.redis_url = active_environ.get(
