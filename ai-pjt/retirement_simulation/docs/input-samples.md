@@ -173,8 +173,10 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 이 단계로 입력 어댑터 브랜치 0~4번의 모듈 구현·검증·문서화를 마친다. 기존 3번 작업의
 [381개 검증 기록](input-adapter-validation.md)은 해당 시점의 이력으로 유지한다.
 
-다음 개발 브랜치 권장은 `feat/ai-retirement-analysis`다. 통합 실행 함수, What-if 변경 입력과
-안전한 출력 JSON 변환, 오류/범위/실행 메타데이터 보존, 성능 측정·한도 근거를 분리해 진행한다.
+입력 어댑터는 MR !45로 병합됐고, 후속 `feat/ai-retirement-analysis`에서
+[통합 호출·입출력 규격](analysis-contract.md)을 문서화했다. 아직 통합 실행/출력 구현은 하지 않았다.
+이후 통합 실행 함수, What-if 변경 입력과 안전한 출력 JSON 변환, 오류/범위/실행 메타데이터 보존,
+성능 측정·한도 근거를 분리해 진행한다.
 실제 BE의 일관된 snapshot 조회·인증·없음 확인·부분 분석 허용 정책, 패키지 배포와 보고서 UI는
 [서비스 연결 설계](service-integration-design.md)에 따른 별도 승인된 연결 작업이다.
 푸시·MR 생성·병합은 요청받았을 때만 진행한다.
