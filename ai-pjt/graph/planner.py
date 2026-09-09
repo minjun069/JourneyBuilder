@@ -12,6 +12,8 @@ from uuid import uuid4
 from core.context import ContextWindow
 from core.step_registry import load_step_candidates
 from graph.router import TaskClassifier, select_route
+from tools.financial_policy import REFERENCE_VALUE_INPUT_SCHEMA
+from tools.registry import validate_json_schema
 
 
 MAX_PLAN_TASKS = 3
@@ -55,6 +57,11 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
                 "path": "as_of",
                 "value_type": "string",
             },
+            "calculation_policy_version": {
+                "artifact_type": "reference_value",
+                "path": "calculation_policy_version",
+                "value_type": "string",
+            },
         },
     },
     "propose_form_change": {
@@ -79,6 +86,11 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
             "as_of": {
                 "artifact_type": "reference_value",
                 "path": "as_of",
+                "value_type": "string",
+            },
+            "calculation_policy_version": {
+                "artifact_type": "reference_value",
+                "path": "calculation_policy_version",
                 "value_type": "string",
             },
         },
@@ -108,10 +120,60 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
         "capability": "lookup_reference_value",
         "produces": "reference_value",
         "binding_expectations": {},
+        "argument_schema": REFERENCE_VALUE_INPUT_SCHEMA,
+    },
+    "lookup_retirement_gap": {
+        "executor_kind": "tool",
+        "capability": "get_dashboard_metric",
+        "produces": "dashboard_metric",
+        "binding_expectations": {},
+        "fixed_arguments": {"metric_id": "retirement_gap"},
+    },
+    "answer_dashboard_metric": {
+        "executor_kind": "agent",
+        "produces": "text_response",
+        "binding_expectations": {
+            "metric_id": {
+                "artifact_type": "dashboard_metric",
+                "path": "metric_id",
+                "value_type": "string",
+            },
+            "value": {
+                "artifact_type": "dashboard_metric",
+                "path": "value",
+                "value_type": "number",
+                "unit": "KRW",
+            },
+            "unit": {
+                "artifact_type": "dashboard_metric",
+                "path": "unit",
+                "value_type": "string",
+            },
+            "report_id": {
+                "artifact_type": "dashboard_metric",
+                "path": "report_id",
+                "value_type": "number",
+            },
+            "report_version": {
+                "artifact_type": "dashboard_metric",
+                "path": "report_version",
+                "value_type": "number",
+            },
+            "calculation_policy_version": {
+                "artifact_type": "dashboard_metric",
+                "path": "calculation_policy_version",
+                "value_type": "string",
+            },
+            "generated_at": {
+                "artifact_type": "dashboard_metric",
+                "path": "generated_at",
+                "value_type": "string",
+            },
+        },
     },
 }
 
-TASK_FIELDS = {"id", "type", "description", "depends_on", "bindings"}
+TASK_FIELDS = {"id", "type", "description", "depends_on", "bindings", "arguments"}
 FORBIDDEN_PLANNER_FIELDS = {
     "agent",
     "executor",
@@ -141,10 +203,11 @@ PLANNER_PROMPT = """\
 - description: 원문 중 이 task가 수행할 구체적인 요청
 - depends_on: 앞서 선언한 task id 문자열 배열
 - bindings: 입력 이름을 {{"task_id": "선행 id", "path": "artifact field"}}에 연결한 object
+- arguments: lookup_reference_value에만 필요한 object. reference_id, age 정수, period(monthly|annual|current), population을 정확히 지정
 
 의존 요청 예시:
 {{"tasks": [
-  {{"id": "lookup", "type": "lookup_reference_value", "description": "승인된 기준값 조회", "depends_on": [], "bindings": {{}}}},
+  {{"id": "lookup", "type": "lookup_reference_value", "description": "승인된 기준값 조회", "depends_on": [], "bindings": {{}}, "arguments": {{"reference_id": "debt_service_ratio_max", "age": 40, "period": "annual", "population": "retirewise_kr_households"}}}},
   {{"id": "fill", "type": "propose_form_change", "description": "조회 값으로 변경안 제안", "depends_on": ["lookup"], "bindings": {{"value": {{"task_id": "lookup", "path": "value"}}}}}}
 ]}}
 
@@ -292,6 +355,41 @@ def validate_route_plan(
                 )
             )
 
+        argument_schema = contract.get("argument_schema")
+        fixed_arguments = contract.get("fixed_arguments")
+        raw_arguments = raw_task.get("arguments")
+        normalized_arguments: dict[str, Any] | None = None
+        if isinstance(argument_schema, Mapping):
+            argument_errors = validate_json_schema(argument_schema, raw_arguments)
+            if argument_errors:
+                issues.append(
+                    _issue(
+                        "INVALID_TOOL_ARGUMENTS",
+                        f"{path}.arguments",
+                        "tool task arguments가 입력 계약과 일치하지 않습니다.",
+                    )
+                )
+            elif isinstance(raw_arguments, Mapping):
+                normalized_arguments = deepcopy(dict(raw_arguments))
+        elif isinstance(fixed_arguments, Mapping):
+            if "arguments" in raw_task:
+                issues.append(
+                    _issue(
+                        "PLANNER_FIXED_ARGUMENT_INJECTION",
+                        f"{path}.arguments",
+                        "이 tool task의 인자는 runtime 정책으로 고정됩니다.",
+                    )
+                )
+            normalized_arguments = deepcopy(dict(fixed_arguments))
+        elif "arguments" in raw_task:
+            issues.append(
+                _issue(
+                    "UNEXPECTED_TASK_ARGUMENTS",
+                    f"{path}.arguments",
+                    "이 task type은 arguments를 허용하지 않습니다.",
+                )
+            )
+
         raw_dependencies = raw_task.get("depends_on", [])
         if not isinstance(raw_dependencies, list) or any(
             not isinstance(item, str) for item in raw_dependencies
@@ -419,6 +517,7 @@ def validate_route_plan(
         }
         if contract["executor_kind"] == "tool":
             normalized["capability"] = contract["capability"]
+            normalized["arguments"] = normalized_arguments or {}
         normalized_tasks.append(normalized)
 
     if issues:

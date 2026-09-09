@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from math import isfinite
 from collections.abc import Mapping
 from typing import Any
@@ -13,19 +13,68 @@ from tools.output_validation import validate_form_update_contract
 
 
 TASK_STATUSES = {"completed", "failed", "blocked"}
-ARTIFACT_TYPES = {"text_response", "form_change", "reference_value"}
+TOOL_ARTIFACT_SCHEMA_VERSION = "1.0"
+ARTIFACT_TYPES = {
+    "text_response",
+    "form_change",
+    "reference_value",
+    "dashboard_metric",
+}
 REFERENCE_VALUE_FIELDS = {
     "type",
+    "schema_version",
+    "producer_task_id",
+    "reference_id",
+    "age",
     "value",
     "unit",
     "period",
     "population",
+    "comparator",
     "source_id",
+    "source_version",
     "as_of",
+    "calculation_policy_version",
+}
+DASHBOARD_METRIC_FIELDS = {
+    "type",
+    "schema_version",
+    "producer_task_id",
+    "availability",
+    "metric_id",
+    "value",
+    "unit",
+    "report_id",
+    "report_version",
+    "calculation_policy_version",
+    "generated_at",
 }
 BINDABLE_ARTIFACT_PATHS = {
     "reference_value": frozenset(
-        {"value", "unit", "period", "population", "source_id", "as_of"}
+        {
+            "reference_id",
+            "age",
+            "value",
+            "unit",
+            "period",
+            "population",
+            "comparator",
+            "source_id",
+            "source_version",
+            "as_of",
+            "calculation_policy_version",
+        }
+    ),
+    "dashboard_metric": frozenset(
+        {
+            "metric_id",
+            "value",
+            "unit",
+            "report_id",
+            "report_version",
+            "calculation_policy_version",
+            "generated_at",
+        }
     ),
     "text_response": frozenset({"text"}),
     "form_change": frozenset(),
@@ -294,9 +343,22 @@ def _validate_completed_result(
             )
         )
         return
+    if (
+        artifact_type in {"reference_value", "dashboard_metric"}
+        and artifact.get("producer_task_id") != task.get("id")
+    ):
+        issues.append(
+            _issue(
+                "ARTIFACT_PRODUCER_MISMATCH",
+                "result.artifact.producer_task_id",
+                "tool artifact 생산 task가 실행 task와 일치하지 않습니다.",
+            )
+        )
 
     if artifact_type == "reference_value":
         _validate_reference_value(artifact, issues)
+    elif artifact_type == "dashboard_metric":
+        _validate_dashboard_metric(artifact, issues)
     elif artifact_type == "text_response":
         if not _non_empty(artifact.get("text")):
             issues.append(
@@ -332,15 +394,13 @@ def _validate_reference_value(
     artifact: Mapping[str, Any],
     issues: list[TaskValidationIssue],
 ) -> None:
-    unknown = set(artifact) - REFERENCE_VALUE_FIELDS
-    if unknown:
-        issues.append(
-            _issue(
-                "UNKNOWN_REFERENCE_FIELD",
-                "result.artifact",
-                f"알 수 없는 reference field입니다: {', '.join(sorted(unknown))}",
-            )
-        )
+    _validate_exact_fields(
+        artifact,
+        REFERENCE_VALUE_FIELDS,
+        issues,
+        artifact_name="reference",
+    )
+    _validate_tool_artifact_identity(artifact, issues)
     value = artifact.get("value")
     if (
         isinstance(value, bool)
@@ -355,7 +415,25 @@ def _validate_reference_value(
                 "reference value는 0 이상의 유한한 숫자여야 합니다.",
             )
         )
-    for field in ("unit", "period", "population", "source_id"):
+    age = artifact.get("age")
+    if isinstance(age, bool) or not isinstance(age, int) or not 0 <= age <= 120:
+        issues.append(
+            _issue(
+                "INVALID_REFERENCE_AGE",
+                "result.artifact.age",
+                "reference value 연령은 0~120 정수여야 합니다.",
+            )
+        )
+    for field in (
+        "reference_id",
+        "unit",
+        "period",
+        "population",
+        "comparator",
+        "source_id",
+        "source_version",
+        "calculation_policy_version",
+    ):
         if not _non_empty(artifact.get(field)):
             issues.append(
                 _issue(
@@ -371,6 +449,128 @@ def _validate_reference_value(
                 "INVALID_REFERENCE_DATE",
                 "result.artifact.as_of",
                 "reference value 기준일은 ISO date여야 합니다.",
+            )
+        )
+
+
+def _validate_dashboard_metric(
+    artifact: Mapping[str, Any],
+    issues: list[TaskValidationIssue],
+) -> None:
+    _validate_exact_fields(
+        artifact,
+        DASHBOARD_METRIC_FIELDS,
+        issues,
+        artifact_name="dashboard metric",
+    )
+    _validate_tool_artifact_identity(artifact, issues)
+    if artifact.get("availability") != "ready":
+        issues.append(
+            _issue(
+                "INVALID_DASHBOARD_AVAILABILITY",
+                "result.artifact.availability",
+                "완료된 dashboard metric은 ready여야 합니다.",
+            )
+        )
+    if artifact.get("metric_id") != "retirement_gap":
+        issues.append(
+            _issue(
+                "INVALID_DASHBOARD_METRIC_ID",
+                "result.artifact.metric_id",
+                "허용되지 않은 dashboard metric입니다.",
+            )
+        )
+    value = artifact.get("value")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        issues.append(
+            _issue(
+                "INVALID_DASHBOARD_VALUE",
+                "result.artifact.value",
+                "retirement gap은 0 이상의 정수 금액이어야 합니다.",
+            )
+        )
+    if artifact.get("unit") != "KRW":
+        issues.append(
+            _issue(
+                "INVALID_DASHBOARD_UNIT",
+                "result.artifact.unit",
+                "retirement gap 단위는 KRW여야 합니다.",
+            )
+        )
+    for field in ("report_id", "report_version"):
+        value = artifact.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            issues.append(
+                _issue(
+                    "INVALID_REPORT_PROVENANCE",
+                    f"result.artifact.{field}",
+                    "보고서 ID와 version은 양의 정수여야 합니다.",
+                )
+            )
+    if not _non_empty(artifact.get("calculation_policy_version")):
+        issues.append(
+            _issue(
+                "MISSING_DASHBOARD_POLICY_VERSION",
+                "result.artifact.calculation_policy_version",
+                "dashboard metric에 calculation policy version이 필요합니다.",
+            )
+        )
+    generated_at = artifact.get("generated_at")
+    if not isinstance(generated_at, str) or not _is_aware_iso_datetime(generated_at):
+        issues.append(
+            _issue(
+                "INVALID_DASHBOARD_GENERATED_AT",
+                "result.artifact.generated_at",
+                "dashboard metric 생성 시각은 timezone이 있는 ISO datetime이어야 합니다.",
+            )
+        )
+
+
+def _validate_tool_artifact_identity(
+    artifact: Mapping[str, Any],
+    issues: list[TaskValidationIssue],
+) -> None:
+    if artifact.get("schema_version") != TOOL_ARTIFACT_SCHEMA_VERSION:
+        issues.append(
+            _issue(
+                "INVALID_ARTIFACT_SCHEMA_VERSION",
+                "result.artifact.schema_version",
+                "지원하지 않는 tool artifact schema version입니다.",
+            )
+        )
+    if not _non_empty(artifact.get("producer_task_id")):
+        issues.append(
+            _issue(
+                "MISSING_ARTIFACT_PRODUCER",
+                "result.artifact.producer_task_id",
+                "tool artifact에 생산 task ID가 필요합니다.",
+            )
+        )
+
+
+def _validate_exact_fields(
+    artifact: Mapping[str, Any],
+    expected: set[str],
+    issues: list[TaskValidationIssue],
+    *,
+    artifact_name: str,
+) -> None:
+    unknown = set(artifact) - expected
+    missing = expected - set(artifact)
+    if unknown:
+        issues.append(
+            _issue(
+                "UNKNOWN_TOOL_ARTIFACT_FIELD",
+                "result.artifact",
+                f"알 수 없는 {artifact_name} field입니다: {', '.join(sorted(unknown))}",
+            )
+        )
+    if missing:
+        issues.append(
+            _issue(
+                "MISSING_TOOL_ARTIFACT_FIELD",
+                "result.artifact",
+                f"누락된 {artifact_name} field입니다: {', '.join(sorted(missing))}",
             )
         )
 
@@ -434,6 +634,14 @@ def _is_iso_date(value: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _is_aware_iso_datetime(value: str) -> bool:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
 
 
 def _issue(code: str, path: str, message: str) -> TaskValidationIssue:

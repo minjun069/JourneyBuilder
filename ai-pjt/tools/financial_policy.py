@@ -45,6 +45,28 @@ REFERENCE_KEYS = {
     "source_id",
     "as_of",
 }
+REFERENCE_VALUE_INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reference_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+        },
+        "age": {"type": "integer", "minimum": 0, "maximum": 120},
+        "period": {
+            "type": "string",
+            "enum": ["monthly", "annual", "current"],
+        },
+        "population": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+        },
+    },
+    "required": ["reference_id", "age", "period", "population"],
+    "additionalProperties": False,
+}
 
 
 class ApprovedFinancialPolicyError(RuntimeError):

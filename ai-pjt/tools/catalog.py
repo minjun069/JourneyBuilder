@@ -11,6 +11,7 @@ from .contracts import (
 from .financial_policy import (
     ApprovedFinancialPolicyError,
     ApprovedReferenceValueNotFound,
+    REFERENCE_VALUE_INPUT_SCHEMA,
     lookup_approved_reference_value,
 )
 from .registry import FunctionToolRegistry
@@ -65,26 +66,7 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
                 "승인된 공용 계산 정책에서 기준 항목, 연령, 기간과 모집단이 정확히 "
                 "일치하는 구조화 기준값을 조회합니다. 값을 추정하거나 보간하지 않습니다."
             ),
-            input_schema=_object_schema(
-                properties={
-                    "reference_id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 100,
-                    },
-                    "age": {"type": "integer", "minimum": 0, "maximum": 120},
-                    "period": {
-                        "type": "string",
-                        "enum": ["monthly", "annual", "current"],
-                    },
-                    "population": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 100,
-                    },
-                },
-                required=("reference_id", "age", "period", "population"),
-            ),
+            input_schema=REFERENCE_VALUE_INPUT_SCHEMA,
             output_schema=_object_schema(
                 properties={"reference": _reference_value_schema()},
                 required=("reference",),

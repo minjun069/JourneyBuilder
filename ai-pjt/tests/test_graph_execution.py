@@ -19,6 +19,7 @@ class FakeClassifier:
     def __call__(self, *, task: dict, candidates: tuple[str, ...]) -> dict:
         agent = {
             "answer_question": "qa",
+            "answer_dashboard_metric": "qa",
             "propose_form_change": "input_assist",
         }.get(task["type"], "fallback")
         return {
@@ -132,6 +133,12 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                     "description": "40대 월평균 비용 조회",
                     "depends_on": [],
                     "bindings": {},
+                    "arguments": {
+                        "reference_id": "debt_service_ratio_max",
+                        "age": 45,
+                        "period": "annual",
+                        "population": "retirewise_kr_households",
+                    },
                 },
                 {
                     "id": "fill",
@@ -151,15 +158,22 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             return {
                 "task_id": "task-1",
                 "status": "completed",
-                "artifact": {
-                    "type": "reference_value",
-                    "value": 2_500_000,
-                    "unit": "KRW",
-                    "period": "month",
-                    "population": "40대",
-                    "source_id": "approved-statistics-2026",
-                    "as_of": "2026-06-30",
-                },
+                    "artifact": {
+                        "type": "reference_value",
+                        "schema_version": "1.0",
+                        "producer_task_id": "task-1",
+                        "reference_id": "monthly_target_expense",
+                        "age": 45,
+                        "value": 2_500_000,
+                        "unit": "KRW",
+                        "period": "monthly",
+                        "population": "40대",
+                        "comparator": "eq",
+                        "source_id": "approved-statistics-2026",
+                        "source_version": "1.0.0",
+                        "as_of": "2026-06-30",
+                        "calculation_policy_version": "2026-09-07.v1",
+                    },
             }
 
         graph = build_graph(
