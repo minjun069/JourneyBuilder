@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: '.',
-  testMatch: process.env.F05_TEST_MATCH ?? 'harness-smoke.spec.mjs',
+  testMatch: process.env.F05_TEST_MATCH ?? 'representative.spec.mjs',
   fullyParallel: false,
   workers: 1,
   retries: 0,

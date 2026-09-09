@@ -10,6 +10,10 @@ const STEP_LABELS = {
   'financial-mindset': '경제 관념',
   'financial-assets': '금융자산',
 }
+const STEP_TITLES = {
+  ...STEP_LABELS,
+  'financial-assets': '금융자산 현황',
+}
 
 function authHeaders(token) {
   return { Authorization: `Bearer ${token}` }
@@ -217,7 +221,7 @@ export class F05BrowserDriver {
     await this.jumpTo('고객 정보 수집')
     if (stepId === 'financial-assets') await this.jumpTo('재무 정보')
     await this.jumpTo(STEP_LABELS[stepId])
-    await expect(this.page.locator('.input-panel .doc-title')).toHaveText(STEP_LABELS[stepId])
+    await expect(this.page.locator('.input-panel .doc-title')).toHaveText(STEP_TITLES[stepId])
   }
 
   fieldRow(label) {
@@ -231,9 +235,9 @@ export class F05BrowserDriver {
     const inputs = row.locator('input')
     await selects.nth(0).selectOption({ label: asset.assetType })
     await inputs.nth(0).fill(String(asset.name))
-    await inputs.nth(1).fill(String(asset.principal))
-    await inputs.nth(2).fill(String(asset.value))
-    await inputs.nth(3).fill(String(asset.monthly))
+    await inputs.nth(1).fill(`${asset.principal}원`)
+    await inputs.nth(2).fill(`${asset.value}원`)
+    await inputs.nth(3).fill(`${asset.monthly}원`)
     await selects.nth(1).selectOption({ label: asset.purpose })
   }
 
@@ -326,11 +330,17 @@ export class F05BrowserDriver {
   }
 
   async assetDraftRows() {
-    return this.page.locator('.input-panel .table-wrap').evaluate((element) => {
+    const rows = await this.page.locator('.input-panel .table-wrap').evaluate((element) => {
       let instance = element.__vueParentComponent
       while (instance && !instance.exposed?.form) instance = instance.parent
-      return structuredClone(instance.exposed.form.assets)
+      return JSON.parse(JSON.stringify(instance.exposed.form.assets))
     })
+    return rows.map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => {
+      if (['principal', 'value', 'monthly'].includes(key) && typeof value === 'string') {
+        return [key, Number(value.replace(/[^0-9.-]/g, ''))]
+      }
+      return [key, value]
+    })))
   }
 
   async assertDraft({ expected, phase }) {
@@ -379,7 +389,7 @@ export class F05BrowserDriver {
     const response = await responsePromise
     expect(response.status()).toBe(probe.expectedHttpStatus)
     await this.assertDatabase({ expected: unchangedDatabase, phase: 'rejected-atomic-save' })
-    await valueInput.fill(validValue)
+    await valueInput.fill(`${validValue.replace(/원$/, '')}원`)
     await expect(this.page.locator('.submit-form-btn')).toBeEnabled()
   }
 

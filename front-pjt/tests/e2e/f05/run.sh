@@ -5,13 +5,25 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../../.." && pwd)"
 compose_files=(-f "${repo_root}/docker-compose.yml" -f "${repo_root}/docker-compose.e2e.yml")
 
-case "${1:---smoke}" in
+case "${1:-all}" in
   --smoke)
     scenarios=(basic-info-proposal-mixed-decisions)
     test_match=harness-smoke.spec.mjs
     ;;
+  all)
+    scenarios=(
+      basic-info-proposal-mixed-decisions
+      financial-mindset-proposal-mixed-decisions
+      financial-assets-proposal-mixed-decisions
+    )
+    test_match=representative.spec.mjs
+    ;;
+  basic-info-proposal-mixed-decisions|financial-mindset-proposal-mixed-decisions|financial-assets-proposal-mixed-decisions)
+    scenarios=("$1")
+    test_match=representative.spec.mjs
+    ;;
   *)
-    echo "usage: $0 --smoke" >&2
+    echo "usage: $0 [--smoke|all|<scenario-id>]" >&2
     exit 2
     ;;
 esac
@@ -60,4 +72,4 @@ for scenario in "${scenarios[@]}"; do
   run_scenario "${scenario}"
 done
 
-echo '[F05] harness smoke passed'
+echo '[F05] representative scenarios passed'
