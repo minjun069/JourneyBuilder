@@ -230,6 +230,7 @@ class MessageStreamViewTests(SimpleTestCase):
             '/messages/stream/',
             {'content': '은퇴 준비를 알려줘', 'step_id': 'general', 'form_data': {}},
             format='json',
+            HTTP_ACCEPT='text/event-stream',
         )
         force_authenticate(request, user=user)
 
