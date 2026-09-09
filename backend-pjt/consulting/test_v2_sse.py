@@ -165,6 +165,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
             '/api/v2/consultations/12/messages/stream/',
             browser_body(),
             format='json',
+            HTTP_ACCEPT='text/event-stream',
             HTTP_IDEMPOTENCY_KEY='idem-test',
         )
         force_authenticate(request, user=SimpleNamespace(id=3, is_authenticated=True))

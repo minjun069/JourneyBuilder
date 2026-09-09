@@ -7,6 +7,7 @@ from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -30,6 +31,7 @@ from .ai_lifecycle import (
     verify_service_bearer,
 )
 from .models import ConsultingSession, Message
+from .sse import EventStreamRenderer
 from .v2_sse import proxy_v2_ai_stream, replay_v2_stream
 
 
@@ -174,6 +176,7 @@ class V2MessageCreateView(V2APIView):
 
 class V2MessageStreamView(V2APIView):
     permission_classes = [IsAuthenticated]
+    renderer_classes = [JSONRenderer, EventStreamRenderer]
 
     @staticmethod
     def _stream_response(iterator):

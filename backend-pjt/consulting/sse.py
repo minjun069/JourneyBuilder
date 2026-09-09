@@ -2,6 +2,29 @@ import json
 from collections.abc import AsyncIterable, AsyncIterator, Iterable, Iterator
 from typing import Any
 
+from rest_framework.renderers import BaseRenderer
+
+
+class EventStreamRenderer(BaseRenderer):
+    """Allow DRF content negotiation for SSE StreamingHttpResponse views."""
+
+    media_type = 'text/event-stream'
+    format = 'sse'
+    charset = 'utf-8'
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        if data is None:
+            return b''
+        if isinstance(data, bytes):
+            return data
+        if isinstance(data, str):
+            return data.encode(self.charset)
+        return json.dumps(
+            data,
+            ensure_ascii=False,
+            separators=(',', ':'),
+        ).encode(self.charset)
+
 
 class SSEProtocolError(ValueError):
     """Raised when the upstream AI stream violates the agreed SSE contract."""

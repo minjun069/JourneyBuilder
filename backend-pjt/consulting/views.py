@@ -2,6 +2,7 @@ from django.db import transaction
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
+from rest_framework.renderers import JSONRenderer
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -51,7 +52,7 @@ from .serializers import (
     FinancialGoalPeriodSerializer,
     FinancialGoalMilestoneSerializer,
 )
-from .sse import SSEProtocolError, aiter_sse_events, encode_sse
+from .sse import EventStreamRenderer, SSEProtocolError, aiter_sse_events, encode_sse
 
 
 logger = logging.getLogger(__name__)
@@ -594,6 +595,7 @@ class AIActionRejectView(APIView):
 # SSE 스트리밍
 class MessageStreamView(APIView):
     permission_classes = [IsAuthenticated]
+    renderer_classes = [JSONRenderer, EventStreamRenderer]
 
     def post(self, request, session_id):
         session = get_session_or_404(session_id, request.user)
