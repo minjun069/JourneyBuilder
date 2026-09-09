@@ -4,7 +4,8 @@
 [통합 호출·입출력 규격](analysis-contract.md)의 실행·불변 결과·실행 오류를 구현했다.
 JSON 변환은 후속 4번에서 구현했으며 [출력 변환 가이드](analysis-output.md)를 따른다.
 후속 5번의 [합성 성능 측정·후보 한도](analysis-performance.md)도 완료했다.
-운영 성능 검증·통합 분석 CLI·BE/FE 연결은 아직 완료 범위가 아니다.
+후속 6번의 [통합 분석 CLI·확대 회귀](analysis-samples.md)와 [BE 인수인계](be-handoff.md)도 완료했다.
+운영 성능 검증·BE/FE 연결은 아직 완료 범위가 아니다.
 
 ## 1. 공개 인터페이스와 실행 순서
 
@@ -199,6 +200,6 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 
 변경 위치는 `ai-pjt/retirement_simulation/`뿐이다. 기존 계산 엔진·모델·입력/변경 매퍼·CLI는
 수정하지 않았고 BE·FE·Agent·컨텍스트·매뉴얼·공통 의존성·배포 설정·Jira도 건드리지 않았다.
-후속 **4번 결과/오류 JSON 변환·5번 합성 성능 측정까지 완료**했다.
-다음은 같은 브랜치의 6번 통합 샘플·인수인계다.
+후속 **4번 결과/오류 JSON 변환·5번 합성 성능 측정·6번 통합 샘플/인수인계까지 완료**했다.
+다음은 브랜치 최종 변경 검토·최신 master 충돌 확인이며 원격 작업은 명시 요청 시 진행한다.
 실제 서비스 연결 완료와 독립 모듈 구현 완료는 구분한다.

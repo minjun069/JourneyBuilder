@@ -18,8 +18,8 @@
 기존 모델·입력 어댑터·계산 엔진의 규칙/버전은 바꾸지 않았다. BE·FE·Agent·컨텍스트·
 매뉴얼·공통 설정·의존성도 변경하지 않았다. 후속 3번에서
 [통합 실행 함수·결과·실행 오류](analysis-execution.md), 후속 4번에서
-[결과/오류 JSON 변환](analysis-output.md)까지 구현했다. **통합 CLI·서비스 연결은 아직 미구현**이며
-이 매퍼가 HTTP API나 인증 검사를 대신하지 않는다.
+[결과/오류 JSON 변환](analysis-output.md)까지 구현했다. 후속 6번의 [통합 CLI](analysis-samples.md)도
+완료했다. **실제 서비스 연결은 아직 미구현**이며 이 매퍼가 HTTP API나 인증 검사를 대신하지 않는다.
 
 ## 2. 입력 규칙
 
@@ -159,5 +159,6 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 
 같은 브랜치의 **3번 통합 실행 함수·불변 결과·실행 오류 및 4번 결과/오류 JSON 변환까지 완료**했다.
 후속 5번의 [합성 성능 측정·초기 연동 후보 한도](analysis-performance.md)까지 완료했다.
-다음은 6번 통합 샘플/인수인계다.
+후속 6번의 [통합 샘플·확대 회귀](analysis-samples.md)와 [BE 인수인계](be-handoff.md)도 완료했다.
+다음은 브랜치 최종 변경 검토·최신 master 충돌 확인이다.
 독립 모듈 검증은 실제 DB/API/FE/배포 검증을 대신하지 않는다.
