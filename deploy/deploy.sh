@@ -11,8 +11,8 @@
 #   1. 사전 점검: env 파일, compose 병합(config)
 #   2. 현재 기동 중인 빌드 이미지 ID 기록 (롤백 대상)
 #   3. build → up -d --remove-orphans   (migrate one-shot → backend 순서는 compose 가 보장)
-#      → gateway 재시작. gateway(nginx) 는 고정 upstream 이라 기동 시점의 backend IP 를 계속 쓴다.
-#        backend 가 재생성되면 IP 가 바뀌어 /api 가 502 가 되므로 up 뒤에 항상 다시 해석시킨다.
+#      → gateway 재시작. gateway(nginx) 의 upstream 은 resolve 방식(10s 주기 재조회)이라 backend 재생성 뒤
+#        스스로 회복하지만, 배포 직후 헬스체크가 TTL 을 기다리지 않도록 up 뒤에 즉시 다시 해석시킨다.
 #   4. 헬스체크: web·backend 컨테이너 healthy + web HTTP 200 + API 경로가 5xx 가 아닌 응답
 #      (API 프로브는 host→web→gateway→backend 전 구간을 검사한다. 인증 필요 경로라 401 이 정상 응답)
 #      ai-pjt 는 상태만 보고(AI_REQUIRED=1 이면 필수)
@@ -48,8 +48,9 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 compose() { docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
 log() { printf '[deploy %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
-# gateway(nginx, 외부 이미지)는 up 에서 재생성되지 않는데 conf 의 upstream 이 고정이라 옛 backend IP 를 물고 있다 →
-# up 뒤에 재시작해서 다시 해석시킨다(1~2초 단절). web 의 nginx 는 resolver 방식이라 대상이 아니다.
+# gateway(nginx, 외부 이미지)는 up 에서 재생성되지 않는다. conf 의 upstream 은 resolve 방식이라 backend IP 변경을
+# 10s 안에 스스로 따라가지만(S15P21B109-128), 배포 직후 502 창을 없애기 위해 up 뒤에 재시작해 즉시 해석시킨다(1~2초 단절).
+# web 의 nginx 는 resolver 방식이라 대상이 아니다.
 refresh_gateway() { compose restart gateway >/dev/null 2>&1 && log "gateway 재시작(upstream 재해석)" || log "경고: gateway 재시작 실패"; }
 # HTTP 상태코드가 "서버가 응답했다"를 뜻하는지 — 5xx 와 000(연결 실패)만 실패로 본다
 responded() { case "$1" in 000|5??) return 1 ;; *) return 0 ;; esac; }
