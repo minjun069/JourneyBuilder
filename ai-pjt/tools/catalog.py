@@ -180,7 +180,14 @@ async def _search_financial_knowledge(
             ToolErrorCode.INVALID_ARGUMENTS,
             "공백만 있는 검색어는 사용할 수 없습니다.",
         )
-    results = await context.knowledge_search(query, arguments.get("top_k", 5))
+    try:
+        results = await context.knowledge_search(query, arguments.get("top_k", 5))
+    except RuntimeError as exc:
+        raise ToolInvocationError(
+            ToolErrorCode.DEPENDENCY_UNAVAILABLE,
+            "승인된 금융 지식 검색기를 사용할 수 없습니다.",
+            retryable=True,
+        ) from exc
     if not isinstance(results, list):
         raise ToolInvocationError(
             ToolErrorCode.INVALID_RESULT,

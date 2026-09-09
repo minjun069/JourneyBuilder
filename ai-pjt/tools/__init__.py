@@ -8,7 +8,12 @@ from .output_validation import (
     validate_form_update,
     validate_form_update_contract,
 )
-from .runtime import FunctionToolRuntime, RuntimeToolRequest, ToolCallBudget
+from .runtime import (
+    FunctionToolRuntime,
+    RuntimeToolRequest,
+    ToolCallBudget,
+    build_production_tool_runtime,
+)
 
 __all__ = [
     "ToolCallResult",
@@ -16,6 +21,7 @@ __all__ = [
     "FunctionToolRuntime",
     "RuntimeToolRequest",
     "ToolCallBudget",
+    "build_production_tool_runtime",
     "build_default_registry",
     "default_tool_definitions",
     "validate_agent_output",

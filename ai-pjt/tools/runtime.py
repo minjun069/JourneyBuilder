@@ -119,6 +119,24 @@ class FunctionToolRuntime:
         )
 
 
+def build_production_tool_runtime(
+    *,
+    registry: FunctionToolRegistry | None = None,
+    knowledge_search: KnowledgeSearch | None = None,
+) -> FunctionToolRuntime:
+    """Bind the approved operational retriever without importing it in tests."""
+
+    if registry is None:
+        from .catalog import build_default_registry
+
+        registry = build_default_registry()
+    if knowledge_search is None:
+        from rag.retriever import search_financial_knowledge
+
+        knowledge_search = search_financial_knowledge
+    return FunctionToolRuntime(registry, knowledge_search=knowledge_search)
+
+
 def _deadline_at_monotonic(value: Any) -> float | None:
     if not isinstance(value, str):
         return None
