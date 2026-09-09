@@ -53,6 +53,8 @@ from .what_if_engine import (
     calculate_what_if_paths,
 )
 
+from .what_if_adapter import map_what_if_scenarios
+
 __all__ = [
     "MAX_WHAT_IF_SCENARIOS",
     "AmountPercentileDelta",
@@ -92,4 +94,5 @@ __all__ = [
     "generate_return_paths",
     "map_retirement_profile",
     "map_simulation_assumptions",
+    "map_what_if_scenarios",
 ]

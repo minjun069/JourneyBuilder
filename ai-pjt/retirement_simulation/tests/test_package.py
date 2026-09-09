@@ -29,7 +29,7 @@ class PackageBoundaryTests(unittest.TestCase):
 
     def test_engine_modules_resolve_from_the_new_directory(self) -> None:
         for name in ("models", "input_adapter", "cashflow", "return_paths", "monte_carlo",
-                     "what_if", "what_if_engine"):
+                     "what_if", "what_if_engine", "what_if_adapter"):
             with self.subTest(module=name):
                 module = import_module(f"retirement_simulation.{name}")
                 self.assertEqual(
@@ -56,6 +56,7 @@ assert simulation.calculate_monte_carlo.__module__ == 'retirement_simulation.mon
 assert simulation.calculate_what_if.__module__ == 'retirement_simulation.what_if_engine'
 assert simulation.map_retirement_profile.__module__ == 'retirement_simulation.input_adapter'
 assert simulation.map_simulation_assumptions.__module__ == 'retirement_simulation.input_adapter'
+assert simulation.map_what_if_scenarios.__module__ == 'retirement_simulation.what_if_adapter'
 for root in ('retirement', 'django', 'fastapi', 'langgraph', 'numpy', 'llama_index'):
     assert not any(name == root or name.startswith(root + '.') for name in sys.modules), root
 print('standalone import OK')
