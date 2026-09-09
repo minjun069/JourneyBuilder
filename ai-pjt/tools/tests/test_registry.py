@@ -107,7 +107,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registered_agents = set(step_registry["agents"])
         definitions = default_tool_definitions()
 
-        self.assertEqual(len(definitions), 6)
+        self.assertEqual(len(definitions), 7)
         for definition in definitions:
             with self.subTest(tool=definition.name):
                 self.assertTrue(definition.allowed_agents)
@@ -224,6 +224,42 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(result.ok)
         self.assertEqual(result.data["results"][0]["document_id"], "pension-guide")
+
+    async def test_approved_reference_value_uses_exact_policy_criteria(self):
+        result = await self.registry.invoke(
+            "get_approved_reference_value",
+            {
+                "reference_id": "debt_service_ratio_max",
+                "age": 64,
+                "period": "annual",
+                "population": "retirewise_kr_households",
+            },
+            self.context,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["reference"]["value"], 10)
+        self.assertEqual(result.data["reference"]["unit"], "percent")
+        self.assertEqual(result.data["reference"]["comparator"], "lt")
+        self.assertEqual(
+            result.data["reference"]["calculation_policy_version"],
+            "2026-09-07.v1",
+        )
+
+    async def test_approved_reference_value_does_not_estimate_a_missing_match(self):
+        result = await self.registry.invoke(
+            "get_approved_reference_value",
+            {
+                "reference_id": "debt_service_ratio_max",
+                "age": 64,
+                "period": "monthly",
+                "population": "retirewise_kr_households",
+            },
+            self.context,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error.code, ToolErrorCode.NOT_FOUND)
 
     async def test_timeout_is_returned_as_structured_error(self):
         async def slow_handler(_, __):

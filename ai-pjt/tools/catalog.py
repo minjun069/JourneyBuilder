@@ -8,6 +8,11 @@ from .contracts import (
     ToolExecutionContext,
     ToolInvocationError,
 )
+from .financial_policy import (
+    ApprovedFinancialPolicyError,
+    ApprovedReferenceValueNotFound,
+    lookup_approved_reference_value,
+)
 from .registry import FunctionToolRegistry
 
 
@@ -53,6 +58,46 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
             handler=_search_financial_knowledge,
             timeout_seconds=5.0,
             argument_classes=("public_knowledge_query",),
+        ),
+        FunctionToolDefinition(
+            name="get_approved_reference_value",
+            description=(
+                "승인된 공용 계산 정책에서 기준 항목, 연령, 기간과 모집단이 정확히 "
+                "일치하는 구조화 기준값을 조회합니다. 값을 추정하거나 보간하지 않습니다."
+            ),
+            input_schema=_object_schema(
+                properties={
+                    "reference_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                    },
+                    "age": {"type": "integer", "minimum": 0, "maximum": 120},
+                    "period": {
+                        "type": "string",
+                        "enum": ["monthly", "annual", "current"],
+                    },
+                    "population": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                    },
+                },
+                required=("reference_id", "age", "period", "population"),
+            ),
+            output_schema=_object_schema(
+                properties={"reference": _reference_value_schema()},
+                required=("reference",),
+            ),
+            allowed_agents=frozenset({"qa", "input_assist"}),
+            handler=_get_approved_reference_value,
+            timeout_seconds=0.5,
+            argument_classes=(
+                "financial_reference_identifier",
+                "age",
+                "statistical_period",
+                "statistical_population_identifier",
+            ),
         ),
         FunctionToolDefinition(
             name="get_form_field_spec",
@@ -162,6 +207,30 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
             timeout_seconds=0.5,
         ),
     )
+
+
+async def _get_approved_reference_value(
+    _: ToolExecutionContext,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        reference = lookup_approved_reference_value(
+            reference_id=arguments["reference_id"],
+            age=arguments["age"],
+            period=arguments["period"],
+            population=arguments["population"],
+        )
+    except ApprovedReferenceValueNotFound as exc:
+        raise ToolInvocationError(
+            ToolErrorCode.NOT_FOUND,
+            "조건에 정확히 일치하는 승인 기준값을 찾지 못했습니다.",
+        ) from exc
+    except ApprovedFinancialPolicyError as exc:
+        raise ToolInvocationError(
+            ToolErrorCode.DEPENDENCY_UNAVAILABLE,
+            "승인된 계산 정책을 사용할 수 없습니다.",
+        ) from exc
+    return {"reference": reference}
 
 
 async def _search_financial_knowledge(
@@ -416,4 +485,41 @@ def _report_schema() -> dict[str, Any]:
             "generated_at": {"type": "string"},
         },
         required=("report_id", "report_type", "version", "status", "generated_at"),
+    )
+
+
+def _reference_value_schema() -> dict[str, Any]:
+    return _object_schema(
+        properties={
+            "reference_id": {"type": "string"},
+            "age": {"type": "integer", "minimum": 0, "maximum": 120},
+            "value": {"type": "number"},
+            "unit": {"type": "string", "minLength": 1},
+            "period": {
+                "type": "string",
+                "enum": ["monthly", "annual", "current"],
+            },
+            "population": {"type": "string", "minLength": 1},
+            "comparator": {
+                "type": "string",
+                "enum": ["lt", "lte", "eq", "gte", "gt"],
+            },
+            "source_id": {"type": "string", "minLength": 1},
+            "source_version": {"type": "string", "minLength": 1},
+            "as_of": {"type": "string", "minLength": 1},
+            "calculation_policy_version": {"type": "string", "minLength": 1},
+        },
+        required=(
+            "reference_id",
+            "age",
+            "value",
+            "unit",
+            "period",
+            "population",
+            "comparator",
+            "source_id",
+            "source_version",
+            "as_of",
+            "calculation_policy_version",
+        ),
     )
