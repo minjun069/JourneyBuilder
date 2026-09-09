@@ -52,6 +52,11 @@ def serialize_v2_message(message):
     }
 
 
+class EventStreamRenderer(JSONRenderer):
+    media_type = 'text/event-stream'
+    format = 'event-stream'
+
+
 class V2APIView(APIView):
     def handle_exception(self, exc):
         if isinstance(exc, (AuthenticationFailed, NotAuthenticated)):

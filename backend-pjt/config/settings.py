@@ -16,6 +16,7 @@ from pathlib import Path
 from config.runtime_env import (
     read_bool,
     read_csv,
+    read_optional_pattern,
     read_positive_float,
     read_positive_int,
     require_secret,
@@ -94,6 +95,11 @@ ASGI_APPLICATION = 'config.asgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+POSTGRES_SCHEMA = read_optional_pattern(
+    'POSTGRES_SCHEMA',
+    r'[a-z][a-z0-9_]{0,62}',
+)
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -102,6 +108,10 @@ DATABASES = {
         'PASSWORD': require_secret('POSTGRES_PASSWORD'),
         'HOST': os.environ.get('POSTGRES_HOST', 'postgres'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        **(
+            {'OPTIONS': {'options': f'-c search_path={POSTGRES_SCHEMA}'}}
+            if POSTGRES_SCHEMA else {}
+        ),
     }
 }
 
@@ -177,3 +187,7 @@ AI_REQUEST_TTL_SECONDS = read_positive_int('AI_REQUEST_TTL_SECONDS', 600)
 AI_SERVICE_TIMEOUT_SECONDS = read_positive_float('AI_SERVICE_TIMEOUT_SECONDS', 5)
 AI_STREAM_READ_TIMEOUT_SECONDS = read_positive_float('AI_STREAM_READ_TIMEOUT_SECONDS', 120)
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+AI_REDIS_NAMESPACE = read_optional_pattern(
+    'AI_REDIS_NAMESPACE',
+    r'[a-z][a-z0-9:_-]{0,63}:',
+)

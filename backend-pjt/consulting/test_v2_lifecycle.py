@@ -146,6 +146,17 @@ class RedisLifecycleStoreTests(SimpleTestCase):
             {'body': {'ok': True}},
         )
 
+    def test_optional_namespace_prefixes_every_lifecycle_key(self):
+        client = FakeRedis()
+        store = RedisLifecycleStore(client, namespace='p07:run42:')
+        state = {'request_id': 'ai_req_test', 'status': 'processing'}
+
+        store.save_active(state)
+        store.save_idempotency(3, 12, 'idem-key', {'body': {'ok': True}})
+
+        self.assertIn('p07:run42:ai:v2:request:ai_req_test', client.values)
+        self.assertIn('p07:run42:ai:v2:idempotency:3:12:idem-key', client.values)
+
 
 class AIRequestDispatchTests(SimpleTestCase):
     @patch('consulting.ai_lifecycle.get_step_field_registry')

@@ -1,6 +1,7 @@
 import api from '@/api'
 import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
 import { readSSEStream, validateSSEEvents, validateV2SSEEvents } from '@/api/sse'
+import { mapMonthlyIncome } from './consultingMapping.js'
 import {
   AI_CONTRACT_VERSION,
   createIdempotencyKey,
@@ -204,7 +205,7 @@ export function mapBasicInfo(form) {
     tendency:       form.tendency,
     interest:       str(form.interest),
     need:           str(form.need),
-    monthly_income: money(form.earnings),
+    monthly_income: mapMonthlyIncome(form.earnings),
     retirement_age: num(form.retirementAge),
     end_age:        num(form.endAge),
   }

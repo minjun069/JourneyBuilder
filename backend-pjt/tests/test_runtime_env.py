@@ -13,6 +13,7 @@ from config.runtime_env import (  # noqa: E402
     RuntimeConfigurationError,
     read_bool,
     read_csv,
+    read_optional_pattern,
     read_positive_float,
     read_positive_int,
     require_secret,
@@ -52,6 +53,27 @@ class RuntimeEnvironmentTests(unittest.TestCase):
         self.assertEqual(read_csv("HOSTS", "localhost", {}), ["localhost"])
         with self.assertRaises(RuntimeConfigurationError):
             read_csv("HOSTS", "localhost", {"HOSTS": " , "})
+
+    def test_optional_pattern_accepts_empty_and_matching_values(self) -> None:
+        self.assertEqual(read_optional_pattern("SCHEMA", r"[a-z][a-z0-9_]+", {}), "")
+        self.assertEqual(
+            read_optional_pattern(
+                "SCHEMA",
+                r"[a-z][a-z0-9_]+",
+                {"SCHEMA": "p07_run_42"},
+            ),
+            "p07_run_42",
+        )
+
+    def test_optional_pattern_rejects_unsafe_values(self) -> None:
+        for value in ("Public", "p07-run", "p07;drop schema public"):
+            with self.subTest(value=value):
+                with self.assertRaises(RuntimeConfigurationError):
+                    read_optional_pattern(
+                        "SCHEMA",
+                        r"[a-z][a-z0-9_]+",
+                        {"SCHEMA": value},
+                    )
 
 
 if __name__ == "__main__":

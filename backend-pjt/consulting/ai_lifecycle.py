@@ -198,8 +198,13 @@ def validate_terminal_callback(payload):
 
 
 class RedisLifecycleStore:
-    def __init__(self, client=None):
+    def __init__(self, client=None, namespace=None):
         self._client = client
+        self._namespace = (
+            settings.AI_REDIS_NAMESPACE
+            if namespace is None
+            else namespace
+        )
 
     @property
     def client(self):
@@ -208,13 +213,11 @@ class RedisLifecycleStore:
             self._client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
         return self._client
 
-    @staticmethod
-    def request_key(request_id):
-        return f'ai:v2:request:{request_id}'
+    def request_key(self, request_id):
+        return f'{self._namespace}ai:v2:request:{request_id}'
 
-    @staticmethod
-    def idempotency_key(user_id, session_id, key):
-        return f'ai:v2:idempotency:{user_id}:{session_id}:{key}'
+    def idempotency_key(self, user_id, session_id, key):
+        return f'{self._namespace}ai:v2:idempotency:{user_id}:{session_id}:{key}'
 
     def get_request(self, request_id):
         raw = self.client.get(self.request_key(request_id))
