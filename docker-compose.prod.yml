@@ -25,9 +25,8 @@ services:
   web:
     build:
       context: ./front-pjt
-      args:
-        # nginx 가 /api 를 backend 로 넘기므로 도메인과 무관한 상대 경로
-        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-/api/v1}"
+      # VITE_API_BASE_URL 은 넘기지 않는다 — front-pjt/Dockerfile 의 ARG 기본값이 유일한 출처다.
+      # env 로 받으면 옛 값이 남은 env 파일이 이를 덮어써 전 API 가 404 가 된다 (S15P21B109-130).
     <<: [*restart, *logging]
     depends_on:
       backend:
