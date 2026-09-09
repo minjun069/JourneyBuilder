@@ -3,13 +3,16 @@
 상태: **내부 모델·입력 검증, 연 단위 현금흐름 엔진·경계 조건 테스트·계산 샘플 구현.
 몬테카를로 경로 생성·계산·확률 및 분위수 집계·기본 및 확대 경계 검증·전용 샘플 CLI 완료.
 What-if 시나리오 생성·공통 경로 비교 계산·입력 검증·기본 및 확대 경계 테스트·전용 샘플 CLI 완료.
+저장형 입력 어댑터·명시적 가정 변환·범위 안내·기본 및 확대 경계 검증·연동 샘플 CLI 완료.
 실제 데이터 및 서비스 연결·운영 성능 검증은 남아 있음.**
 
 몬테카를로와 What-if가 공통으로 사용할 독립 Python 모듈이다. 이 문서는 모듈의
 내부 구현 명세이며, 팀의 기존 Agent·업무 데이터·HTTP 계약을 변경하거나 새 제품
 기능의 배포 완료를 선언하지 않는다. 보고서 버튼 기반 연결의 논리 입출력·배치 선택과
 협의 항목은 [서비스 연결 설계 초안](docs/service-integration-design.md)에 정리했다.
-외부 API·담당자·실행 위치는 아직 미합의이며, AI 서버 호출은 필수가 아니다.
+실행 위치는 사용자 결정에 따라 **BE에서 독립 Python 패키지를 직접 호출**하는 방향이다.
+AI 서버 진입점은 추가하지 않는다. BE 연결·배포 변경의 승인이나 구현 완료를 뜻하지 않으며,
+외부 API·담당자·패키지 배포 방법은 연결 전에 정해야 한다.
 
 패키지 이름은 `retirement_simulation`이다. 이전 `retirement` import/CLI의 변경 방법과
 계산 불변 검증은 [패키지 이름 변경 안내](docs/package-rename.md)를 참고한다.
@@ -41,8 +44,15 @@ What-if의 구현 기준은 [계산·비교 규칙](docs/what-if-rules.md)이다
 [What-if 샘플 가이드](docs/what-if-samples.md)를 참고한다.
 
 서비스 연결을 검토하는 팀원은 [화면 흐름·입출력·연결 범위](docs/service-integration-design.md)를
-먼저 참고한다. BE 직접 실행과 AI 서버의 별도 계산 API를 비교하고, 준비자금 계산과
-고정값 준비율 화면의 차이·다른 영역 확인 사항·서비스 완료 기준을 구분한다.
+먼저 참고한다. BE 직접 실행의 경계, 준비자금 계산과 고정값 준비율 화면의 차이,
+다른 영역 확인 사항·서비스 완료 기준을 구분한다. 입력 어댑터의 구현 기준은
+[저장 입력 매핑 규격](docs/input-mapping-rules.md), 공개 함수·범위 안내·오류·호출 예시는
+[입력 어댑터 가이드](docs/input-adapter.md)에 있다. 저장형 객체 변환은 구현했지만
+BE에서 실제 고객 정보를 조회하거나 API/화면에 연결하지는 않았다.
+입력 조합·수치/기간 경계·상태 격리와 검증 결과는
+[입력 어댑터 검증 기록](docs/input-adapter-validation.md)을 참고한다.
+저장형 합성 입력을 실제 어댑터→MC/What-if로 실행하는 명령·출력·한계는
+[입력 연동 샘플 가이드](docs/input-samples.md)에 정리했다.
 
 ## 작업 경계
 
@@ -53,6 +63,7 @@ What-if의 구현 기준은 [계산·비교 규칙](docs/what-if-rules.md)이다
 - 기존 `retirement_simulation.samples` CLI는 합성 입력의 고정 현금흐름만 출력한다.
   `retirement_simulation.monte_carlo_samples`는 몬테카를로 전용 합성 실행기다.
   `retirement_simulation.what_if_samples`는 공통 시장 경로의 What-if 비교 합성 실행기다.
+  `retirement_simulation.input_samples`는 저장형 합성 dict를 실제 입력 어댑터에 전달한다.
   모두 실제 고객 보고서나 기존 BE 준비율을 생성하지 않는다.
 - `get_retirement_scenario`는 기존 조회 도구로 유지한다. 여기에서 같은 도구나
   Agent를 추가하지 않는다.
@@ -112,6 +123,19 @@ conda run -n retirewise-ai python -S -B -m retirement_simulation.what_if_samples
 `--num-paths`, `--seed`, `--details` 옵션을 지원하며 자동 추천은 하지 않는다.
 시연 가정·출력·오류·한계는 [What-if 샘플 가이드](docs/what-if-samples.md)에 있다.
 
+같은 `ai-pjt/`에서 **저장 입력 어댑터를 거치는 MC·What-if 샘플**을 실행한다.
+
+```bash
+conda run -n retirewise-ai python -S -B -m retirement_simulation.input_samples
+conda run -n retirewise-ai python -S -B -m retirement_simulation.input_samples --mode monte-carlo
+conda run -n retirewise-ai python -S -B -m retirement_simulation.input_samples --case saved_working --details
+```
+
+기본은 저장형 합성 사례 3개·What-if 변경안 총 10개, 사례별 공통 경로 1,000개·시드 42다.
+기준 MC만 볼 때는 `--mode monte-carlo`를 사용한다. 실제 매핑된 입력·매핑 버전·누락된
+재무 범위 안내·계산 출처와 결과를 함께 출력한다. 실제 고객 파일·DB·API는 읽지 않는다.
+시연 가정·사례별 조건·검증 결과는 [입력 연동 샘플 가이드](docs/input-samples.md)를 참고한다.
+
 ## 최소 내부 모델
 
 | 모델 | 목적 | 주요 값 |
@@ -120,6 +144,7 @@ conda run -n retirewise-ai python -S -B -m retirement_simulation.what_if_samples
 | `RetirementExpensePeriod` | 한 연령 구간의 총 월 생활비 | `from_age`, `to_age`, `monthly_amount` |
 | `PensionIncome` | 이미 입력된 연금 수령 일정 | `start_age`, `end_age`, `monthly_amount` |
 | `SimulationAssumptions` | 고객 정보와 구분되는 계산 가정 | 연 수익률 평균·변동성·물가, 반복 수, 난수 시드 |
+| `ProfileMappingResult`, `InputMappingNotice` | 저장 입력 매핑 결과와 반영 범위 | 불변 프로필·안내 코드/안전한 경로·매핑 버전 |
 | `WhatIfChanges` | 원본 프로필에 적용할 불변 변경 조건 | 월 적립 총액·은퇴 나이·전체 생활비 일정, 생략/None은 유지 |
 | `WhatIfScenario` | 배치 비교의 변경안 | 고유 기술 식별자·불변 변경 조건 |
 | `AssetPoint` | 계산기의 최소 출력 단위 | 연도말 나이별 계산 잔액, 음수는 미충당 부족액 |
@@ -138,7 +163,8 @@ tuple을 받아 tuple로 복사하고, 구간 모델 자체도 수정할 수 없
 
 필수 필드 누락은 Python 생성자의 `TypeError`, 잘못된 값은
 `ModelValidationError(field_name, message)`로 거부한다. 오류에 입력 원문을 넣지
-않는다. 금액 문자열의 파싱, 단위 추측, 실제 snapshot 변환은 이 단계에 없다.
+않는다. 금액 문자열의 파싱·단위 추측은 하지 않는다. 저장형 snapshot 변환은 모델
+생성자와 분리한 `map_retirement_profile()`이 담당하며 `InputMappingError`로 실패를 알린다.
 
 ## 단위·기간·판정 기준
 
@@ -160,10 +186,11 @@ tuple을 받아 tuple로 복사하고, 구간 모델 자체도 수정할 수 없
    자동 합산하지 않는다. 은퇴하는 해부터 적립을 0으로 처리한다.
 6. **연금:** 월 수령액은 입력된 명목 금액이며 수령 나이 양 끝을 포함한다.
    여러 연금의 수령기간 중첩은 허용한다. 연금 없음은 명시적 빈 tuple로 입력한다.
-   종신·수령기간 문자열 변환, 수령액 추정, 일시금·계좌 인출은 아직 지원하지 않는다.
+   입력 어댑터는 종신·명확한 N년 수령기간을 이 일정으로 변환한다.
+   수령액 추정·일시금·계좌 인출은 지원하지 않는다.
 7. **비율:** 내부 연간 비율은 decimal fraction이다. `0.05`는 5%이고 `5`는
-   500%다. form의 percent 단위에서 내부 단위로 바꾸는 것은 향후 입력 adapter의
-   책임이며 값 크기로 단위를 추측하지 않는다. 평균은 단순 연수익률의 산술 평균,
+   500%다. percent 원천이 필요하면 향후 설정 연결부가 단위를 명시해 변환해야 한다.
+   현재 가정 어댑터는 fraction만 검증하고 크기로 단위를 추측하지 않는다. 평균은 단순 연수익률의 산술 평균,
    변동성은 같은 수익률의 연 표준편차다. 3단계의 확률분포는 총수익 배수 `1+r`의
    로그정규분포이며 변환식·경로 생성·확률 및 분위수 집계를 구현했다.
 8. **가정 검증:** 시장 관련 세 가정은 필수이며 기본 시장값을 주입하지 않는다.
@@ -181,7 +208,9 @@ tuple을 받아 tuple로 복사하고, 구간 모델 자체도 수정할 수 없
 
 ## 기존 프로젝트 입력과의 대응
 
-아래는 **후속 입력 adapter의 매핑 기준**이지, 이미 구현된 데이터 연결이 아니다.
+아래는 **구현한 순수 입력 adapter의 매핑 기준**이지, 실제 BE 조회/API 연결이 아니다.
+누락·명시적 0·목록 확인·지원 자산·생활비 중복·연금 기간·가정 입력의 상세 규칙과
+합성 검산값은 [저장 입력 매핑 규격](docs/input-mapping-rules.md)을 따른다.
 기계 원천은 [BE 필드 레지스트리](../../backend-pjt/consulting/field_registry.py),
 기존 전달 경로는 [고객 snapshot 생성](../../backend-pjt/consulting/ai_services.py)이다.
 
@@ -190,13 +219,13 @@ tuple을 받아 tuple로 복사하고, 구간 모델 자체도 수정할 수 없
 | 나이 3개 | `basic_info.age/retirement_age/end_age` | 누락을 기본 나이로 대체하지 않음 |
 | `liquid_assets` | `financial_assets[].current_value` | 지원하는 금융자산 합산, 부동산·연금 계좌 잔액과 분리 |
 | `monthly_savings` | `financial_assets[].monthly_savings` | 금융자산 납입 총액, 연금 납입·소득 잉여 이중 반영 금지 |
-| 생활비 구간 | `goal_periods[phase=after]`와 `items[].amount` | 연령별 항목 합계 산출 후 비중복 구간 구성, 구간·금액 보존 |
+| 생활비 구간 | `goal_periods[phase=after]`와 `items[].amount` | 같은 기간 내부의 월 금액만 합산. 서로 다른 기간의 중복은 거절 |
 | 연금 수령 일정 | `pension_assets`의 수령방식·개시 나이·기간·예상액 | 연금형 지원 여부 확인, 종신은 계획 범위로 변환, 미입력과 연금 없음 구분 |
 
 실제 입력의 부동산, 부채, 일회성 목표, 연금 계좌 납입·인출 등 미지원 조건을
 adapter가 조용히 버려 전체 재무상태를 반영했다고 표시해서는 안 된다. 지원 범위
-안내 또는 계산 보류를 별도로 정한다. 현재 모델에는 임의의 고객 dict를 받는
-입구가 없어 아직 이 데이터들을 소비하지 않는다.
+안내 또는 계산 보류를 구분한다. 초기 내부 정책은 매핑 규격을 따르며, 어댑터는
+반영 범위 안내를 함께 반환한다. 실제 서비스의 부분 분석 허용 여부는 연결 전에 정한다.
 
 기준 입력은 저장된 snapshot을 우선 대상으로 한다. 미저장 `current_form`의 병합과
 확정 사실 선택은 여기에서 재구현하지 않는다. 서비스 연결 시 기존
@@ -218,9 +247,10 @@ adapter가 조용히 버려 전체 재무상태를 반영했다고 표시해서�
 
 1. 문서화 완료: 보고서 시뮬레이션 화면 흐름·논리 입출력·연결 범위 초안.
    팀의 외부 계약 동결/승인 또는 연결 구현 완료가 아니다.
-2. 실제 snapshot 매핑·계산 가정 규격·입력 adapter.
+2. 모듈 범위 완료: 입력 매핑 규격·순수 어댑터·기본/확대 경계 검증·전용 연동 샘플.
+   실제 저장 정보 조회·없음 확인·부분 분석 허용 정책은 서비스 연결 작업에 남아 있다.
 3. 통합 실행 함수·출력 adapter·운영 성능 측정 및 실행 한도 결정.
-4. BE 직접 실행 또는 별도 내부 계산 API를 통한 서비스 연결.
+4. BE에서 패키지를 직접 실행하는 서비스 연결·단일 소스 패키지 배포.
 5. 실제 준비율과 기본 몬테카를로 화면 연결.
 6. What-if 조건 변경·동일 기준 비교 화면 연결.
 7. 인증·세션·오류·timeout·원본 불변·배포 환경 통합 검증 및 사용/운영 문서.
@@ -238,7 +268,7 @@ adapter가 조용히 버려 전체 재무상태를 반영했다고 표시해서�
 `calculate_what_if()`와 `calculate_what_if_paths()`는 각각 생성·직접 지정한 공통
 경로로 기준안과 1~10개 변경안을 비교한다. 전체 검증 후 기준안은 한 번만 계산한다.
 확률·비교 결과를 흉내 낸 stub은 없다. API endpoint, Agent·도구 연결, DB 저장,
-최적화 기능은 현재 미구현이며 이번 서비스 설계 문서 작업에서도 추가하지 않는다.
+최적화 기능은 현재 미구현이며 이번 입력 어댑터 작업에서도 추가하지 않는다.
 
 ## 이 모듈의 브랜치·커밋·MR 규칙
 
@@ -248,7 +278,10 @@ adapter가 조용히 버려 전체 재무상태를 반영했다고 표시해서�
 분기했고 MR !34로 병합됐다(병합 커밋 `f0fe7ea`). What-if 브랜치는
 `feat/ai-retirement-what-if`이며 `f0fe7ea`에서 분기해 MR !35로 병합됐다
 (병합 커밋 `37b31aa`). 서비스 설계 문서 브랜치 `docs/ai-retirement-service-contract`는
-2026-09-09 로컬에서 확인한 `master`의 `8dd0f82`에서 분기했다.
+2026-09-09 로컬에서 확인한 `master`의 `8dd0f82`에서 분기했고, 최신 master 반영 후
+MR !41로 병합됐다(병합 커밋 `df723da`). 입력 어댑터 작업을 시작할 때 이미
+`feat/ai-retirement-input-adapter`가 체크아웃돼 있었으며, 원격 fetch 후 HEAD·로컬 master·
+`origin/master`가 모두 `cbc18d8`인 깨끗한 상태를 확인했다. 추가 분기나 rebase는 하지 않았다.
 이 절의 규칙은 사용자 요청에 따른
 이 모듈의 작업 방식이며, 다른 팀원의 Git 관례나 저장소 설정을 변경하지 않는다.
 
@@ -296,6 +329,17 @@ What-if 브랜치는 아래 **0~5번 구현·검증·문서화까지 완료**하
 | 3 | 공통 경로 기준/변경안 계산·결과 비교·기본 테스트(완료) | `feat: 은퇴 What-if 비교 계산 구현` |
 | 4 | 은퇴·생활비·재현성·수치 범위·고갈 경계 검증(완료) | `test: 은퇴 What-if 경계 조건 검증` |
 | 5 | 합성 입력의 실제 비교 실행·사용 가이드(완료) | `feat: 은퇴 What-if 샘플 실행 기능 추가` |
+
+입력 어댑터 브랜치는 아래 **0~4번 구현·검증·샘플·문서화까지 완료**했다.
+신규 샘플 테스트 23개를 포함한 전체 404개가 일반·`-S` 실행에서 통과했다.
+
+| 순서 | 작업 | 권장 커밋 제목 |
+|---|---|---|
+| 0 | master·기능 브랜치 상태 확인(완료) | 별도 커밋 없음 |
+| 1 | BE 직접 실행 결정·원천 매핑·누락/기간/가정 규격(완료) | `docs: 은퇴 시뮬레이션 입력 매핑 규격 정의` |
+| 2 | 순수 입력 어댑터·기본 테스트(완료) | `feat: 은퇴 시뮬레이션 입력 어댑터 구현` |
+| 3 | 누락·단위·중복·연금·미지원 경계 회귀 검증(완료) | `test: 은퇴 시뮬레이션 입력 매핑 경계 검증` |
+| 4 | 합성 저장 입력의 MC/What-if 실행 예제·사용 문서(완료) | `feat: 은퇴 시뮬레이션 입력 연동 샘플 추가` |
 
 각 단위에서 구현과 기본 테스트를 함께 검증하고, 통과한 변경을 해당 단위로 커밋한다.
 후속 검토에서 독립적인 버그 수정이 발견되면 관련 회귀 테스트와 함께 `fix: ...`
