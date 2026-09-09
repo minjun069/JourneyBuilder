@@ -19,6 +19,14 @@ from .models import (
 
 from .return_paths import ReturnPathGenerationError, generate_return_paths
 
+from .input_adapter import (
+    InputMappingError,
+    InputMappingNotice,
+    ProfileMappingResult,
+    map_retirement_profile,
+    map_simulation_assumptions,
+)
+
 from .monte_carlo import (
     AmountPercentiles,
     AssetPercentiles,
@@ -57,11 +65,14 @@ __all__ = [
     "CashflowYear",
     "FirstDepletionCount",
     "FirstDepletionDelta",
+    "InputMappingError",
+    "InputMappingNotice",
     "ModelValidationError",
     "MonteCarloCalculationError",
     "MonteCarloMetadata",
     "MonteCarloResult",
     "PensionIncome",
+    "ProfileMappingResult",
     "RetirementExpensePeriod",
     "RetirementProfile",
     "ReturnPathGenerationError",
@@ -79,4 +90,6 @@ __all__ = [
     "calculate_what_if_paths",
     "create_what_if_profile",
     "generate_return_paths",
+    "map_retirement_profile",
+    "map_simulation_assumptions",
 ]
