@@ -1,9 +1,11 @@
 # 저장 입력 어댑터 사용 가이드
 
-상태: **입력 어댑터·기본 테스트 구현 완료.** 확대 경계 검증·전용 연동 샘플은 후속 작업이다.
+상태: **입력 어댑터·기본 테스트·확대 경계 검증 완료.** 전용 연동 샘플은 후속 작업이다.
 실제 BE 데이터 조회·API·FE 연결·배포·시장 가정 설정은 구현하지 않았다.
 구현은 [input_adapter.py](../input_adapter.py), 정책은 [입력 매핑 규격](input-mapping-rules.md),
 기본 검증은 [test_input_adapter.py](../tests/test_input_adapter.py)에 있다.
+조합형 독립 검산·수치/기간/상태 격리와 재실행 결과는
+[확대 경계 검증 기록](input-adapter-validation.md)을 참고한다.
 
 ## 1. 공개 Python 인터페이스
 
@@ -156,7 +158,7 @@ conda run -n retirewise-ai python -B -m unittest discover -s ai-pjt/retirement_s
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement_simulation/tests -q
 ```
 
-2026-09-09, Miniforge `retirewise-ai` / Python 3.13.15 검증 기록:
+최초 구현 `7253c68`의 2026-09-09, Miniforge `retirewise-ai` / Python 3.13.15 검증 기록:
 
 - 신규 기본 테스트 **39개 통과**, 전체 **343개**가 일반 실행과 `-S` 실행에서 각각 통과.
 - 공개 import 검증에 어댑터를 포함했고 Django/FastAPI/LLM 의존성 없이 패키지 import 확인.
@@ -166,6 +168,7 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 - 기존 모델·계산 엔진 6개 파일은 작업 시작 커밋과 byte 단위 동일. 변경은 모듈 내부
   구현·export·테스트·문서 **8개 파일**뿐이며 BE·FE·Agent·공통 설정은 수정하지 않았다.
 
-다음 커밋은 확대 경계/회귀 검증이다. 그다음 실제 어댑터를 사용하는 전용 합성 샘플·
-가이드를 추가한다. What-if 변경 dict 파싱·통합 실행/화면 JSON·운영 성능 검증과 실제
+후속 확대 경계/회귀 검증도 완료했고 전체 381개 테스트가 일반·`-S`·역순 실행에서 통과했다.
+다음 커밋은 실제 어댑터를 사용하는 전용 합성 샘플·가이드다.
+What-if 변경 dict 파싱·통합 실행/화면 JSON·운영 성능 검증과 실제
 BE·FE 연결은 이 기본 입력 매핑 작업에 포함하지 않는다.
