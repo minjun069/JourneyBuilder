@@ -47,6 +47,16 @@ services:
 
   ai-pjt:
     <<: [*restart, *logging]
+    # GMS(gms.ssafy.io) 경유로 gemini 를 쓴다. GMS 키는 Google 키가 아니라서 Google 로 직접 가면
+    # "API key not valid" 로 거부된다(2026-09-09 실측) → base URL 을 GMS 로 돌려야 한다.
+    # google-genai SDK 가 GOOGLE_GEMINI_BASE_URL 을 읽고 x-goog-api-key 헤더로 키를 보내며,
+    # 이는 GMS 문서의 호출 방식과 같다. 그래서 ai-pjt 코드는 고치지 않는다.
+    # 두 값 모두 GMS 가 정하는 것이라 환경별로 바뀌지 않는다 → env 로 열지 않고 고정한다(S15P21B109-129/130 교훈).
+    # 루트 compose 는 GOOGLE_GEMINI_BASE_URL 을 전달하지 않고 EMBEDDING_MODEL 기본값이 gemini-embedding-001 이라
+    # 여기서 덮어써야 한다. GOOGLE_API_KEY(=GMS 키)만 env 파일에서 온다.
+    environment:
+      GOOGLE_GEMINI_BASE_URL: "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
+      EMBEDDING_MODEL: "gemini-embedding-2"
 
   # gateway 는 루트 compose 에만 있어 여태 restart 정책이 없었다(도커 기본값 no).
   # 죽으면 사람이 올릴 때까지 /api 전체가 내려간다 — 상시 서비스이므로 다른 것과 같이 붙인다 (S15P21B109-128).
