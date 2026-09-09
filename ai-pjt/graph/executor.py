@@ -27,6 +27,7 @@ class ExecutionReport:
     task_results: dict[str, dict[str, Any]]
     output: dict[str, Any]
     tasks_used: int
+    tool_calls_used: int = 0
 
 
 def validate_agent_executor_registry(
@@ -55,6 +56,10 @@ async def execute_route_plan(
     agent_executors: Mapping[str, RuntimeExecutor],
     tool_executors: Mapping[str, RuntimeExecutor],
     task_limit: int = 3,
+    request_id: str = "request-unknown",
+    deadline_at: str | None = None,
+    tool_context: Mapping[str, Any] | None = None,
+    tool_call_budget: Any = None,
 ) -> ExecutionReport:
     """Run validated tasks in source order and pass only explicit bindings.
 
@@ -149,6 +154,8 @@ async def execute_route_plan(
         tasks_used += 1
 
         execution_input = {
+            "request_id": request_id,
+            "plan_id": str(plan.get("plan_id", "plan-unknown")),
             "task": deepcopy(dict(task)),
             "task_input": {
                 "description": str(task.get("description", "")),
@@ -160,6 +167,9 @@ async def execute_route_plan(
             "field_registry": deepcopy(field_registry),
             "bound_inputs": deepcopy(bound_inputs),
             "next": str(executor_name),
+            "deadline_at": deadline_at,
+            "tool_context": deepcopy(dict(tool_context or {})),
+            "tool_call_budget": tool_call_budget,
         }
         try:
             raw_result = await executor(execution_input)
@@ -191,6 +201,11 @@ async def execute_route_plan(
         task_results=task_results,
         output=output,
         tasks_used=tasks_used,
+        tool_calls_used=(
+            tool_call_budget.used
+            if hasattr(tool_call_budget, "used")
+            else 0
+        ),
     )
 
 
@@ -237,6 +252,8 @@ def aggregate_task_results(
 
         if isinstance(artifact, Mapping) and artifact.get("type") == "reference_value":
             responses.append(_reference_value_message(artifact))
+        if isinstance(artifact, Mapping) and artifact.get("type") == "dashboard_metric":
+            responses.append(_dashboard_metric_message(artifact))
 
         if not isinstance(artifact, Mapping) or artifact.get("type") != "form_change":
             continue
@@ -353,6 +370,11 @@ def _failure_message(reason_code: str) -> str:
         "route_missing": "안전한 실행 경로를 확인하지 못해 해당 요청을 처리하지 않았습니다.",
         "binding_resolution_failed": "선행 결과를 후속 입력으로 안전하게 연결하지 못했습니다.",
         "task_budget_exhausted": "요청당 실행 가능한 작업 수를 초과했습니다.",
+        "tool_resource_not_found": "검증된 조회 결과를 찾지 못했습니다.",
+        "tool_dependency_unavailable": "검증된 조회 결과를 현재 사용할 수 없습니다.",
+        "invalid_tool_arguments": "도구 조회 조건이 안전한 계약과 일치하지 않습니다.",
+        "invalid_tool_result": "도구 조회 결과가 artifact 계약을 통과하지 못했습니다.",
+        "invalid_tool_task": "도구 task가 허용된 실행 계약과 일치하지 않습니다.",
     }
     return messages.get(reason_code, "요청의 일부를 완료하지 못했습니다.")
 
@@ -386,4 +408,15 @@ def _reference_value_message(artifact: Mapping[str, Any]) -> str:
         f"{artifact.get('population')} 기준 {artifact.get('period')} 값은 "
         f"{rendered_value} {artifact.get('unit')}입니다. "
         f"출처는 {artifact.get('source_id')}, 기준일은 {artifact.get('as_of')}입니다."
+    )
+
+
+def _dashboard_metric_message(artifact: Mapping[str, Any]) -> str:
+    value = artifact.get("value")
+    rendered_value = f"{value:,}" if isinstance(value, int) else str(value)
+    return (
+        f"최신 검증 보고서의 은퇴 부족액은 {rendered_value} {artifact.get('unit')}입니다. "
+        f"보고서 ID/version은 {artifact.get('report_id')}/{artifact.get('report_version')}, "
+        f"계산 정책은 {artifact.get('calculation_policy_version')}, "
+        f"생성 시각은 {artifact.get('generated_at')}입니다."
     )

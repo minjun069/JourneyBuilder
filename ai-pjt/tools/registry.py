@@ -224,12 +224,15 @@ class FunctionToolRegistry:
             return
         context.audit_sink(ToolAuditEvent(
             request_id=context.request_id,
+            plan_id=context.plan_id,
+            task_id=context.task_id,
             tool_name=tool_name,
             tool_version=tool_version,
             agent=context.agent,
             status="succeeded" if result.ok else "failed",
             duration_ms=max(0, int((monotonic() - started_at) * 1000)),
             argument_classes=argument_classes,
+            call_source=context.call_source,
             error_code=result.error.code.value if result.error else None,
         ))
 

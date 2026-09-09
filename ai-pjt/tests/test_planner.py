@@ -13,14 +13,23 @@ def task(
     *,
     depends_on: list[str] | None = None,
     bindings: dict | None = None,
+    arguments: dict | None = None,
 ) -> dict:
-    return {
+    value = {
         "id": alias,
         "type": task_type,
         "description": description,
         "depends_on": depends_on or [],
         "bindings": bindings or {},
     }
+    if task_type == "lookup_reference_value":
+        value["arguments"] = arguments or {
+            "reference_id": "debt_service_ratio_max",
+            "age": 45,
+            "period": "annual",
+            "population": "retirewise_kr_households",
+        }
+    return value
 
 
 class FakePlanner:
@@ -52,6 +61,53 @@ class FakeClassifier:
 
 
 class RoutePlanValidationTests(unittest.TestCase):
+    def test_retirement_gap_arguments_are_runtime_fixed(self) -> None:
+        raw_task = task(
+            "gap",
+            "lookup_retirement_gap",
+            "최신 보고서의 은퇴 부족액 조회",
+        )
+        validation = validate_route_plan(
+            {"tasks": [raw_task]},
+            step_id="basic-info",
+        )
+
+        self.assertTrue(validation.valid)
+        self.assertEqual(
+            validation.plan["tasks"][0]["arguments"],
+            {"metric_id": "retirement_gap"},
+        )
+
+        raw_task["arguments"] = {"metric_id": "invented_metric"}
+        rejected = validate_route_plan(
+            {"tasks": [raw_task]},
+            step_id="basic-info",
+        )
+        self.assertFalse(rejected.valid)
+        self.assertIn(
+            "PLANNER_FIXED_ARGUMENT_INJECTION",
+            {issue.code for issue in rejected.issues},
+        )
+
+    def test_reference_lookup_requires_complete_typed_arguments(self) -> None:
+        raw_task = task(
+            "reference",
+            "lookup_reference_value",
+            "기준값 조회",
+        )
+        del raw_task["arguments"]["population"]
+
+        validation = validate_route_plan(
+            {"tasks": [raw_task]},
+            step_id="basic-info",
+        )
+
+        self.assertFalse(validation.valid)
+        self.assertIn(
+            "INVALID_TOOL_ARGUMENTS",
+            {issue.code for issue in validation.issues},
+        )
+
     def test_dependency_and_binding_are_normalized_to_runtime_ids(self) -> None:
         validation = validate_route_plan({
             "tasks": [

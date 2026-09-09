@@ -16,6 +16,8 @@ from core.context import ContextScope
 from core.monitoring import get_callbacks
 from graph.builder import build_graph
 from schemas.chat import ChatRequest, ChatStreamRequest
+from tools.graph_adapter import build_graph_tool_executors
+from tools.runtime import build_production_tool_runtime
 from transport.contracts import (
     CallbackError,
     ChatV2Request,
@@ -40,7 +42,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings.validate_runtime()
     async with get_checkpointer() as checkpointer:
-        app.state.chat_graph = build_graph(checkpointer)
+        tool_runtime = build_production_tool_runtime()
+        app.state.chat_graph = build_graph(
+            checkpointer,
+            tool_executors=build_graph_tool_executors(tool_runtime),
+        )
         app.state.context_api = build_context_state_api(checkpointer)
         request_store = PostgresRequestCheckpointStore(settings.db_url)
         await request_store.setup()
@@ -129,6 +135,13 @@ def _graph_input(request: ChatRequest | ChatStreamRequest | ChatV2Request) -> di
     chart_payload = getattr(request, "chart_payload", None)
     if chart_payload is not None:
         payload["chart_payload"] = chart_payload
+    tool_context = getattr(request, "tool_context", None)
+    if tool_context is not None:
+        payload["tool_context"] = (
+            tool_context.model_dump(mode="json")
+            if hasattr(tool_context, "model_dump")
+            else tool_context
+        )
     return payload
 
 

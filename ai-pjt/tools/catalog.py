@@ -8,6 +8,12 @@ from .contracts import (
     ToolExecutionContext,
     ToolInvocationError,
 )
+from .financial_policy import (
+    ApprovedFinancialPolicyError,
+    ApprovedReferenceValueNotFound,
+    REFERENCE_VALUE_INPUT_SCHEMA,
+    lookup_approved_reference_value,
+)
 from .registry import FunctionToolRegistry
 
 
@@ -53,6 +59,27 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
             handler=_search_financial_knowledge,
             timeout_seconds=5.0,
             argument_classes=("public_knowledge_query",),
+        ),
+        FunctionToolDefinition(
+            name="get_approved_reference_value",
+            description=(
+                "승인된 공용 계산 정책에서 기준 항목, 연령, 기간과 모집단이 정확히 "
+                "일치하는 구조화 기준값을 조회합니다. 값을 추정하거나 보간하지 않습니다."
+            ),
+            input_schema=REFERENCE_VALUE_INPUT_SCHEMA,
+            output_schema=_object_schema(
+                properties={"reference": _reference_value_schema()},
+                required=("reference",),
+            ),
+            allowed_agents=frozenset({"qa", "input_assist"}),
+            handler=_get_approved_reference_value,
+            timeout_seconds=0.5,
+            argument_classes=(
+                "financial_reference_identifier",
+                "age",
+                "statistical_period",
+                "statistical_population_identifier",
+            ),
         ),
         FunctionToolDefinition(
             name="get_form_field_spec",
@@ -164,6 +191,30 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
     )
 
 
+async def _get_approved_reference_value(
+    _: ToolExecutionContext,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        reference = lookup_approved_reference_value(
+            reference_id=arguments["reference_id"],
+            age=arguments["age"],
+            period=arguments["period"],
+            population=arguments["population"],
+        )
+    except ApprovedReferenceValueNotFound as exc:
+        raise ToolInvocationError(
+            ToolErrorCode.NOT_FOUND,
+            "조건에 정확히 일치하는 승인 기준값을 찾지 못했습니다.",
+        ) from exc
+    except ApprovedFinancialPolicyError as exc:
+        raise ToolInvocationError(
+            ToolErrorCode.DEPENDENCY_UNAVAILABLE,
+            "승인된 계산 정책을 사용할 수 없습니다.",
+        ) from exc
+    return {"reference": reference}
+
+
 async def _search_financial_knowledge(
     context: ToolExecutionContext,
     arguments: dict[str, Any],
@@ -180,7 +231,14 @@ async def _search_financial_knowledge(
             ToolErrorCode.INVALID_ARGUMENTS,
             "공백만 있는 검색어는 사용할 수 없습니다.",
         )
-    results = await context.knowledge_search(query, arguments.get("top_k", 5))
+    try:
+        results = await context.knowledge_search(query, arguments.get("top_k", 5))
+    except RuntimeError as exc:
+        raise ToolInvocationError(
+            ToolErrorCode.DEPENDENCY_UNAVAILABLE,
+            "승인된 금융 지식 검색기를 사용할 수 없습니다.",
+            retryable=True,
+        ) from exc
     if not isinstance(results, list):
         raise ToolInvocationError(
             ToolErrorCode.INVALID_RESULT,
@@ -225,11 +283,23 @@ async def _get_dashboard_metric(
             ToolErrorCode.NOT_FOUND,
             "현재 세션의 검증된 보고서에서 해당 지표를 찾지 못했습니다.",
         )
-    if metric.get("status") != "ready":
+    if metric.get("availability") == "unavailable":
+        reason = metric.get("reason")
+        error_code = (
+            ToolErrorCode.NOT_FOUND
+            if reason == "report_not_found"
+            else ToolErrorCode.DEPENDENCY_UNAVAILABLE
+        )
         raise ToolInvocationError(
-            ToolErrorCode.DEPENDENCY_UNAVAILABLE,
-            "해당 지표의 원본 보고서가 아직 준비되지 않았습니다.",
-            retryable=True,
+            error_code,
+            "Backend가 검증한 보고서 지표를 사용할 수 없습니다.",
+            retryable=reason == "report_processing",
+            details=({"reason": reason},),
+        )
+    if metric.get("availability") != "ready":
+        raise ToolInvocationError(
+            ToolErrorCode.INVALID_RESULT,
+            "보고서 지표 snapshot의 availability가 올바르지 않습니다.",
         )
     requested_version = arguments.get("report_version")
     if requested_version is not None and metric.get("report_version") != requested_version:
@@ -345,22 +415,23 @@ def _metric_schema() -> dict[str, Any]:
     return _object_schema(
         properties={
             "metric_id": {"type": "string"},
-            "value": {},
-            "unit": {"type": "string"},
-            "source_report": {"type": "string"},
+            "availability": {"type": "string", "enum": ["ready"]},
+            "value": {"type": "integer", "minimum": 0},
+            "unit": {"type": "string", "enum": ["KRW"]},
+            "report_id": {"type": "integer", "minimum": 1},
             "report_version": {"type": "integer", "minimum": 1},
+            "calculation_policy_version": {"type": "string", "minLength": 1},
             "generated_at": {"type": "string"},
-            "status": {"type": "string", "enum": ["ready"]},
-            "assumptions": {"type": "object"},
         },
         required=(
             "metric_id",
+            "availability",
             "value",
             "unit",
-            "source_report",
+            "report_id",
             "report_version",
+            "calculation_policy_version",
             "generated_at",
-            "status",
         ),
     )
 
@@ -389,10 +460,48 @@ def _scenario_schema() -> dict[str, Any]:
 def _report_schema() -> dict[str, Any]:
     return _object_schema(
         properties={
+            "report_id": {"type": "integer", "minimum": 1},
             "report_type": {"type": "string"},
             "version": {"type": "integer", "minimum": 1},
             "status": {"type": "string", "enum": ["processing", "ready", "failed"]},
             "generated_at": {"type": "string"},
         },
-        required=("report_type", "version", "status", "generated_at"),
+        required=("report_id", "report_type", "version", "status", "generated_at"),
+    )
+
+
+def _reference_value_schema() -> dict[str, Any]:
+    return _object_schema(
+        properties={
+            "reference_id": {"type": "string"},
+            "age": {"type": "integer", "minimum": 0, "maximum": 120},
+            "value": {"type": "number"},
+            "unit": {"type": "string", "minLength": 1},
+            "period": {
+                "type": "string",
+                "enum": ["monthly", "annual", "current"],
+            },
+            "population": {"type": "string", "minLength": 1},
+            "comparator": {
+                "type": "string",
+                "enum": ["lt", "lte", "eq", "gte", "gt"],
+            },
+            "source_id": {"type": "string", "minLength": 1},
+            "source_version": {"type": "string", "minLength": 1},
+            "as_of": {"type": "string", "minLength": 1},
+            "calculation_policy_version": {"type": "string", "minLength": 1},
+        },
+        required=(
+            "reference_id",
+            "age",
+            "value",
+            "unit",
+            "period",
+            "population",
+            "comparator",
+            "source_id",
+            "source_version",
+            "as_of",
+            "calculation_policy_version",
+        ),
     )

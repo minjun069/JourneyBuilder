@@ -5,14 +5,51 @@ front-pjt/src/components/charts/financialIndicatorSchema.js 의 존(zone) 정의
 두 파일을 함께 유지보수한다. 값 방향(가계수지 = 100 - 지출률)도 프론트와 동일.
 """
 
+from reports.policy import load_financial_policy
+
+
 GOOD = '양호'
 WARN = '주의'
 RISK = '위험'
+UNAVAILABLE = '판정 불가'
 
-# 연령 브래킷별 양호 기준값 (프론트 getZones 와 동일)
-SAVING_GOOD_FROM = {'20s': 50, '30s': 30, '40s': 20, '50s': 10, '65+': 5}
-DSR_GOOD_UNDER = {'20s': 25, '30s': 25, '40s': 25, '50s': 15, '65+': 5}
-EMERGENCY_GOOD_FROM = {'20s': 2, '30s': 3, '40s': 4, '50s': 5, '65+': 6}
+POLICY = load_financial_policy()
+
+
+def _thresholds(reference_id):
+    result = {}
+    for item in POLICY['reference_values']:
+        if item['reference_id'] != reference_id:
+            continue
+        age_min = item['age_min']
+        age_max = item['age_max']
+        if age_min == 20 and age_max == 29:
+            bracket = '20s'
+        elif age_min == 20 and age_max == 49:
+            result.update({'20s': item['value'], '30s': item['value'], '40s': item['value']})
+            continue
+        elif age_min == 30 and age_max == 39:
+            bracket = '30s'
+        elif age_min == 40 and age_max == 49:
+            bracket = '40s'
+        elif age_min == 50 and age_max == 59:
+            bracket = '50s'
+        elif age_min == 60 and age_max == 64:
+            bracket = '60-64'
+        elif age_min == 60 and age_max is None:
+            result.update({'60-64': item['value'], '65+': item['value']})
+            continue
+        elif age_min == 65 and age_max is None:
+            bracket = '65+'
+        else:
+            continue
+        result[bracket] = item['value']
+    return result
+
+
+SAVING_GOOD_FROM = _thresholds('total_savings_propensity_min')
+DSR_GOOD_UNDER = _thresholds('debt_service_ratio_max')
+EMERGENCY_GOOD_FROM = _thresholds('emergency_reserve_min')
 
 
 def age_bracket(age):
@@ -22,8 +59,10 @@ def age_bracket(age):
         return '30s'
     if age < 50:
         return '40s'
-    if age < 65:
+    if age < 60:
         return '50s'
+    if age < 65:
+        return '60-64'
     return '65+'
 
 
@@ -55,6 +94,8 @@ def _grade_financial_asset_ratio(value, bracket):
 def _grade_debt_service_ratio(value, bracket):
     # 낮을수록 좋음. 프론트 zone: [0, t)=양호, [t, 1.6t)=주의, 이상=위험
     threshold = DSR_GOOD_UNDER[bracket]
+    if threshold == 0:
+        return GOOD if value == 0 else RISK
     if value < threshold:
         return GOOD
     if value < threshold * 1.6:
@@ -102,7 +143,16 @@ def build_graded_indicators(raw_indicators, age):
     bracket = age_bracket(age)
     graded = []
     for key, source_key, transform, grade_fn, group in INDICATOR_DEFS:
-        value = float(raw_indicators.get(source_key) or 0)
+        raw_value = raw_indicators.get(source_key)
+        if raw_value is None:
+            graded.append({
+                'key': key,
+                'value': None,
+                'grade': UNAVAILABLE,
+                'group': group,
+            })
+            continue
+        value = float(raw_value)
         if transform:
             value = transform(value)
         graded.append({

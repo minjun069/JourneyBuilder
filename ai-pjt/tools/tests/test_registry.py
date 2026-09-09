@@ -54,10 +54,11 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
                     "metric_id": "net_worth",
                     "value": 120_000_000,
                     "unit": "KRW",
-                    "source_report": "asset_statement",
+                    "report_id": 10,
                     "report_version": 2,
+                    "calculation_policy_version": "2026-09-07.v1",
                     "generated_at": "2026-09-04T00:00:00Z",
-                    "status": "ready",
+                    "availability": "ready",
                 }
             },
             retirement_scenarios={
@@ -72,6 +73,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             },
             available_reports=(
                 {
+                    "report_id": 10,
                     "report_type": "asset_statement",
                     "version": 2,
                     "status": "ready",
@@ -105,7 +107,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registered_agents = set(step_registry["agents"])
         definitions = default_tool_definitions()
 
-        self.assertEqual(len(definitions), 6)
+        self.assertEqual(len(definitions), 7)
         for definition in definitions:
             with self.subTest(tool=definition.name):
                 self.assertTrue(definition.allowed_agents)
@@ -164,6 +166,38 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.data["metric"]["unit"], "KRW")
 
+    async def test_backend_unavailable_metric_reason_becomes_tool_failure(self):
+        for reason, expected_code, retryable in (
+            ("report_not_found", ToolErrorCode.NOT_FOUND, False),
+            ("report_processing", ToolErrorCode.DEPENDENCY_UNAVAILABLE, True),
+            ("report_failed", ToolErrorCode.DEPENDENCY_UNAVAILABLE, False),
+            ("report_stale", ToolErrorCode.DEPENDENCY_UNAVAILABLE, False),
+            ("policy_version_mismatch", ToolErrorCode.DEPENDENCY_UNAVAILABLE, False),
+            ("report_schema_invalid", ToolErrorCode.DEPENDENCY_UNAVAILABLE, False),
+        ):
+            with self.subTest(reason=reason):
+                context = ToolExecutionContext(
+                    request_id="req-unavailable",
+                    step_id="basic-info",
+                    agent="qa",
+                    dashboard_metrics={
+                        "retirement_gap": {
+                            "availability": "unavailable",
+                            "reason": reason,
+                        },
+                    },
+                )
+                result = await self.registry.invoke(
+                    "get_dashboard_metric",
+                    {"metric_id": "retirement_gap"},
+                    context,
+                )
+
+                self.assertFalse(result.ok)
+                self.assertEqual(result.error.code, expected_code)
+                self.assertEqual(result.error.retryable, retryable)
+                self.assertEqual(result.error.details[0]["reason"], reason)
+
     async def test_get_retirement_scenario_fails_explicitly_when_missing(self):
         result = await self.registry.invoke(
             "get_retirement_scenario",
@@ -190,6 +224,42 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(result.ok)
         self.assertEqual(result.data["results"][0]["document_id"], "pension-guide")
+
+    async def test_approved_reference_value_uses_exact_policy_criteria(self):
+        result = await self.registry.invoke(
+            "get_approved_reference_value",
+            {
+                "reference_id": "debt_service_ratio_max",
+                "age": 64,
+                "period": "annual",
+                "population": "retirewise_kr_households",
+            },
+            self.context,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["reference"]["value"], 10)
+        self.assertEqual(result.data["reference"]["unit"], "percent")
+        self.assertEqual(result.data["reference"]["comparator"], "lt")
+        self.assertEqual(
+            result.data["reference"]["calculation_policy_version"],
+            "2026-09-07.v1",
+        )
+
+    async def test_approved_reference_value_does_not_estimate_a_missing_match(self):
+        result = await self.registry.invoke(
+            "get_approved_reference_value",
+            {
+                "reference_id": "debt_service_ratio_max",
+                "age": 64,
+                "period": "monthly",
+                "population": "retirewise_kr_households",
+            },
+            self.context,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error.code, ToolErrorCode.NOT_FOUND)
 
     async def test_timeout_is_returned_as_structured_error(self):
         async def slow_handler(_, __):
