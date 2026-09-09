@@ -1,3 +1,5 @@
+import { createSecureUuid } from '../utils/secureUuid.js'
+
 export const AI_CONTRACT_VERSION = '2.0'
 export const AI_POLLING_INTERVAL_MS = 3_000
 export const AI_PROCESSING_TIMEOUT_MS = 90_000
@@ -196,11 +198,8 @@ export async function pollUntilTerminal({
   )
 }
 
-export function createIdempotencyKey() {
-  if (typeof globalThis.crypto?.randomUUID !== 'function') {
-    throw new Error('안전한 idempotency key를 생성할 수 없습니다.')
-  }
-  return globalThis.crypto.randomUUID()
+export function createIdempotencyKey(cryptoProvider = globalThis.crypto) {
+  return createSecureUuid(cryptoProvider)
 }
 
 export function deriveV2BaseURL(baseURL) {

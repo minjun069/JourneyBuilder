@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, computed } from 'vue'
+import { createSecureUuid } from '@/utils/secureUuid'
 
 const props = defineProps({
   currentAge:    { type: Number, default: 30 },
@@ -86,7 +87,7 @@ function confirmPeriod() {
     return
   }
   tabData.value.periods.push({
-    clientItemId: crypto.randomUUID(),
+    clientItemId: createSecureUuid(),
     fromAge: from,
     toAge: to,
     items: [],
@@ -110,7 +111,7 @@ function deletePeriod(i) {
 function addPeriodItem() {
   if (selIdx.value === null) return
   tabData.value.periods[selIdx.value].items.push({
-    clientItemId: crypto.randomUUID(),
+    clientItemId: createSecureUuid(),
     name: EXPENSE_CATS[0],
     name__sel: EXPENSE_CATS[0],
     amount: '',
@@ -134,7 +135,7 @@ function clearItemNameEtc(item) {
 
 function addMilestone() {
   tabData.value.milestones.push({
-    clientItemId: crypto.randomUUID(),
+    clientItemId: createSecureUuid(),
     age: '',
     category: '소득',
     content: '',

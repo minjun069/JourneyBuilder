@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test src/api/aiLifecycle.test.js src/api/aiLifecycleContract.test.js src/api/sse.test.js src/api/sseV2Contract.test.js src/utils/canonicalMoney.test.js src/utils/formActionsContract.test.js src/utils/stepRegistryContract.test.js",
+    "test": "node --test src/api/aiLifecycle.test.js src/api/aiLifecycleContract.test.js src/api/consultingMapping.test.js src/api/sse.test.js src/api/sseV2Contract.test.js src/utils/canonicalMoney.test.js src/utils/formActionsContract.test.js src/utils/stepRegistryContract.test.js",
+    "test:e2e:f05": "playwright test --config tests/e2e/f05/playwright.config.mjs",
     "preview": "vite preview",
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
@@ -26,6 +27,7 @@
     "vue3-apexcharts": "^1.11.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^6.0.6",
     "eslint": "^10.2.1",
@@ -36,6 +38,8 @@
     "npm-run-all2": "^8.0.4",
     "oxlint": "~1.60.0",
     "prettier": "3.8.3",
+    "pg": "^8.16.3",
+    "redis": "^5.8.2",
     "vite": "^8.0.8",
     "vite-plugin-vue-devtools": "^8.1.1"
   },

@@ -1,3 +1,5 @@
+import { createSecureUuid } from './secureUuid.js'
+
 const SINGLE_FIELDS = {
   'basic-info': {
     age: 'age',
@@ -111,7 +113,7 @@ function applyList(form, change) {
 
   if (change.operation === 'add') {
     rows.push({
-      clientItemId: crypto.randomUUID(),
+      clientItemId: createSecureUuid(),
       ...mapObject(change.value, fields),
       ...(
         change.value == null || typeof change.value !== 'object'
@@ -150,7 +152,7 @@ function applyGoal(form, change) {
         : null
       parent.items ??= []
       parent.items.push({
-        clientItemId: crypto.randomUUID(),
+        clientItemId: createSecureUuid(),
         ...mapObject(change.value, LIST_FIELDS.goal_period_items),
         ...(
           itemField && (change.value == null || typeof change.value !== 'object')
@@ -166,7 +168,7 @@ function applyGoal(form, change) {
     const field = fields?.[change.path]
     form[phase][key] ??= []
     form[phase][key].push({
-      clientItemId: crypto.randomUUID(),
+      clientItemId: createSecureUuid(),
       ...mapObject(change.value, fields),
       ...(field && (change.value == null || typeof change.value !== 'object')
         ? { [field]: uiValue(change.path, change.value) }

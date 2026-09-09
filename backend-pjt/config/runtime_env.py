@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from collections.abc import Mapping
 
 
@@ -97,3 +98,15 @@ def read_csv(
     if not values:
         raise RuntimeConfigurationError(f"{name} must not be empty")
     return values
+
+
+def read_optional_pattern(
+    name: str,
+    pattern: str,
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    active_environ = os.environ if environ is None else environ
+    value = active_environ.get(name, "").strip()
+    if value and re.fullmatch(pattern, value) is None:
+        raise RuntimeConfigurationError(f"{name} has an invalid format")
+    return value

@@ -1,6 +1,8 @@
 import api from '@/api'
 import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
 import { readSSEStream, validateSSEEvents, validateV2SSEEvents } from '@/api/sse'
+import { mapMonthlyIncome, wrapCurrentListForm } from './consultingMapping.js'
+import { createSecureUuid } from '@/utils/secureUuid'
 import {
   AI_CONTRACT_VERSION,
   createIdempotencyKey,
@@ -183,7 +185,7 @@ function num(val) {
 }
 
 export function ensureClientItemId(item) {
-  if (!item.clientItemId) item.clientItemId = crypto.randomUUID()
+  if (!item.clientItemId) item.clientItemId = createSecureUuid()
   return item.clientItemId
 }
 
@@ -204,7 +206,7 @@ export function mapBasicInfo(form) {
     tendency:       form.tendency,
     interest:       str(form.interest),
     need:           str(form.need),
-    monthly_income: money(form.earnings),
+    monthly_income: mapMonthlyIncome(form.earnings),
     retirement_age: num(form.retirementAge),
     end_age:        num(form.endAge),
   }
@@ -394,8 +396,8 @@ export function mapCurrentForm(stepId, form) {
   const mapper = CURRENT_FORM_MAPPERS[stepId]
   const mapped = mapper ? mapper(form) : {}
   if (!Array.isArray(mapped)) return mapped
-  return mapped.map((item, index) => ({
+  return wrapCurrentListForm(mapped.map((item, index) => ({
     ...item,
     client_item_id: ensureClientItemId(form.assets[index]),
-  }))
+  })))
 }

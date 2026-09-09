@@ -41,6 +41,21 @@ test('브라우저 요청마다 UUID idempotency key를 만든다', () => {
   )
 })
 
+test('HTTP 개발 origin에서도 getRandomValues로 안전한 UUID를 만든다', () => {
+  const bytes = Uint8Array.from({ length: 16 }, (_, index) => index)
+  const cryptoProvider = {
+    getRandomValues(target) {
+      target.set(bytes)
+      return target
+    },
+  }
+
+  assert.equal(
+    createIdempotencyKey(cryptoProvider),
+    '00010203-0405-4607-8809-0a0b0c0d0e0f',
+  )
+})
+
 test('접수 응답은 v2 envelope와 processing 상태를 모두 검사한다', () => {
   assert.deepEqual(validateAcceptedEnvelope(accepted), accepted.data)
   assert.throws(

@@ -1,4 +1,6 @@
 <script setup>
+import { createSecureUuid } from '@/utils/secureUuid'
+
 const props = defineProps({
   modelValue: { type: Array, required: true },
   columns: { type: Array, required: true },
@@ -8,7 +10,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 function addRow() {
-  const blank = { clientItemId: crypto.randomUUID() }
+  const blank = { clientItemId: createSecureUuid() }
   props.columns.forEach(col => {
     if (col.type === 'frequency') {
       blank[col.key] = { none: true, unit: '월', count: '' }
