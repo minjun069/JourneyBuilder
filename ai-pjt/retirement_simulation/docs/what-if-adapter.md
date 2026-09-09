@@ -17,8 +17,9 @@
 
 기존 모델·입력 어댑터·계산 엔진의 규칙/버전은 바꾸지 않았다. BE·FE·Agent·컨텍스트·
 매뉴얼·공통 설정·의존성도 변경하지 않았다. 후속 3번에서
-[통합 실행 함수·결과·실행 오류](analysis-execution.md)까지 구현했다. **JSON 변환·출력 전용 오류·
-통합 CLI·서비스 연결은 아직 미구현**이며 이 매퍼가 HTTP API나 인증 검사를 대신하지 않는다.
+[통합 실행 함수·결과·실행 오류](analysis-execution.md), 후속 4번에서
+[결과/오류 JSON 변환](analysis-output.md)까지 구현했다. **통합 CLI·서비스 연결은 아직 미구현**이며
+이 매퍼가 HTTP API나 인증 검사를 대신하지 않는다.
 
 ## 2. 입력 규칙
 
@@ -35,10 +36,10 @@
 
 명시적 0은 유지한다. bool·실수·숫자 문자열·`Decimal`을 정수로 변환하지 않는다.
 생활비 행의 null은 오류다. 변경 필드 자체의 null과 구분한다. Python 정수 금액의 상한을
-새로 만들지 않았으며, 향후 출력 계층의 JavaScript 안전 수치 제한은 이 매퍼의 책임이 아니다.
+새로 만들지 않았으며, 출력 계층의 JavaScript 안전 수치 제한은 이 매퍼의 책임이 아니다.
 매핑 성공이 큰 금액의 계산/JSON 변환 성공까지 보장하지는 않는다.
 
-`[]`와 `()`는 빈 tuple을 반환한다. 이는 향후 기준 MC 모드 선택용이다.
+`[]`와 `()`는 빈 tuple을 반환한다. 통합 실행에서는 기준 MC 모드 선택에 사용한다.
 기존 `calculate_what_if()`는 여전히 **1~10개** 시나리오만 받으므로 빈 결과를 전달하지 않는다.
 반대로 `[{'scenario_id': 'unchanged', 'changes': {}}]`는 하나의 무변경 비교 정의다.
 
@@ -129,7 +130,7 @@ assert mapped.notices  # 후속 통합 결과에는 모든 안내와 mapping_ver
 실패하면 부분 결과는 반환하지 않으며 앞서 읽은 원본도 바꾸지 않는다. 필수 Python 인자 누락이나
 미지원 keyword는 `TypeError`다. 기준 의존 적용 실패는 여전히 `ModelValidationError`이며,
 통합 함수는 후속 3번에서 구현한 `RetirementAnalysisError`로 감싸며 이 매퍼의 독립 호출은
-기존 오류를 유지한다. 출력 변환은 4번 작업이다.
+기존 오류를 유지한다. 출력 변환도 후속 4번에서 별도 함수로 구현했다.
 
 ## 5. 검증과 후속 작업
 
@@ -156,6 +157,6 @@ conda run -n retirewise-ai python -B -m unittest discover -s ai-pjt/retirement_s
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement_simulation/tests -q
 ```
 
-같은 브랜치의 **3번 통합 실행 함수·불변 결과 묶음·알려진 실행 오류 변환까지 완료**했다.
-다음은 4번 JSON 출력, 5번 성능 측정, 6번 통합 샘플/인수인계 순서다.
+같은 브랜치의 **3번 통합 실행 함수·불변 결과·실행 오류 및 4번 결과/오류 JSON 변환까지 완료**했다.
+다음은 5번 성능 측정, 6번 통합 샘플/인수인계 순서다.
 독립 모듈 검증은 실제 DB/API/FE/배포 검증을 대신하지 않는다.

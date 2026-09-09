@@ -175,8 +175,8 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 
 입력 어댑터는 MR !45로 병합됐고, 후속 `feat/ai-retirement-analysis`에서
 [통합 호출·입출력 규격](analysis-contract.md)을 문서화하고 What-if 변경 입력과
-[통합 실행·불변 결과·실행 오류](analysis-execution.md)까지 구현했다. 기존 입력 연동 CLI는
-수정하지 않았다. 이후 안전한 출력 JSON 변환, 성능 측정·한도 근거, 통합 CLI를 분리해 진행한다.
+[통합 실행·불변 결과·실행 오류](analysis-execution.md), [결과/오류 JSON 변환](analysis-output.md)까지
+구현했다. 기존 입력 연동 CLI는 수정하지 않았다. 이후 성능 측정·한도 근거, 통합 CLI를 분리해 진행한다.
 실제 BE의 일관된 snapshot 조회·인증·없음 확인·부분 분석 허용 정책, 패키지 배포와 보고서 UI는
 [서비스 연결 설계](service-integration-design.md)에 따른 별도 승인된 연결 작업이다.
 푸시·MR 생성·병합은 요청받았을 때만 진행한다.

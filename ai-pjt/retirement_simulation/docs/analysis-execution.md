@@ -2,7 +2,8 @@
 
 작성일: 2026-09-09. `feat/ai-retirement-analysis`의 3번 작업, 시작 커밋 `9700c62`.
 [통합 호출·입출력 규격](analysis-contract.md)의 실행·불변 결과·실행 오류를 구현했다.
-JSON 변환·성능 측정·통합 CLI·BE/FE 연결은 이번 완료 범위가 아니다.
+JSON 변환은 후속 4번에서 구현했으며 [출력 변환 가이드](analysis-output.md)를 따른다.
+성능 측정·통합 CLI·BE/FE 연결은 아직 완료 범위가 아니다.
 
 ## 1. 공개 인터페이스와 실행 순서
 
@@ -61,7 +62,7 @@ What-if는 기존 엔진에서 공통 경로를 한 번 생성하고 기준 계�
 `calculate_monte_carlo_paths()`/`calculate_what_if_paths()`에 남긴다. 배치 메타데이터는 `generated`,
 What-if 내부 기준/변경 MC는 `provided`로 유지한다. 설정 시드는 `metadata.assumptions.seed`,
 실제 사용 시드는 기존 `metadata.seed`다. 변동성 0이면 실제 시드/RNG는 None이다.
-향후 JSON의 `effective_seed`는 이 기존 property에서 매핑할 예정이다.
+JSON의 `effective_seed`는 이 기존 property에서 매핑한다.
 
 원본·전역 난수 상태·기준 입력은 유지한다. 같은 입력·가정·시드·코드·Python 환경이면 결과가 같다.
 시각·실행 ID·사용자 정보·금융 API 조회·캐시·원본 병합은 추가하지 않는다. 호출자는 매핑 중
@@ -126,7 +127,8 @@ else:
 이 예시는 기준 모드와 비교 모드를 **각각 별도 호출**해 차이를 확인한다. 서비스에서 What-if를
 실행할 때는 `comparison` 호출 하나로 기준과 변경 결과를 함께 받으며 기준 MC를 먼저 호출할 필요가 없다.
 기준 `10,000 − 12×1,000 = −2,000원`, 변경 `10,000 − 12×800 = 400원`, 성공률 차이는 +100pp다.
-반환 모델은 아직 JSON 응답이 아니다. notices를 누락한 임의 응답이나 `asdict()`를 공개 계약으로 사용하지 않는다.
+반환 모델은 JSON 응답이 아니며 `analysis_to_dict()`로 변환한다.
+notices를 누락한 임의 응답이나 `asdict()`를 공개 계약으로 사용하지 않는다.
 
 ## 4. 실행 오류
 
@@ -162,8 +164,9 @@ path index·age 같은 하위 상세 객체도 노출하지 않는다. 알려진
 대체하거나 재시도·timeout·HTTP status를 이 계층에서 결정하지 않는다.
 
 `invalid_analysis_result`, `unsafe_json_number`와 출력 경로 검증·`analysis_to_dict()`·
-`analysis_error_to_dict()`는 **4번 JSON 계층에서 구현할 예정**이다. 지금 오류 생성자는 출력 전용
-코드를 받지 않는다. 내부 계산의 큰 정수/유한 float 허용 범위를 출력 제한으로 바꾸지 않았다.
+`analysis_error_to_dict()`는 **후속 4번 JSON 계층에서 구현했다**. 오류 생성자는 7개 코드를
+지원하며 출력의 숫자/정합성 규칙은 출력 변환 가이드를 따른다.
+내부 계산의 큰 정수/유한 float 허용 범위를 출력 제한으로 바꾸지 않았다.
 기존 독립 함수의 `InputMappingError`/`ModelValidationError`/계산 오류 계약은 그대로다.
 
 ## 5. 검증·작업 경계
@@ -173,14 +176,14 @@ path index·age 같은 하위 상세 객체도 노출하지 않는다. 알려진
 [모델·오류 테스트](../tests/test_analysis_models.py)는 불변성·입력/결과 정합성·생성 경로 출처·
 안전한 오류 생성·기존 매핑 오류 경로 보존을 확인한다. 패키지 경계 검사에 신규 export도 추가했다.
 
-2026-09-09, Miniforge `retirewise-ai` / CPython 3.13.15 검증 결과:
+2026-09-09, Miniforge `retirewise-ai` / CPython 3.13.15, 3번(`4615527`) 당시 검증 결과:
 
 - 신규 **60개**(실행 34개·모델/오류 26개) 통과. 기존 447개를 포함한 전체 **507개**가
   일반·`-S` 실행과 `-S` 역순 실행에서 모두 통과했다.
 - 금지 필드 `replace()` 테스트는 Python 버전에 따른 `TypeError`/`ValueError` 차이를 허용하도록
   보완했다. 계산 코드의 예외를 무시하거나 예상 실패로 처리한 테스트는 없다.
 - 이 가이드와 변경 입력 가이드의 Python 예시 2개를 실제 실행했다. 계약 JSON 3개를 파싱하고
-  실제 통합 호출의 주요 수치·안내·실행 출처·오류 속성을 대조했다. JSON 직렬화 검증은 아직 아니다.
+  실제 통합 호출의 주요 수치·안내·실행 출처·오류 속성을 대조했다. 당시에는 JSON 직렬화 검증을 포함하지 않았다.
 - Python 35개 파일 구문, 로컬 Markdown 링크 232개·anchor 5개·코드 블록을 확인했다.
 - 기존 Python 파일 중 export/import 경계 테스트 2개를 제외한 **29개**는 `9700c62`와 byte 단위 동일하다.
   변경 **12개 파일**은 모두 시뮬레이션 모듈 내부다.
@@ -195,5 +198,6 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 
 변경 위치는 `ai-pjt/retirement_simulation/`뿐이다. 기존 계산 엔진·모델·입력/변경 매퍼·CLI는
 수정하지 않았고 BE·FE·Agent·컨텍스트·매뉴얼·공통 의존성·배포 설정·Jira도 건드리지 않았다.
-다음은 같은 브랜치의 **4번 결과/오류 JSON 변환**, 이후 5번 성능 측정, 6번 통합 샘플·인수인계다.
+후속 **4번 결과/오류 JSON 변환까지 완료**했다. 다음은 같은 브랜치의 5번 성능 측정,
+6번 통합 샘플·인수인계 순서다.
 실제 서비스 연결 완료와 독립 모듈 구현 완료는 구분한다.

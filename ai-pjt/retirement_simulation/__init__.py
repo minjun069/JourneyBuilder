@@ -57,6 +57,7 @@ from .what_if_adapter import map_what_if_scenarios
 
 from .analysis import RetirementAnalysisResult, analyze_retirement
 from .analysis_errors import RetirementAnalysisError
+from .analysis_output import analysis_error_to_dict, analysis_to_dict
 
 __all__ = [
     "MAX_WHAT_IF_SCENARIOS",
@@ -89,6 +90,8 @@ __all__ = [
     "WhatIfResult",
     "WhatIfScenario",
     "WhatIfScenarioResult",
+    "analysis_error_to_dict",
+    "analysis_to_dict",
     "analyze_retirement",
     "calculate_cashflow",
     "calculate_cashflow_path",
