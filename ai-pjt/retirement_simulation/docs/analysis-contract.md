@@ -1,8 +1,8 @@
 # 은퇴 시뮬레이션 통합 호출·입출력 규격
 
 작성일: 2026-09-09. 기준: 입력 어댑터 MR !45 병합(`e54d773`) 이후 최신 master `09554bd`.
-상태: **통합 분석 브랜치 0번 준비·1번 규격 문서화·2번 변경 입력 매퍼 완료.
-통합 실행 함수·결과/오류 모델·JSON 변환은 아직 미구현이다.**
+상태: **통합 분석 브랜치 0번 준비·1번 규격 문서화·2번 변경 입력 매퍼·3번 통합 실행 완료.
+결과 묶음·실행 오류 모델까지 구현했고, JSON 변환·출력 전용 오류는 아직 미구현이다.**
 이 문서는 후속 모듈 구현 기준이며 BE·FE가 승인한 HTTP 계약이나 서비스 배포 완료 선언이 아니다.
 
 ## 1. 목적·완료 범위
@@ -14,6 +14,7 @@ BE가 이미 읽은 저장형 snapshot과 명시적 가정을 받아 기존 MC/W
 
 - 최초 0·1번(`debddd4`)은 문서만 변경했다. 후속 2번은 변경 입력 매퍼·export·테스트와
   [사용/검증 가이드](what-if-adapter.md)를 추가했다. 기존 모델·계산식은 변경하지 않았다.
+- 후속 3번은 [통합 실행·불변 결과·실행 오류](analysis-execution.md)와 전용 테스트를 추가했다.
 - 변경 위치는 `ai-pjt/retirement_simulation/` 안으로 제한한다. 외부 의존성은 추가하지 않는다.
 - Agent·라우팅·컨텍스트·재무상담 매뉴얼, BE/FE·DB·공통 설정·Docker·CI·Jira는 수정하지 않는다.
 - DB/파일/네트워크/환경변수 조회, 현재 시각 읽기, 로그 출력, 결과/원본 저장, 캐시를 계산 호출에 넣지 않는다.
@@ -26,8 +27,9 @@ BE가 이미 읽은 저장형 snapshot과 명시적 가정을 받아 기존 MC/W
 
 ## 2. 공개 인터페이스와 구현 상태
 
-`map_what_if_scenarios`는 구현되어 패키지에서 import할 수 있다. 나머지 함수와 결과/오류 모델은
-**구현 예정 규격**이며 현재 import하거나 실행할 수 없다. 미구현 항목의 stub은 추가하지 않는다.
+`map_what_if_scenarios`, `analyze_retirement`, `RetirementAnalysisResult`, `RetirementAnalysisError`는
+구현되어 패키지에서 import할 수 있다. 두 JSON 변환 함수와 출력 전용 오류 코드는
+**4번 구현 예정 규격**이다. 미구현 항목의 stub은 추가하지 않는다.
 
 ```text
 map_what_if_scenarios(values) -> tuple[WhatIfScenario, ...]
@@ -44,11 +46,11 @@ analysis_error_to_dict(error: RetirementAnalysisError) -> dict[str, object]
 | 경계 | 책임·반환 |
 |---|---|
 | `map_what_if_scenarios` — 구현 완료 | 저장 원천과 별도로 받은 변경 dict 목록을 기존 불변 시나리오로 변환. 계산/난수 생성 없음 |
-| `analyze_retirement` | 원천·가정·변경 검증, 적용 후 프로필 구성, 기존 엔진 1회 호출. 성공하면 불변 결과 묶음 |
+| `analyze_retirement` — 구현 완료 | 원천·가정·변경 검증, 적용 후 프로필 구성, 기존 엔진 1회 호출. 성공하면 불변 결과 묶음 |
 | `analysis_to_dict` | 계산 없이 명시적 출력 매핑·숫자 범위 검증. 매 호출마다 새 dict/list 반환 |
 | `analysis_error_to_dict` | 이 계층의 검증된 오류만 안전한 코드/경로/고정 설명으로 변환. 임의 예외 직렬화는 하지 않음 |
 
-`RetirementAnalysisResult`는 frozen/slots/keyword dataclass를 예정한다.
+`RetirementAnalysisResult`는 frozen/slots/keyword dataclass로 구현했다.
 
 | 내부 필드 | 내용·불변 조건 |
 |---|---|
@@ -128,7 +130,7 @@ ID는 기존 `WhatIfScenario`의 ASCII `[a-z][a-z0-9_-]{0,63}` 규칙을 따르�
 3. `map_what_if_scenarios(scenarios)` 1회.
 4. 각 변경안을 원래 기준에 독립 적용하여 전체 프로필 검증. 하나라도 실패하면 경로 생성/계산하지 않음.
 5. 0개면 `calculate_monte_carlo()` 1회, 1~10개면 `calculate_what_if()` 1회.
-6. 결과 묶음 반환. 필요한 경우 호출자가 `analysis_to_dict()`로 전체 결과를 변환한 뒤 사용.
+6. 결과 묶음 반환. JSON 변환은 후속 4번의 `analysis_to_dict()`에서 구현한다.
 
 What-if 실행 전에 별도 MC를 호출하거나 변경안마다 새로운 시장 경로를 만들지 않는다.
 기존 What-if 엔진 내부의 순수 프로필 재검증은 허용하지만 경로 생성·기준 계산은 배치당 1회다.
@@ -236,9 +238,10 @@ dict 키는 문자열이고 순환 참조/객체 자체를 출력하지 않는�
 
 ## 6. 오류 계약
 
-신규 `RetirementAnalysisError`는 `Exception`을 상속하는 통합/출력 계층의 오류다. 기존 독립 함수의 예외 규격은 바꾸지 않는다.
+`RetirementAnalysisError`는 `Exception`을 상속하는 통합 계층의 오류다. 실행 오류 5개를 구현했고
+출력 전용 코드 2개와 출력 경로 검증은 4번에 추가한다. 기존 독립 함수의 예외 규격은 바꾸지 않는다.
 검증된 `code`, `stage`, `field_name`, `reason_code`, 고정 `message`를 갖고, 입력 원문/임의 객체를 보관하지 않는다.
-생성 인자는 `code`, `field_name`, keyword 전용 `reason_code=None`을 예정하고, stage/message는
+생성 인자는 `code`, `field_name`, keyword 전용 `reason_code=None`이며, stage/message는
 허용 코드에서 결정한다. 새 결과 모델을 잘못 직접 생성한 경우는 기존 `ModelValidationError`로 거절한다.
 통합 함수는 알려진 오류만 아래와 같이 변환하고 예외 chaining의 원문 표시를 억제한다.
 
@@ -249,8 +252,8 @@ dict 키는 문자열이고 순환 참조/객체 자체를 출력하지 않는�
 | 변경 목록 변환 | `scenario_mapping_failed` / `scenarios` | 기존 코드, `scenarios...` 경로 |
 | 기준 의존 변경 적용 | `scenario_application_failed` / `scenarios` | `invalid_profile`, `scenarios[index].changes.<허용 필드>` |
 | MC/What-if 수치 계산 | `calculation_failed` / `calculation` | `null`, 안전한 계산 위치 |
-| 출력 대상 모델 정합성 실패 | `invalid_analysis_result` / `output` | `null`, `analysis` 또는 허용된 출력 경로 |
-| 비유한/범위 초과 숫자 | `unsafe_json_number` / `output` | `null`, 허용된 출력 필드 경로 |
+| 출력 대상 모델 정합성 실패 — 4번 예정 | `invalid_analysis_result` / `output` | `null`, `analysis` 또는 허용된 출력 경로 |
+| 비유한/범위 초과 숫자 — 4번 예정 | `unsafe_json_number` / `output` | `null`, 허용된 출력 필드 경로 |
 
 변경 후 은퇴 나이가 계획 종료를 넘어서 모델의 `end_age` 검증에 실패한 경우, 오류는
 변경할 수 없는 `changes.end_age`가 아니라 `scenarios[index].changes.retirement_age`로 매핑한다.
@@ -261,6 +264,9 @@ dict 키는 문자열이고 순환 참조/객체 자체를 출력하지 않는�
 전달하지 않는다. 계산 오류의 stage/field가 허용 목록에 없으면 `field_name="calculation"`으로
 축약한다. 알려진 위치도 고정 키와 배열 index로만 구성하고 시나리오 ID·고객 값은 넣지 않는다.
 수치 오류의 path index/age 등 상세 진단 객체를 이 v1 오류 JSON에 복사하지 않는다.
+
+현재 실행 오류의 정확한 위치 allowlist·전체 실패 처리·검증 결과는
+[통합 실행 가이드](analysis-execution.md)에 있다. 출력 전용 코드는 현재 생성자에서도 거절한다.
 
 `analysis_error_to_dict()`의 출력 형태는 다음 JSON 예시다. 성공 payload와 함께 반환하지 않는다.
 
@@ -286,12 +292,13 @@ dict 키는 문자열이고 순환 참조/객체 자체를 출력하지 않는�
 감추지 않고 전파한다. 외부의 최종 비식별 500 처리·timeout·인증 오류·재시도 정책은 BE 책임이다.
 
 HTTP status·라우트·응답 envelope·작업 ID·스트리밍은 이 오류 계약으로 확정하지 않는다.
-출력 계층 구현 전까지는 기존 순수 함수 호출법을 사용하며 신규 오류가 이미 발생한다고 가정하지 않는다.
+현재 통합 함수에서는 실행 오류 5개가 발생할 수 있다. 기존 순수 함수는 기존 예외를 유지하며,
+JSON 오류 변환 함수는 아직 호출할 수 없다.
 
 ## 7. 합성 입출력 예시와 검산
 
-아래 첫 JSON은 예정 `analyze_retirement`의 호출 인자 묶음이다. 현재 BE 요청 본문이 아니며
-신규 함수를 실행한 결과도 아니다. 설정은 손계산용 0%이고 시장 전망/운영 기본값이 아니다.
+아래 첫 JSON은 구현된 `analyze_retirement`에 전달할 호출 인자 묶음이다. 현재 BE 요청 본문이
+아니며 반환 JSON도 아니다. 설정은 손계산용 0%이고 시장 전망/운영 기본값이 아니다.
 
 ```json
 {
@@ -404,7 +411,7 @@ Python 환경 필드만 실행 환경에 따라 달라지는 **예정 전체 pay
 | 0 — 완료 | 최신 master fast-forward·기존 테스트·새 브랜치 | 별도 커밋 없음, 기준은 이번 문서에 기록 |
 | 1 — 완료 | 호출·입력/결과/오류·단위/범위 규격과 검산 | `docs: 은퇴 시뮬레이션 통합 호출 규격 정의` |
 | 2 — 완료 | 변경 dict 매퍼·구조/값/ID/없음·원본 불변 테스트 | `feat: 은퇴 What-if 변경 입력 어댑터 구현` |
-| 3 | 불변 결과 묶음·통합 오류·MC/비교 실행·공통 경로/전체 실패 테스트 | `feat: 은퇴 시뮬레이션 통합 실행 구현` |
+| 3 — 완료 | 불변 결과 묶음·실행 오류·MC/비교 실행·공통 경로/전체 실패 테스트 | `feat: 은퇴 시뮬레이션 통합 실행 구현` |
 | 4 | 전체 출력·오류 dict 매핑, property/숫자/메타데이터/격리·JSON round-trip 검증 | `feat: 은퇴 시뮬레이션 출력 변환 구현` |
 | 5 | 경로/기간/변경안별 시간·메모리 측정과 실행 한도 근거 | `perf: 은퇴 시뮬레이션 실행 성능 검증` |
 | 6 | 통합 CLI·사용 예시·확대 회귀·BE 인수인계 | `feat: 은퇴 통합 분석 샘플 추가` |

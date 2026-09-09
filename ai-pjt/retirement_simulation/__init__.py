@@ -55,6 +55,9 @@ from .what_if_engine import (
 
 from .what_if_adapter import map_what_if_scenarios
 
+from .analysis import RetirementAnalysisResult, analyze_retirement
+from .analysis_errors import RetirementAnalysisError
+
 __all__ = [
     "MAX_WHAT_IF_SCENARIOS",
     "AmountPercentileDelta",
@@ -75,6 +78,8 @@ __all__ = [
     "MonteCarloResult",
     "PensionIncome",
     "ProfileMappingResult",
+    "RetirementAnalysisError",
+    "RetirementAnalysisResult",
     "RetirementExpensePeriod",
     "RetirementProfile",
     "ReturnPathGenerationError",
@@ -84,6 +89,7 @@ __all__ = [
     "WhatIfResult",
     "WhatIfScenario",
     "WhatIfScenarioResult",
+    "analyze_retirement",
     "calculate_cashflow",
     "calculate_cashflow_path",
     "calculate_monte_carlo",

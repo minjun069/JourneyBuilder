@@ -16,8 +16,9 @@
 - 원본 입력은 호출 중에 다른 곳에서 수정하지 않아야 한다. 동시 수정이나 snapshot 일관성을 보장하지 않는다.
 
 기존 모델·입력 어댑터·계산 엔진의 규칙/버전은 바꾸지 않았다. BE·FE·Agent·컨텍스트·
-매뉴얼·공통 설정·의존성도 변경하지 않았다. **통합 실행 함수·결과/오류 모델·JSON 변환·
-통합 CLI·서비스 연결은 아직 미구현**이며 이번 함수가 HTTP API나 인증 검사를 대신하지 않는다.
+매뉴얼·공통 설정·의존성도 변경하지 않았다. 후속 3번에서
+[통합 실행 함수·결과·실행 오류](analysis-execution.md)까지 구현했다. **JSON 변환·출력 전용 오류·
+통합 CLI·서비스 연결은 아직 미구현**이며 이 매퍼가 HTTP API나 인증 검사를 대신하지 않는다.
 
 ## 2. 입력 규칙
 
@@ -127,7 +128,8 @@ assert mapped.notices  # 후속 통합 결과에는 모든 안내와 mapping_ver
 
 실패하면 부분 결과는 반환하지 않으며 앞서 읽은 원본도 바꾸지 않는다. 필수 Python 인자 누락이나
 미지원 keyword는 `TypeError`다. 기준 의존 적용 실패는 여전히 `ModelValidationError`이며,
-이들을 감싸는 통합 오류 모델/출력 변환은 후속 3·4번 작업이다.
+통합 함수는 후속 3번에서 구현한 `RetirementAnalysisError`로 감싸며 이 매퍼의 독립 호출은
+기존 오류를 유지한다. 출력 변환은 4번 작업이다.
 
 ## 5. 검증과 후속 작업
 
@@ -136,12 +138,12 @@ assert mapped.notices  # 후속 통합 결과에는 모든 안내와 mapping_ver
 입력 비노출·I/O/난수/계산 미호출, 기존 저장 매퍼→실제 What-if 손계산을 검증한다.
 [패키지 경계 테스트](../tests/test_package.py)에 새 export/import도 포함했다.
 
-2026-09-09, Miniforge `retirewise-ai` / CPython 3.13.15 검증 결과:
+2026-09-09, Miniforge `retirewise-ai` / CPython 3.13.15, 2번(`9700c62`) 당시 검증 결과:
 
 - 전용 **43개** 통과. 기존 404개를 포함한 전체 **447개**가 일반·`-S` 실행에서 모두 통과했다.
 - 전체 447개를 역순으로 실행한 `-S` 검사도 통과했다. 기존 엔진·입력 매핑·CLI 회귀를 포함한다.
 - 이 문서의 Python 예시를 실제 실행했고 출력 없이 손계산 assertion이 통과했다.
-- 신규 매퍼의 export를 확인했고 후속 통합 함수/모델/직렬화 함수는 아직 존재하지 않음을 확인했다.
+- 당시 신규 매퍼의 export를 확인했고 후속 통합 함수/모델/직렬화 함수는 존재하지 않음을 확인했다.
 - 모듈 Python 31개 파일 구문과 로컬 Markdown 링크 219개·anchor 5개를 확인했다.
 - 기존 Python 중 export/import 경계 테스트 2개를 제외한 27개는 `debddd4`와 byte 단위 동일하다.
 - 변경 8개 파일 모두 시뮬레이션 모듈 내부다. 새 파일은 매퍼·전용 테스트·이 가이드뿐이다.
@@ -154,6 +156,6 @@ conda run -n retirewise-ai python -B -m unittest discover -s ai-pjt/retirement_s
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement_simulation/tests -q
 ```
 
-다음은 같은 브랜치의 **3번 통합 실행 함수·불변 결과 묶음·알려진 오류 변환**이다.
-그 뒤 4번 JSON 출력, 5번 성능 측정, 6번 통합 샘플/인수인계 순서로 진행한다.
+같은 브랜치의 **3번 통합 실행 함수·불변 결과 묶음·알려진 실행 오류 변환까지 완료**했다.
+다음은 4번 JSON 출력, 5번 성능 측정, 6번 통합 샘플/인수인계 순서다.
 독립 모듈 검증은 실제 DB/API/FE/배포 검증을 대신하지 않는다.
