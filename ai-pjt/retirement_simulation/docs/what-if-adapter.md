@@ -158,5 +158,6 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 ```
 
 같은 브랜치의 **3번 통합 실행 함수·불변 결과·실행 오류 및 4번 결과/오류 JSON 변환까지 완료**했다.
-다음은 5번 성능 측정, 6번 통합 샘플/인수인계 순서다.
+후속 5번의 [합성 성능 측정·초기 연동 후보 한도](analysis-performance.md)까지 완료했다.
+다음은 6번 통합 샘플/인수인계다.
 독립 모듈 검증은 실제 DB/API/FE/배포 검증을 대신하지 않는다.

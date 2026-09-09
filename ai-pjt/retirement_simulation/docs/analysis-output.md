@@ -155,7 +155,7 @@ conda run -n retirewise-ai python -B -m unittest discover -s ai-pjt/retirement_s
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement_simulation/tests -q
 ```
 
-2026-09-09, Miniforge `retirewise-ai` / CPython 3.13.15 검증 결과:
+2026-09-09, Miniforge `retirewise-ai` / CPython 3.13.15, 4번(`4bcd307`) 당시 검증 결과:
 
 - 신규 **55개**(기본 출력 26개·경계 29개) 통과. 기존 507개를 포함한 전체 **562개**가
   일반·`-S` 실행과 `-S` 역순 실행에서 모두 통과했다.
@@ -168,11 +168,12 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 - 변경 **13개 파일**은 모두 `ai-pjt/retirement_simulation/` 내부다. BE·FE·Agent·컨텍스트·
   매뉴얼·공통 설정·의존성·배포·Jira는 변경하지 않았다. 성능/서비스 검증 완료를 뜻하지 않는다.
 
-4번 이후 같은 브랜치의 남은 작업은 다음 순서다. 이번 커밋에서 미리 실행하지 않는다.
+4번 이후의 작업 순서는 다음과 같다. **5번 합성 성능 검증은 후속 작업으로 완료**했으며
+[측정 방법·원시 결과·후보 한도](analysis-performance.md)에 기록했다. 다음은 6번이다.
 
 | 순서 | 작업·완료 기준 | 권장 커밋 |
 |---|---|---|
-| 5 | 합성 입력으로 경로 수·기간·변경안 수별 실행/변환 시간·메모리 측정. 작은 사례부터 측정하고 한도 근거·환경·한계를 문서화 | `perf: 은퇴 시뮬레이션 실행 성능 검증` |
+| 5 — 완료 | 합성 입력으로 경로 수·기간·변경안 수별 실행/변환/인코딩 시간·메모리 측정. 후보 한도 근거·환경·한계를 문서화 | `perf: 은퇴 시뮬레이션 실행 성능 검증` |
 | 6 | 저장 입력→통합 실행→성공/오류 JSON을 사용하는 합성 CLI·사용 예시, 확대 회귀·BE 인수인계·제약 문서 | `feat: 은퇴 통합 분석 샘플 추가` |
 | 브랜치 마무리 | 전체 검증·변경 범위/문서 재확인·최신 master 충돌 확인. 필요 시 승인 범위 내 동기화 후 재검증 | 필요한 변경이 있을 때만 별도 커밋 |
 | 요청 시 | 이지석 인증 계정 확인 후 푸시·사용자 MR 양식으로 생성. 실제 병합은 별도 요청/사용자 처리 | 원격 작업은 명시 요청 시에만 |
