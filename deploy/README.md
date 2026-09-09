@@ -33,7 +33,7 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 | `POSTGRES_PASSWORD` | 무작위 생성 | **볼륨이 이미 있으면 DB 는 옛 비밀번호 유지 → 접속 끊김.** 데이터는 남음. 절차: DB 에서 `ALTER USER retirewise PASSWORD '...'` → 파일 갱신 → 재기동. **`down -v` 금지** |
 | `DATABASE_URL` | 위 비밀번호로 자동 조립 | POSTGRES_* 와 항상 일치시킨다 |
 | `AI_SERVICE_BEARER_TOKEN` | 무작위 생성 | backend·ai 동시 재기동이면 문제 없음 |
-| `GOOGLE_API_KEY` | 팀 Gemini 키를 직접 입력 | 외부 회전 시만 |
+| `GOOGLE_API_KEY` | **GMS 키**를 직접 입력 (개인 Google 계정 키 아님 — 아래 절 참고) | 외부 회전 시만 |
 
 - 스크립트는 파일이 이미 있으면 덮어쓰지 않는다(exit 2).
 - 서버 파일은 백업 1부를 `/srv/s15p21b109/secrets/app.env.bak`(root 600)으로 둔다 — DB 비밀번호를 잃지 않기 위해.
@@ -110,9 +110,50 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 | 실패 | deploy.sh 가 롤백 후 exit 1 → 잡 failed. 파이프라인 알림은 S15P21B109-126 |
 
 - **재배포(코드 변경 없음, env 만 바뀐 경우)**: master 최신 파이프라인의 `deploy:production` 잡을 GitLab 에서 Retry. 또는 서버에서 러너 체크아웃 디렉터리로 가서 `bash deploy/deploy.sh --no-build`
-- **ai 컨테이너만 재기동(LLM 키 입력·회전 후)**: 러너 체크아웃 디렉터리에서 `docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate ai-pjt`
+- **ai 컨테이너만 재기동(LLM 키 입력·회전 후)**: 러너 체크아웃 디렉터리에서 `sudo docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate ai-pjt` (app.env 가 root:gitlab-runner 640 이라 `ubuntu` 계정은 `sudo` 필요. deploy 잡을 Retry 하면 러너 권한으로 돌아 sudo 불필요)
 - **주의**: `master` 는 아직 보호 브랜치가 아니고 "파이프라인 통과 시 머지" 조건도 없다. 빨간불 MR 을 머지하면 test 가 실패해 deploy 는 실행되지 않지만(스테이지 순서), 테스트가 잡지 못하는 결함은 그대로 배포된다. 보호 브랜치 설정은 S15P21B109-126
 - 검증 기록(2026-09-08, 서버): 기능 브랜치에서 `when: manual` 로 실행. 1차(파이프라인 #183374) 2초 실패 — 첫 배포 경로 `PREV: unbound variable` → deploy.sh 수정. 2차(파이프라인 #183408, 잡 #495972) **62초 성공**: 이미지 3종 빌드 → postgres·redis healthy → migrate 완료 → backend healthy → web healthy → 8080 200 → last_good 4개 기록. `https://j15b109.p.ssafy.io` 502 → **200**. ai-pjt 는 `GOOGLE_API_KEY is required` 로 재시작 반복(예상된 상태, LLM 키 조합 확정 후 입력). 호스트 노출 포트는 22/80/443 과 127.0.0.1 의 8080/8081 만
+
+## AI 키 (GMS) 등록 — S15P21B109-122 잔여분
+
+`ai-pjt` 는 GMS(`gms.ssafy.io`)를 통해 gemini 를 쓴다. **GMS 키는 Google 발급 키가 아니라서 Google 로 직접 가면 `API key not valid` 로 거부된다** → 요청 대상을 GMS 로 돌려야 한다.
+
+| 값 | 어디에 | 비고 |
+|---|---|---|
+| `GOOGLE_API_KEY` | 서버 `app.env` (사람이 입력) | **GMS 키**. 변수명이 GOOGLE_* 인 것은 `ai-pjt/core/config.py` 가 이 이름만 읽기 때문 |
+| `GOOGLE_GEMINI_BASE_URL` | `docker-compose.prod.yml` 에 **고정** | `https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com`. GMS 가 정하는 값이라 env 로 열지 않는다(S15P21B109-130 교훈) |
+| `EMBEDDING_MODEL` | `docker-compose.prod.yml` 에 **고정** | `gemini-embedding-2`. 루트 compose 기본값 `gemini-embedding-001` 은 GMS 에 없다 |
+| `EMBED_DIM` | 루트 compose 기본값 3072 | 실측 벡터 길이와 일치 확인 |
+
+### 서버 등록 절차
+
+```bash
+ssh ssafy
+sudo nano /srv/s15p21b109/secrets/app.env        # GOOGLE_API_KEY= 에 GMS 키 입력
+sudo grep -q '^GOOGLE_API_KEY=.\+' /srv/s15p21b109/secrets/app.env && echo 설정됨 || echo 비어있음
+sudo cp /srv/s15p21b109/secrets/app.env /srv/s15p21b109/secrets/app.env.bak && sudo chmod 600 /srv/s15p21b109/secrets/app.env.bak
+```
+
+- 키를 `sed -i` 같은 한 줄 명령으로 넣지 않는다 — 셸 히스토리에 평문이 남는다. 편집기로 입력한다
+- **백업(`app.env.bak`)도 같이 갱신한다.** 옛 값이 남은 백업을 복원하면 되돌아간다
+- 반영: master 파이프라인의 `deploy:production` 을 Retry. ai-pjt 의 환경변수가 바뀌어 compose 가 그 컨테이너를 재생성한다
+
+### 검증 — healthy 만으로는 부족하다
+
+`ai-pjt/main.py` 의 `/health` 는 `{"status":"ok"}` 만 반환하고 공급자를 호출하지 않는다. `validate_runtime()` 도 값이 비었는지만 본다.
+**틀린 키·틀린 base URL 이어도 컨테이너는 healthy 가 된다.** 그래서 실호출로 판정한다.
+
+```bash
+sudo docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml \
+  exec -T ai-pjt python -c "
+from core.llm import embed_model
+print('embed len =', len(embed_model.get_text_embedding('연금')))"
+```
+
+`3072` 가 나오면 임베딩 경로 정상. 실호출은 크레딧을 소모하므로 최소 횟수로 한다.
+
+- 검증 기록(2026-09-09, 운영 이미지 컨테이너): 임베딩 **성공 3072**, `EMBED_DIM` 일치. 원시 HTTP 로 gemini 채팅도 200 OK
+- **LLM 은 `ai-pjt` 코드 변경이 있어야 동작한다.** 컨테이너의 `langchain-google-genai` 2.1.12 는 구형 클라이언트를 써 `GOOGLE_GEMINI_BASE_URL` 을 읽지 않는다. 4.x 로 올리면 `langchain-core` 가 1.x 로 끌려 올라가 `langchain`·`langchain-openai` 0.3.x 와 충돌한다(새 SDK 를 쓰는 3.0.0+ 전부가 `langchain-core>=1.0.0` 요구). 해결책은 의존성 변경 없이 gemini 분기에 `transport="rest"` + `client_options={"api_endpoint": <base_url 에서 scheme 제거>}` 를 넘기는 것 — 운영 이미지에서 `invoke`·`stream()` 모두 검증했다. 담당: AI 파트
 
 ## 이후 절 (해당 이슈에서 채움)
 - 데이터 배치 컨테이너·보호 브랜치·알림 — S15P21B109-126
