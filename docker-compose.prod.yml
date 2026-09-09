@@ -6,7 +6,7 @@
 # 루트 compose 는 건드리지 않는다(ai-docs/architecture/overview.md §3). 여기서 추가하는 것은 세 가지뿐:
 #   1. web — front-pjt 이미지(nginx: SPA 정적 + /api·/admin → backend 프록시). 호스트에 바인딩되는 유일한 서비스.
 #      호스트 nginx(TLS 종단, S15P21B109-123)가 127.0.0.1:8080 으로 넘긴다. 외부에 직접 열리지 않는다.
-#   2. restart 정책 — 서버 재부팅·프로세스 종료 후 자동 복구. migrate 는 one-shot 이므로 제외.
+#   2. restart 정책 — 서버 재부팅·프로세스 종료 후 자동 복구. 상시 서비스 전부에 붙인다(migrate 는 one-shot 이라 제외).
 #   3. 로그 상한 — 디스크가 로그로 차는 것을 막는다.
 #
 # 로컬에서도 같은 명령(--env-file 대신 .env)으로 운영과 같은 경로를 재현할 수 있다: http://localhost:8080
@@ -46,4 +46,9 @@ services:
     <<: [*restart, *logging]
 
   ai-pjt:
+    <<: [*restart, *logging]
+
+  # gateway 는 루트 compose 에만 있어 여태 restart 정책이 없었다(도커 기본값 no).
+  # 죽으면 사람이 올릴 때까지 /api 전체가 내려간다 — 상시 서비스이므로 다른 것과 같이 붙인다 (S15P21B109-128).
+  gateway:
     <<: [*restart, *logging]
