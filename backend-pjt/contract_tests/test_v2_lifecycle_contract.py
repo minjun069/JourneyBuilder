@@ -71,11 +71,18 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
         )
 
     @patch('consulting.ai_lifecycle.get_step_field_registry')
+    @patch('consulting.ai_lifecycle.build_tool_context')
     @patch('consulting.ai_lifecycle.build_customer_info')
-    def test_django_outbound_payload_matches_ai_provider_fixture(self, customer_info, registry):
+    def test_django_outbound_payload_matches_ai_provider_fixture(
+        self,
+        customer_info,
+        tool_context,
+        registry,
+    ):
         fixture_body = FIXTURE['cases']['django_ai_accepted']['request']['body']
         customer_info.return_value = fixture_body['customer_info']
         registry.return_value = fixture_body['field_registry']
+        tool_context.return_value = fixture_body['tool_context']
         deadline = datetime.fromisoformat(fixture_body['deadline_at'].replace('Z', '+00:00'))
 
         actual = build_v2_ai_payload(

@@ -2,7 +2,7 @@
   "fixture_set": "ai-contract-v2",
   "fixture_kind": "lifecycle",
   "contract_version": "2.0",
-  "companion_fixtures": ["step-registry.json", "form-actions.json", "chart-payloads.json"],
+  "companion_fixtures": ["step-registry.json", "form-actions.json", "chart-payloads.json", "tool-contexts.json"],
   "required_case_categories": [
     "normal",
     "missing",
@@ -265,6 +265,22 @@
               "operations": ["set", "add", "update", "remove"]
             }
           ],
+          "tool_context": {
+            "schema_version": "1.0",
+            "session_id": 1,
+            "step_id": "basic-info",
+            "generated_at": "2026-09-02T06:00:00Z",
+            "field_specs": [],
+            "dashboard_metrics": {
+              "retirement_gap": {
+                "availability": "unavailable",
+                "reason": "report_not_found"
+              }
+            },
+            "retirement_scenarios": {},
+            "available_reports": [],
+            "section_completion": {}
+          },
           "chart_payload": null
         }
       },
