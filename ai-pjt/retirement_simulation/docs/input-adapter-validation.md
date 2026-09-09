@@ -112,7 +112,7 @@ conda run -n retirewise-ai python -B -m unittest discover -s ai-pjt/retirement_s
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement_simulation/tests -q
 ```
 
-2026-09-09, Python 3.13.15 검증 결과:
+3번 작업 `b457f27`의 2026-09-09, Python 3.13.15 검증 결과:
 
 - 신규 확대 테스트 **38개 통과**. 기본 39개와 합쳐 어댑터 관련 전용 테스트는 **77개**다.
 - 전체 **381개**가 일반·`-S` 실행에서 각각 통과했다.
@@ -130,6 +130,7 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 
 ## 6. 남은 작업
 
-다음은 브랜치 4번 **실제 어댑터를 사용하는 합성 MC/What-if 샘플·사용 문서**다.
-그 후 별도 작업으로 통합 실행 함수·출력 JSON·운영 성능 측정, 승인된 BE 패키징/API와
+후속 브랜치 4번 [실제 어댑터를 사용하는 합성 MC/What-if 샘플·사용 문서](input-samples.md)도
+완료했다. 위 수치·파일 불변 검증은 3번 작업 시점의 기록이다.
+이후 별도 작업으로 통합 실행 함수·출력 JSON·운영 성능 측정, 승인된 BE 패키징/API와
 FE 연결을 진행한다. 이번 테스트 통과로 서비스 연결이나 배포가 완료된 것은 아니다.
