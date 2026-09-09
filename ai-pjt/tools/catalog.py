@@ -232,11 +232,23 @@ async def _get_dashboard_metric(
             ToolErrorCode.NOT_FOUND,
             "현재 세션의 검증된 보고서에서 해당 지표를 찾지 못했습니다.",
         )
-    if metric.get("status") != "ready":
+    if metric.get("availability") == "unavailable":
+        reason = metric.get("reason")
+        error_code = (
+            ToolErrorCode.NOT_FOUND
+            if reason == "report_not_found"
+            else ToolErrorCode.DEPENDENCY_UNAVAILABLE
+        )
         raise ToolInvocationError(
-            ToolErrorCode.DEPENDENCY_UNAVAILABLE,
-            "해당 지표의 원본 보고서가 아직 준비되지 않았습니다.",
-            retryable=True,
+            error_code,
+            "Backend가 검증한 보고서 지표를 사용할 수 없습니다.",
+            retryable=reason == "report_processing",
+            details=({"reason": reason},),
+        )
+    if metric.get("availability") != "ready":
+        raise ToolInvocationError(
+            ToolErrorCode.INVALID_RESULT,
+            "보고서 지표 snapshot의 availability가 올바르지 않습니다.",
         )
     requested_version = arguments.get("report_version")
     if requested_version is not None and metric.get("report_version") != requested_version:
@@ -352,22 +364,23 @@ def _metric_schema() -> dict[str, Any]:
     return _object_schema(
         properties={
             "metric_id": {"type": "string"},
-            "value": {},
-            "unit": {"type": "string"},
-            "source_report": {"type": "string"},
+            "availability": {"type": "string", "enum": ["ready"]},
+            "value": {"type": "integer", "minimum": 0},
+            "unit": {"type": "string", "enum": ["KRW"]},
+            "report_id": {"type": "integer", "minimum": 1},
             "report_version": {"type": "integer", "minimum": 1},
+            "calculation_policy_version": {"type": "string", "minLength": 1},
             "generated_at": {"type": "string"},
-            "status": {"type": "string", "enum": ["ready"]},
-            "assumptions": {"type": "object"},
         },
         required=(
             "metric_id",
+            "availability",
             "value",
             "unit",
-            "source_report",
+            "report_id",
             "report_version",
+            "calculation_policy_version",
             "generated_at",
-            "status",
         ),
     )
 
@@ -396,10 +409,11 @@ def _scenario_schema() -> dict[str, Any]:
 def _report_schema() -> dict[str, Any]:
     return _object_schema(
         properties={
+            "report_id": {"type": "integer", "minimum": 1},
             "report_type": {"type": "string"},
             "version": {"type": "integer", "minimum": 1},
             "status": {"type": "string", "enum": ["processing", "ready", "failed"]},
             "generated_at": {"type": "string"},
         },
-        required=("report_type", "version", "status", "generated_at"),
+        required=("report_id", "report_type", "version", "status", "generated_at"),
     )

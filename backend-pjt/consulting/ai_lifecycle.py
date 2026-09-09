@@ -20,6 +20,7 @@ from .ai_services import (
     generate_request_id,
 )
 from .field_registry import get_step_field_registry
+from .tool_context import build_tool_context
 
 
 CONTRACT_VERSION = '2.0'
@@ -262,6 +263,12 @@ def build_v2_ai_payload(*, request_id, session, user, message, step_id, form_dat
         ),
         'customer_info': build_customer_info(session, form_data),
         'field_registry': get_step_field_registry(step_id),
+        'tool_context': build_tool_context(
+            session=session,
+            user=user,
+            step_id=step_id,
+            generated_at=current,
+        ),
         'chart_payload': None,
     }
 
