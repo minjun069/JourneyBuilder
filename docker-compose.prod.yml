@@ -27,7 +27,7 @@ services:
       context: ./front-pjt
       args:
         # nginx 가 /api 를 backend 로 넘기므로 도메인과 무관한 상대 경로
-        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-/api}"
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-/api/v1}"
     <<: [*restart, *logging]
     depends_on:
       backend:
