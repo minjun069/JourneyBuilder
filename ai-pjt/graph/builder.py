@@ -28,10 +28,81 @@ from tools.output_validation import validate_form_update, validate_form_update_c
 from tools.runtime import ToolCallBudget
 
 
-SAFE_PLAN_FAILURE_RESPONSE = (
-    "요청을 안전한 실행 계획으로 나누지 못했습니다. "
-    "원하는 작업을 조금 더 구체적으로 나누어 다시 요청해 주세요."
-)
+def _looks_like_qa(message: str) -> bool:
+    compact = message.strip().replace(" ", "")
+    if not compact:
+        return False
+    return (
+        "?" in compact
+        or compact.endswith(("뭐야", "무엇인가요", "왜요", "인가요", "나요", "까요"))
+        or any(token in compact for token in ("설명해줘", "알려줘", "무슨뜻", "어떻게계산"))
+    )
+
+
+def _pause_elicit_state(existing: Mapping[str, Any]) -> dict[str, Any]:
+    phase = existing.get("phase")
+    if phase not in {"asking", "confirming"}:
+        raise ValueError("only an active Elicit state can be paused")
+    paused = deepcopy(dict(existing))
+    paused["paused_from"] = phase
+    paused["phase"] = "paused"
+    return paused
+
+
+def _with_elicit_resume_action(
+    output: dict[str, Any],
+    elicit_state: Any,
+) -> dict[str, Any]:
+    if (
+        isinstance(elicit_state, Mapping)
+        and elicit_state.get("phase") == "paused"
+        and output.get("ui_action") is None
+    ):
+        return {
+            **output,
+            "ui_action": {"type": "resume_elicit", "label": "이어서 계속"},
+        }
+    return output
+
+
+def _direct_agent_plan(
+    *,
+    request_id: str,
+    task_type: str,
+    description: str,
+    agent: str,
+    state: Mapping[str, Any],
+    reason_code: str = "trusted_route",
+) -> dict[str, Any]:
+    produces = "text_response"
+    task = {
+        "id": "task-1",
+        "type": task_type,
+        "description": description,
+        "depends_on": [],
+        "bindings": {},
+        "executor_kind": "agent",
+        "produces": produces,
+        "step_id": state["step_id"],
+        "route": {
+            "task_id": "task-1",
+            "executor_kind": "agent",
+            "executor": agent,
+            "reason_code": reason_code,
+        },
+    }
+    return {
+        "schema_version": "1.0",
+        "plan_id": f"plan-{request_id}",
+        "tasks": [task],
+        "chart_payload": deepcopy(state.get("chart_payload")),
+        "request_mode": state.get("request_mode", "chat"),
+        "review_trigger": state.get("review_trigger"),
+        "elicit_action": state.get("elicit_action"),
+        "elicit_state": deepcopy(state.get("elicit_state", {})),
+        "context_scope": deepcopy(state.get("context_scope", {})),
+        "conversation_context": deepcopy(state.get("conversation_context", {})),
+    }
 
 
 def _default_agent_graphs() -> dict[str, Any]:
@@ -48,18 +119,28 @@ def _default_agent_graphs() -> dict[str, Any]:
     }
 
 
-def _agent_executor(agent_graph: Any) -> RuntimeExecutor:
+def _agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
     async def execute(payload: dict[str, Any]) -> Mapping[str, Any]:
         task = payload["task"]
         task_id = str(task.get("id", "task-unknown"))
+        is_fallback = agent_name == "fallback"
         agent_state = {
-            "message": payload["message"],
+            "message": "" if is_fallback else payload["message"],
             "step_id": payload["step_id"],
-            "customer_info": payload["customer_info"],
-            "field_registry": payload["field_registry"],
-            "bound_inputs": payload["bound_inputs"],
-            "current_task": deepcopy(task),
+            "customer_info": {} if is_fallback else payload["customer_info"],
+            "field_registry": [] if is_fallback else payload["field_registry"],
+            "bound_inputs": {} if is_fallback else payload["bound_inputs"],
+            "current_task": {"id": task_id, "type": "fallback"} if is_fallback else deepcopy(task),
             "next": payload["next"],
+            "chart_payload": None if is_fallback else payload.get("chart_payload"),
+            "request_mode": payload.get("request_mode", "chat"),
+            "review_trigger": payload.get("review_trigger"),
+            "elicit_action": payload.get("elicit_action"),
+            "elicit_state": {} if is_fallback else deepcopy(payload.get("elicit_state", {})),
+            "context_scope": {} if is_fallback else deepcopy(payload.get("context_scope", {})),
+            "conversation_context": {} if is_fallback else deepcopy(payload.get("conversation_context", {})),
+            "request_id": payload.get("request_id"),
+            "fallback_category": task.get("route", {}).get("reason_code"),
         }
         result = await agent_graph.ainvoke(agent_state)
         raw_output = result.get("output") if isinstance(result, Mapping) else None
@@ -68,7 +149,7 @@ def _agent_executor(agent_graph: Any) -> RuntimeExecutor:
             "output": raw_output,
         })
         if not validation.valid:
-            return failed_task_result(task_id, "output_schema_invalid")
+            return failed_task_result(task_id, "artifact_invalid")
 
         output = validation.output
         action = output.get("action")
@@ -79,12 +160,32 @@ def _agent_executor(agent_graph: Any) -> RuntimeExecutor:
                 "type": "text_response",
                 "text": output["response"],
             }
-        return {
+        task_result = {
             "task_id": task_id,
             "status": "completed",
             "response": output["response"],
             "artifact": artifact,
         }
+        for key in ("review", "ui_action"):
+            if isinstance(output.get(key), Mapping):
+                task_result[key] = deepcopy(dict(output[key]))
+        if isinstance(output.get("elicit_capture"), Mapping):
+            capture_validation = validate_form_update_contract({
+                **agent_state,
+                "output": {
+                    "response": output["response"],
+                    "step_id": payload["step_id"],
+                    "action": dict(output["elicit_capture"]),
+                },
+            })
+            if not capture_validation.valid:
+                return failed_task_result(task_id, "artifact_invalid")
+            task_result["elicit_capture"] = deepcopy(dict(output["elicit_capture"]))
+        if isinstance(result, Mapping) and isinstance(result.get("elicit_state"), Mapping):
+            task_result["state_update"] = {
+                "elicit_state": deepcopy(dict(result["elicit_state"]))
+            }
+        return task_result
 
     return execute
 
@@ -156,13 +257,14 @@ def build_graph(
         _default_agent_graphs() if agent_graphs is None else agent_graphs
     )
     agent_executors = {
-        name: _agent_executor(graph)
+        name: _agent_executor(name, graph)
         for name, graph in active_graphs.items()
     }
     validate_agent_executor_registry(agent_executors)
     active_tools = dict(tool_executors or {})
 
     def plan_request(state: ChatState) -> dict[str, Any]:
+        paused_state = None
         context_payload = state.get("conversation_context")
         try:
             context = (
@@ -187,17 +289,19 @@ def build_graph(
             )
         except (TypeError, ValueError):
             return {
-                "route_plan": {"schema_version": "1.0", "tasks": []},
+                "route_plan": _direct_agent_plan(
+                    request_id=str(state.get("request_id", "request-unknown")),
+                    task_type="fallback",
+                    description="안전한 대화 문맥을 복원할 수 없음",
+                    agent="fallback",
+                    state=state,
+                    reason_code="plan_invalid",
+                ),
                 "plan_issues": [{
                     "code": "CONTEXT_INVALID",
                     "path": "conversation_context",
                     "message": "대화 문맥을 안전하게 복원하지 못했습니다.",
                 }],
-                "output": {
-                    "response": SAFE_PLAN_FAILURE_RESPONSE,
-                    "step_id": state["step_id"],
-                    "action": None,
-                },
             }
 
         request_id = state.get("request_id")
@@ -206,6 +310,36 @@ def build_graph(
             if isinstance(request_id, str) and request_id.strip()
             else None
         )
+        if state.get("request_mode") == "error_review":
+            return {
+                "route_plan": _direct_agent_plan(
+                    request_id=str(request_id or "request-unknown"),
+                    task_type="review_validation_error",
+                    description="현재 draft의 오기·단위 착오·문맥 불일치 검토",
+                    agent="error_review",
+                    state=state,
+                ),
+                "plan_issues": [],
+            }
+        existing_elicit = state.get("elicit_state", {})
+        phase = existing_elicit.get("phase") if isinstance(existing_elicit, Mapping) else None
+        elicit_action = state.get("elicit_action")
+        if elicit_action in {"start", "resume"} or (
+            phase in {"asking", "confirming"} and not _looks_like_qa(state["message"])
+        ):
+            return {
+                "route_plan": _direct_agent_plan(
+                    request_id=str(request_id or "request-unknown"),
+                    task_type="collect_qualitative_info",
+                    description=state["message"],
+                    agent="elicit",
+                    state=state,
+                ),
+                "plan_issues": [],
+            }
+        if phase in {"asking", "confirming"} and _looks_like_qa(state["message"]):
+            paused_state = _pause_elicit_state(existing_elicit)
+            state = {**state, "elicit_state": paused_state}
         validation = create_route_plan(
             message=state["message"],
             step_id=state["step_id"],
@@ -217,21 +351,34 @@ def build_graph(
         )
         if not validation.valid:
             return {
-                "route_plan": validation.plan,
+                "route_plan": _direct_agent_plan(
+                    request_id=str(request_id or "request-unknown"),
+                    task_type="fallback",
+                    description="유효한 실행 계획을 만들 수 없음",
+                    agent="fallback",
+                    state=state,
+                    reason_code="plan_invalid",
+                ),
                 "plan_issues": [issue.to_dict() for issue in validation.issues],
-                "output": {
-                    "response": SAFE_PLAN_FAILURE_RESPONSE,
-                    "step_id": state["step_id"],
-                    "action": None,
-                },
             }
+        plan = deepcopy(validation.plan)
+        plan.update({
+            "chart_payload": deepcopy(state.get("chart_payload")),
+            "request_mode": state.get("request_mode", "chat"),
+            "review_trigger": state.get("review_trigger"),
+            "elicit_action": state.get("elicit_action"),
+            "elicit_state": deepcopy(state.get("elicit_state", {})),
+            "context_scope": deepcopy(state.get("context_scope", {})),
+            "conversation_context": deepcopy(state.get("conversation_context", {})),
+        })
         return {
-            "route_plan": validation.plan,
+            "route_plan": plan,
             "plan_issues": [],
+            **({"elicit_state": paused_state} if paused_state is not None else {}),
         }
 
     async def execute_plan(state: ChatState) -> dict[str, Any]:
-        if state.get("plan_issues"):
+        if state.get("plan_issues") and not state.get("route_plan", {}).get("tasks"):
             return {"task_results": {}, "output": state["output"]}
         customer_info = state.get("customer_info", {})
         registry = state.get("field_registry", [])
@@ -283,10 +430,16 @@ def build_graph(
             if isinstance(budget_state, Mapping)
             else {"task_limit": task_limit, "tasks_used": report.tasks_used}
         )
+        state_update = report.state_update or {}
+        output = report.output
+        current_elicit = state_update.get("elicit_state", state.get("elicit_state"))
+        if isinstance(output, dict):
+            output = _with_elicit_resume_action(output, current_elicit)
         return {
             "task_results": report.task_results,
-            "output": report.output,
+            "output": output,
             "execution_budget": updated_budget,
+            **state_update,
         }
 
     def persist_context(state: ChatState) -> dict[str, Any]:

@@ -200,8 +200,8 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["output"]["action"]["changes"][0]["value"], 2_500_000)
 
-    async def test_invalid_plan_never_calls_an_agent(self) -> None:
-        from graph.builder import SAFE_PLAN_FAILURE_RESPONSE, build_graph
+    async def test_invalid_plan_calls_only_sanitized_fallback(self) -> None:
+        from graph.builder import build_graph
 
         agents = all_agent_graphs()
         graph = build_graph(
@@ -219,9 +219,13 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         })
 
         self.assertTrue(result["plan_issues"])
-        self.assertEqual(result["output"]["response"], SAFE_PLAN_FAILURE_RESPONSE)
-        self.assertEqual(sum(len(agent.calls) for agent in agents.values()), 0)
-
+        self.assertEqual(result["output"]["response"], "fallback 응답")
+        self.assertEqual(len(agents["fallback"].calls), 1)
+        self.assertEqual(agents["fallback"].calls[0]["customer_info"], {})
+        self.assertEqual(
+            sum(len(agent.calls) for name, agent in agents.items() if name != "fallback"),
+            0,
+        )
 
 if __name__ == "__main__":
     unittest.main()

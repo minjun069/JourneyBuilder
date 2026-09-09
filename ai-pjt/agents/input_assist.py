@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
+from agents.input_assist_defaults import build_default_proposals
 from core.llm import llm
 
 MAX_RETRIES = 2
@@ -204,6 +205,19 @@ async def _identify(state: InputAssistState) -> dict:
     ]
     guideline = json.dumps(writable_registry, ensure_ascii=False, indent=2)
     current_form = state.get("customer_info", {}).get("current_form", {})
+    if state["classification"] == "fill_avg":
+        proposals = build_default_proposals(
+            step_id=state["step_id"],
+            message=state["message"],
+            current_form=current_form if isinstance(current_form, dict) else {},
+            saved_data=state.get("customer_info", {}).get("saved_data", {}),
+        )
+        return {
+            "guideline": guideline,
+            "identification": proposals,
+            "resolution_confidence": 0,
+            "cur_index": 0,
+        }
     result = await _identify_chain.ainvoke([
         SystemMessage(content=_IDENTIFY_SYSTEM.format(
             guideline=guideline,
@@ -303,6 +317,12 @@ async def _resolve(state: InputAssistState) -> dict:
             "resolution_confidence": 1.0,
             "field_spec": field_spec,
         }
+    if "policy_value" in item:
+        return {
+            "resolution": item["policy_value"],
+            "resolution_confidence": 1.0,
+            "field_spec": field_spec,
+        }
     if state["classification"] == "fill_avg":
         return {
             "resolution": None,
@@ -350,6 +370,31 @@ async def _error_check_2(state: InputAssistState) -> dict:
                 "reason": reason,
                 "confidence": 1.0,
                 "bound_unit": bound_inputs.get("unit"),
+            }],
+            "cur_index": state["cur_index"] + 1,
+            "resolution_retries": 0,
+            "validation_type": "ok",
+            "validation_reason": "",
+        }
+    if "policy_value" in item:
+        metadata = item.get("policy_metadata", {})
+        source = metadata.get("source", {}) if isinstance(metadata, dict) else {}
+        source_title = source.get("title", "승인된 기본값 정책")
+        return {
+            "partial_results": state["partial_results"] + [{
+                "section": item["section"],
+                "path": item["path"],
+                "operation": item["operation"],
+                "item_id": item.get("item_id"),
+                "client_item_id": item.get("client_item_id"),
+                "excerpt": item["excerpt"],
+                "resolution": item["policy_value"],
+                "parent_item_id": item.get("parent_item_id"),
+                "parent_client_item_id": item.get("parent_client_item_id"),
+                "success": True,
+                "reason": f"승인된 기본값 정책: {source_title}",
+                "confidence": 1.0,
+                "policy_metadata": metadata,
             }],
             "cur_index": state["cur_index"] + 1,
             "resolution_retries": 0,
@@ -440,6 +485,17 @@ def _route_after_error_check_2(state: InputAssistState) -> str:
 
 
 async def _merge(state: InputAssistState) -> dict:
+    if state["classification"] == "fill_avg" and not state["partial_results"]:
+        return {
+            "output": {
+                "response": (
+                    "현재 단계에는 승인된 기본값 정책으로 안전하게 매핑할 수 있는 "
+                    "빈 항목이 없어 자동 채우지 않았습니다."
+                ),
+                "step_id": state["step_id"],
+                "action": None,
+            }
+        }
     parts = []
     changes = []
     confidences = []
@@ -456,6 +512,9 @@ async def _merge(state: InputAssistState) -> dict:
             }
             if item.get("bound_unit") is not None:
                 change["unit"] = item["bound_unit"]
+            metadata = item.get("policy_metadata")
+            if isinstance(metadata, dict):
+                change.update(metadata)
             if item.get("item_id") is not None:
                 change["item_id"] = item["item_id"]
             if item.get("client_item_id"):

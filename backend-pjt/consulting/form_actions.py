@@ -49,6 +49,12 @@ def normalize_form_action(output, step_id):
             change['parent_item_id'] = raw['parent_item_id']
         if raw.get('parent_client_item_id'):
             change['parent_client_item_id'] = raw['parent_client_item_id']
+        for metadata_field in (
+            'policy_version', 'source', 'retrieved_at', 'transform', 'assumption_level',
+            'source_turn_ids',
+        ):
+            if raw.get(metadata_field) is not None:
+                change[metadata_field] = raw[metadata_field]
         changes.append(change)
 
     if not changes:

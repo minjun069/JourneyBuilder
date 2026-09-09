@@ -461,7 +461,7 @@
       "step_id": "legacy-dashboard",
       "message": "이 화면 내용을 설명해 줘.",
       "classifier": {"status": "matched", "agent": "qa"},
-      "expected": {"agent": "fallback", "reason_code": "unsupported_step"},
+      "expected": {"agent": "fallback", "reason_code": "plan_invalid"},
       "expected_classifier_calls": 0
     },
     {
@@ -470,7 +470,7 @@
       "step_id": "basic-info",
       "message": "현재 화면의 그래프를 분석해 줘.",
       "classifier": {"status": "matched", "agent": "chart_interpret"},
-      "expected": {"agent": "fallback", "reason_code": "agent_not_allowed"}
+      "expected": {"agent": "fallback", "reason_code": "plan_invalid"}
     },
     {
       "id": "fallback-chart-input-agent-not-allowed",
@@ -478,7 +478,7 @@
       "step_id": "balance-sheet",
       "message": "여기에 새 자산 금액을 입력해 줘.",
       "classifier": {"status": "matched", "agent": "input_assist"},
-      "expected": {"agent": "fallback", "reason_code": "agent_not_allowed"}
+      "expected": {"agent": "fallback", "reason_code": "plan_invalid"}
     },
     {
       "id": "fallback-classifier-provider-error",
@@ -486,7 +486,7 @@
       "step_id": "income",
       "message": "월급 정보를 설명해 줘.",
       "classifier": {"status": "error", "agent": null, "error": "provider_timeout"},
-      "expected": {"agent": "fallback", "reason_code": "classifier_error"}
+      "expected": {"agent": "fallback", "reason_code": "plan_invalid"}
     }
   ]
 }

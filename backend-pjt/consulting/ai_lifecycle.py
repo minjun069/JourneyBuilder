@@ -20,6 +20,7 @@ from .ai_services import (
     generate_request_id,
 )
 from .field_registry import get_step_field_registry
+from .chart_payload import build_chart_payload
 from .tool_context import build_tool_context
 
 
@@ -101,7 +102,10 @@ def validate_browser_message(payload):
             'CONTRACT_VERSION_UNSUPPORTED',
             '지원하지 않는 계약 버전입니다.',
         )
-    allowed_fields = {'contract_version', 'content', 'step_id', 'form_data'}
+    allowed_fields = {
+        'contract_version', 'content', 'step_id', 'form_data',
+        'request_mode', 'review_trigger', 'elicit_action',
+    }
     if set(payload) - allowed_fields:
         raise LifecycleError(400, 'REQUEST_INVALID', '지원하지 않는 요청 필드가 있습니다.')
     if 'content' not in payload:
@@ -119,12 +123,35 @@ def validate_browser_message(payload):
     form_data = payload.get('form_data', {})
     if not isinstance(form_data, dict):
         raise LifecycleError(400, 'REQUEST_INVALID', 'form_data는 객체여야 합니다.')
-    return {
+    request_mode = payload.get('request_mode', 'chat')
+    review_trigger = payload.get('review_trigger')
+    elicit_action = payload.get('elicit_action')
+    if request_mode not in ('chat', 'error_review'):
+        raise LifecycleError(400, 'REQUEST_INVALID', 'request_mode이 올바르지 않습니다.')
+    if request_mode == 'error_review':
+        if review_trigger not in ('save', 'user_request'):
+            raise LifecycleError(400, 'REQUEST_INVALID', 'review_trigger가 필요합니다.')
+    elif review_trigger is not None:
+        raise LifecycleError(400, 'REQUEST_INVALID', 'chat 요청에는 review_trigger를 사용할 수 없습니다.')
+    if elicit_action not in (None, 'start', 'resume'):
+        raise LifecycleError(400, 'REQUEST_INVALID', 'elicit_action이 올바르지 않습니다.')
+    if elicit_action is not None and (
+        request_mode != 'chat' or step_id != 'financial-mindset'
+    ):
+        raise LifecycleError(400, 'REQUEST_INVALID', 'Elicit 동작은 경제 관념 단계에서만 가능합니다.')
+    normalized = {
         'contract_version': CONTRACT_VERSION,
         'content': content,
         'step_id': step_id,
         'form_data': form_data,
     }
+    if 'request_mode' in payload:
+        normalized['request_mode'] = request_mode
+    if review_trigger is not None:
+        normalized['review_trigger'] = review_trigger
+    if elicit_action is not None:
+        normalized['elicit_action'] = elicit_action
+    return normalized
 
 
 def require_idempotency_key(request):
@@ -187,6 +214,8 @@ def validate_terminal_callback(payload):
         output = payload.get('output')
         if not isinstance(output, dict) or not isinstance(output.get('response'), str):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'completed output이 올바르지 않습니다.')
+        _validate_error_review_output(output)
+        _validate_ui_action_output(output)
     else:
         error = payload.get('error')
         if not isinstance(error, dict):
@@ -196,6 +225,82 @@ def validate_terminal_callback(payload):
         if not isinstance(error.get('message'), str) or not isinstance(error.get('retryable'), bool):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'failed error가 올바르지 않습니다.')
     return payload
+
+
+def _validate_error_review_output(output):
+    review = output.get('review')
+    if review is None:
+        return
+    if not isinstance(review, dict) or set(review) != {'type', 'trigger', 'manual', 'items'}:
+        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review output이 올바르지 않습니다.')
+    if review.get('type') != 'error_review' or review.get('trigger') not in ('save', 'user_request'):
+        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review output이 올바르지 않습니다.')
+    manual = review.get('manual')
+    if (
+        not isinstance(manual, dict)
+        or set(manual) != {'document_id', 'version'}
+        or not all(isinstance(manual.get(key), str) and manual.get(key) for key in manual)
+    ):
+        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review manual이 올바르지 않습니다.')
+    items = review.get('items')
+    if not isinstance(items, list):
+        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review items가 올바르지 않습니다.')
+    allowed = {
+        'section', 'path', 'item_id', 'client_item_id', 'parent_item_id',
+        'parent_client_item_id', 'current_value', 'reason', 'suggested_value', 'confidence',
+    }
+    for item in items:
+        if not isinstance(item, dict) or set(item) - allowed:
+            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review item이 올바르지 않습니다.')
+        if 'current_value' not in item:
+            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review item에 현재 값이 필요합니다.')
+        if not all(isinstance(item.get(key), str) and item.get(key) for key in ('section', 'path', 'reason')):
+            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review item이 올바르지 않습니다.')
+        confidence = item.get('confidence')
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review confidence가 올바르지 않습니다.')
+
+
+def _validate_ui_action_output(output):
+    ui_action = output.get('ui_action')
+    if ui_action is None:
+        return
+    if (
+        not isinstance(ui_action, dict)
+        or set(ui_action) != {'type', 'label'}
+        or ui_action.get('type') != 'resume_elicit'
+        or not isinstance(ui_action.get('label'), str)
+        or not ui_action['label'].strip()
+    ):
+        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'ui_action output이 올바르지 않습니다.')
+
+
+def _validate_error_review_fields(output, step_id):
+    review = output.get('review')
+    if not isinstance(review, dict):
+        return
+    registry = {
+        (field.get('section'), field.get('path')): field
+        for field in get_step_field_registry(step_id)
+        if isinstance(field, dict)
+    }
+    for item in review.get('items', []):
+        spec = registry.get((item.get('section'), item.get('path')))
+        if spec is None:
+            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review field가 현재 단계와 일치하지 않습니다.')
+        if spec.get('cardinality') in ('list', 'nested_list') and not (
+            item.get('item_id') is not None or item.get('client_item_id')
+        ):
+            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review 반복 항목 식별자가 필요합니다.')
+        if (
+            spec.get('cardinality') == 'nested_list'
+            and str(item.get('path', '')).startswith('items[].')
+            and not (
+                item.get('parent_item_id') is not None
+                or item.get('parent_client_item_id')
+            )
+        ):
+            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review 부모 항목 식별자가 필요합니다.')
 
 
 class RedisLifecycleStore:
@@ -249,9 +354,17 @@ class RedisLifecycleStore:
         )
 
 
-def build_v2_ai_payload(*, request_id, session, user, message, step_id, form_data, now=None):
+def build_v2_ai_payload(
+    *, request_id, session, user, message, step_id, form_data,
+    request_mode='chat', review_trigger=None, elicit_action=None, now=None,
+):
     current = now or utc_now()
-    return {
+    chart_result = build_chart_payload(
+        session=session,
+        user=user,
+        step_id=step_id,
+    )
+    payload = {
         'contract_version': CONTRACT_VERSION,
         'request_id': request_id,
         'session_id': session.id,
@@ -269,8 +382,15 @@ def build_v2_ai_payload(*, request_id, session, user, message, step_id, form_dat
             step_id=step_id,
             generated_at=current,
         ),
-        'chart_payload': None,
+        'chart_payload': chart_result.payload,
     }
+    if request_mode != 'chat':
+        payload['request_mode'] = request_mode
+    if review_trigger is not None:
+        payload['review_trigger'] = review_trigger
+    if elicit_action is not None:
+        payload['elicit_action'] = elicit_action
+    return payload
 
 
 def ai_v2_url():
@@ -381,8 +501,11 @@ def bind_terminal_callback(state, payload):
 
 
 def create_v2_assistant_message(session, payload, step_id):
+    output = payload.get('output') if isinstance(payload.get('output'), dict) else {}
+    _validate_error_review_fields(output, step_id)
     message = create_assistant_message_from_callback(session, payload, step_id=step_id)
     extracted = message.extracted_data or {}
+    extracted_changed = False
     action = extracted.get('action')
     if isinstance(action, dict):
         action_id = f'act_{uuid.uuid4().hex}'
@@ -400,6 +523,14 @@ def create_v2_assistant_message(session, payload, step_id):
             'status': 'pending',
             'changes': changes,
         }}
+        extracted_changed = True
+    if isinstance(output.get('review'), dict):
+        extracted['review'] = output['review']
+        extracted_changed = True
+    if isinstance(output.get('ui_action'), dict):
+        extracted['ui_action'] = output['ui_action']
+        extracted_changed = True
+    if extracted_changed:
         message.extracted_data = extracted
         message.save(update_fields=['extracted_data'])
     return message

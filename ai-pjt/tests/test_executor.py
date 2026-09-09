@@ -314,6 +314,82 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             "task_budget_exhausted",
         )
 
+    async def test_all_failed_keeps_aggregator_reason_and_adds_one_fallback(self) -> None:
+        fallback_calls: list[dict] = []
+
+        async def invalid_qa(_: dict) -> dict:
+            return {}
+
+        async def fallback(payload: dict) -> dict:
+            fallback_calls.append(payload)
+            return {
+                "task_id": "task-fallback-all-failed",
+                "status": "completed",
+                "response": "입력과 요청을 확인한 뒤 다시 시도해 주세요.",
+                "artifact": {
+                    "type": "text_response",
+                    "text": "입력과 요청을 확인한 뒤 다시 시도해 주세요.",
+                },
+            }
+
+        task = consumer_task("task-1", "answer_question", "qa")
+        task["depends_on"] = []
+        task["bindings"] = {}
+        report = await execute_route_plan(
+            plan={"tasks": [task]},
+            step_id="financial-goals",
+            customer_info={"sensitive": "must-not-reach-fallback"},
+            field_registry=[FIELD_SPEC],
+            agent_executors={"qa": invalid_qa, "fallback": fallback},
+            tool_executors={},
+        )
+
+        self.assertEqual(len(fallback_calls), 1)
+        self.assertEqual(fallback_calls[0]["task"]["route"]["reason_code"], "all_tasks_failed")
+        self.assertEqual(fallback_calls[0]["customer_info"], {})
+        self.assertIn("안전성 검증", report.output["response"])
+        self.assertIn("다시 시도", report.output["response"])
+
+    async def test_partial_success_does_not_call_fallback(self) -> None:
+        fallback_calls = 0
+
+        async def failing(_: dict) -> dict:
+            raise RuntimeError("expected failure")
+
+        async def succeeding(_: dict) -> dict:
+            return {
+                "task_id": "task-2",
+                "status": "completed",
+                "artifact": {"type": "text_response", "text": "검증된 독립 결과"},
+            }
+
+        async def fallback(_: dict) -> dict:
+            nonlocal fallback_calls
+            fallback_calls += 1
+            return {}
+
+        failed_task = consumer_task("task-1", "answer_question", "input_assist")
+        failed_task["depends_on"] = []
+        failed_task["bindings"] = {}
+        successful_task = consumer_task("task-2", "answer_question", "qa")
+        successful_task["depends_on"] = []
+        successful_task["bindings"] = {}
+        report = await execute_route_plan(
+            plan={"tasks": [failed_task, successful_task]},
+            step_id="financial-goals",
+            customer_info={},
+            field_registry=[FIELD_SPEC],
+            agent_executors={
+                "input_assist": failing,
+                "qa": succeeding,
+                "fallback": fallback,
+            },
+            tool_executors={},
+        )
+
+        self.assertEqual(fallback_calls, 0)
+        self.assertIn("검증된 독립 결과", report.output["response"])
+
 
 class AggregationTests(unittest.TestCase):
     def test_conflicting_changes_are_removed_from_public_action(self) -> None:

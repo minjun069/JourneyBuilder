@@ -132,6 +132,10 @@ def _graph_input(request: ChatRequest | ChatStreamRequest | ChatV2Request) -> di
         "customer_info": customer_info,
         "field_registry": request.field_registry,
     }
+    for field in ("request_mode", "review_trigger", "elicit_action"):
+        value = getattr(request, field, None)
+        if value is not None:
+            payload[field] = value
     chart_payload = getattr(request, "chart_payload", None)
     if chart_payload is not None:
         payload["chart_payload"] = chart_payload

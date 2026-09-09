@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { applyCanonicalChanges } from './formChanges.js'
+import { applyCanonicalChanges, readCanonicalValue } from './formChanges.js'
 
 const fixtureUrl = new URL(
   '../../../contract-fixtures/ai-lifecycle/v2/form-actions.json',
@@ -79,4 +79,25 @@ test('승인된 D1 fixture 변경은 실제 Frontend draft resolver 결과와 �
       caseName,
     )
   }
+})
+
+test('Error Review 후보는 검토 당시 canonical 값과 현재 draft가 같을 때만 식별된다', () => {
+  const currentForm = {
+    goal_periods: [{
+      client_item_id: 'period-1',
+      items: [{ client_item_id: 'item-1', amount: 20000 }],
+    }],
+  }
+  const change = {
+    section: 'goal_periods',
+    path: 'items[].amount',
+    client_item_id: 'item-1',
+    parent_client_item_id: 'period-1',
+  }
+
+  assert.deepEqual(readCanonicalValue(currentForm, change), { found: true, value: 20000 })
+  assert.deepEqual(
+    readCanonicalValue(currentForm, { ...change, parent_client_item_id: 'other-period' }),
+    { found: false, value: undefined },
+  )
 })

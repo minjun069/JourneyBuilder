@@ -1,0 +1,58 @@
+{
+  "fixture_kind": "error-reviews",
+  "contract_version": "2.0",
+  "cases": {
+    "save_suspicious_income": {
+      "browser_request_fragment": {
+        "request_mode": "error_review",
+        "review_trigger": "save",
+        "step_id": "basic-info"
+      },
+      "ai_output": {
+        "response": "입력값에서 확인이 필요한 항목 1개를 찾았습니다.",
+        "step_id": "basic-info",
+        "action": null,
+        "review": {
+          "type": "error_review",
+          "trigger": "save",
+          "manual": {
+            "document_id": "interface-basic-info",
+            "version": "1.0.0"
+          },
+          "items": [
+            {
+              "section": "basic_info",
+              "path": "monthly_income",
+              "current_value": 20000,
+              "reason": "월 소득의 단위 착오 가능성을 확인해야 합니다.",
+              "suggested_value": 2000000,
+              "confidence": 0.91
+            }
+          ]
+        }
+      },
+      "frontend_behavior": "후보 적용은 draft를 직접 수정하고 승인 API를 호출하지 않는다. 취소·닫기는 현재 값을 유지한다."
+    },
+    "user_review_no_suspicion": {
+      "browser_request_fragment": {
+        "request_mode": "error_review",
+        "review_trigger": "user_request",
+        "step_id": "expenses"
+      },
+      "ai_output": {
+        "response": "현재 입력값에서 별도로 확인을 권할 만한 항목을 찾지 못했습니다.",
+        "step_id": "expenses",
+        "action": null,
+        "review": {
+          "type": "error_review",
+          "trigger": "user_request",
+          "manual": {
+            "document_id": "interface-expenses",
+            "version": "1.0.0"
+          },
+          "items": []
+        }
+      }
+    }
+  }
+}

@@ -11,6 +11,7 @@ from .ai_lifecycle import (
     TERMINAL_STATE_TTL_SECONDS,
     LifecycleError,
     RedisLifecycleStore,
+    _validate_error_review_fields,
     bind_terminal_callback,
     build_v2_ai_payload,
     create_v2_assistant_message,
@@ -91,6 +92,26 @@ class BrowserMessageValidationTests(SimpleTestCase):
 
         self.assertEqual(captured.exception.status_code, 422)
         self.assertEqual(captured.exception.code, 'CONTRACT_VERSION_UNSUPPORTED')
+
+    def test_error_review_and_elicit_controls_are_explicitly_bound(self):
+        review = validate_browser_message({
+            **self.valid_payload(),
+            'request_mode': 'error_review',
+            'review_trigger': 'save',
+        })
+        self.assertEqual(review['review_trigger'], 'save')
+
+        with self.assertRaises(LifecycleError):
+            validate_browser_message({**self.valid_payload(), 'request_mode': 'error_review'})
+        with self.assertRaises(LifecycleError):
+            validate_browser_message({**self.valid_payload(), 'elicit_action': 'start'})
+
+        elicit = validate_browser_message({
+            **self.valid_payload(),
+            'step_id': 'financial-mindset',
+            'elicit_action': 'start',
+        })
+        self.assertEqual(elicit['elicit_action'], 'start')
 
 
 class ServiceAuthenticationTests(SimpleTestCase):
@@ -314,6 +335,39 @@ class CallbackValidationTests(SimpleTestCase):
         for value in ('not-a-date', '2026-09-02T06:00:42'):
             with self.subTest(value=value), self.assertRaises(LifecycleError):
                 validate_terminal_callback(completed_callback(completed_at=value))
+
+    def test_structured_error_review_output_is_validated(self):
+        review = {
+            'type': 'error_review',
+            'trigger': 'save',
+            'manual': {'document_id': 'interface-basic-info', 'version': '1.0.0'},
+            'items': [{
+                'section': 'basic_info',
+                'path': 'monthly_income',
+                'current_value': 20_000,
+                'reason': '다른 소득 정보와 비교해 단위 착오가 의심됩니다.',
+                'suggested_value': 2_000_000,
+                'confidence': 0.91,
+            }],
+        }
+        payload = completed_callback(output={'response': '확인이 필요합니다.', 'review': review})
+        self.assertEqual(validate_terminal_callback(payload), payload)
+
+        invalid = completed_callback(output={
+            'response': '확인이 필요합니다.',
+            'review': {**review, 'trigger': 'blocking_save'},
+        })
+        with self.assertRaises(LifecycleError):
+            validate_terminal_callback(invalid)
+
+        _validate_error_review_fields({'review': review}, 'basic-info')
+        with self.assertRaises(LifecycleError):
+            _validate_error_review_fields({
+                'review': {
+                    **review,
+                    'items': [{**review['items'][0], 'path': 'unknown_field'}],
+                },
+            }, 'basic-info')
 
 
 class FormChangeDecisionTests(SimpleTestCase):

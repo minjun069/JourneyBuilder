@@ -78,7 +78,10 @@ def _build_report_content(report_type, session):
         return calculate_pension_schedule(session)
 
     if report_type == Report.ReportType.LIFETIME_CASHFLOW:
-        return calculate_lifetime_cashflow(session)
+        content = calculate_lifetime_cashflow(session)
+        if content:
+            content['input_snapshot_digest'] = calculation_input_digest(session)
+        return content
 
     if report_type == Report.ReportType.REQUIRED_SAVINGS:
         retirement_fund = calculate_retirement_fund(session)

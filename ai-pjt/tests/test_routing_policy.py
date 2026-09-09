@@ -94,7 +94,7 @@ class ProductionRoutingPolicyTests(unittest.TestCase):
             classifier=FakeClassifier({"status": "matched", "agent": "qa"}),
         )
         self.assertEqual(decision["executor"], "fallback")
-        self.assertEqual(decision["reason_code"], "unsupported_task")
+        self.assertEqual(decision["reason_code"], "plan_invalid")
 
 
 if __name__ == "__main__":

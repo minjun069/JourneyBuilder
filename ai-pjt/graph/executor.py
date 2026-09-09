@@ -28,6 +28,7 @@ class ExecutionReport:
     output: dict[str, Any]
     tasks_used: int
     tool_calls_used: int = 0
+    state_update: dict[str, Any] | None = None
 
 
 def validate_agent_executor_registry(
@@ -78,6 +79,7 @@ async def execute_route_plan(
         raise ValueError("task_limit must be a positive integer")
     raw_tasks = plan.get("tasks", [])
     tasks = raw_tasks if isinstance(raw_tasks, list) else []
+    aggregate_tasks = list(tasks)
 
     for task in tasks:
         if not isinstance(task, Mapping):
@@ -170,6 +172,13 @@ async def execute_route_plan(
             "deadline_at": deadline_at,
             "tool_context": deepcopy(dict(tool_context or {})),
             "tool_call_budget": tool_call_budget,
+            "chart_payload": deepcopy(plan.get("chart_payload")),
+            "request_mode": plan.get("request_mode", "chat"),
+            "review_trigger": plan.get("review_trigger"),
+            "elicit_action": plan.get("elicit_action"),
+            "elicit_state": deepcopy(plan.get("elicit_state", {})),
+            "context_scope": deepcopy(plan.get("context_scope", {})),
+            "conversation_context": deepcopy(plan.get("conversation_context", {})),
         }
         try:
             raw_result = await executor(execution_input)
@@ -191,8 +200,65 @@ async def execute_route_plan(
             result = failed_task_result(task_id, "binding_not_consumed")
         task_results[task_id] = result
 
+    has_completed = any(
+        result.get("status") == "completed" for result in task_results.values()
+    )
+    has_planned_fallback = any(
+        isinstance(task, Mapping)
+        and isinstance(task.get("route"), Mapping)
+        and task["route"].get("executor") == "fallback"
+        for task in tasks
+    )
+    if not has_completed and tasks and not has_planned_fallback:
+        fallback_task = {
+            "id": "task-fallback-all-failed",
+            "type": "fallback",
+            "description": "검증된 task 결과 없음",
+            "depends_on": [],
+            "bindings": {},
+            "executor_kind": "agent",
+            "produces": "text_response",
+            "step_id": step_id,
+            "route": {
+                "task_id": "task-fallback-all-failed",
+                "executor_kind": "agent",
+                "executor": "fallback",
+                "reason_code": "all_tasks_failed",
+            },
+        }
+        fallback_executor = agent_executors.get("fallback")
+        if fallback_executor is not None:
+            fallback_payload = {
+                "request_id": request_id,
+                "plan_id": str(plan.get("plan_id", "plan-unknown")),
+                "task": fallback_task,
+                "task_input": {"description": "검증된 task 결과 없음", "bindings": {}},
+                "message": "검증된 task 결과 없음",
+                "step_id": step_id,
+                "customer_info": {},
+                "field_registry": [],
+                "bound_inputs": {},
+                "next": "fallback",
+                "deadline_at": deadline_at,
+                "tool_context": {},
+                "tool_call_budget": tool_call_budget,
+            }
+            try:
+                fallback_result = await fallback_executor(fallback_payload)
+                fallback_validation = validate_task_result(
+                    task=fallback_task,
+                    result=fallback_result,
+                    step_id=step_id,
+                    field_registry=field_registry,
+                )
+                task_results[fallback_task["id"]] = fallback_validation.result
+                aggregate_tasks.append(fallback_task)
+                tasks_used += 1
+            except Exception:
+                pass
+
     output = aggregate_task_results(
-        tasks=tasks,
+        tasks=aggregate_tasks,
         task_results=task_results,
         step_id=step_id,
         field_registry=field_registry,
@@ -206,6 +272,7 @@ async def execute_route_plan(
             if hasattr(tool_call_budget, "used")
             else 0
         ),
+        state_update=_collect_state_update(aggregate_tasks, task_results),
     )
 
 
@@ -224,6 +291,8 @@ def aggregate_task_results(
     conflicts: set[tuple[Any, ...]] = set()
     user_requested_values: list[bool] = []
     confidences: list[float] = []
+    reviews: list[dict[str, Any]] = []
+    ui_actions: list[dict[str, Any]] = []
 
     for task_index, task in enumerate(tasks):
         if not isinstance(task, Mapping):
@@ -241,6 +310,11 @@ def aggregate_task_results(
         if status != "completed":
             continue
 
+        if isinstance(result.get("review"), Mapping):
+            reviews.append(deepcopy(dict(result["review"])))
+        if isinstance(result.get("ui_action"), Mapping):
+            ui_actions.append(deepcopy(dict(result["ui_action"])))
+
         response = result.get("response")
         artifact = result.get("artifact")
         if isinstance(response, str) and response.strip():
@@ -255,13 +329,18 @@ def aggregate_task_results(
         if isinstance(artifact, Mapping) and artifact.get("type") == "dashboard_metric":
             responses.append(_dashboard_metric_message(artifact))
 
-        if not isinstance(artifact, Mapping) or artifact.get("type") != "form_change":
+        form_artifact = (
+            artifact
+            if isinstance(artifact, Mapping) and artifact.get("type") == "form_change"
+            else result.get("elicit_capture")
+        )
+        if not isinstance(form_artifact, Mapping) or form_artifact.get("type") != "form_change":
             continue
-        user_requested_values.append(artifact.get("user_requested") is True)
-        confidence = artifact.get("confidence")
+        user_requested_values.append(form_artifact.get("user_requested") is True)
+        confidence = form_artifact.get("confidence")
         if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
             confidences.append(float(confidence))
-        for change_index, raw_change in enumerate(artifact.get("changes", [])):
+        for change_index, raw_change in enumerate(form_artifact.get("changes", [])):
             if not isinstance(raw_change, Mapping):
                 continue
             change = deepcopy(dict(raw_change))
@@ -298,12 +377,30 @@ def aggregate_task_results(
         "step_id": step_id,
         "action": action,
     }
+    if len(reviews) == 1:
+        output["review"] = reviews[0]
+    if len(ui_actions) == 1:
+        output["ui_action"] = ui_actions[0]
     validation = validate_form_update_contract({
         "step_id": step_id,
         "field_registry": field_registry,
         "output": output,
     })
     return validation.output
+
+
+def _collect_state_update(
+    tasks: list[Any],
+    task_results: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    update: dict[str, Any] = {}
+    for task in tasks:
+        if not isinstance(task, Mapping):
+            continue
+        result = task_results.get(str(task.get("id")))
+        if isinstance(result, Mapping) and isinstance(result.get("state_update"), Mapping):
+            update.update(deepcopy(dict(result["state_update"])))
+    return update
 
 
 def _binding_source_ids(task: Mapping[str, Any]) -> list[str]:
@@ -365,6 +462,10 @@ def _failure_message(reason_code: str) -> str:
         "output_schema_invalid": (
             "작업 결과가 안전성 검증을 통과하지 못해 응답에서 제외했습니다."
         ),
+        "artifact_invalid": (
+            "작업 결과가 안전성 검증을 통과하지 못해 응답에서 제외했습니다."
+        ),
+        "dependency_failed": "선행 작업이 실패해 연결된 요청은 실행하지 않았습니다.",
         "executor_unavailable": "요청을 처리할 실행 기능이 연결되지 않았습니다.",
         "executor_error": "요청 처리 중 오류가 발생해 해당 결과를 제외했습니다.",
         "route_missing": "안전한 실행 경로를 확인하지 못해 해당 요청을 처리하지 않았습니다.",

@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import os
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 
 AGENT_RUNTIME_AVAILABLE = all(
@@ -89,18 +91,26 @@ class InputAssistBindingTests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class QABindingTests(unittest.IsolatedAsyncioTestCase):
-    async def test_bound_reference_skips_a_second_retrieval_decision(self) -> None:
+    async def test_bound_reference_still_allows_explanation_retrieval(self) -> None:
         configure_disposable_runtime()
         from agents import qa
 
-        decision = await qa._decide({
-            "bound_inputs": {
-                "value": 2_500_000,
-                "unit": "KRW",
-                "source_id": "approved-statistics-2026",
-            }
-        })
-        self.assertEqual(decision, {"need_retrieval": False})
+        with patch.object(
+            qa,
+            "_decision_chain",
+            SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(need_retrieval=True))),
+        ):
+            decision = await qa._decide({
+                "message": "이 기준값의 의미와 배경을 설명해줘",
+                "current_query": "기준값 의미와 배경",
+                "customer_info": {},
+                "bound_inputs": {
+                    "value": 2_500_000,
+                    "unit": "KRW",
+                    "source_id": "approved-statistics-2026",
+                },
+            })
+        self.assertEqual(decision, {"need_retrieval": True})
 
 
 if __name__ == "__main__":

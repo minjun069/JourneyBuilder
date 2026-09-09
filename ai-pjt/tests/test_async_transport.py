@@ -71,6 +71,22 @@ class ServiceAuthorizationTests(IsolatedAsyncioTestCase):
         verify_service_authorization("Bearer test-token", "test-token")
 
 
+class FeatureControlContractTests(IsolatedAsyncioTestCase):
+    def test_error_review_requires_a_trigger(self):
+        review = make_request(request_mode="error_review", review_trigger="save")
+        self.assertEqual(review.review_trigger, "save")
+
+        with self.assertRaises(ValueError):
+            make_request(request_mode="error_review")
+
+    def test_elicit_action_is_bound_to_financial_mindset_chat(self):
+        elicit = make_request(step_id="financial-mindset", elicit_action="start")
+        self.assertEqual(elicit.elicit_action, "start")
+
+        with self.assertRaises(ValueError):
+            make_request(elicit_action="start")
+
+
 class CallbackClientTests(IsolatedAsyncioTestCase):
     async def test_retryable_failures_use_four_attempts_and_same_payload(self):
         received = []

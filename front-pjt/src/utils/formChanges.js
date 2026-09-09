@@ -83,6 +83,43 @@ function matchesIdentity(item, change) {
   return false
 }
 
+function canonicalIdentityMatches(item, change, prefix = '') {
+  const idKey = `${prefix}item_id`
+  const clientIdKey = `${prefix}client_item_id`
+  if (change[idKey] != null) return String(item?.id) === String(change[idKey])
+  if (change[clientIdKey]) return item?.client_item_id === change[clientIdKey]
+  return false
+}
+
+export function readCanonicalValue(currentForm, change) {
+  if (!currentForm || typeof currentForm !== 'object') return { found: false, value: undefined }
+  if (change.item_id == null && !change.client_item_id) {
+    return {
+      found: Object.hasOwn(currentForm, change.path),
+      value: currentForm[change.path],
+    }
+  }
+
+  const rows = change.section === 'goal_periods' || change.section === 'goal_milestones'
+    ? currentForm[change.section]
+    : currentForm.assets
+  if (!Array.isArray(rows)) return { found: false, value: undefined }
+  if (change.section === 'goal_periods' && change.path.startsWith('items[].')) {
+    const parent = rows.find((row) => canonicalIdentityMatches(row, change, 'parent_'))
+    const item = parent?.items?.find((row) => canonicalIdentityMatches(row, change))
+    const itemPath = change.path.slice('items[].'.length)
+    return {
+      found: Boolean(item && Object.hasOwn(item, itemPath)),
+      value: item?.[itemPath],
+    }
+  }
+  const item = rows.find((row) => canonicalIdentityMatches(row, change))
+  return {
+    found: Boolean(item && Object.hasOwn(item, change.path)),
+    value: item?.[change.path],
+  }
+}
+
 function uiValue(field, value) {
   if (field === 'is_fixed' && typeof value === 'boolean') return value ? '고정' : '변동'
   if (field === 'monthly_income' && typeof value === 'number') return value / 10000

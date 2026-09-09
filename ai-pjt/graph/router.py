@@ -97,7 +97,7 @@ def select_route(
             task_id=task_id,
             executor_kind="agent",
             executor=FALLBACK_AGENT,
-            reason_code="unsupported_task",
+            reason_code="plan_invalid",
         )
 
     candidates = step_candidates.get(step_id)
@@ -106,7 +106,7 @@ def select_route(
             task_id=task_id,
             executor_kind="agent",
             executor=FALLBACK_AGENT,
-            reason_code="unsupported_step",
+            reason_code="plan_invalid",
         )
 
     candidate_tuple = tuple(candidates)
@@ -117,7 +117,7 @@ def select_route(
             task_id=task_id,
             executor_kind="agent",
             executor=FALLBACK_AGENT,
-            reason_code="classifier_error",
+            reason_code="plan_invalid",
         )
 
     if not isinstance(classified, Mapping):
@@ -128,15 +128,15 @@ def select_route(
         chosen = classified.get("agent")
 
     if status not in CLASSIFIER_STATUSES:
-        reason_code = "classifier_error"
+        reason_code = "plan_invalid"
     elif status == "ambiguous":
         reason_code = "ambiguous_intent"
     elif status == "unsupported":
         reason_code = "unsupported_intent"
     elif not isinstance(chosen, str) or not chosen:
-        reason_code = "classifier_error"
+        reason_code = "plan_invalid"
     elif chosen not in candidate_tuple:
-        reason_code = "agent_not_allowed"
+        reason_code = "plan_invalid"
     else:
         return _decision(
             task_id=task_id,

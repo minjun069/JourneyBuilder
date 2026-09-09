@@ -112,6 +112,9 @@ class V2MessageCreateView(V2APIView):
                 message=body['content'],
                 step_id=body['step_id'],
                 form_data=body['form_data'],
+                request_mode=body.get('request_mode', 'chat'),
+                review_trigger=body.get('review_trigger'),
+                elicit_action=body.get('elicit_action'),
             )
             state = make_processing_state(
                 request_id=request_id,
@@ -253,6 +256,9 @@ class V2MessageStreamView(V2APIView):
                 message=body['content'],
                 step_id=body['step_id'],
                 form_data=body['form_data'],
+                request_mode=body.get('request_mode', 'chat'),
+                review_trigger=body.get('review_trigger'),
+                elicit_action=body.get('elicit_action'),
             )
             state = make_processing_state(
                 request_id=request_id,

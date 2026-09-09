@@ -78,7 +78,13 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   // frozen v2 기본 경로: 접수 후 3초 간격으로 최대 90초 polling
-  async function sendMessage(content, { stepId, form = null } = {}) {
+  async function sendMessage(content, {
+    stepId,
+    form = null,
+    requestMode = 'chat',
+    reviewTrigger = null,
+    elicitAction = null,
+  } = {}) {
     if (!sessionId.value) return null
     cancelActiveStream()
     const controller = new AbortController()
@@ -91,6 +97,9 @@ export const useAiStore = defineStore('ai', () => {
           content,
           step_id: stepId,
           form_data: mapCurrentForm(stepId, form ?? {}),
+          request_mode: requestMode,
+          ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
+          ...(elicitAction ? { elicit_action: elicitAction } : {}),
         },
         {
           idempotencyKey: createIdempotencyKey(),
@@ -150,7 +159,13 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   // 일반 AI 상담 기본 경로: v2 인증·멱등성 계약을 유지하며 SSE로 수신한다.
-  async function* streamMessageV2(content, { stepId, form = null } = {}) {
+  async function* streamMessageV2(content, {
+    stepId,
+    form = null,
+    requestMode = 'chat',
+    reviewTrigger = null,
+    elicitAction = null,
+  } = {}) {
     if (!sessionId.value) return
     cancelActiveStream()
     const controller = new AbortController()
@@ -163,6 +178,9 @@ export const useAiStore = defineStore('ai', () => {
           content,
           step_id: stepId,
           form_data: mapCurrentForm(stepId, form ?? {}),
+          request_mode: requestMode,
+          ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
+          ...(elicitAction ? { elicit_action: elicitAction } : {}),
         },
         {
           idempotencyKey: createIdempotencyKey(),
@@ -176,6 +194,15 @@ export const useAiStore = defineStore('ai', () => {
     } finally {
       if (activeStreamController === controller) activeStreamController = null
     }
+  }
+
+  function reviewForm(stepId, form, trigger = 'user_request') {
+    return sendMessage('현재 입력값을 검토해 주세요.', {
+      stepId,
+      form,
+      requestMode: 'error_review',
+      reviewTrigger: trigger,
+    })
   }
 
   function cancelActiveStream() {
@@ -318,7 +345,7 @@ export const useAiStore = defineStore('ai', () => {
     presentationData,
     loading, error,
     initSession, loadSessions, continueLatestSession,
-    loadMessages, sendMessage, streamMessage, streamMessageV2, cancelActiveStream,
+    loadMessages, sendMessage, streamMessage, streamMessageV2, reviewForm, cancelActiveStream,
     approveAction, rejectAction, approveChange, rejectChange,
     saveFormData, loadBasicInfo,
     fetchPresentationData,
