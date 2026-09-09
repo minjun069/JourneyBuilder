@@ -14,6 +14,8 @@ RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 COPY --chown=app:app ai-pjt/ .
 COPY --chown=app:app contract-fixtures/ai-lifecycle/v2/step-registry.json \
     ./contract-fixtures/ai-lifecycle/v2/step-registry.json
+COPY --chown=app:app contract-fixtures/financial-calculation/v1/policy.json \
+    ./contract-fixtures/financial-calculation/v1/policy.json
 
 USER app
 

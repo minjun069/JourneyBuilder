@@ -12,6 +12,8 @@ from .calculators import (
     calculate_retirement_fund,
     calculate_retirement_readiness,
 )
+from .policy import active_policy_version
+from .snapshots import calculation_input_digest
 
 
 # 동기 보고서 생성 — 자산현황표, 현금흐름표
@@ -86,9 +88,15 @@ def _build_report_content(report_type, session):
             retirement_fund.get('total_required_fund', 0)
             - retirement_readiness.get('total_retirement_assets', 0),
         )
-        return calculate_required_savings(
+        content = calculate_required_savings(
             session,
             total_shortfall,
         )
+        content.update({
+            'retirement_gap': total_shortfall,
+            'calculation_policy_version': active_policy_version(),
+            'input_snapshot_digest': calculation_input_digest(session),
+        })
+        return content
 
     raise ValueError(f'Unsupported report type: {report_type}')

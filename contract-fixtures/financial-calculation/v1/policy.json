@@ -1,0 +1,140 @@
+{
+  "schema_version": "1.0",
+  "policy_version": "2026-09-07.v1",
+  "status": "approved",
+  "approved_at": "2026-09-07",
+  "valid_from": "2026-09-07",
+  "valid_until": null,
+  "country": "KR",
+  "sources": [
+    {
+      "source_id": "retirewise-planning-assumptions-2026",
+      "publisher": "S15P21B109",
+      "source_version": "1.0.0",
+      "as_of": "2026-09-07",
+      "license": "project-authored factual summary"
+    },
+    {
+      "source_id": "retirewise-household-financial-indicator-policy",
+      "publisher": "S15P21B109",
+      "source_version": "1.1.0",
+      "as_of": "2026-09-07",
+      "license": "project-authored internal policy"
+    },
+    {
+      "source_id": "nps-old-age-pension-eligibility",
+      "publisher": "국민연금공단",
+      "source_version": "2.0.0",
+      "as_of": "2026-09-07",
+      "license": "facts only"
+    }
+  ],
+  "assumptions": {
+    "inflation_rate": 0.02,
+    "conservative_inflation_rate": 0.03,
+    "financial_return_rate": 0.04,
+    "aggressive_financial_return_rate": 0.05,
+    "real_estate_growth_rate": 0.02,
+    "real_estate_appreciation_rate": 0.02,
+    "wage_growth_rate": 0.03,
+    "rent_growth_rate": 0.02,
+    "vacancy_rate": 0.05,
+    "plan_end_age": 100
+  },
+  "national_pension": {
+    "a_value_monthly_krw": 3193511,
+    "formula_constant": 1.29,
+    "premium_rate": 0.095,
+    "standard_monthly_income_min_krw": 410000,
+    "standard_monthly_income_max_krw": 6590000,
+    "standard_income_period": "2026-07/2027-06",
+    "contribution_months_policy": "user_input_required",
+    "normal_start_age_by_birth_year": [
+      {"birth_year_max": 1952, "age": 60},
+      {"birth_year_min": 1953, "birth_year_max": 1956, "age": 61},
+      {"birth_year_min": 1957, "birth_year_max": 1960, "age": 62},
+      {"birth_year_min": 1961, "birth_year_max": 1964, "age": 63},
+      {"birth_year_min": 1965, "birth_year_max": 1968, "age": 64},
+      {"birth_year_min": 1969, "age": 65}
+    ],
+    "early_adjustment_per_month": -0.005,
+    "delayed_adjustment_per_month": 0.006,
+    "unapproved_public_pension_correction": null
+  },
+  "indicators": {
+    "household_balance": {
+      "formula": "total_expense / total_income * 100",
+      "numerator": "total_expense",
+      "denominator": "total_income",
+      "unit": "percent",
+      "undefined_when": ["total_income_missing", "total_income_zero"]
+    },
+    "total_savings_propensity": {
+      "formula": "total_savings / total_income * 100",
+      "numerator": "total_savings",
+      "denominator": "total_income",
+      "unit": "percent",
+      "undefined_when": ["total_income_missing", "total_income_zero"]
+    },
+    "emergency_reserve": {
+      "formula": "liquid_assets / total_expense",
+      "numerator": "liquid_assets",
+      "denominator": "total_expense",
+      "unit": "months",
+      "undefined_when": ["total_expense_missing", "total_expense_zero"]
+    },
+    "debt_service_ratio": {
+      "formula": "debt_repayment / total_income * 100",
+      "numerator": "debt_repayment",
+      "denominator": "total_income",
+      "unit": "percent",
+      "undefined_when": ["total_income_missing", "total_income_zero"]
+    },
+    "retirement_savings": {
+      "formula": "retirement_savings / total_savings * 100",
+      "numerator": "retirement_savings",
+      "denominator": "total_savings",
+      "unit": "percent",
+      "undefined_when": ["total_savings_missing", "total_savings_zero"]
+    },
+    "insurance_preparation": {
+      "formula": "protection_insurance_expense / total_income * 100",
+      "numerator": "protection_insurance_expense",
+      "denominator": "total_income",
+      "unit": "percent",
+      "undefined_when": ["total_income_missing", "total_income_zero"]
+    },
+    "financial_asset_ratio": {
+      "formula": "financial_assets / total_assets * 100",
+      "numerator": "financial_assets",
+      "denominator": "total_assets",
+      "unit": "percent",
+      "undefined_when": ["total_assets_missing", "total_assets_zero"]
+    }
+  },
+  "reference_values": [
+    {"reference_id": "household_balance_max", "age_min": 20, "age_max": 29, "value": 50, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "lte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "household_balance_max", "age_min": 30, "age_max": 39, "value": 70, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "lte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "household_balance_max", "age_min": 40, "age_max": 49, "value": 80, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "lte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "household_balance_max", "age_min": 50, "age_max": 59, "value": 90, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "lte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "household_balance_max", "age_min": 60, "age_max": null, "value": 95, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "lte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "emergency_reserve_min", "age_min": 20, "age_max": 29, "value": 2, "unit": "months", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "emergency_reserve_min", "age_min": 30, "age_max": 39, "value": 3, "unit": "months", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "emergency_reserve_min", "age_min": 40, "age_max": 49, "value": 4, "unit": "months", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "emergency_reserve_min", "age_min": 50, "age_max": 59, "value": 5, "unit": "months", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "emergency_reserve_min", "age_min": 60, "age_max": null, "value": 6, "unit": "months", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "debt_service_ratio_max", "age_min": 20, "age_max": 49, "value": 25, "unit": "percent", "period": "annual", "population": "retirewise_kr_households", "comparator": "lt", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "debt_service_ratio_max", "age_min": 50, "age_max": 59, "value": 20, "unit": "percent", "period": "annual", "population": "retirewise_kr_households", "comparator": "lt", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "debt_service_ratio_max", "age_min": 60, "age_max": 64, "value": 10, "unit": "percent", "period": "annual", "population": "retirewise_kr_households", "comparator": "lt", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "debt_service_ratio_max", "age_min": 65, "age_max": null, "value": 0, "unit": "percent", "period": "annual", "population": "retirewise_kr_households", "comparator": "eq", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "total_savings_propensity_min", "age_min": 20, "age_max": 29, "value": 50, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "total_savings_propensity_min", "age_min": 30, "age_max": 39, "value": 30, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "total_savings_propensity_min", "age_min": 40, "age_max": 49, "value": 20, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "total_savings_propensity_min", "age_min": 50, "age_max": 59, "value": 10, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "total_savings_propensity_min", "age_min": 60, "age_max": null, "value": 5, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "retirement_savings_share_min", "age_min": 20, "age_max": null, "value": 50, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "financial_asset_ratio_min", "age_min": 20, "age_max": null, "value": 40, "unit": "percent", "period": "current", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "insurance_preparation_range_min", "age_min": 20, "age_max": null, "value": 8, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "insurance_preparation_range_max", "age_min": 20, "age_max": null, "value": 10, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "lte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"}
+  ]
+}

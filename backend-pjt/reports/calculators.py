@@ -2,6 +2,11 @@ from datetime import timedelta
 from django.utils import timezone
 import re
 
+from .policy import active_policy_version, load_financial_policy
+
+
+CALCULATION_POLICY = load_financial_policy()
+
 ASSUMPTION_SOURCES = {
     'inflation_rate': {
         'label': '한국은행 물가안정목표',
@@ -13,26 +18,14 @@ ASSUMPTION_SOURCES = {
     },
 }
 
-DEFAULT_ASSUMPTIONS = {
-    'inflation_rate': 0.02,
-    'conservative_inflation_rate': 0.026,
-    'financial_return_rate': 0.04,
-    'aggressive_financial_return_rate': 0.05,
-    'real_estate_growth_rate': 0.02,
-    'real_estate_appreciation_rate': 0.03,
-    'wage_growth_rate': 0.03,
-    'rent_growth_rate': 0.02,
-    'vacancy_rate': 0.05,
-}
+DEFAULT_ASSUMPTIONS = dict(CALCULATION_POLICY['assumptions'])
 
 PENSION_ASSUMPTIONS = {
-    'a_value': 3193511,
-    'formula_constant': 1.29,
-    'premium_rate': 0.095,
-    'min_income': 390000,
-    'max_income': 6170000,
-    'normal_start_age': 65,
-    'assumed_start_age': 28,
+    'a_value': CALCULATION_POLICY['national_pension']['a_value_monthly_krw'],
+    'formula_constant': CALCULATION_POLICY['national_pension']['formula_constant'],
+    'premium_rate': CALCULATION_POLICY['national_pension']['premium_rate'],
+    'min_income': CALCULATION_POLICY['national_pension']['standard_monthly_income_min_krw'],
+    'max_income': CALCULATION_POLICY['national_pension']['standard_monthly_income_max_krw'],
 }
 
 # 자산현황표
@@ -371,34 +364,27 @@ def calculate_financial_indicators(session, asset_data, cash_flow_data):
     asset_cats = asset_data['asset_categories']
 
     # 1. 가계수지지표 = (총지출 ÷ 총소득) × 100
-    household_balance_indicator = _ratio(total_expense, total_income)
+    household_balance_indicator = _ratio_or_none(total_expense, total_income)
 
-    # 2. 총저축성향지표 = (연간 저축액 / 연간 가처분소득) * 100
-    # 비소비지출(세금, 4대보험 등) 계산
+    # 비소비지출은 상세 표시에만 유지한다. 승인 산식의 분모는 총소득이다.
     non_consumption_expense = sum(
         _to_int(expense.amount)
         for expense in session.expenses.all()
         if _contains_any((expense.name or '').lower(), NON_CONSUMPTION_KEYWORDS)
     )
     disposable_income = max(0, total_income - non_consumption_expense)
-    
+
     total_savings = outflow['savings']['total'] + outflow['investments']['total']
-    total_savings_propensity = _ratio(total_savings, disposable_income)
+    total_savings_propensity = _ratio_or_none(total_savings, total_income)
 
     # 3. 비상예비금지표 = 유동성 자산 / 월평균 지출
     # 유동성 자산은 현금/저축성 자산으로 산정
     liquid_assets = asset_cats['cash_savings']['total']
     
-    # 월평균 지출 (일반적으로 저축/투자를 제외한 순수 소비+부채상환을 의미)
-    monthly_consumption_and_debt = (
-        outflow['fixed_consumption']['total'] + 
-        outflow['variable_consumption']['total'] + 
-        outflow['debt_repayment']['total']
-    )
-    # 지표 값은 배수(개월 수)로 표현 (예: 3.5개월치)
+    # 승인 산식은 현금흐름표의 총지출을 분모로 사용한다.
     emergency_reserve_indicator = (
-        round(liquid_assets / monthly_consumption_and_debt, 2) 
-        if monthly_consumption_and_debt > 0 else 0
+        round(liquid_assets / total_expense, 2)
+        if total_expense > 0 else None
     )
 
     # 4. 보장성보험준비지표 = (월 보장성 보험료 합계 / 월 총소득) * 100
@@ -409,18 +395,24 @@ def calculate_financial_indicators(session, asset_data, cash_flow_data):
         if _contains_any((expense.name or '').lower(), PROTECTION_INSURANCE_KEYWORDS)
         and not _contains_any((expense.name or '').lower(), NON_CONSUMPTION_KEYWORDS)
     )
-    insurance_preparation_indicator = _ratio(protection_insurance_expense, total_income)
+    insurance_preparation_indicator = _ratio_or_none(
+        protection_insurance_expense,
+        total_income,
+    )
 
     # 5. 총부채상환지표 (DSR) = 1년간 갚아야 하는 대출 원금&이자 / 연간 소득
     debt_repayment = outflow['debt_repayment']['total']
-    dsr_indicator = _ratio(debt_repayment, total_income)
+    dsr_indicator = _ratio_or_none(debt_repayment, total_income)
 
     # 6. 금융자산비중지표 = (금융자산 / 총자산) * 100
     # 투자 및 유동성 자산 합계 (실물자산, 부동산 제외)
     pure_financial_assets = asset_cats['cash_savings']['total'] + asset_cats['investment_assets']['total']
-    financial_asset_ratio = _ratio(pure_financial_assets, asset_data['total_assets'])
+    financial_asset_ratio = _ratio_or_none(
+        pure_financial_assets,
+        asset_data['total_assets'],
+    )
 
-    # 7. 노후대비저축지표 = 노후 월 부족액 대비 현재 연금 월 납입액
+    # 7. 노후대비저축지표 = 노후대비저축 ÷ 총저축
     required_retirement_living_expense = _average_monthly_retirement_expense(session)
     expected_public_pension = _public_pension_monthly(session)
     monthly_shortfall = max(0, required_retirement_living_expense - expected_public_pension)
@@ -431,11 +423,7 @@ def calculate_financial_indicators(session, asset_data, cash_flow_data):
         for asset in session.pension_assets.all()
     )
     
-    # 부족 금액 대비 현재 준비(저축)하고 있는 금액의 비율
-    if monthly_shortfall > 0:
-        retirement_savings_indicator = _ratio(pension_savings, monthly_shortfall)
-    else:
-        retirement_savings_indicator = 100.0 if required_retirement_living_expense > 0 else 0.0
+    retirement_savings_indicator = _ratio_or_none(pension_savings, total_savings)
 
     return {
         'assumptions': _assumptions_payload(),
@@ -451,7 +439,8 @@ def calculate_financial_indicators(session, asset_data, cash_flow_data):
         '_details': {
             'disposable_income': disposable_income,
             'liquid_assets': liquid_assets,
-            'monthly_consumption_and_debt': monthly_consumption_and_debt,
+            'total_expense': total_expense,
+            'total_savings': total_savings,
             'protection_insurance_expense': protection_insurance_expense,
             'pure_financial_assets': pure_financial_assets,
             'required_retirement_living_expense': required_retirement_living_expense,
@@ -473,7 +462,7 @@ def calculate_financial_goal_result(session, inflation_rate=None):
     inflation_rate = _resolve_rate(inflation_rate, 'inflation_rate')
     current_age = basic_info.age or 30
     retirement_age = basic_info.retirement_age or 60
-    end_age = basic_info.end_age or 100
+    end_age = basic_info.end_age or DEFAULT_ASSUMPTIONS['plan_end_age']
 
     # 물가상승률이 반영된 미래가치(FV) 계산 헬퍼 함수
     def _get_fv(amount, target_age):
@@ -579,7 +568,7 @@ def calculate_retirement_fund(session, inflation_rate=None):
     inflation_rate = _resolve_rate(inflation_rate, 'inflation_rate')
     current_age = basic_info.age or 30
     retirement_age = basic_info.retirement_age or 60
-    end_age = basic_info.end_age or 100
+    end_age = basic_info.end_age or DEFAULT_ASSUMPTIONS['plan_end_age']
 
     # 1. 은퇴 준비기간 및 은퇴 기간
     prep_period_years = max(0, retirement_age - current_age)
@@ -707,14 +696,6 @@ def calculate_retirement_readiness(
         fv_pmt = pmt_annual * (((1 + rate) ** years - 1) / rate)
         return int(fv_pv + fv_pmt)
 
-    # 2. 공적연금 보정률 산출 (비관적이지 않게 상향 조정)
-    def _get_pension_correction_rate(age):
-        if age >= 50: return 0.98   # 50대: 95~100%
-        elif age >= 40: return 0.90 # 40대: 85~95%
-        else: return 0.85           # 30대 이하: 75~90%
-
-    correction_rate = _get_pension_correction_rate(current_age)
-
     # 나이별 자산 구성 변화 추이 (그래프용 데이터)
     yearly_projections = []
     
@@ -763,7 +744,7 @@ def calculate_retirement_readiness(
     
     # [공적연금] (월 수령액 기준 보정)
     public_pension_monthly = sum(
-        _to_int(asset.expected_amount) * correction_rate
+        _to_int(asset.expected_amount)
         for asset in session.pension_assets.all()
         if '국민' in (asset.type or '') or '공무원' in (asset.type or '')
     )
@@ -809,12 +790,10 @@ def calculate_retirement_readiness(
             wage_growth_rate=income_growth_rate,
             rent_growth_rate=rent_increase_rate,
             vacancy_rate=vacancy_rate,
-            public_pension_correction=correction_rate,
         ),
         'rates_applied': {
             'financial_return': fin_return_rate,
             'real_estate_appreciation': re_appreciation_rate,
-            'public_pension_correction': correction_rate
         },
         'current_composition': {
             'financial': yearly_projections[0]['financial'] if yearly_projections else 0,
@@ -864,11 +843,16 @@ def calculate_pension_schedule(session, inflation_rate=None):
     # B값: 사용자의 현재 소득을 상/하한선 내로 보정
     B_VALUE = max(MIN_INCOME, min(income, MAX_INCOME)) if income > 0 else 0
 
-    # 2. 가입 기간 및 지급률 계산
-    # 실제 환경에서는 PensionAsset의 국민연금 납입 기간을 가져와야 하나,
-    # 없으면 임의로 28세부터 은퇴 시점까지 납입한다고 가정
-    assumed_start_age = PENSION_ASSUMPTIONS['assumed_start_age']
-    total_months = max(0, (retirement_age - assumed_start_age) * 12)
+    # 가입 기간은 사용자 입력만 사용하며 임의 가입 시작 연령을 만들지 않는다.
+    public_pension = next(
+        (asset for asset in session.pension_assets.all() if _is_public_pension(asset)),
+        None,
+    )
+    total_months = (
+        max(0, _to_int(public_pension.payment_period_years) * 12)
+        if public_pension is not None and public_pension.payment_period_years
+        else 0
+    )
     
     # 20년(240개월) 초과 가입월수 (n)
     n = max(0, total_months - 240)
@@ -884,9 +868,8 @@ def calculate_pension_schedule(session, inflation_rate=None):
     # 기본연금액 추정 (연간 금액) = 1.29 * (A + B) * (1 + 0.05n/12)
     base_pension_annual = CONSTANT * (A_VALUE + B_VALUE) * (1 + 0.05 * (n / 12))
 
-    # 지급개시연령 (일반적으로 65세)
-    normal_start_age = PENSION_ASSUMPTIONS['normal_start_age']
-    expected_start_age = _public_pension_start_age(session) or 65
+    normal_start_age = _normal_public_pension_start_age(current_age)
+    expected_start_age = _public_pension_start_age(session) or normal_start_age
 
     # 조기/연기 수급에 따른 가감률 계산
     # 조기: 1개월당 -0.5% / 연기: 1개월당 +0.6%
@@ -894,9 +877,13 @@ def calculate_pension_schedule(session, inflation_rate=None):
     adjustment_rate = 0.0
 
     if diff_months < 0:
-        adjustment_rate = diff_months * 0.005 # 음수이므로 자동 감액 (-)
+        adjustment_rate = diff_months * abs(
+            CALCULATION_POLICY['national_pension']['early_adjustment_per_month']
+        )
     elif diff_months > 0:
-        adjustment_rate = diff_months * 0.006 # 양수이므로 자동 가산 (+)
+        adjustment_rate = diff_months * CALCULATION_POLICY[
+            'national_pension'
+        ]['delayed_adjustment_per_month']
 
     # 조기/연기 반영 후 금액. base_pension_annual 산식에 가입기간 보정이 이미 반영되어
     # payment_rate를 다시 곱하지 않는다.
@@ -914,10 +901,10 @@ def calculate_pension_schedule(session, inflation_rate=None):
     else:
         final_annual_est = adjusted_annual + dependent_pension_annual
         final_monthly_est = final_annual_est / 12 if final_annual_est > 0 else 0
-        estimate_method = 'simple_formula'
+        estimate_method = 'simple_formula' if total_months else 'unavailable'
 
     # 4. 연도별 국민연금 스케줄 (물가 연동 그래프용)
-    end_age = basic_info.end_age or 100
+    end_age = basic_info.end_age or DEFAULT_ASSUMPTIONS['plan_end_age']
     schedule = []
     
     current_year = timezone.now().year if timezone.now() else 2024
@@ -1245,6 +1232,19 @@ def _public_pension_start_age(session):
     return public_pension.pension_start_age if public_pension else None
 
 
+def _normal_public_pension_start_age(current_age):
+    birth_year = timezone.now().year - _to_int(current_age)
+    for bracket in CALCULATION_POLICY['national_pension']['normal_start_age_by_birth_year']:
+        minimum = bracket.get('birth_year_min')
+        maximum = bracket.get('birth_year_max')
+        if minimum is not None and birth_year < minimum:
+            continue
+        if maximum is not None and birth_year > maximum:
+            continue
+        return bracket['age']
+    raise ValueError('국민연금 지급개시연령 정책 구간을 찾지 못했습니다.')
+
+
 def _is_public_pension(asset):
     pension_type = (asset.type or '')
     return '국민' in pension_type or '공무원' in pension_type
@@ -1268,6 +1268,7 @@ def _assumptions_payload(**overrides):
     return {
         **DEFAULT_ASSUMPTIONS,
         **overrides,
+        'calculation_policy_version': active_policy_version(),
         'sources': ASSUMPTION_SOURCES,
     }
 
@@ -1283,6 +1284,10 @@ def _attach_ratios(categories, total):
 
 def _ratio(value, total):
     return round(value / total * 100, 1) if total else 0
+
+
+def _ratio_or_none(value, total):
+    return round(value / total * 100, 1) if total else None
 
 
 def _to_int(value):

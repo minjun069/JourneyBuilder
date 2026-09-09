@@ -59,7 +59,7 @@ test:foundation:
 test:backend:
   stage: test
   script:
-    - docker build -q -t ci-backend:$CI_COMMIT_SHORT_SHA backend-pjt
+    - docker build -q -f backend-pjt/Dockerfile -t ci-backend:$CI_COMMIT_SHORT_SHA .
     - >
       docker run --rm
       -v "$CI_PROJECT_DIR:/src:ro" -w /src/backend-pjt

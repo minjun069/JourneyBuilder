@@ -59,7 +59,8 @@ services:
 
   migrate:
     build:
-      context: ./backend-pjt
+      context: .
+      dockerfile: backend-pjt/Dockerfile
     command: ["python", "manage.py", "migrate", "--noinput"]
     environment: *backend-environment
     depends_on:
@@ -71,7 +72,8 @@ services:
 
   backend:
     build:
-      context: ./backend-pjt
+      context: .
+      dockerfile: backend-pjt/Dockerfile
     environment: *backend-environment
     depends_on:
       postgres:
