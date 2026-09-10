@@ -78,6 +78,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(rules, [
             "include README.md pyproject.toml MANIFEST.in",
             "include tests/__init__.py tests/test_*.py",
+            "include tests/run_installation_checks.py tests/installed/check_package.py",
             "include docs/*.md docs/analysis-performance-results.json",
             "prune build",
             "prune dist",
