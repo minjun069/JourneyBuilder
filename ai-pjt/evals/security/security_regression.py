@@ -1,8 +1,8 @@
-"""Validate the P14 foundation suite against a mock-only policy boundary.
+"""Run the promoted F13 corpus against its declared deterministic evaluator.
 
-This module deliberately does not import production Agent, RAG, tool, or callback
-code.  It prepares deterministic attack inputs and expected decisions so each
-F13 can bind the same cases after its production guardrail boundary is available.
+The original P14 cases keep their synthetic inputs and mock evaluator. Routed
+plan cases bind the same corpus to the F13-T01 guardrail core without invoking
+an Agent, tool, model, callback, or production graph.
 """
 
 from __future__ import annotations
@@ -11,12 +11,21 @@ import argparse
 import copy
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = "security-regression-v1"
+AI_ROOT = Path(__file__).resolve().parents[2]
+if str(AI_ROOT) not in sys.path:
+    sys.path.insert(0, str(AI_ROOT))
+
+from core.step_registry import load_step_candidates  # noqa: E402
+from guardrails.plan_policy import evaluate_route_plan  # noqa: E402
+
+
+SCHEMA_VERSION = "security-regression-v2"
 SUITE_PATH = Path(__file__).with_name("cases.json")
 
 SUPPORTED_CATEGORIES = {
@@ -29,6 +38,10 @@ SUPPORTED_CATEGORIES = {
     "resource_abuse",
     "financial_overclaim",
     "obfuscated_bypass",
+    "plan_integrity",
+    "dependency_integrity",
+    "binding_integrity",
+    "route_authorization",
 }
 SUPPORTED_DECISIONS = {"allow", "block"}
 SUPPORTED_SEVERITIES = {"critical", "high", "medium", "low"}
@@ -41,9 +54,17 @@ SUPPORTED_SURFACES = {
     "callback",
     "runtime_limits",
     "model_output",
+    "route_plan",
+}
+SUPPORTED_INPUT_KINDS = {"security_signals", "route_plan"}
+SUPPORTED_EVALUATORS = {"mock_policy", "plan_guardrail"}
+EVALUATOR_INPUT_KINDS = {
+    "mock_policy": "security_signals",
+    "plan_guardrail": "route_plan",
 }
 VERSION_KEYS = {"dataset", "model", "prompt", "document", "index", "tool"}
 CASE_ID_PATTERN = re.compile(r"^SEC-[A-Z]+-\d{3}$")
+COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHARED_DOC_SOURCE_PATTERN = re.compile(r"^shared-docs:[^#]+\.md#[^#]+$")
 
 
@@ -84,10 +105,22 @@ def validate_suite(suite: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if suite.get("schema_version") != SCHEMA_VERSION:
         errors.append(f"schema_version must be {SCHEMA_VERSION!r}")
-    if suite.get("execution_scope") != "mock-only":
-        errors.append("execution_scope must be 'mock-only' for P14 preparation")
-    if suite.get("production_binding") != "out-of-scope":
-        errors.append("production_binding must remain 'out-of-scope'")
+    if suite.get("suite_id") != "AI-F13-T01":
+        errors.append("suite_id must be 'AI-F13-T01'")
+    if suite.get("foundation_suite_id") != "AI-P14-D13":
+        errors.append("foundation_suite_id must preserve 'AI-P14-D13'")
+    baseline_commit = suite.get("baseline_commit")
+    if (
+        not isinstance(baseline_commit, str)
+        or COMMIT_PATTERN.fullmatch(baseline_commit) is None
+    ):
+        errors.append("baseline_commit must be a 40-character lowercase commit SHA")
+    if suite.get("execution_scope") != "mock-and-deterministic-core":
+        errors.append(
+            "execution_scope must be 'mock-and-deterministic-core' for F13-T01"
+        )
+    if suite.get("production_binding") != "guardrail-core-only":
+        errors.append("production_binding must remain 'guardrail-core-only'")
     if suite.get("synthetic_data_only") is not True:
         errors.append("synthetic_data_only must be true")
     for source_name in ("policy_source", "requirements_source"):
@@ -160,11 +193,41 @@ def validate_suite(suite: dict[str, Any]) -> list[str]:
         if severity not in SUPPORTED_SEVERITIES:
             errors.append(f"{prefix}.severity is unsupported: {severity!r}")
 
+        input_kind = case.get("input_kind")
+        if input_kind not in SUPPORTED_INPUT_KINDS:
+            errors.append(f"{prefix}.input_kind is unsupported: {input_kind!r}")
+        evaluator = case.get("evaluator")
+        if evaluator not in SUPPORTED_EVALUATORS:
+            errors.append(f"{prefix}.evaluator is unsupported: {evaluator!r}")
+        elif input_kind in SUPPORTED_INPUT_KINDS and (
+            EVALUATOR_INPUT_KINDS[evaluator] != input_kind
+        ):
+            errors.append(
+                f"{prefix}.evaluator {evaluator!r} does not accept "
+                f"input_kind {input_kind!r}"
+            )
+
         case_input = case.get("input")
         if not isinstance(case_input, dict):
             errors.append(f"{prefix}.input must be an object")
-        elif not isinstance(case_input.get("signals"), dict):
-            errors.append(f"{prefix}.input.signals must be an object")
+        elif input_kind == "security_signals":
+            if not isinstance(case_input.get("signals"), dict):
+                errors.append(f"{prefix}.input.signals must be an object")
+        elif input_kind == "route_plan":
+            if not isinstance(case_input.get("payload"), dict):
+                errors.append(f"{prefix}.input.payload must be a RoutePlan object")
+            if not isinstance(case_input.get("step_id"), str) or not case_input[
+                "step_id"
+            ].strip():
+                errors.append(f"{prefix}.input.step_id must be a non-empty string")
+            capabilities = case_input.get("registered_tool_capabilities", [])
+            if not isinstance(capabilities, list) or not all(
+                isinstance(capability, str) and capability
+                for capability in capabilities
+            ):
+                errors.append(
+                    f"{prefix}.input.registered_tool_capabilities must be strings"
+                )
 
         expected = case.get("expected")
         if not isinstance(expected, dict):
@@ -372,13 +435,46 @@ class MockPolicyOracle:
         return Decision("allow", "USER_REQUEST_ALLOWED", ("answer_current_request",))
 
 
+class PlanGuardrailEvaluator:
+    """Adapt a RoutePlan corpus case to the deterministic F13-T01 core."""
+
+    def __init__(self) -> None:
+        self._step_candidates = load_step_candidates()
+
+    def evaluate(self, case: dict[str, Any]) -> Decision:
+        case_input = case["input"]
+        result = evaluate_route_plan(
+            copy.deepcopy(case_input["payload"]),
+            step_id=case_input["step_id"],
+            step_candidates=self._step_candidates,
+            registered_tool_capabilities=tuple(
+                case_input.get("registered_tool_capabilities", ())
+            ),
+        )
+        effects = (
+            ("execute_validated_plan",)
+            if result.allowed
+            else ("deny_plan_execution", "audit_security_event")
+        )
+        return Decision(result.decision, result.reason_code, effects)
+
+
 def run_suite(
-    suite: dict[str, Any], oracle: MockPolicyOracle | None = None
+    suite: dict[str, Any],
+    evaluators: dict[str, Any] | None = None,
 ) -> list[CaseResult]:
-    oracle = oracle or MockPolicyOracle()
+    active_evaluators = (
+        {
+            "mock_policy": MockPolicyOracle(),
+            "plan_guardrail": PlanGuardrailEvaluator(),
+        }
+        if evaluators is None
+        else evaluators
+    )
     results: list[CaseResult] = []
     for case in suite["cases"]:
-        actual = oracle.evaluate(copy.deepcopy(case))
+        evaluator = active_evaluators[case["evaluator"]]
+        actual = evaluator.evaluate(copy.deepcopy(case))
         expected = case["expected"]
         failures: list[str] = []
         if actual.decision != expected["decision"]:
@@ -444,7 +540,10 @@ def main() -> int:
             json.dumps(
                 {
                     "schema_version": suite["schema_version"],
+                    "suite_id": suite["suite_id"],
+                    "foundation_suite_id": suite["foundation_suite_id"],
                     "execution_scope": suite["execution_scope"],
+                    "production_binding": suite["production_binding"],
                     "versions": suite["versions"],
                     "summary": {
                         "total": len(results),

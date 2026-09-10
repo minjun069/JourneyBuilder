@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -16,6 +18,38 @@ from security_regression import (
     load_suite,
     run_suite,
     validate_suite,
+)
+
+
+P14_CASE_IDS = {
+    "SEC-DPI-001",
+    "SEC-DPI-002",
+    "SEC-CTX-001",
+    "SEC-CTX-002",
+    "SEC-RAG-001",
+    "SEC-RAG-002",
+    "SEC-TOL-001",
+    "SEC-TOL-002",
+    "SEC-TOL-003",
+    "SEC-TOL-004",
+    "SEC-APR-001",
+    "SEC-APR-002",
+    "SEC-CBK-001",
+    "SEC-CBK-002",
+    "SEC-CBK-003",
+    "SEC-CBK-004",
+    "SEC-CBK-005",
+    "SEC-RES-001",
+    "SEC-RES-002",
+    "SEC-FIN-001",
+    "SEC-FIN-002",
+    "SEC-OBF-001",
+    "SEC-OBF-002",
+    "SEC-OBF-003",
+    "SEC-OBF-004",
+}
+P14_ID_INPUT_EXPECTED_SHA256 = (
+    "83e39291a031b49c2661dc0f1968ab20a52d60288647dc297d4c7557c95038b7"
 )
 
 
@@ -40,7 +74,47 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
             all(count > 0 for decisions in coverage.values() for count in decisions.values())
         )
 
-    def test_mock_oracle_matches_every_expected_decision(self) -> None:
+    def test_promoted_p14_cases_and_route_plan_dispatch_are_explicit(self) -> None:
+        foundation_cases = {
+            case["id"]: case
+            for case in self.suite["cases"]
+            if case["id"] in P14_CASE_IDS
+        }
+        self.assertEqual(set(foundation_cases), P14_CASE_IDS)
+        self.assertTrue(all(
+            case["input_kind"] == "security_signals"
+            and case["evaluator"] == "mock_policy"
+            for case in foundation_cases.values()
+        ))
+        preserved_contract = [
+            {
+                "id": case["id"],
+                "input": case["input"],
+                "expected": case["expected"],
+            }
+            for case in self.suite["cases"]
+            if case["id"] in P14_CASE_IDS
+        ]
+        digest = hashlib.sha256(json.dumps(
+            preserved_contract,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()).hexdigest()
+        self.assertEqual(digest, P14_ID_INPUT_EXPECTED_SHA256)
+
+        route_cases = [
+            case
+            for case in self.suite["cases"]
+            if case["input_kind"] == "route_plan"
+        ]
+        self.assertTrue(route_cases)
+        self.assertTrue(all(
+            case["evaluator"] == "plan_guardrail"
+            for case in route_cases
+        ))
+
+    def test_declared_evaluators_match_every_expected_decision(self) -> None:
         results = run_suite(self.suite)
 
         failures = {
@@ -105,6 +179,18 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
         errors = validate_suite(mutated)
 
         self.assertIn(f"duplicate case id: {mutated['cases'][0]['id']}", errors)
+
+    def test_validator_rejects_evaluator_input_kind_mismatch(self) -> None:
+        mutated = copy.deepcopy(self.suite)
+        mutated["cases"][0]["evaluator"] = "plan_guardrail"
+
+        errors = validate_suite(mutated)
+
+        self.assertIn(
+            "cases[0].evaluator 'plan_guardrail' does not accept "
+            "input_kind 'security_signals'",
+            errors,
+        )
 
     def test_runner_detects_expected_decision_drift(self) -> None:
         mutated = copy.deepcopy(self.suite)
