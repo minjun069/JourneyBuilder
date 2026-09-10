@@ -59,6 +59,7 @@ docker-compose.override.yml
 
 # PostgreSQL local volume/data
 postgres_data/
+/ai-pjt/rag/.local/
 
 # =========================
 # Kafka

@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -187,7 +188,9 @@ class PipelineTestCase(unittest.TestCase):
         manifest = self.pipeline.build(
             documents, IndexTarget("synthetic_financial", "v1")
         )
-        retriever = IndexedRetriever(store=self.store, embedding=self.embedding)
+        retriever = IndexedRetriever(
+            store=self.store, embedding=self.embedding, minimum_dense_score=0.0
+        )
         failing = evaluate_retriever(
             retriever=retriever,
             manifest=manifest,
@@ -238,6 +241,54 @@ class PipelineTestCase(unittest.TestCase):
             v2.physical_collection,
         )
         self.assertTrue(self.store.list_chunks(v1.physical_collection))
+
+    def test_multi_collection_promotion_is_all_or_nothing(self) -> None:
+        first_manifest = self.pipeline.build(
+            [
+                make_document(
+                    "first", "첫 번째 승인 근거", collection="synthetic_first"
+                )
+            ],
+            IndexTarget("synthetic_first", "v1"),
+        )
+        second_manifest = self.pipeline.build(
+            [
+                make_document(
+                    "second", "두 번째 승인 근거", collection="synthetic_second"
+                )
+            ],
+            IndexTarget("synthetic_second", "v1"),
+        )
+        retriever = IndexedRetriever(
+            store=self.store, embedding=self.embedding, minimum_dense_score=0.0
+        )
+        first_report = evaluate_retriever(
+            retriever=retriever,
+            manifest=first_manifest,
+            gold_queries=[GoldQuery("first", "첫 번째 근거", ("first",))],
+            top_k=1,
+        )
+        second_report = replace(
+            evaluate_retriever(
+                retriever=retriever,
+                manifest=second_manifest,
+                gold_queries=[GoldQuery("second", "두 번째 근거", ("second",))],
+                top_k=1,
+            ),
+            passed=False,
+        )
+
+        self.assertTrue(first_report.passed)
+        self.assertFalse(second_report.passed)
+        with self.assertRaisesRegex(ValueError, "did not pass"):
+            self.pipeline.promote_many(
+                [
+                    (first_manifest, first_report),
+                    (second_manifest, second_report),
+                ]
+            )
+        self.assertIsNone(self.store.active_collection("synthetic_first"))
+        self.assertIsNone(self.store.active_collection("synthetic_second"))
 
     def test_active_version_is_immutable_but_identical_rebuild_is_noop(self) -> None:
         documents = [make_document("pension", "퇴직연금 안내")]
@@ -352,13 +403,13 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
             interface = json.loads(
                 (
                     Path(directory)
-                    / "interface-guides__catalog-2-1-0-report.json"
+                    / "interface-guides__experiment-catalog-2-1-0-report.json"
                 ).read_text(encoding="utf-8")
             )
             financial = json.loads(
                 (
                     Path(directory)
-                    / "financial-knowledge__catalog-2-1-0-report.json"
+                    / "financial-knowledge__experiment-catalog-2-1-0-report.json"
                 ).read_text(encoding="utf-8")
             )
             self.assertEqual(interface["evaluation"]["query_count"], 20)
@@ -367,7 +418,7 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
             self.assertTrue(financial["evaluation"]["passed"])
             self.assertEqual(financial["evaluation"]["false_evidence_count"], 0)
 
-    def test_financial_operational_promotion_requires_calculator_confirmation(self) -> None:
+    def test_official_qualification_requires_rag_owner_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             errors = io.StringIO()
             with patch.dict(
@@ -380,12 +431,77 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                         "run-operational",
                         "--report-dir",
                         directory,
-                        "--promote",
+                        "--artifact-kind",
+                        "official",
+                        "--operator-id",
+                        "rag-owner",
                     ]
                 )
 
             self.assertEqual(result, 2)
-            self.assertIn("calculator alignment", errors.getvalue())
+            self.assertIn("confirm-rag-owner", errors.getvalue())
+
+    def test_official_run_records_one_qualification_and_activates_both(self) -> None:
+        class OperationalJsonStore(JsonVectorStore):
+            def ensure_schema(self) -> None:
+                return None
+
+            def prune_retired(
+                self, logical_collection: str, *, retention_days: int = 30
+            ) -> int:
+                return 0
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = OperationalJsonStore(root / "store")
+            embedding = DeterministicHashEmbedding(2048)
+            with patch.dict(
+                "os.environ",
+                {"DATABASE_URL": "postgresql://unused/test"},
+                clear=True,
+            ), patch(
+                "rag.pipeline.cli.PostgresIndexStore", return_value=store
+            ), patch(
+                "rag.pipeline.cli._operational_embedding", return_value=embedding
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                result = cli_main(
+                    [
+                        "run-operational",
+                        "--report-dir",
+                        str(root / "reports"),
+                        "--artifact-kind",
+                        "official",
+                        "--environment-id",
+                        "test-owner-db",
+                        "--operator-id",
+                        "rag-owner",
+                        "--confirm-rag-owner",
+                        "--index-version",
+                        "catalog-2-1-0-test",
+                        "--promote",
+                    ]
+                )
+
+            payload = json.loads(
+                (
+                    root
+                    / "reports"
+                    / "official__catalog-2-1-0-test__qualification.json"
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(payload["query_count"], 58)
+        self.assertEqual(payload["overall_decision"], "PASS")
+        self.assertTrue(payload["activatable"])
+        self.assertTrue(payload["activation"]["performed"])
+        self.assertEqual(
+            set(payload["activation"]["after"].values()),
+            {
+                "interface-guides__official-catalog-2-1-0-test",
+                "financial-knowledge__official-catalog-2-1-0-test",
+            },
+        )
 
     def test_negative_query_fails_when_retriever_returns_false_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

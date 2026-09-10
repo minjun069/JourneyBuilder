@@ -53,33 +53,101 @@ Recall@5 0.85 이상, MRR@5 0.70 이상, provenance 완전성 100%, collection �
 근거 없음 질문의 false evidence 0건을 요구한다. deterministic embedding 결과는
 파이프라인 회귀검사용이며 운영 Gemini 품질을 대신하지 않는다.
 
-## 운영 PostgreSQL 색인
+## F06-T06 로컬 DB와 공식 색인
 
-운영 명령은 `DATABASE_URL`, `GOOGLE_API_KEY`, Gemini `gemini-embedding-001`과
-3,072차원 설정을 사용한다. 웹 서버 시작 경로에서는 schema 생성, 색인 또는 활성
-포인터 변경을 하지 않는다.
+RAG는 애플리케이션과 같은 PostgreSQL의 `rag_index_manifests`,
+`rag_index_chunks`, `rag_active_indexes`를 사용한다. 별도 RAG DB 접속 설정을
+애플리케이션에 추가하지 않는다. `rag/docker-compose.yml`은 RAG 담당자가 실제
+색인과 artifact를 만드는 동안 쓸 수 있는 로컬 애플리케이션 DB 하네스다. Compose
+project와 volume 이름에 `RAG_INSTANCE_ID`를 넣으므로 개발자별 데이터가 격리된다.
 
 ```bash
-python3 -m rag.pipeline.cli run-operational \
-  --report-dir /tmp/retirewise-rag-reports \
+cd ai-pjt/rag
+mkdir -p .local
+cp ops.env.example .local/ops.env
+set -a
+source .local/ops.env
+set +a
+./ops.sh up
+./ops.sh db-check
+```
+
+`stop`은 컨테이너만 멈추고 volume은 유지한다. 이 절차는 `down -v`를 제공하지
+않으므로 실수로 생성 데이터를 지우지 않는다.
+
+```bash
+./ops.sh status
+./ops.sh stop
+```
+
+실험 실행은 모든 개발자가 할 수 있다. `artifact_kind=experiment`가 파일명,
+physical collection(`interface-guides__experiment-...`)과 DB manifest에 기록된다.
+
+```bash
+./ops.sh qualify \
+  --report-dir .local/reports \
+  --artifact-kind experiment \
+  --environment-id <개발자-id> \
   --index-version catalog-2-1-0
 ```
 
-기본 실행은 새 physical collection을 만들고 평가하지만 활성화하지 않는다. 평가를
-통과한 인터페이스 가이드는 다음처럼 명시적으로 승격한다.
+승인 corpus 변경, 공식 physical index, 공식 qualification report와 배포 artifact는
+RAG 담당자만 만든다. 공식 실행은 생산자 식별자와 권한 확인을 반드시 기록하고,
+GMS의 `gemini-embedding-2` 3,072차원만 허용한다. catalog와 승인된 계산 정책 파일을
+읽어 각각의 SHA-256과 버전을 embedding 호출 전에 고정한다.
 
 ```bash
-python3 -m rag.pipeline.cli run-operational \
-  --report-dir /tmp/retirewise-rag-reports \
-  --collection interface-guides \
+./ops.sh qualify \
+  --report-dir .local/reports \
+  --artifact-kind official \
+  --environment-id <rag-owner-db> \
+  --operator-id <rag-owner-id> \
+  --confirm-rag-owner \
   --index-version catalog-2-1-0 \
   --promote
 ```
 
-`financial-knowledge`는 별도 계산기 정합화 작업이 완료되기 전까지 승격을 막는다.
-완료 뒤에만 `--promote --confirm-calculator-aligned`를 함께 사용한다. 승격은
-`rag_active_indexes` 포인터를 transaction 안에서 교체하며 이전 활성 버전에는
-retired 시각을 기록한다. retired 버전은 기본 30일 뒤 다음 승격 명령에서 정리한다.
+명령은 catalog에서 collection별 승인 문서를 읽고 Markdown chunk를 만든 다음 GMS
+Gemini embedding을 호출해 새 physical index에 upsert한다. 이어 20개 인터페이스
+질문과 38개 금융 질문을 각각 검색해 Recall@5, MRR@5, provenance, collection 혼입,
+false evidence를 계산한다. 두 결과는 PASS/FAIL과 관계없이 collection 보고서와 하나의
+`official__...__qualification.json`으로 확정된다. 두 collection이 모두 통과한 경우에만
+`activatable=true`가 되며 `--promote`는 두 active pointer를 한 transaction에서 함께
+바꾼다. 하나라도 실패하면 기존 pointer는 그대로다.
+
+## 논리 백업 artifact 승계
+
+공식 qualification의 manifest·chunk 수·active pointer가 DB와 일치하는지 확인한 뒤
+RAG 테이블의 대상 행만 압축 artifact로 내보낸다. Django 테이블이나 DB 자격 증명은
+포함하지 않는다.
+
+```bash
+./ops.sh export \
+  --qualification .local/reports/official__catalog-2-1-0__qualification.json \
+  --output-dir artifacts
+python3 -m rag.artifacts inspect \
+  --artifact artifacts/official__official-catalog-2-1-0.tar.gz
+```
+
+첫 실제 dump가 20 MiB 이하이면 `artifacts/`에서 일반 Git으로 추적하고, 누적 크기가
+문제가 될 때 `*.tar.gz`를 Git LFS로 전환한다. 실패 qualification은 증거로 남지만
+artifact로 내보낼 수 없다.
+
+소비자는 기존 RAG 데이터가 있는 같은 애플리케이션 DB에 가져올 수 있다. 같은
+physical ID가 이미 있으면 manifest와 모든 chunk가 동일한 경우만 재사용하고, 다르면
+덮어쓰지 않고 실패한다. import만 하면 현재 active pointer를 보존하며, 공식 PASS
+artifact에 `--activate`를 준 경우에만 두 pointer를 함께 전환한다.
+
+```bash
+DATABASE_URL='postgresql://...' PYTHONPATH=ai-pjt \
+  python3 -m rag.artifacts import \
+  --artifact ai-pjt/rag/artifacts/official__official-catalog-2-1-0.tar.gz
+
+DATABASE_URL='postgresql://...' PYTHONPATH=ai-pjt \
+  python3 -m rag.artifacts import \
+  --artifact ai-pjt/rag/artifacts/official__official-catalog-2-1-0.tar.gz \
+  --activate
+```
 
 ## 안전 경계
 
@@ -88,8 +156,8 @@ retired 시각을 기록한다. retired 버전은 기본 30일 뒤 다음 승격
   적재한다.
 - 운영 target은 검토자 정보가 있고 `review_status=approved`인 문서만 허용한다.
 - 금융 지식과 인터페이스 가이드는 같은 collection에 섞지 않는다.
-- 새 버전은 별도 physical collection에 만든다. 평가가 실패하면 기존 활성
-  버전은 바뀌지 않으며 새 버전도 활성화할 수 없다.
+- 새 버전은 별도 physical collection에 만든다. 두 collection의 평가가 모두
+  통과하기 전에는 기존 활성 버전을 바꾸지 않는다.
 - synthetic fixture는 실제 금융·세무 판단의 근거로 사용하지 않는다.
 
 ## Adapter와 F06 경계

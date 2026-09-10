@@ -27,6 +27,8 @@ class IndexStore(Protocol):
 
     def activate(self, logical_collection: str, physical_collection: str) -> None: ...
 
+    def activate_many(self, collections: dict[str, str]) -> None: ...
+
     def active_collection(self, logical_collection: str) -> str | None: ...
 
     def search(
@@ -133,12 +135,20 @@ class JsonVectorStore:
         return payload
 
     def activate(self, logical_collection: str, physical_collection: str) -> None:
-        _validate_name(logical_collection)
-        manifest = self.get_manifest(physical_collection)
-        if manifest is None or manifest.collection != logical_collection:
-            raise ValueError("cannot activate a collection without a matching manifest")
+        self.activate_many({logical_collection: physical_collection})
+
+    def activate_many(self, collections: dict[str, str]) -> None:
+        if not collections:
+            raise ValueError("at least one collection is required for activation")
+        for logical_collection, physical_collection in collections.items():
+            _validate_name(logical_collection)
+            manifest = self.get_manifest(physical_collection)
+            if manifest is None or manifest.collection != logical_collection:
+                raise ValueError(
+                    "cannot activate a collection without a matching manifest"
+                )
         active = self._load_active()
-        active[logical_collection] = physical_collection
+        active.update(collections)
         self._atomic_write(self._active_path, active)
 
     def active_collection(self, logical_collection: str) -> str | None:
@@ -350,63 +360,75 @@ class PostgresIndexStore:
         return IndexManifest.from_dict(payload)
 
     def activate(self, logical_collection: str, physical_collection: str) -> None:
-        _validate_name(logical_collection)
-        _validate_name(physical_collection)
+        self.activate_many({logical_collection: physical_collection})
+
+    def activate_many(self, collections: dict[str, str]) -> None:
+        if not collections:
+            raise ValueError("at least one collection is required for activation")
+        ordered = sorted(collections.items())
+        for logical_collection, physical_collection in ordered:
+            _validate_name(logical_collection)
+            _validate_name(physical_collection)
         with self._connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT pg_advisory_xact_lock(hashtext(%s))",
-                    (f"rag:{logical_collection}",),
-                )
-                cursor.execute(
-                    """
-                    SELECT logical_collection
-                    FROM rag_index_manifests
-                    WHERE physical_collection = %s
-                    """,
-                    (physical_collection,),
-                )
-                row = cursor.fetchone()
-                if row is None or row[0] != logical_collection:
-                    raise ValueError("cannot activate a collection without a matching manifest")
-                cursor.execute(
-                    """
-                    SELECT physical_collection
-                    FROM rag_active_indexes
-                    WHERE logical_collection = %s
-                    FOR UPDATE
-                    """,
-                    (logical_collection,),
-                )
-                current = cursor.fetchone()
-                if current is not None and current[0] != physical_collection:
+                for logical_collection, _ in ordered:
+                    cursor.execute(
+                        "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                        (f"rag:{logical_collection}",),
+                    )
+                for logical_collection, physical_collection in ordered:
+                    cursor.execute(
+                        """
+                        SELECT logical_collection
+                        FROM rag_index_manifests
+                        WHERE physical_collection = %s
+                        """,
+                        (physical_collection,),
+                    )
+                    row = cursor.fetchone()
+                    if row is None or row[0] != logical_collection:
+                        raise ValueError(
+                            "cannot activate a collection without a matching manifest"
+                        )
+                for logical_collection, physical_collection in ordered:
+                    cursor.execute(
+                        """
+                        SELECT physical_collection
+                        FROM rag_active_indexes
+                        WHERE logical_collection = %s
+                        FOR UPDATE
+                        """,
+                        (logical_collection,),
+                    )
+                    current = cursor.fetchone()
+                    if current is not None and current[0] != physical_collection:
+                        cursor.execute(
+                            """
+                            UPDATE rag_index_manifests
+                            SET retired_at = CURRENT_TIMESTAMP
+                            WHERE physical_collection = %s
+                            """,
+                            (current[0],),
+                        )
+                    cursor.execute(
+                        """
+                        INSERT INTO rag_active_indexes (
+                            logical_collection, physical_collection, activated_at
+                        ) VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (logical_collection) DO UPDATE SET
+                            physical_collection = EXCLUDED.physical_collection,
+                            activated_at = EXCLUDED.activated_at
+                        """,
+                        (logical_collection, physical_collection),
+                    )
                     cursor.execute(
                         """
                         UPDATE rag_index_manifests
-                        SET retired_at = CURRENT_TIMESTAMP
+                        SET retired_at = NULL
                         WHERE physical_collection = %s
                         """,
-                        (current[0],),
+                        (physical_collection,),
                     )
-                cursor.execute(
-                    """
-                    INSERT INTO rag_active_indexes (
-                        logical_collection, physical_collection, activated_at
-                    ) VALUES (%s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (logical_collection) DO UPDATE SET
-                        physical_collection = EXCLUDED.physical_collection,
-                        activated_at = EXCLUDED.activated_at
-                    """,
-                    (logical_collection, physical_collection),
-                )
-                cursor.execute(
-                    """
-                    UPDATE rag_index_manifests
-                    SET retired_at = NULL
-                    WHERE physical_collection = %s
-                    """,
-                    (physical_collection,),
-                )
 
     def active_collection(self, logical_collection: str) -> str | None:
         _validate_name(logical_collection)

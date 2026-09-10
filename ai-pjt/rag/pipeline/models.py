@@ -7,6 +7,7 @@ from typing import Any
 
 DOCUMENT_KINDS = frozenset({"financial-knowledge", "interface-guide"})
 REVIEW_STATUSES = frozenset({"approved", "rejected", "pending", "synthetic"})
+ARTIFACT_KINDS = frozenset({"official", "experiment"})
 
 
 def _require_text(name: str, value: str) -> None:
@@ -181,6 +182,7 @@ class IndexTarget:
     collection: str
     index_version: str
     operational: bool = False
+    artifact_kind: str = "experiment"
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -190,10 +192,17 @@ class IndexTarget:
             _require_text(name, value)
             if not all(char.isalnum() or char in "_-" for char in value):
                 raise ValueError(f"{name} contains an unsafe character: {value!r}")
+        if self.artifact_kind not in ARTIFACT_KINDS:
+            raise ValueError(
+                f"artifact_kind must be one of {sorted(ARTIFACT_KINDS)}"
+            )
+        if not self.operational and self.artifact_kind != "experiment":
+            raise ValueError("non-operational indexes must be experiments")
 
     @property
     def physical_collection(self) -> str:
-        return f"{self.collection}__{self.index_version}"
+        qualifier = f"{self.artifact_kind}-" if self.operational else ""
+        return f"{self.collection}__{qualifier}{self.index_version}"
 
 
 @dataclass(frozen=True)
@@ -210,6 +219,7 @@ class IndexManifest:
     embedding_dimensions: int
     source_versions: tuple[tuple[str, str], ...]
     built_at: str
+    artifact_kind: str = "legacy"
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -222,6 +232,7 @@ class IndexManifest:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> IndexManifest:
         values = dict(payload)
+        values.setdefault("artifact_kind", "legacy")
         values["source_versions"] = tuple(
             (item["source_id"], item["version"])
             for item in values["source_versions"]

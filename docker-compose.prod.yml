@@ -52,8 +52,8 @@ services:
     # google-genai SDK 가 GOOGLE_GEMINI_BASE_URL 을 읽고 x-goog-api-key 헤더로 키를 보내며,
     # 이는 GMS 문서의 호출 방식과 같다. 그래서 ai-pjt 코드는 고치지 않는다.
     # 두 값 모두 GMS 가 정하는 것이라 환경별로 바뀌지 않는다 → env 로 열지 않고 고정한다(S15P21B109-129/130 교훈).
-    # 루트 compose 는 GOOGLE_GEMINI_BASE_URL 을 전달하지 않고 EMBEDDING_MODEL 기본값이 gemini-embedding-001 이라
-    # 여기서 덮어써야 한다. GOOGLE_API_KEY(=GMS 키)만 env 파일에서 온다.
+    # 루트 compose 에도 같은 값이 고정돼 있으며, 이 override 는 운영 의도를 명시적으로 유지한다.
+    # GOOGLE_API_KEY(=GMS 키)만 env 파일에서 온다.
     environment:
       GOOGLE_GEMINI_BASE_URL: "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
       EMBEDDING_MODEL: "gemini-embedding-2"
