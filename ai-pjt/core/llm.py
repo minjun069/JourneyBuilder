@@ -22,10 +22,23 @@ def _create_llm() -> BaseChatModel:
 
     if provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
+        # GOOGLE_GEMINI_BASE_URL 이 있으면 그 주소로 보낸다(GMS 등 프록시).
+        # 설치된 langchain-google-genai 2.x 는 구형 generativelanguage 클라이언트를 써서
+        # 이 환경변수를 스스로 읽지 않으므로 client_options 로 명시해야 한다.
+        # api_endpoint 는 scheme 없는 host+경로 형식이고, 경로 접두어가 빠지면 404·405 가 된다.
+        proxy_options: dict[str, object] = {}
+        if settings.gemini_base_url:
+            proxy_options = {
+                "transport": "rest",
+                "client_options": {
+                    "api_endpoint": settings.gemini_base_url.split("://", 1)[-1],
+                },
+            }
         return ChatGoogleGenerativeAI(
             model=settings.llm_model,
             google_api_key=settings.gemini_api_key,
             streaming=True,
+            **proxy_options,
         )
 
     # "openai" or "opensource" — vLLM 등 OpenAI 호환 엔드포인트 모두 처리
