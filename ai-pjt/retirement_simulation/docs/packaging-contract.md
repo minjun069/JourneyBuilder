@@ -1,8 +1,8 @@
 # 은퇴 시뮬레이션 패키징 규격
 
 작성일: 2026-09-10. 기준: MR !48 병합(`14eb23c`) 이후 `master=d0194e7`.
-브랜치: `feat/ai-retirement-packaging`. **0번 준비·1번 규격 문서화만 완료**한 문서다.
-패키지 빌드 설정·배포 파일·설치 검증·BE 이미지/API 연결은 아직 구현하지 않았다.
+브랜치: `feat/ai-retirement-packaging`. **0번 준비·1번 규격·2번 빌드 설정/기본 검증 완료**.
+로컬 wheel/sdist를 빌드했으며 격리 설치·설치 후 실행 검증·BE 이미지/API 연결은 아직 진행하지 않았다.
 아래 선택은 모듈 내부 구현 기준이며 BE·배포 담당자가 설치 방식을 승인했다는 뜻이 아니다.
 
 ## 1. 목표와 변경 경계
@@ -12,13 +12,14 @@ BE가 설치된 패키지의 공개 함수를 import하는 방향은 유지한�
 서비스 진입점으로 사용하지 않는다. 공개 함수와 계산 규칙은 [통합 호출 규격](analysis-contract.md)을 따른다.
 
 - 변경 위치는 `ai-pjt/retirement_simulation/` 내부로 제한한다. 소스 이동·복제·import 이름 변경 없음.
-- 이번 0·1번은 Markdown만 변경한다. `pyproject.toml`, `MANIFEST.in`, 빌드 스크립트·테스트도 아직 추가하지 않는다.
+- 0·1번은 Markdown만 변경했다. 2번은 모듈 내부 빌드 설정·파일 포함 규칙·ignore·설정 테스트를 추가한다.
 - 후속 구현에서도 계산식·모델·공개 export·JSON/오류 계약·가정 기본값을 패키징 때문에 바꾸지 않는다.
 - BE/FE·Agent·컨텍스트·매뉴얼·공통 정책·루트 설정·requirements·Docker·Compose·CI·Jira는 변경하지 않는다.
 - 외부 PyPI/GitLab Registry 업로드, BE 담당자 메시지 전송, 배포 실행은 포함하지 않는다.
   [BE 연결 확인서](be-integration-checklist.md)는 전달 준비 자료이며 실제 전달/합의 기록이 아니다.
+- 사용자 요청에 따라 2번에서 BE 전달 문서를 보완하지 않는다. 관련 설명/문서 보완은 브랜치 종료 후 별도 요청 시 진행한다.
 
-## 2. 최신 코드에서 확인한 전제
+## 2. 브랜치 시작 시 확인한 전제
 
 | 항목 | `d0194e7`의 확인 사실 | 패키징에 반영할 내용 |
 |---|---|---|
@@ -42,8 +43,8 @@ DB의 동일 시점 읽기·없음 확인·원본 계산과 digest의 일치가 
 |---|---|
 | 배포 이름 | `retirewise-retirement-simulation`. 프로젝트 내부 산출물의 이름이며 공개 저장소의 이름 선점/게시를 의미하지 않음 |
 | import 이름 | 기존 `retirement_simulation` 유지 |
-| 최초 패키지 버전 | `0.1.0` 예정. 정적 메타데이터로 관리하고 계산 코드 import·Git 명령으로 동적 생성하지 않음 |
-| Python 범위 | 초기 `>=3.13,<3.14` 예정. 우선 CPython 3.13 계열에 한정. 이 메타데이터는 모든 patch/OS를 실제 검증했다는 뜻이 아님 |
+| 최초 패키지 버전 | `0.1.0`. 정적 메타데이터로 관리하고 계산 코드 import·Git 명령으로 동적 생성하지 않음 |
+| Python 범위 | 초기 `>=3.13,<3.14`. 우선 CPython 3.13 계열에 한정. 이 메타데이터는 모든 patch/OS를 실제 검증했다는 뜻이 아님 |
 | 우선 검증 환경 | Linux/WSL의 로컬 3.13.15, BE 연결 인수 시 실제 3.13.14 이미지. 다른 Python/OS는 미검증 |
 | 런타임 의존성 | `dependencies = []`. AI/BE 전체 requirements를 패키지 의존성으로 가져오지 않음 |
 | 빌드 백엔드 | `setuptools.build_meta`, 초기 구현은 현재 확인한 `setuptools==84.0.0` 기준으로 검증 |
@@ -56,8 +57,9 @@ DB의 동일 시점 읽기·없음 확인·원본 계산과 digest의 일치가 
 빌드 설정은 표준 `pyproject.toml`에 두고, 메타데이터와 빌드 도구 요구사항을 런타임 의존성과
 구분한다. [PyPA 메타데이터 안내](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/)와
 [setuptools 설정 안내](https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html)를 기준으로 한다.
-현재 환경에서 pip 26.2.1·setuptools 84.0.0은 확인했고 `build`·`wheel` 배포 패키지는 설치되지 않았다.
-이번에는 설치하지 않았다. 후속 빌드는 별도 환경에서 필요한 도구와 버전을 기록하고, 공용 환경을 갱신하지 않는다.
+0·1번 당시 공용 `retirewise-ai`의 pip 26.2.1·setuptools 84.0.0을 확인했고 `build`·`wheel`은 없었다.
+2번에서는 전용 임시 venv에만 `build`·빌드 백엔드와 도구 의존성을 설치했다. 공용 Miniforge 환경은
+갱신하지 않았으며 `wheel` 배포 패키지를 별도로 설치할 필요 없이 빌드됐다. 실제 버전은 9절에 기록한다.
 
 ### 소스 배치
 
@@ -66,7 +68,7 @@ DB의 동일 시점 읽기·없음 확인·원본 계산과 digest의 일치가 
 [setuptools의 명시적 package-dir 지원](https://setuptools.pypa.io/en/latest/userguide/package_discovery.html)을
 사용하며 실제 산출물의 경로는 2·3번에서 검사한다.
 
-아래는 **2번 구현용 설정 초안**이다. 현재 파일로 존재하지 않으며 아직 빌드/설치할 수 없다.
+아래는 2번에서 추가한 [실제 빌드 설정](../pyproject.toml)이다. 설정 테스트에서 문서와 파일의 일치를 검사한다.
 
 ```toml
 [build-system]
@@ -87,10 +89,10 @@ package-dir = {retirement_simulation = "."}
 include-package-data = false
 ```
 
-설정 위치는 `ai-pjt/retirement_simulation/pyproject.toml`로 계획한다. 저장소/AI 루트에는 만들지 않는다.
+설정 위치는 `ai-pjt/retirement_simulation/pyproject.toml`이다. 저장소/AI 루트에는 만들지 않는다.
 패키지 자동 탐색으로 `tests`, `docs`, Agent·공용 도구가 새 import 패키지가 되지 않게 한다.
-설정 가능성과 이 프로젝트에서 실제 빌드되는 것은 구분하며, 2번에서 실패하면 계산 코드 이동으로
-우회하지 말고 원인을 확인하고 이 규격/패키징 설정 범위에서 해결한다.
+2번에서 실제 sdist→wheel 빌드와 파일/메타데이터 검사를 통과했다. 설치된 패키지의 import·실행은
+3번에서 별도로 확인한다. 패키징을 위해 계산 코드를 이동하거나 복제본을 제품 코드로 유지하지 않는다.
 
 ## 4. 산출물과 포함 파일
 
@@ -101,7 +103,7 @@ include-package-data = false
 | 대상 | 포함 | 제외/검사 |
 |---|---|---|
 | wheel | `retirement_simulation/`의 기존 루트 Python 18개와 정상 배포 메타데이터 | tests·docs 데이터·빌드 설정·BE/AI 앱·공통 정책·계정 정보·빌드 캐시 미포함 |
-| sdist | 위 소스, 빌드 설정·표준 메타데이터, README, 모듈 내부 테스트·문서/합성 성능 JSON. 추가 파일은 필요성을 명시 | 저장소 다른 디렉터리·`.git`·환경 파일·고객 자료·venv·캐시·기존 산출물 미포함 |
+| sdist | 위 소스, 빌드 설정·표준 메타데이터, README, 모듈 내부 테스트·문서/합성 성능 JSON. setuptools가 생성한 `setup.cfg`·`PKG-INFO`·egg-info도 포함 | 저장소 다른 디렉터리·`.git`·환경 파일·고객 자료·venv·캐시·기존 산출물 미포함 |
 | 검증 기록 | 소스 커밋, 도구/환경, 파일 목록, 산출물 SHA-256, 설치/실행 결과 | 바이너리/압축 산출물 자체를 Git에 커밋하거나 원격에 게시하지 않음 |
 
 wheel의 Python 목록에는 기존 샘플들과 개발용 `analysis_benchmark.py`도 포함한다. 공개 API로
@@ -109,7 +111,7 @@ export하지 않는다는 기존 경계는 유지한다. 테스트 helper를 사
 설치 후에도 사용할 수 있어야 한다. sdist 문서의 BE/FE 상대 링크는 원본 저장소 맥락의 링크다.
 이를 해결하려고 BE/FE 소스를 sdist에 포함하지 않는다.
 
-`MANIFEST.in`으로 sdist의 추가 파일을 관리하고 wheel과 별도로 검사한다.
+[MANIFEST.in](../MANIFEST.in)으로 sdist의 추가 파일을 관리하고 wheel과 별도로 검사한다.
 `include-package-data`의 기본값에 의존하지 않는다. 루트 자체가 패키지 디렉터리인 배치에서는
 sdist에 넣은 docs/tests가 wheel로 유입되는지 특히 확인한다.
 [setuptools 파일 포함 규칙](https://setuptools.pypa.io/en/latest/userguide/miscellaneous.html)을 참고한다.
@@ -117,7 +119,9 @@ sdist에 넣은 docs/tests가 wheel로 유입되는지 특히 확인한다.
 소스 복제본을 제품 코드로 유지하지 않는다. 검증을 위한 임시 소스 묶음/빌드 디렉터리는 허용하되,
 작업 전용 임시 경로와 검증된 원천만 사용한다. 빌드 캐시가 필요하면 모듈 내부 ignore 또는 임시 경로로
 격리하고 루트 `.gitignore`는 수정하지 않는다. 경로 탈출·외부 symlink·금지 파일 포함도 실패 조건이다.
-동일 입력이 항상 동일 압축 바이트가 된다는 재현 빌드 보장은 아직 하지 않는다.
+모듈의 [.gitignore](../.gitignore)는 `/build/`·`/dist/`·`/*.egg-info/`와 Python 캐시만 제외한다.
+이 ignore 파일 자체는 배포본에 넣지 않는다. 동일 입력이 항상 동일 압축 바이트가 된다는
+재현 빌드 보장은 아직 하지 않는다.
 
 ## 5. 설치 검증의 완료 기준
 
@@ -171,12 +175,12 @@ wheel에서 docs/tests를 제외하면 이 방식으로 설치 여부를 판단�
 |---|---|---|
 | 0 — 완료 | 최신 master·기준 테스트·기능 브랜치 준비 | 별도 커밋 없음, 이 문서에 기록 |
 | 1 — 완료 | 패키징 규격·설치 검증 기준·BE 확인서 문서화 | `docs: 은퇴 시뮬레이션 패키징 규격 정의` |
-| 2 | 패키지 메타데이터·파일 포함 규칙·빌드 설정·기본 검증 | `build: 은퇴 시뮬레이션 패키지 빌드 설정` |
+| 2 — 완료 | 패키지 메타데이터·파일 포함 규칙·빌드 설정·기본 검증 | `build: 은퇴 시뮬레이션 패키지 빌드 설정` |
 | 3 | 저장소 밖 wheel 설치·import·합성 실행·실패 경계 검증 | `test: 은퇴 시뮬레이션 설치 경계 검증` |
 | 4 | 전체 회귀·산출물 검사·실제 설치 방법/인수인계 문서 | `docs: 은퇴 시뮬레이션 패키지 설치 가이드` |
 | 5 | 최종 범위·master 충돌 확인 후 요청 시 푸시/MR | 필요한 변경만 별도 커밋. 원격 작업은 명시 요청 시 |
 
-각 요청 단위는 문서화·검증 후 로컬 커밋한다. 아직 요청하지 않은 2~5번을 함께 구현하지 않는다.
+각 요청 단위는 문서화·검증 후 로컬 커밋한다. 현재 요청한 2번 다음의 3~5번은 함께 구현하지 않는다.
 그 뒤 서비스 작업은 BE 설치/인증 API → 기준 MC·실제 준비율 화면 → What-if 화면 → 운영/E2E 검증이다.
 
 ## 8. 0·1번 검증 기록
@@ -206,4 +210,70 @@ conda run -n retirewise-ai python -B -m unittest discover -s ai-pjt/retirement_s
 conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement_simulation/tests -q
 ```
 
-빌드·설치·실제 BE 이미지·서비스 인수는 이번 완료 범위가 아니다. 다음은 같은 브랜치의 2번 빌드 설정이다.
+위는 0·1번 당시 기록이며 빌드·설치·실제 BE 이미지·서비스 인수를 포함하지 않는다.
+
+## 9. 2번 빌드 설정·기본 검증 기록
+
+2026-09-10, `0b3b643` 이후 같은 브랜치에서 진행했다. 아래는 **모듈 내부 개발 검증**이며
+BE 전달 문서·설치 가이드나 실제 BE 설치 완료 기록이 아니다.
+
+### 추가한 설정과 기본 테스트
+
+- [pyproject.toml](../pyproject.toml): 배포 이름/정적 버전·Python 범위·무의존성·단일 패키지 대응.
+- [MANIFEST.in](../MANIFEST.in): 모듈 루트 문서/설정, `tests/__init__.py`·`tests/test_*.py`,
+  `docs/*.md`와 기존 합성 성능 JSON만 추가한다. 폴더 전체 `graft`/상위 저장소 탐색은 하지 않는다.
+  build/dist·숨김 파일·Python 캐시/백업은 제외한다. `.gitignore`와 생성한 압축 파일은 배포본에서 제외한다.
+- [.gitignore](../.gitignore): 모듈 내부 빌드 부산물만 Git에서 제외한다. 루트 ignore는 수정하지 않는다.
+- [설정 테스트](../tests/test_packaging_config.py) 10개: 이름/버전·Python 범위·의존성·빌드 백엔드·
+  명시적 패키지/파일 포함·진입점/라이선스 경계·README·18개 원본 모듈 목록·문서 TOML 일치.
+  표준 라이브러리만 사용하며 산출물 설치/import 검증을 대신하지 않는다.
+
+### 빌드 환경과 재실행
+
+기존 `retirewise-ai`와 분리한 `/tmp` 전용 venv를 만들었다. CPython 3.13.15,
+pip 26.2.1, build 1.6.0, setuptools 84.0.0, packaging 26.3, pyproject_hooks 1.2.0을 사용했다.
+빌드 도구 확보에만 공식 PyPI를 사용했으며 프로젝트·고객 파일을 업로드하지 않았다.
+계산 패키지를 어떤 환경에도 설치하지 않았고 BE의 Python 3.13.14 이미지는 검증하지 않았다.
+
+저장소 루트에서 같은 도구 버전으로 재실행할 수 있다. 소스 사본은 검증용 일회성 사본이다.
+실제 제품 소스를 별도 위치에 복제해 관리하는 방식이 아니다.
+
+```bash
+packaging_workdir="$(mktemp -d /tmp/retirement-packaging-build.XXXXXXXX)"
+conda run --no-capture-output -n retirewise-ai python -B -m venv "$packaging_workdir/build-env"
+"$packaging_workdir/build-env/bin/python" -I -B -m pip --isolated --disable-pip-version-check install --no-cache-dir --index-url https://pypi.org/simple "build==1.6.0" "setuptools==84.0.0" "packaging==26.3" "pyproject_hooks==1.2.0"
+cp -a -- ai-pjt/retirement_simulation "$packaging_workdir/source"
+"$packaging_workdir/build-env/bin/python" -I -B -m build --no-isolation --outdir "$packaging_workdir/dist" "$packaging_workdir/source"
+```
+
+`--no-isolation`은 위에서 이미 준비한 **전용 build-env**를 사용한다는 의미다. 공용 환경에서
+같은 옵션을 실행했다는 뜻이 아니다. build의 기본 실행으로 먼저 sdist를 만들고, Git/상위 AI 소스가
+없는 sdist 추출본에서 wheel을 빌드했다. [build 공식 안내](https://build.pypa.io/en/stable/)를 참고한다.
+제외 대상이 없는 깨끗한 소스에서는 MANIFEST의 `no previously-included ...` 경고가 나올 수 있다.
+실패를 무시한 것이 아니라 최종 종료 코드와 실제 산출물 목록을 별도로 검사했다.
+
+### 확인한 산출물
+
+| 산출물 | 기본 검증 결과 |
+|---|---|
+| `retirewise_retirement_simulation-0.1.0-py3-none-any.whl` | 파일 22개 = 기존 Python 18개 + dist-info 4개. docs/tests/빌드 설정/다른 앱 미포함 |
+| `retirewise_retirement_simulation-0.1.0.tar.gz` | 파일 82개 = Python 18개 + tests 26개 + docs 29개 + README/설정 3개 + 생성 메타데이터 6개 |
+
+- 두 배포본의 포함 파일을 예상 목록과 대조했고, 포함된 소스/테스트/문서가 빌드 입력과 byte 단위로 일치했다.
+- 메타데이터의 이름·버전·`Requires-Python`·Markdown README, 런타임 `Requires-Dist` 부재를 확인했다.
+  `py3-none-any`는 순수 Python wheel 형식이며 Python 버전 제한과 실제 OS 검증 범위를 없애는 표시가 아니다.
+- wheel CRC·전체 RECORD의 SHA-256/크기, 압축 파일 SHA-256, 중복 경로·경로 탈출·symlink/hardlink 부재를 확인했다.
+  실행별 압축 파일 해시는 로컬 검사 출력에 기록했다. 해시를 포함한 문서를 다시 sdist에 넣는 순환을 피하며,
+  압축 파일 자체와 검증용 임시 환경은 Git에 커밋하지 않는다.
+- 일반·`-S` 실행에서 기존 620개 + 신규 설정 10개, 총 **630개** 회귀 테스트가 통과했다.
+- Git의 `check-ignore --no-index`로 모듈 내부 build/dist/egg-info/캐시 제외 규칙을 확인했다.
+
+설정 테스트만 재실행하려면 저장소 루트에서 다음 명령을 사용한다.
+
+```bash
+conda run --no-capture-output -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retirement_simulation/tests -p test_packaging_config.py -v
+```
+
+**다음은 3번:** 깨끗한 설치 환경에 wheel을 일반 설치하고 저장소 밖에서 import 위치·공개 함수·
+합성 CLI·오류를 검증한다. 이번 빌드 성공을 설치/실행·BE/FE 통합·운영 성능 검증 완료로 해석하지 않는다.
+BE 전달 문서는 이번에 수정하지 않았으며 사용자 요청 전까지 보완·전송하지 않는다.

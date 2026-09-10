@@ -1,0 +1,6 @@
+# Module-local build outputs; never commit distribution binaries.
+/build/
+/dist/
+/*.egg-info/
+__pycache__/
+*.py[cod]
