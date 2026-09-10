@@ -476,6 +476,8 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                         "--operator-id",
                         "rag-owner",
                         "--confirm-rag-owner",
+                        "--source-revision",
+                        "a" * 40,
                         "--index-version",
                         "catalog-2-1-0-test",
                         "--promote",
@@ -493,6 +495,7 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(payload["query_count"], 58)
         self.assertEqual(payload["overall_decision"], "PASS")
+        self.assertEqual(payload["source_revision"], "a" * 40)
         self.assertTrue(payload["activatable"])
         self.assertTrue(payload["activation"]["performed"])
         self.assertEqual(
