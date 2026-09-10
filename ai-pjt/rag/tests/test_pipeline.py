@@ -496,6 +496,15 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
         self.assertTrue(payload["activatable"])
         self.assertTrue(payload["activation"]["performed"])
         self.assertEqual(
+            payload["retrieval"],
+            {
+                "strategy": "dense-bm25-rrf",
+                "top_k": 5,
+                "fetch_k": 10,
+                "minimum_dense_score": 0.52,
+            },
+        )
+        self.assertEqual(
             set(payload["activation"]["after"].values()),
             {
                 "interface-guides__official-catalog-2-1-0-test",

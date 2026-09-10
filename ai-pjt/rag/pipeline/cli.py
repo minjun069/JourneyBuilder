@@ -34,6 +34,7 @@ _DEFAULT_POLICY = (
 _OPERATIONAL_COLLECTIONS = ("interface-guides", "financial-knowledge")
 _OPERATIONAL_EMBEDDING_MODEL = "gemini-embedding-2"
 _OPERATIONAL_EMBEDDING_DIMENSIONS = 3072
+_OPERATIONAL_MINIMUM_DENSE_SCORE = 0.52
 _GMS_GEMINI_BASE_URL = (
     "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
 )
@@ -101,7 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
     operational.add_argument("--overlap", type=int, default=100)
     operational.add_argument("--top-k", type=int, default=5)
     operational.add_argument("--fetch-k", type=int, default=10)
-    operational.add_argument("--minimum-dense-score", type=float, default=0.30)
+    operational.add_argument(
+        "--minimum-dense-score",
+        type=float,
+        default=_OPERATIONAL_MINIMUM_DENSE_SCORE,
+    )
     operational.add_argument("--minimum-recall", type=float, default=0.85)
     operational.add_argument("--minimum-mrr", type=float, default=0.70)
     operational.add_argument("--retention-days", type=int, default=30)
@@ -487,6 +492,12 @@ def run_operational(args: argparse.Namespace) -> int:
             "model": embedding.model_id,
             "dimensions": embedding.dimensions,
             "endpoint": "gms",
+        },
+        "retrieval": {
+            "strategy": "dense-bm25-rrf",
+            "top_k": args.top_k,
+            "fetch_k": args.fetch_k,
+            "minimum_dense_score": args.minimum_dense_score,
         },
         "thresholds": {
             "recall_at_5_minimum": thresholds.minimum_recall,

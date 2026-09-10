@@ -115,6 +115,12 @@ false evidence를 계산한다. 두 결과는 PASS/FAIL과 관계없이 collecti
 `activatable=true`가 되며 `--promote`는 두 active pointer를 한 transaction에서 함께
 바꾼다. 하나라도 실패하면 기존 pointer는 그대로다.
 
+운영 검색은 dense 후보와 BM25 후보를 reciprocal-rank fusion하며, dense cosine
+similarity가 `0.52` 미만인 후보는 제외한다. 이 경계는 GMS `gemini-embedding-2`로
+승인 58문항을 측정했을 때 무관 질문 최고 점수 `0.5117`과 정답 문서 최저 점수
+`0.5401` 사이에서 정했다. 실제 실행의 `top_k`, `fetch_k`, 경계값은 qualification의
+`retrieval`에 기록한다. 모델이나 corpus가 바뀌면 같은 방식으로 다시 검증해야 한다.
+
 ## 논리 백업 artifact 승계
 
 공식 qualification의 manifest·chunk 수·active pointer가 DB와 일치하는지 확인한 뒤
