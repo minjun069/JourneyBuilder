@@ -225,7 +225,8 @@ BE 전달 문서·설치 가이드나 실제 BE 설치 완료 기록이 아니�
 
 - [pyproject.toml](../pyproject.toml): 배포 이름/정적 버전·Python 범위·무의존성·단일 패키지 대응.
 - [MANIFEST.in](../MANIFEST.in): 모듈 루트 문서/설정, `tests/__init__.py`·`tests/test_*.py`,
-  `docs/*.md`와 기존 합성 성능 JSON만 추가한다. 폴더 전체 `graft`/상위 저장소 탐색은 하지 않는다.
+  `docs/*.md`와 기존 합성 성능 JSON을 추가한다. 후속 인수인계에서 정책 JSON·입출력 예시·진단 결과와
+  `tests/handoff_samples.py`를 명시적으로 추가했다. 폴더 전체 `graft`/상위 저장소 탐색은 하지 않는다.
   build/dist·숨김 파일·Python 캐시/백업은 제외한다. `.gitignore`와 생성한 압축 파일은 배포본에서 제외한다.
 - [.gitignore](../.gitignore): 모듈 내부 빌드 부산물만 Git에서 제외한다. 루트 ignore는 수정하지 않는다.
 - [설정 테스트](../tests/test_packaging_config.py) 10개: 이름/버전·Python 범위·의존성·빌드 백엔드·
