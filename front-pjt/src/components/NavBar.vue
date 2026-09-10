@@ -4,7 +4,7 @@
 
         <div class="logo-area">
             <RouterLink to="/" class="logo-link">
-                <img src="@/assets/images/jb_logo.svg" class="logo-img" alt="Journey Builder" />
+                <img src="@/assets/images/rw_logo_capsule_dark.svg" class="logo-img" alt="Journey Builder" />
                 <div class="logo-text">
                     <span class="logo-journey">Journey</span>
                     <span class="logo-builder">Builder</span>
