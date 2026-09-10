@@ -1,2 +1,7 @@
 # 셸 스크립트는 항상 LF. Windows 체크아웃(autocrlf)에서 CRLF 가 되면 서버에서 "\r: command not found" 로 깨진다.
 *.sh text eol=lf
+
+# rag 승인 corpus 는 catalog.json 에 파일 SHA-256 이 박혀 있어(corpus.py:148 이 대조)
+# CRLF 로 체크아웃되면 해시가 어긋나 rag/tests 가 embedding 호출 전에 실패한다.
+# Windows(core.autocrlf=true)에서 3건 실패 / 리눅스 러너는 통과 — 체크아웃 형태 차이일 뿐이다.
+ai-pjt/rag/data/**/*.md text eol=lf
