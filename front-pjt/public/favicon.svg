@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="capTuckD" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f6bff"/>
+      <stop offset="0.45" stop-color="#6664f0"/>
+      <stop offset="1" stop-color="#7f7dfa"/>
+    </linearGradient>
+    <linearGradient id="capFrontD" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6664f0"/>
+      <stop offset="1" stop-color="#7f7dfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="#0a0a0a"/>
+  <!-- 상승하는 캡슐 3개: 아래 캡슐의 위쪽 끝이 다음 캡슐 뒤로 겹침 -->
+  <rect x="51" y="91" width="44" height="120" rx="22" fill="url(#capTuckD)" transform="rotate(30 73 151)"/>
+  <rect x="106" y="68" width="44" height="120" rx="22" fill="url(#capTuckD)" transform="rotate(30 128 128)"/>
+  <rect x="161" y="45" width="44" height="120" rx="22" fill="url(#capFrontD)" transform="rotate(30 183 105)"/>
+</svg>

@@ -2,7 +2,10 @@
 include README.md pyproject.toml MANIFEST.in
 include tests/__init__.py tests/test_*.py
 include tests/run_installation_checks.py tests/installed/check_package.py
+include tests/handoff_samples.py
 include docs/*.md docs/analysis-performance-results.json
+include docs/simulation-policy.json
+include docs/handoff-examples.json docs/handoff-validation-results.json
 
 # Do not collect nested caches, build outputs, or hidden local files.
 prune build
