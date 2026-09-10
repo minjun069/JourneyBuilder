@@ -28,7 +28,7 @@ default:
   interruptible: true
 
 variables:
-  GIT_DEPTH: "50"            # g1_gate.py 가 git merge-base 를 쓰므로 너무 얕으면 실패한다
+  GIT_DEPTH: "0"             # 전체 히스토리. g1_gate.py 가 200 커밋 전 조상을 검사하고, 저장소가 8.7MiB 라 얕게 받을 이득이 없다
   DOCKER_BUILDKIT: "1"
   # 테스트 전용 더미 (운영 값 아님)
   CI_DJANGO_SECRET_KEY: "ci-only-django-secret-key-not-for-production"
