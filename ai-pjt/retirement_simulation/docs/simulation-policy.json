@@ -1,0 +1,39 @@
+{
+  "policy_version": "simulation-mvp-2026-09-10.v1",
+  "decided_at": "2026-09-10",
+  "status": "mvp_scope_decided_not_deployed",
+  "basis": "project_common_assumptions_not_personal_portfolio_estimates",
+  "calibration_period": null,
+  "assumption_values": {
+    "annual_return_mean": 0.04,
+    "annual_return_volatility": 0.10,
+    "annual_inflation_rate": 0.02,
+    "num_paths": 1000,
+    "seed": 42
+  },
+  "max_comparison_scenarios": 1,
+  "changed_readiness_in_scope": false,
+  "partial_analysis_with_notices": true,
+  "external_market_api_required": false,
+  "sources": [
+    {
+      "id": "project_financial_policy",
+      "reference": "contract-fixtures/financial-calculation/v1/policy.json",
+      "version": "2026-09-07.v1",
+      "use": "Explicitly adopt financial_return_rate=0.04 as the nominal arithmetic mean; no automatic shared-policy loading."
+    },
+    {
+      "id": "blackstone_mixed_asset_example",
+      "url": "https://www.blackstone.com/en-emea/pws/essentials-of-private-credit/",
+      "as_of": "2025-12-31",
+      "accessed_at": "2026-09-10",
+      "use": "10.4% annualized volatility is a scale reference only, not KRW portfolio calibration or a 60/40 allocation recommendation."
+    },
+    {
+      "id": "bok_inflation_target",
+      "url": "https://www.bok.or.kr/portal/main/contents.do?menuNo=200291",
+      "accessed_at": "2026-09-10",
+      "use": "2% medium-term CPI inflation target, not a forecast for every year or household."
+    }
+  ]
+}

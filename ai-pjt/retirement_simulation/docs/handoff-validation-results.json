@@ -1,0 +1,755 @@
+{
+  "kind": "synthetic_handoff_diagnostics_v1",
+  "policy_version": "simulation-mvp-2026-09-10.v1",
+  "python_version": "3.13.15",
+  "python_implementation": "CPython",
+  "seeds": [
+    7,
+    21,
+    42,
+    73,
+    109
+  ],
+  "path_counts": [
+    1000,
+    5000
+  ],
+  "paired_runs": [
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 7
+      },
+      "num_years": 51,
+      "baseline_probability": 0.329,
+      "changed_probability": 0.448,
+      "delta_pp": 11.899999999999999,
+      "baseline_final_p50_krw": -291109958.9004278,
+      "changed_final_p50_krw": -91285310.58517636,
+      "elapsed_seconds": 0.38961057500091556
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 21
+      },
+      "num_years": 51,
+      "baseline_probability": 0.358,
+      "changed_probability": 0.486,
+      "delta_pp": 12.8,
+      "baseline_final_p50_krw": -241293280.3210318,
+      "changed_final_p50_krw": -33202028.578206014,
+      "elapsed_seconds": 0.3960094800004299
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.342,
+      "changed_probability": 0.486,
+      "delta_pp": 14.399999999999997,
+      "baseline_final_p50_krw": -255574310.24411175,
+      "changed_final_p50_krw": -41168090.82409221,
+      "elapsed_seconds": 0.3899664500004292
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 73
+      },
+      "num_years": 51,
+      "baseline_probability": 0.331,
+      "changed_probability": 0.474,
+      "delta_pp": 14.299999999999995,
+      "baseline_final_p50_krw": -243049761.40555194,
+      "changed_final_p50_krw": -38101968.43531198,
+      "elapsed_seconds": 0.391083284999695
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 109
+      },
+      "num_years": 51,
+      "baseline_probability": 0.366,
+      "changed_probability": 0.481,
+      "delta_pp": 11.5,
+      "baseline_final_p50_krw": -231341128.8662236,
+      "changed_final_p50_krw": -15650649.534034815,
+      "elapsed_seconds": 0.3824248679993616
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 7
+      },
+      "num_years": 51,
+      "baseline_probability": 0.3246,
+      "changed_probability": 0.4576,
+      "delta_pp": 13.3,
+      "baseline_final_p50_krw": -273465952.3220582,
+      "changed_final_p50_krw": -66613777.57127833,
+      "elapsed_seconds": 1.9785340809994523
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 21
+      },
+      "num_years": 51,
+      "baseline_probability": 0.335,
+      "changed_probability": 0.4672,
+      "delta_pp": 13.219999999999999,
+      "baseline_final_p50_krw": -256968145.7529498,
+      "changed_final_p50_krw": -56786750.702859834,
+      "elapsed_seconds": 1.9862206710004102
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.3256,
+      "changed_probability": 0.4684,
+      "delta_pp": 14.279999999999998,
+      "baseline_final_p50_krw": -261368175.35905308,
+      "changed_final_p50_krw": -59067857.89579368,
+      "elapsed_seconds": 2.096318595999037
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 73
+      },
+      "num_years": 51,
+      "baseline_probability": 0.3292,
+      "changed_probability": 0.4558,
+      "delta_pp": 12.659999999999998,
+      "baseline_final_p50_krw": -264311065.6731662,
+      "changed_final_p50_krw": -65739660.079750486,
+      "elapsed_seconds": 1.9996842079999624
+    },
+    {
+      "case": "combined",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 109
+      },
+      "num_years": 51,
+      "baseline_probability": 0.3294,
+      "changed_probability": 0.4652,
+      "delta_pp": 13.579999999999998,
+      "baseline_final_p50_krw": -262204244.46440563,
+      "changed_final_p50_krw": -51900468.60916699,
+      "elapsed_seconds": 1.9968541479993291
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 7
+      },
+      "num_years": 6,
+      "baseline_probability": 0.496,
+      "changed_probability": 0.921,
+      "delta_pp": 42.50000000000001,
+      "baseline_final_p50_krw": -241403.016577214,
+      "changed_final_p50_krw": 24251956.606210485,
+      "elapsed_seconds": 0.05274101100076223
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 21
+      },
+      "num_years": 6,
+      "baseline_probability": 0.461,
+      "changed_probability": 0.927,
+      "delta_pp": 46.6,
+      "baseline_final_p50_krw": -1997621.8230034765,
+      "changed_final_p50_krw": 22966262.793119203,
+      "elapsed_seconds": 0.05436151500180131
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 6,
+      "baseline_probability": 0.476,
+      "changed_probability": 0.92,
+      "delta_pp": 44.400000000000006,
+      "baseline_final_p50_krw": -1400650.538257802,
+      "changed_final_p50_krw": 22975845.130610332,
+      "elapsed_seconds": 0.05403618399941479
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 73
+      },
+      "num_years": 6,
+      "baseline_probability": 0.482,
+      "changed_probability": 0.93,
+      "delta_pp": 44.800000000000004,
+      "baseline_final_p50_krw": -1048840.7479929961,
+      "changed_final_p50_krw": 23814358.82931494,
+      "elapsed_seconds": 0.05226107199996477
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 109
+      },
+      "num_years": 6,
+      "baseline_probability": 0.475,
+      "changed_probability": 0.92,
+      "delta_pp": 44.50000000000001,
+      "baseline_final_p50_krw": -732494.4257098939,
+      "changed_final_p50_krw": 23728705.343255788,
+      "elapsed_seconds": 0.05433040199932293
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 7
+      },
+      "num_years": 6,
+      "baseline_probability": 0.4776,
+      "changed_probability": 0.922,
+      "delta_pp": 44.440000000000005,
+      "baseline_final_p50_krw": -1102313.4458847512,
+      "changed_final_p50_krw": 23768597.07387026,
+      "elapsed_seconds": 0.26082557100016857
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 21
+      },
+      "num_years": 6,
+      "baseline_probability": 0.4918,
+      "changed_probability": 0.926,
+      "delta_pp": 43.42,
+      "baseline_final_p50_krw": -350079.3200697992,
+      "changed_final_p50_krw": 24468915.07825918,
+      "elapsed_seconds": 0.2589665640007297
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 42
+      },
+      "num_years": 6,
+      "baseline_probability": 0.4814,
+      "changed_probability": 0.9202,
+      "delta_pp": 43.88,
+      "baseline_final_p50_krw": -937605.9373222683,
+      "changed_final_p50_krw": 23749799.698627084,
+      "elapsed_seconds": 0.27154990999952133
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 73
+      },
+      "num_years": 6,
+      "baseline_probability": 0.471,
+      "changed_probability": 0.9172,
+      "delta_pp": 44.620000000000005,
+      "baseline_final_p50_krw": -1171623.7357350513,
+      "changed_final_p50_krw": 23526190.917724725,
+      "elapsed_seconds": 0.2661481509985606
+    },
+    {
+      "case": "retired",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 109
+      },
+      "num_years": 6,
+      "baseline_probability": 0.4796,
+      "changed_probability": 0.9164,
+      "delta_pp": 43.68,
+      "baseline_final_p50_krw": -842539.9783292357,
+      "changed_final_p50_krw": 23961868.710911456,
+      "elapsed_seconds": 0.2550614250012586
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 7
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0,
+      "delta_pp": 0,
+      "baseline_final_p50_krw": -183888671.8033145,
+      "changed_final_p50_krw": -111958090.92350602,
+      "elapsed_seconds": 0.14358599899969704
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 21
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0.001,
+      "delta_pp": 0.1,
+      "baseline_final_p50_krw": -184140293.15418947,
+      "changed_final_p50_krw": -112505402.583569,
+      "elapsed_seconds": 0.14427152799908072
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0,
+      "delta_pp": 0,
+      "baseline_final_p50_krw": -183814763.9984187,
+      "changed_final_p50_krw": -112069130.21307024,
+      "elapsed_seconds": 0.1443951660003222
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 73
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0,
+      "delta_pp": 0,
+      "baseline_final_p50_krw": -184186352.63399392,
+      "changed_final_p50_krw": -112839026.3156167,
+      "elapsed_seconds": 0.1460029059999215
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 109
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0.002,
+      "delta_pp": 0.2,
+      "baseline_final_p50_krw": -184204093.08008128,
+      "changed_final_p50_krw": -113199536.27179244,
+      "elapsed_seconds": 0.14383944499968493
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 7
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0.0004,
+      "delta_pp": 0.04,
+      "baseline_final_p50_krw": -184022646.9559298,
+      "changed_final_p50_krw": -112773689.25904578,
+      "elapsed_seconds": 0.7390111219992832
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 21
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0.0002,
+      "delta_pp": 0.02,
+      "baseline_final_p50_krw": -184387023.48721433,
+      "changed_final_p50_krw": -112793955.08519793,
+      "elapsed_seconds": 0.7389609839992772
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 42
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0.0002,
+      "delta_pp": 0.02,
+      "baseline_final_p50_krw": -184270211.57057744,
+      "changed_final_p50_krw": -112825727.83438346,
+      "elapsed_seconds": 0.7286034389999259
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 73
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0.0006,
+      "delta_pp": 0.06,
+      "baseline_final_p50_krw": -184201500.9777764,
+      "changed_final_p50_krw": -113036981.26431638,
+      "elapsed_seconds": 0.7294048200001271
+    },
+    {
+      "case": "pension_gap",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 5000,
+        "seed": 109
+      },
+      "num_years": 18,
+      "baseline_probability": 0,
+      "changed_probability": 0.0008,
+      "delta_pp": 0.08,
+      "baseline_final_p50_krw": -183937386.05165195,
+      "changed_final_p50_krw": -112353834.71148196,
+      "elapsed_seconds": 0.7400172439993185
+    }
+  ],
+  "seed_ranges": [
+    {
+      "case": "combined",
+      "num_paths": 1000,
+      "baseline_probability_range": [
+        0.329,
+        0.366
+      ],
+      "changed_probability_range": [
+        0.448,
+        0.486
+      ],
+      "delta_pp_range": [
+        11.5,
+        14.399999999999997
+      ]
+    },
+    {
+      "case": "combined",
+      "num_paths": 5000,
+      "baseline_probability_range": [
+        0.3246,
+        0.335
+      ],
+      "changed_probability_range": [
+        0.4558,
+        0.4684
+      ],
+      "delta_pp_range": [
+        12.659999999999998,
+        14.279999999999998
+      ]
+    },
+    {
+      "case": "retired",
+      "num_paths": 1000,
+      "baseline_probability_range": [
+        0.461,
+        0.496
+      ],
+      "changed_probability_range": [
+        0.92,
+        0.93
+      ],
+      "delta_pp_range": [
+        42.50000000000001,
+        46.6
+      ]
+    },
+    {
+      "case": "retired",
+      "num_paths": 5000,
+      "baseline_probability_range": [
+        0.471,
+        0.4918
+      ],
+      "changed_probability_range": [
+        0.9164,
+        0.926
+      ],
+      "delta_pp_range": [
+        43.42,
+        44.620000000000005
+      ]
+    },
+    {
+      "case": "pension_gap",
+      "num_paths": 1000,
+      "baseline_probability_range": [
+        0,
+        0
+      ],
+      "changed_probability_range": [
+        0,
+        0.002
+      ],
+      "delta_pp_range": [
+        0,
+        0.2
+      ]
+    },
+    {
+      "case": "pension_gap",
+      "num_paths": 5000,
+      "baseline_probability_range": [
+        0,
+        0
+      ],
+      "changed_probability_range": [
+        0.0002,
+        0.0008
+      ],
+      "delta_pp_range": [
+        0.02,
+        0.08
+      ]
+    }
+  ],
+  "sensitivity_runs": [
+    {
+      "case": "base",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.342,
+      "changed_probability": 0.486,
+      "delta_pp": 14.399999999999997,
+      "baseline_final_p50_krw": -255574310.24411175,
+      "changed_final_p50_krw": -41168090.82409221,
+      "elapsed_seconds": 0.4040625400011777
+    },
+    {
+      "case": "mean_2pct",
+      "assumptions": {
+        "annual_return_mean": 0.02,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.035,
+      "changed_probability": 0.09,
+      "delta_pp": 5.499999999999999,
+      "baseline_final_p50_krw": -564066851.7179521,
+      "changed_final_p50_krw": -430626039.0278851,
+      "elapsed_seconds": 0.39404157399985706
+    },
+    {
+      "case": "mean_6pct",
+      "assumptions": {
+        "annual_return_mean": 0.06,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.814,
+      "changed_probability": 0.888,
+      "delta_pp": 7.400000000000007,
+      "baseline_final_p50_krw": 1051253584.0283132,
+      "changed_final_p50_krw": 1482114441.410091,
+      "elapsed_seconds": 0.39706905300045037
+    },
+    {
+      "case": "volatility_5pct",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.05,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.353,
+      "changed_probability": 0.62,
+      "delta_pp": 26.700000000000003,
+      "baseline_final_p50_krw": -133320838.92935134,
+      "changed_final_p50_krw": 131866549.43309827,
+      "elapsed_seconds": 0.3985492170013458
+    },
+    {
+      "case": "volatility_15pct",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.15,
+        "annual_inflation_rate": 0.02,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.297,
+      "changed_probability": 0.384,
+      "delta_pp": 8.700000000000003,
+      "baseline_final_p50_krw": -381338786.4936818,
+      "changed_final_p50_krw": -221413895.3223718,
+      "elapsed_seconds": 0.4033233609989111
+    },
+    {
+      "case": "inflation_1pct",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.01,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.747,
+      "changed_probability": 0.854,
+      "delta_pp": 10.7,
+      "baseline_final_p50_krw": 335372842.81681097,
+      "changed_final_p50_krw": 521835974.642516,
+      "elapsed_seconds": 0.41380477900020196
+    },
+    {
+      "case": "inflation_3pct",
+      "assumptions": {
+        "annual_return_mean": 0.04,
+        "annual_return_volatility": 0.1,
+        "annual_inflation_rate": 0.03,
+        "num_paths": 1000,
+        "seed": 42
+      },
+      "num_years": 51,
+      "baseline_probability": 0.083,
+      "changed_probability": 0.159,
+      "delta_pp": 7.6,
+      "baseline_final_p50_krw": -870745457.2319235,
+      "changed_final_p50_krw": -657320892.903541,
+      "elapsed_seconds": 0.40421938999861595
+    }
+  ],
+  "limitations": [
+    "synthetic_only",
+    "not_market_calibration",
+    "not_a_confidence_interval",
+    "not_be_performance_or_sla",
+    "sensitivity_values_are_not_service_presets"
+  ]
+}
