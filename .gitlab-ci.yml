@@ -119,6 +119,13 @@ deploy:production:
   stage: deploy
   interruptible: false          # 배포 도중 새 커밋이 와도 이 잡은 끊지 않는다 (compose 가 반만 올라간 상태 방지)
   resource_group: production    # 배포 잡은 동시에 하나만 (러너 concurrent=1 이지만 명시)
+  variables:
+    # ai-pjt 가 healthy 가 되지 못한 배포를 성공으로 기록하지 않는다 (S15P21B109-132).
+    # #122 때 ai 컨테이너가 이틀간 재시작을 반복했는데 배포는 계속 성공으로 남아 발견이 늦었다.
+    # AI env 가 깨져 배포가 계속 실패하면 서빙(web·backend) 수정도 못 나간다 → 그때는 코드 수정 없이 끈다:
+    #   "Run pipeline" 화면에서 변수 AI_REQUIRED=0 (그 실행만) / 프로젝트 CI 변수 AI_REQUIRED=0 (상시)
+    #   또는 서버에서 AI_REQUIRED=0 bash deploy/deploy.sh
+    AI_REQUIRED: "1"
   environment:
     name: production
     url: https://j15b109.p.ssafy.io
