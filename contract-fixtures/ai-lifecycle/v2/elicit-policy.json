@@ -1,0 +1,29 @@
+{
+  "fixture_kind": "elicit-policy",
+  "schema_version": "1.0",
+  "state_schema_version": "1.0",
+  "step_id": "financial-mindset",
+  "confirmation_mode": "one_field_at_a_time",
+  "capture_adapter": "deterministic_form_change_proposal",
+  "limits": {
+    "max_field_turns": 5,
+    "max_total_turns": 30,
+    "max_resets_per_field": 1
+  },
+  "field_order": [
+    "values",
+    "past_experience",
+    "current_situation",
+    "current_challenge",
+    "invest_philosophy",
+    "future_goals"
+  ],
+  "fields": {
+    "values": {"label": "가치관", "question": "돈과 관련해 가장 중요하게 지키고 싶은 기준은 무엇인가요?"},
+    "past_experience": {"label": "과거 경험", "question": "지금의 재무 생각에 영향을 준 과거 경험이 있나요?"},
+    "current_situation": {"label": "현재 재무 상황", "question": "현재 재무 상황을 본인은 어떻게 바라보고 있나요?"},
+    "current_challenge": {"label": "당면 과제", "question": "지금 가장 먼저 해결하고 싶은 재무 과제는 무엇인가요?"},
+    "invest_philosophy": {"label": "투자 철학", "question": "투자할 때 중요하게 생각하는 원칙은 무엇인가요?"},
+    "future_goals": {"label": "미래 인생 목표", "question": "앞으로 돈을 통해 이루고 싶은 삶의 목표는 무엇인가요?"}
+  }
+}

@@ -1,5 +1,34 @@
 import { createSecureUuid } from './secureUuid.js'
 
+export function errorReviewConfidenceLevel(confidence) {
+  if (typeof confidence !== 'number' || !Number.isFinite(confidence)) return null
+  if (confidence >= 0.85) return 'high'
+  if (confidence >= 0.60) return 'medium'
+  return 'low'
+}
+
+export function visibleErrorReviewItems(items) {
+  if (!Array.isArray(items)) return []
+  return items.filter((item) => {
+    const level = errorReviewConfidenceLevel(item?.confidence)
+    return (level === 'medium' || level === 'high') && item?.confidence_level === level
+  })
+}
+
+export function errorReviewItemChange(item) {
+  return {
+    section: item.section,
+    path: item.path,
+    operation: item.item_id != null || item.client_item_id ? 'update' : 'set',
+    value: item.suggested_value,
+    reason: item.reason,
+    ...(item.item_id != null ? { item_id: item.item_id } : {}),
+    ...(item.client_item_id ? { client_item_id: item.client_item_id } : {}),
+    ...(item.parent_item_id != null ? { parent_item_id: item.parent_item_id } : {}),
+    ...(item.parent_client_item_id ? { parent_client_item_id: item.parent_client_item_id } : {}),
+  }
+}
+
 const SINGLE_FIELDS = {
   'basic-info': {
     age: 'age',
@@ -81,6 +110,43 @@ function matchesIdentity(item, change) {
   if (change.item_id != null) return identity.id === String(change.item_id)
   if (change.client_item_id) return identity.clientId === change.client_item_id
   return false
+}
+
+function canonicalIdentityMatches(item, change, prefix = '') {
+  const idKey = `${prefix}item_id`
+  const clientIdKey = `${prefix}client_item_id`
+  if (change[idKey] != null) return String(item?.id) === String(change[idKey])
+  if (change[clientIdKey]) return item?.client_item_id === change[clientIdKey]
+  return false
+}
+
+export function readCanonicalValue(currentForm, change) {
+  if (!currentForm || typeof currentForm !== 'object') return { found: false, value: undefined }
+  if (change.item_id == null && !change.client_item_id) {
+    return {
+      found: Object.hasOwn(currentForm, change.path),
+      value: currentForm[change.path],
+    }
+  }
+
+  const rows = change.section === 'goal_periods' || change.section === 'goal_milestones'
+    ? currentForm[change.section]
+    : currentForm.assets
+  if (!Array.isArray(rows)) return { found: false, value: undefined }
+  if (change.section === 'goal_periods' && change.path.startsWith('items[].')) {
+    const parent = rows.find((row) => canonicalIdentityMatches(row, change, 'parent_'))
+    const item = parent?.items?.find((row) => canonicalIdentityMatches(row, change))
+    const itemPath = change.path.slice('items[].'.length)
+    return {
+      found: Boolean(item && Object.hasOwn(item, itemPath)),
+      value: item?.[itemPath],
+    }
+  }
+  const item = rows.find((row) => canonicalIdentityMatches(row, change))
+  return {
+    found: Boolean(item && Object.hasOwn(item, change.path)),
+    value: item?.[change.path],
+  }
 }
 
 function uiValue(field, value) {
@@ -210,4 +276,33 @@ export function applyCanonicalChanges(stepId, form, changes) {
     else if (LIST_SECTIONS.has(change.section)) applyList(form, change)
     else applyGoal(form, change)
   }
+}
+
+export function applyErrorReviewSuggestion(stepId, form, canonicalForm, item) {
+  if (item?.suggested_value == null || !form) return 'unavailable'
+  const change = errorReviewItemChange(item)
+  const current = readCanonicalValue(canonicalForm, change)
+  if (!current.found || JSON.stringify(current.value) !== JSON.stringify(item.current_value)) {
+    return 'stale'
+  }
+  applyCanonicalChanges(stepId, form, [change])
+  item.decision = 'applied'
+  return 'applied'
+}
+
+export function cancelErrorReviewSuggestion(item) {
+  item.decision = 'cancelled'
+  return 'cancelled'
+}
+
+export async function continueSaveAfterOptionalReview(requestReview, persist) {
+  let needsDecision = false
+  try {
+    needsDecision = await requestReview()
+  } catch {
+    needsDecision = false
+  }
+  if (needsDecision) return 'review_required'
+  await persist()
+  return 'saved'
 }

@@ -28,8 +28,8 @@ export const STEP_GUIDE_MESSAGES = {
   ],
 
   'financial-mindset': [
-    { text: '경제 관념 진단표입니다.' },
-    { text: '소비 성향, 투자 성향, 재무 목표 의식, 자산 관리 방식 4가지 항목을 선택해 주세요.\n고객님의 재무 행동 패턴을 파악하는 데 활용됩니다.' },
+    { text: '가치관, 과거 경험, 현재 상황, 당면 과제, 투자 철학, 미래 목표를 고객님의 말로 정리하는 단계입니다.' },
+    { text: 'AI가 여섯 항목을 하나씩 질문하고, 각 답변을 폼 제안으로 만들기 전에 확인해도 될까요?', action: { type: 'elicit-consent', label: '정성정보 대화 시작' } },
   ],
 
   'financial-satisfaction': [

@@ -1,7 +1,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useAiStore } from '@/stores/ai'
-import { applyCanonicalChanges } from '@/utils/formChanges'
+import { mapCurrentForm } from '@/api/consulting'
+import {
+  applyCanonicalChanges,
+  applyErrorReviewSuggestion,
+  cancelErrorReviewSuggestion,
+  continueSaveAfterOptionalReview,
+  visibleErrorReviewItems,
+} from '@/utils/formChanges'
 import { PROCESS_STEPS, STEP_IDS } from './data/processSteps.js'
 import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.js'
 import BasicInfoForm from '@/components/forms/BasicInfoForm.vue'
@@ -227,7 +234,6 @@ function resetConversationState() {
   draftMessage.value = ''
   resizeChatInput()
   basicInfoData.value = null
-  formWarningShown.value = false
   isTyping.value = false
   isStreamingResponse.value = false
   leftWidth.value = 71.4
@@ -257,6 +263,19 @@ function toChatMessage(message) {
       type: 'form-update',
       messageId: message.id,
     }
+  }
+  const review = message.extracted_data?.review
+  if (review?.type === 'error_review' && Array.isArray(review.items)) {
+    const visibleItems = visibleErrorReviewItems(review.items)
+    bubble.action = {
+      type: 'error-review',
+      trigger: review.trigger,
+      items: visibleItems.map((item) => ({ ...item, decision: 'pending' })),
+    }
+  }
+  const uiAction = message.extracted_data?.ui_action
+  if (uiAction?.type === 'resume_elicit') {
+    bubble.action = { type: 'resume-elicit', label: uiAction.label ?? '이어서 계속' }
   }
   return bubble
 }
@@ -388,8 +407,42 @@ function resizeChatInput() {
   })
 }
 
-function executeAction(action) {
+async function executeAction(action) {
   if (action.type === 'next-step') navigateToStep(action.stepId)
+  if (action.type === 'elicit-consent') await runElicitAction('start')
+  if (action.type === 'resume-elicit') await runElicitAction('resume')
+}
+
+async function runElicitAction(elicitAction) {
+  if (isTyping.value || isStreamingResponse.value || !activeFormRef.value?.form) return
+  let actionIndex = -1
+  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
+    if (messages.value[index].action?.type === `${elicitAction === 'start' ? 'elicit-consent' : 'resume-elicit'}`) {
+      actionIndex = index
+      break
+    }
+  }
+  const text = elicitAction === 'start' ? '정성정보 수집에 동의합니다.' : '이어서 계속'
+  messages.value.push({ role: 'user', text })
+  isTyping.value = true
+  try {
+    const stored = await aiStore.sendMessage(text, {
+      stepId: currentStepId.value,
+      form: activeFormRef.value.form,
+      elicitAction,
+    })
+    if (stored) {
+      if (actionIndex !== -1) {
+        messages.value[actionIndex] = { ...messages.value[actionIndex], action: undefined }
+      }
+      messages.value.push(toChatMessage(stored))
+    }
+  } catch (error) {
+    messages.value.push({ role: 'ai', text: error?.message ?? '정성정보 대화를 시작하지 못했습니다.' })
+  } finally {
+    isTyping.value = false
+    scrollToBottom(false, true)
+  }
 }
 
 function dismissAction(msg) {
@@ -470,8 +523,8 @@ const activeFormComponent = computed(() => STEP_FORM_MAP[currentStepId.value]?.c
 const activeFormTitle     = computed(() => STEP_FORM_MAP[currentStepId.value]?.title ?? '데이터 입력')
 const activeFormRef       = ref(null)
 const basicInfoData       = ref(null)
-const formWarningShown    = ref(false)
 const formSaving          = ref(false)
+const reviewLoading       = ref(false)
 const isFinancialInfoStep = computed(() => currentStepId.value === 'financial-info')
 const financialGoalProps  = computed(() => ({
   currentAge: Number(basicInfoData.value?.age) || 30,
@@ -484,9 +537,65 @@ const activeFormProps = computed(() =>
 const submitButtonLabel   = computed(() => {
   if (isFinancialInfoStep.value) return '다음 단계로 이동'
   if (formSaving.value) return '저장 중...'
-  if (formWarningShown.value) return '수정 완료'
   return '작성 완료'
 })
+
+function applyReviewSuggestion(item) {
+  if (item.suggested_value == null || !activeFormRef.value?.form) return
+  try {
+    const result = applyErrorReviewSuggestion(
+      currentStepId.value,
+      activeFormRef.value.form,
+      mapCurrentForm(currentStepId.value, activeFormRef.value.form),
+      item,
+    )
+    if (result === 'stale') {
+      sessionError.value = '검토 이후 입력값이 바뀌어 후보를 적용하지 않았습니다. 다시 검토해주세요.'
+    }
+  } catch {
+    sessionError.value = '검토 제안을 현재 폼에 반영하지 못했습니다. 값을 직접 확인해주세요.'
+  }
+}
+
+function cancelReviewSuggestion(item) {
+  cancelErrorReviewSuggestion(item)
+}
+
+async function requestErrorReview(trigger, nextStepId = null) {
+  if (reviewLoading.value || !activeFormRef.value?.form) return false
+  reviewLoading.value = true
+  try {
+    const stored = await aiStore.reviewForm(
+      currentStepId.value,
+      activeFormRef.value.form,
+      trigger,
+    )
+    const bubble = toChatMessage(stored)
+    const items = bubble.action?.type === 'error-review' ? bubble.action.items : []
+    if (!items.length) {
+      if (trigger === 'user_request') messages.value.push(bubble)
+      return false
+    }
+    bubble.action.saveAfterReview = trigger === 'save'
+    bubble.action.nextStepId = nextStepId
+    messages.value.push(bubble)
+    scrollToBottom(false, true)
+    return true
+  } catch (error) {
+    if (trigger === 'user_request') {
+      messages.value.push({ role: 'ai', text: error?.message ?? '입력값 검토를 완료하지 못했습니다.' })
+    }
+    return false
+  } finally {
+    reviewLoading.value = false
+  }
+}
+
+async function finishErrorReview(msg) {
+  const { saveAfterReview, nextStepId } = msg.action
+  dismissAction(msg)
+  if (saveAfterReview) await persistFormAndAdvance(nextStepId)
+}
 
 function executeAutoAction(action) {
   if (action.type === 'fill-field' && activeFormRef.value?.form) {
@@ -506,18 +615,13 @@ async function submitForm() {
     return
   }
 
-  const earnings = activeFormRef.value?.form?.earnings
-  if (currentStepId.value === 'basic-info' && Number(earnings) === 10 && !formWarningShown.value) {
-    completedStepIds.value.add(currentStepId.value)
-    dismissNextStepAction()
-    streamAiMessages([{
-      text: `소득이 월 세후 ${earnings}만원으로 낮게 작성된 것 같아요. 잘못 입력하셨다면 수정해주시고, 맞다면 아래의 버튼을 눌러주세요.`,
-      action: { type: 'next-step', stepId: nextStepId, label: '맞습니다, 다음 단계로 이동 →' },
-    }], { onDone: () => { formWarningShown.value = true } })
-    return
-  }
-  formWarningShown.value = false
+  await continueSaveAfterOptionalReview(
+    () => requestErrorReview('save', nextStepId),
+    () => persistFormAndAdvance(nextStepId),
+  )
+}
 
+async function persistFormAndAdvance(nextStepId) {
   formSaving.value = true
   try {
     const response = await aiStore.saveFormData(currentStepId.value, activeFormRef.value?.form ?? {})
@@ -651,6 +755,7 @@ onBeforeUnmount(() => {
                           <strong>{{ change.label ?? `${change.section}.${change.path}` }}</strong>
                           <span>{{ change.value }}</span>
                           <small v-if="change.reason">{{ change.reason }}</small>
+                          <small v-if="change.assumption_level">{{ change.assumption_level }} · {{ change.source?.title ?? '승인 정책' }} · {{ change.source?.reference_period ?? '' }}<template v-if="change.policy_version"> · {{ change.policy_version }}</template></small>
                         </div>
                         <div v-if="change.decision_status === 'pending'" class="update-actions">
                           <button
@@ -670,6 +775,23 @@ onBeforeUnmount(() => {
                           {{ decisionStatusLabel(change.decision_status) }}
                         </span>
                       </div>
+                    </div>
+                    <div v-else-if="msg.action.type === 'error-review'" class="update-card">
+                      <p class="update-desc">의심되는 값만 확인해 주세요. 제안은 현재 draft에만 바로 반영됩니다.</p>
+                      <div v-for="item in msg.action.items" :key="`${item.section}.${item.path}.${item.item_id ?? item.client_item_id ?? ''}`" class="update-change">
+                        <div class="update-change-copy">
+                          <strong>{{ `${item.section}.${item.path}` }}</strong>
+                          <span>현재 값: {{ item.current_value }}</span>
+                          <small>{{ item.reason }} · 신뢰도 {{ item.confidence_level === 'high' ? '높음' : '보통' }}</small>
+                          <span v-if="item.suggested_value != null">수정 후보: {{ item.suggested_value }}</span>
+                        </div>
+                        <div v-if="item.decision === 'pending'" class="update-actions">
+                          <button class="action-btn action-btn--secondary" type="button" @click="cancelReviewSuggestion(item)">현재 값 유지</button>
+                          <button v-if="item.suggested_value != null" class="action-btn" type="button" @click="applyReviewSuggestion(item)">후보 적용</button>
+                        </div>
+                        <span v-else class="update-decision">{{ item.decision === 'applied' ? '적용됨' : '유지함' }}</span>
+                      </div>
+                      <button class="action-btn" type="button" @click="finishErrorReview(msg)">{{ msg.action.saveAfterReview ? '검토 완료하고 저장' : '닫기' }}</button>
                     </div>
                     <button v-else class="action-btn" type="button" @click="executeAction(msg.action)">
                       {{ msg.action.label }}
@@ -735,7 +857,8 @@ onBeforeUnmount(() => {
                   <component :is="activeFormComponent" ref="activeFormRef" v-bind="activeFormProps" />
                 </div>
                 <div class="form-footer">
-                  <button class="submit-form-btn" :class="{ 'submit-form-btn--warned': formWarningShown }" type="button" :disabled="formSaving" @click="submitForm">{{ submitButtonLabel }}</button>
+                  <button class="submit-form-btn submit-form-btn--secondary" type="button" :disabled="formSaving || reviewLoading" @click="requestErrorReview('user_request')">{{ reviewLoading ? '검토 중...' : '입력값 검토' }}</button>
+                  <button class="submit-form-btn" type="button" :disabled="formSaving || reviewLoading" @click="submitForm">{{ submitButtonLabel }}</button>
                 </div>
               </template>
 

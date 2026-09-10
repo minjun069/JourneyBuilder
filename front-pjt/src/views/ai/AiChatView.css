@@ -352,6 +352,7 @@
   border-top: 1px solid #eee;
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 
 .submit-form-btn {
@@ -368,10 +369,10 @@
 
 .submit-form-btn:hover { opacity: 0.88; }
 
-.submit-form-btn--warned {
-  background: linear-gradient(135deg, #e07b39, #f0a060);
-  box-shadow: 0 6px 14px rgba(224, 123, 57, 0.28);
-  transition: background 0.3s, box-shadow 0.3s;
+.submit-form-btn--secondary {
+  color: #5e5ce6;
+  background: #fff;
+  border: 1px solid #b8b9ef;
 }
 
 .composer {

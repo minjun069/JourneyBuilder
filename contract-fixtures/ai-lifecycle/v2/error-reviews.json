@@ -1,0 +1,87 @@
+{
+  "fixture_kind": "error-reviews",
+  "contract_version": "2.0",
+  "confidence_policy": {
+    "low": {"minimum": 0.0, "maximum_exclusive": 0.6, "visible": false},
+    "medium": {"minimum": 0.6, "maximum_exclusive": 0.85, "visible": true},
+    "high": {"minimum": 0.85, "maximum_inclusive": 1.0, "visible": true}
+  },
+  "cases": {
+    "save_suspicious_income": {
+      "browser_request_fragment": {
+        "request_mode": "error_review",
+        "review_trigger": "save",
+        "step_id": "basic-info"
+      },
+      "ai_output": {
+        "response": "입력값에서 확인이 필요한 항목 1개를 찾았습니다.",
+        "step_id": "basic-info",
+        "action": null,
+        "review": {
+          "type": "error_review",
+          "trigger": "save",
+          "manual": {
+            "document_id": "interface-basic-info",
+            "version": "1.0.0"
+          },
+          "items": [
+            {
+              "section": "basic_info",
+              "path": "monthly_income",
+              "current_value": 20000,
+              "reason": "월 소득의 단위 착오 가능성을 확인해야 합니다.",
+              "suggested_value": 2000000,
+              "confidence": 0.91,
+              "confidence_level": "high"
+            }
+          ]
+        }
+      },
+      "expected_frontend": {
+        "visible_item_count": 1,
+        "apply_updates_draft_directly": true,
+        "apply_calls_input_assist_approval_api": false,
+        "cancel_preserves_current_value": true,
+        "close_preserves_current_value": true,
+        "save_waits_for_user_decision": true
+      }
+    },
+    "user_review_no_suspicion": {
+      "browser_request_fragment": {
+        "request_mode": "error_review",
+        "review_trigger": "user_request",
+        "step_id": "expenses"
+      },
+      "ai_output": {
+        "response": "현재 입력값에서 별도로 확인을 권할 만한 항목을 찾지 못했습니다.",
+        "step_id": "expenses",
+        "action": null,
+        "review": {
+          "type": "error_review",
+          "trigger": "user_request",
+          "manual": {
+            "document_id": "interface-expenses",
+            "version": "1.0.0"
+          },
+          "items": []
+        }
+      },
+      "expected_frontend": {
+        "visible_item_count": 0,
+        "save_continues": true
+      }
+    },
+    "save_agent_failure": {
+      "browser_request_fragment": {
+        "request_mode": "error_review",
+        "review_trigger": "save",
+        "step_id": "basic-info"
+      },
+      "agent_result": "timeout_or_error",
+      "expected_frontend": {
+        "persist_existing_draft": true,
+        "save_blocked": false
+      }
+    }
+  }
+}

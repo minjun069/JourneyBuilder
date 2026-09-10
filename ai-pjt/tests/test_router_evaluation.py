@@ -25,9 +25,7 @@ EXPECTED_REASON_CODES = {
     "intent_match",
     "ambiguous_intent",
     "unsupported_intent",
-    "unsupported_step",
-    "agent_not_allowed",
-    "classifier_error",
+    "plan_invalid",
 }
 EXPECTED_STEP_IDS = {
     "intro",
@@ -140,16 +138,16 @@ class RouterEvaluationFixtureTests(unittest.TestCase):
                     self.assertEqual(case["classifier"]["status"], "ambiguous")
                 elif reason_code == "unsupported_intent":
                     self.assertEqual(case["classifier"]["status"], "unsupported")
-                elif reason_code == "unsupported_step":
+                elif case["kind"] == "unsupported_step":
                     self.assertNotIn(case["step_id"], self.step_candidates)
                     self.assertEqual(case.get("expected_classifier_calls"), 0)
-                elif reason_code == "agent_not_allowed":
+                elif case["kind"] == "policy_rejection":
                     self.assertEqual(case["classifier"]["status"], "matched")
                     self.assertNotIn(
                         case["classifier"]["agent"],
                         self.step_candidates[case["step_id"]],
                     )
-                elif reason_code == "classifier_error":
+                elif case["kind"] == "classifier_error":
                     self.assertEqual(case["classifier"]["status"], "error")
 
     def test_elicit_means_explicit_qualitative_collection(self) -> None:

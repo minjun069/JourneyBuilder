@@ -58,3 +58,28 @@ python3 -m unittest discover -s evals/tests -v
 
 W1-L11에서 실제 producer가 동일한 event 계약을 사용하도록 연결하고, F11의
 production masker와 exporter 직전 sentinel 검사를 통과시킨 후 실제 baseline을 측정한다.
+
+## F07-T04·F08-T04 Agent 통합 평가
+
+`agent_baseline.py`는 production Agent prompt·graph를 그대로 실행하고, F06-T06이
+승격한 `financial-knowledge__official-catalog-2-1-0`과
+`interface-guides__official-catalog-2-1-0` active pointer를 먼저 확인한다. QA의
+질의 embedding과 각 Agent의 LLM 호출을 애플리케이션 호출 1회로 계수하며,
+중단된 선행 시도는 `--prior-model-calls`로 누적한다. fixture와 러너 모두
+총 200회를 상한으로 강제한다.
+
+Error Review의 false positive는 정상 입력에 존재하는 canonical field instance를
+분모로 계산하고 low·medium·high 건수와 field별 비율을 모두 남긴다. low는
+실제 사용자 표시에서 숨기므로 raw와 visible 비율을 따로 보고한다. 허용률은
+아직 두지 않으며, 모델 결과는 합격 기준이 아닌 baseline이다. 합격·불합격은
+`contract-fixtures/ai-lifecycle/v2/agent-evaluations.json`이 가리키는 명확한 계약과
+결정론적 회귀 테스트만 판정한다.
+
+실제 실행은 DB credential·GMS key를 실행 환경에만 주입한 뒤 `ai-pjt`에서
+다음과 같이 실행한다. 보고서에는 credential을 기록하지 않는다.
+
+```bash
+PYTHONPATH=. python -m evals.agent_baseline \
+  --prior-model-calls 0 \
+  --output evals/artifacts/f07-f08-production-model-baseline.json
+```

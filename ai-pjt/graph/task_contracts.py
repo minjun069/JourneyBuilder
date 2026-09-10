@@ -619,7 +619,7 @@ def _failed_validation(
 ) -> TaskResultValidation:
     return TaskResultValidation(
         valid=False,
-        result=failed_task_result(task_id, "output_schema_invalid"),
+        result=failed_task_result(task_id, "artifact_invalid"),
         issues=tuple(issues),
     )
 

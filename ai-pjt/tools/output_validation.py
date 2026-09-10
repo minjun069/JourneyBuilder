@@ -6,6 +6,11 @@ from datetime import date
 from math import isfinite
 from typing import Any, Mapping
 
+from agents.error_review_confidence import (
+    VISIBLE_CONFIDENCE_LEVELS,
+    confidence_level,
+)
+
 
 SAFE_VALIDATION_FAILURE_RESPONSE = (
     "응답 또는 입력 제안이 결정론적 검증을 통과하지 못했습니다. "
@@ -97,10 +102,85 @@ def validate_form_update_contract(
             step_id=current_step_id,
             field_registry=state.get("field_registry", []),
         ))
+    review = output.get("review")
+    if review is not None:
+        issues.extend(_validate_error_review(review, expected_trigger=state.get("review_trigger")))
+    ui_action = output.get("ui_action")
+    if ui_action is not None:
+        if (
+            not isinstance(ui_action, dict)
+            or set(ui_action) != {"type", "label"}
+            or ui_action.get("type") != "resume_elicit"
+            or not isinstance(ui_action.get("label"), str)
+            or not ui_action["label"].strip()
+        ):
+            issues.append(_issue(
+                "INVALID_UI_ACTION",
+                "output.ui_action",
+                "지원하지 않는 UI action입니다.",
+            ))
 
     if issues:
         return _failed(issues, current_step_id)
     return OutputValidationResult(valid=True, output=output, issues=())
+
+
+def _validate_error_review(
+    review: Any,
+    *,
+    expected_trigger: Any = None,
+) -> list[ValidationIssue]:
+    if not isinstance(review, dict) or set(review) != {"type", "trigger", "manual", "items"}:
+        return [_issue("INVALID_REVIEW", "output.review", "review 계약이 올바르지 않습니다.")]
+    issues: list[ValidationIssue] = []
+    if review.get("type") != "error_review" or review.get("trigger") not in {"save", "user_request"}:
+        issues.append(_issue("INVALID_REVIEW", "output.review", "review 종류 또는 trigger가 올바르지 않습니다."))
+    if expected_trigger is not None and review.get("trigger") != expected_trigger:
+        issues.append(_issue("REVIEW_TRIGGER_MISMATCH", "output.review.trigger", "review trigger가 요청과 일치하지 않습니다."))
+    manual = review.get("manual")
+    if (
+        not isinstance(manual, dict)
+        or set(manual) != {"document_id", "version"}
+        or not all(isinstance(manual.get(key), str) and manual[key].strip() for key in ("document_id", "version"))
+    ):
+        issues.append(_issue("INVALID_REVIEW_MANUAL", "output.review.manual", "review manual provenance가 올바르지 않습니다."))
+    items = review.get("items")
+    if not isinstance(items, list):
+        return issues + [_issue("INVALID_REVIEW_ITEMS", "output.review.items", "review items는 array여야 합니다.")]
+    allowed = {
+        "section", "path", "item_id", "client_item_id", "parent_item_id",
+        "parent_client_item_id", "current_value", "reason", "suggested_value", "confidence",
+        "confidence_level",
+    }
+    for index, item in enumerate(items):
+        path = f"output.review.items[{index}]"
+        if not isinstance(item, dict) or set(item) - allowed:
+            issues.append(_issue("INVALID_REVIEW_ITEM", path, "review item이 올바르지 않습니다."))
+            continue
+        if "current_value" not in item:
+            issues.append(_issue("INVALID_REVIEW_ITEM", path, "review item에 현재 값이 필요합니다."))
+        if not all(isinstance(item.get(key), str) and item[key].strip() for key in ("section", "path", "reason")):
+            issues.append(_issue("INVALID_REVIEW_ITEM", path, "review field와 이유가 필요합니다."))
+        confidence = item.get("confidence")
+        if (
+            isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not isfinite(float(confidence))
+            or not 0 <= float(confidence) <= 1
+        ):
+            issues.append(_issue("INVALID_REVIEW_CONFIDENCE", f"{path}.confidence", "review confidence가 올바르지 않습니다."))
+            continue
+        level = item.get("confidence_level")
+        if (
+            level not in VISIBLE_CONFIDENCE_LEVELS
+            or level != confidence_level(float(confidence))
+        ):
+            issues.append(_issue(
+                "INVALID_REVIEW_CONFIDENCE_LEVEL",
+                f"{path}.confidence_level",
+                "낮은 신뢰도이거나 confidence와 일치하지 않는 review item은 노출할 수 없습니다.",
+            ))
+    return issues
 
 
 def validate_agent_output_contract(
@@ -230,6 +310,59 @@ def _validate_change(
             "UNIT_MISMATCH",
             f"{base_path}.unit",
             "change 단위가 canonical 필드 단위와 일치하지 않습니다.",
+        ))
+
+    policy_version = change.get("policy_version")
+    if policy_version is not None and not (
+        isinstance(policy_version, str) and policy_version.strip()
+    ):
+        issues.append(_issue(
+            "INVALID_POLICY_VERSION",
+            f"{base_path}.policy_version",
+            "기본값 정책 version이 올바르지 않습니다.",
+        ))
+    source = change.get("source")
+    if source is not None and (
+        not isinstance(source, dict)
+        or set(source) != {"source_id", "title", "reference_period"}
+        or not all(
+            isinstance(source.get(key), str) and source[key].strip()
+            for key in ("source_id", "title", "reference_period")
+        )
+    ):
+        issues.append(_issue(
+            "INVALID_CHANGE_SOURCE",
+            f"{base_path}.source",
+            "기본값 출처 메타데이터가 올바르지 않습니다.",
+        ))
+    retrieved_at = change.get("retrieved_at")
+    if retrieved_at is not None and not (
+        isinstance(retrieved_at, str) and _is_iso_date(retrieved_at)
+    ):
+        issues.append(_issue(
+            "INVALID_RETRIEVED_AT",
+            f"{base_path}.retrieved_at",
+            "기본값 조회 기준일이 올바르지 않습니다.",
+        ))
+    for metadata_field in ("transform", "assumption_level"):
+        if change.get(metadata_field) is not None and not (
+            isinstance(change[metadata_field], str) and change[metadata_field].strip()
+        ):
+            issues.append(_issue(
+                "INVALID_CHANGE_METADATA",
+                f"{base_path}.{metadata_field}",
+                "기본값 설명 메타데이터가 올바르지 않습니다.",
+            ))
+    source_turn_ids = change.get("source_turn_ids")
+    if source_turn_ids is not None and (
+        not isinstance(source_turn_ids, list)
+        or not source_turn_ids
+        or not all(isinstance(turn_id, str) and turn_id for turn_id in source_turn_ids)
+    ):
+        issues.append(_issue(
+            "INVALID_SOURCE_TURNS",
+            f"{base_path}.source_turn_ids",
+            "Elicit source turn 식별자가 올바르지 않습니다.",
         ))
 
     cardinality = spec.get("cardinality")

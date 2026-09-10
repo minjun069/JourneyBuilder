@@ -106,6 +106,31 @@ class OutputValidationTests(unittest.TestCase):
         self.assertTrue(result.valid)
         self.assertIsNotNone(result.output["action"])
 
+    def test_policy_provenance_is_validated(self):
+        change = {
+            "section": "basic_info",
+            "path": "monthly_income",
+            "operation": "set",
+            "value": 3_000_000,
+            "policy_version": "2026-09-09",
+            "source": {
+                "source_id": "approved-source",
+                "title": "승인 자료",
+                "reference_period": "2025",
+            },
+            "retrieved_at": "2026-09-09",
+            "transform": "원 단위 직접 매핑",
+            "assumption_level": "household_benchmark",
+        }
+        self.assertTrue(validate_form_update_contract(state_with_change(change)).valid)
+
+        invalid = validate_form_update_contract(state_with_change({
+            **change,
+            "source": {"title": "출처가 불완전함"},
+        }))
+        self.assertFalse(invalid.valid)
+        self.assertIn("INVALID_CHANGE_SOURCE", {issue.code for issue in invalid.issues})
+
     def test_unknown_field_fails_closed_and_removes_action(self):
         result = validate_form_update_contract(state_with_change({
             "section": "basic_info",
@@ -203,6 +228,49 @@ class OutputValidationTests(unittest.TestCase):
         })
         self.assertFalse(result.valid)
         self.assertIn("INVALID_CURRENT_STEP", {issue.code for issue in result.issues})
+
+    def test_error_review_requires_visible_matching_confidence_level(self):
+        item = {
+            "section": "basic_info",
+            "path": "monthly_income",
+            "current_value": 20_000,
+            "reason": "단위 착오가 의심됩니다.",
+            "suggested_value": 2_000_000,
+            "confidence": 0.91,
+            "confidence_level": "high",
+        }
+        state = {
+            "step_id": "basic-info",
+            "review_trigger": "save",
+            "field_registry": [],
+            "output": {
+                "response": "확인이 필요합니다.",
+                "review": {
+                    "type": "error_review",
+                    "trigger": "save",
+                    "manual": {"document_id": "interface-basic-info", "version": "1.0.0"},
+                    "items": [item],
+                },
+            },
+        }
+        self.assertTrue(validate_form_update_contract(state).valid)
+
+        low = {
+            **state,
+            "output": {
+                **state["output"],
+                "review": {
+                    **state["output"]["review"],
+                    "items": [{**item, "confidence": 0.59, "confidence_level": "low"}],
+                },
+            },
+        }
+        result = validate_form_update_contract(low)
+        self.assertFalse(result.valid)
+        self.assertIn(
+            "INVALID_REVIEW_CONFIDENCE_LEVEL",
+            {issue.code for issue in result.issues},
+        )
 
 
 if __name__ == "__main__":

@@ -74,7 +74,7 @@ class TaskResultContractTests(unittest.TestCase):
             step_id="financial-goals",
         )
         self.assertFalse(validation.valid)
-        self.assertEqual(validation.result["reason_code"], "output_schema_invalid")
+        self.assertEqual(validation.result["reason_code"], "artifact_invalid")
         self.assertEqual(
             {issue.code for issue in validation.issues},
             {
