@@ -1,0 +1,54 @@
+name: "retirewise-rag-${RAG_INSTANCE_ID:?RAG_INSTANCE_ID is required}"
+
+# This is a local producer harness for the application's PostgreSQL schema.
+# It does not introduce a separate RAG database URL into the application.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: "${RAG_POSTGRES_DB:-retirewise_db}"
+      POSTGRES_USER: "${RAG_POSTGRES_USER:-retirewise}"
+      POSTGRES_PASSWORD: "${RAG_POSTGRES_PASSWORD:?RAG_POSTGRES_PASSWORD is required}"
+    ports:
+      - "127.0.0.1:${RAG_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - rag_postgres_data:/var/lib/postgresql/data
+      - ../../db/postgres/init.sql:/docker-entrypoint-initdb.d/10-runtime.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  operator:
+    build:
+      context: ../..
+      dockerfile: ai-pjt/Dockerfile
+    entrypoint: ["python"]
+    user: "${RAG_OPERATOR_UID:-1000}:${RAG_OPERATOR_GID:-1000}"
+    working_dir: /workspace/ai-pjt/rag
+    environment:
+      HOME: /tmp/rag-operator
+      DATABASE_URL: "postgresql://${RAG_POSTGRES_USER:-retirewise}:${RAG_POSTGRES_PASSWORD:?RAG_POSTGRES_PASSWORD is required}@postgres:5432/${RAG_POSTGRES_DB:-retirewise_db}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      GOOGLE_GEMINI_BASE_URL: "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
+      EMBEDDING_PROVIDER: "gemini"
+      EMBEDDING_MODEL: "gemini-embedding-2"
+      EMBED_DIM: "3072"
+      PYTHONPATH: /workspace/ai-pjt
+      RAG_SOURCE_REVISION: "${RAG_SOURCE_REVISION:-}"
+    volumes:
+      - ../..:/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["operator"]
+
+volumes:
+  rag_postgres_data:
+    name: "retirewise_rag_${RAG_INSTANCE_ID}_postgres_data"

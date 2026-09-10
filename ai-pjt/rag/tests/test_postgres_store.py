@@ -76,6 +76,7 @@ class PostgresStoreIntegrationTests(unittest.TestCase):
         )
 
         query_count = 0
+        candidates = []
         for collection in ("interface-guides", "financial-knowledge"):
             manifest = pipeline.build(
                 catalog.for_collection(collection),
@@ -91,10 +92,16 @@ class PostgresStoreIntegrationTests(unittest.TestCase):
                 top_k=5,
             )
             self.assertTrue(report.passed)
-            pipeline.promote(manifest, report)
+            candidates.append((manifest, report))
             query_count += report.query_count
 
         self.assertEqual(query_count, 58)
+        pipeline.promote_many(candidates)
+        for manifest, _ in candidates:
+            self.assertEqual(
+                store.active_collection(manifest.collection),
+                manifest.physical_collection,
+            )
 
     def test_build_search_and_atomic_version_switch(self) -> None:
         store = PostgresIndexStore(DATABASE_URL)

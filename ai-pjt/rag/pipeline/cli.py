@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .chunking import DeterministicChunker, MarkdownStructureChunker
 from .corpus import load_approved_catalog, load_corpus, load_gold_queries
@@ -24,6 +28,16 @@ _DEFAULT_GOLD = _RAG_DIR / "fixtures" / "synthetic" / "gold.json"
 _DEFAULT_CATALOG = _RAG_DIR / "data" / "catalog.json"
 _DEFAULT_GOLD_DIR = _RAG_DIR / "evaluation"
 _REPOSITORY_ROOT = _RAG_DIR.parents[1]
+_DEFAULT_POLICY = (
+    _REPOSITORY_ROOT / "contract-fixtures" / "financial-calculation" / "v1" / "policy.json"
+)
+_OPERATIONAL_COLLECTIONS = ("interface-guides", "financial-knowledge")
+_OPERATIONAL_EMBEDDING_MODEL = "gemini-embedding-2"
+_OPERATIONAL_EMBEDDING_DIMENSIONS = 3072
+_OPERATIONAL_MINIMUM_DENSE_SCORE = 0.52
+_GMS_GEMINI_BASE_URL = (
+    "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,23 +80,41 @@ def build_parser() -> argparse.ArgumentParser:
     operational.add_argument(
         "--collection",
         action="append",
-        choices=("interface-guides", "financial-knowledge"),
+        choices=_OPERATIONAL_COLLECTIONS,
         dest="collections",
     )
     operational.add_argument("--index-version")
+    operational.add_argument(
+        "--artifact-kind",
+        choices=("official", "experiment"),
+        default="experiment",
+        help="marks filenames, physical collection IDs, and manifests",
+    )
+    operational.add_argument("--environment-id", default="local")
+    operational.add_argument("--operator-id")
+    operational.add_argument("--source-revision")
+    operational.add_argument(
+        "--calculation-policy",
+        type=Path,
+        default=_DEFAULT_POLICY,
+    )
     operational.add_argument("--chunk-size", type=int, default=900)
     operational.add_argument("--overlap", type=int, default=100)
     operational.add_argument("--top-k", type=int, default=5)
     operational.add_argument("--fetch-k", type=int, default=10)
-    operational.add_argument("--minimum-dense-score", type=float, default=0.30)
+    operational.add_argument(
+        "--minimum-dense-score",
+        type=float,
+        default=_OPERATIONAL_MINIMUM_DENSE_SCORE,
+    )
     operational.add_argument("--minimum-recall", type=float, default=0.85)
     operational.add_argument("--minimum-mrr", type=float, default=0.70)
     operational.add_argument("--retention-days", type=int, default=30)
     operational.add_argument("--promote", action="store_true")
     operational.add_argument(
-        "--confirm-calculator-aligned",
+        "--confirm-rag-owner",
         action="store_true",
-        help="required to activate financial-knowledge until calculator alignment is complete",
+        help="required when a RAG owner creates or promotes an official candidate",
     )
     return parser
 
@@ -135,7 +167,10 @@ def run_synthetic(args: argparse.Namespace) -> int:
 
 def _operational_embedding() -> LlamaIndexEmbeddingAdapter:
     provider = os.environ.get("EMBEDDING_PROVIDER", "gemini").strip()
-    model = os.environ.get("EMBEDDING_MODEL", "gemini-embedding-001").strip()
+    model = os.environ.get(
+        "EMBEDDING_MODEL", _OPERATIONAL_EMBEDDING_MODEL
+    ).strip()
+    base_url = os.environ.get("GOOGLE_GEMINI_BASE_URL", "").strip()
     api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
     try:
         dimensions = int(os.environ.get("EMBED_DIM", "3072"))
@@ -143,10 +178,23 @@ def _operational_embedding() -> LlamaIndexEmbeddingAdapter:
         raise ValueError("EMBED_DIM must be an integer") from error
     if provider != "gemini":
         raise ValueError("operational indexing currently supports EMBEDDING_PROVIDER=gemini")
+    if model != _OPERATIONAL_EMBEDDING_MODEL:
+        raise ValueError(
+            "operational indexing requires "
+            f"EMBEDDING_MODEL={_OPERATIONAL_EMBEDDING_MODEL}"
+        )
+    if base_url != _GMS_GEMINI_BASE_URL:
+        raise ValueError(
+            "operational indexing requires GOOGLE_GEMINI_BASE_URL="
+            f"{_GMS_GEMINI_BASE_URL}"
+        )
     if not api_key:
         raise ValueError("GOOGLE_API_KEY is required for operational indexing")
-    if dimensions < 1:
-        raise ValueError("EMBED_DIM must be positive")
+    if dimensions != _OPERATIONAL_EMBEDDING_DIMENSIONS:
+        raise ValueError(
+            "operational indexing requires "
+            f"EMBED_DIM={_OPERATIONAL_EMBEDDING_DIMENSIONS}"
+        )
     try:
         from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
     except ImportError as error:
@@ -156,6 +204,64 @@ def _operational_embedding() -> LlamaIndexEmbeddingAdapter:
         embedding,
         model_id=model,
         dimensions=dimensions,
+    )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _repository_relative_path(path: Path, repository_root: Path) -> str:
+    try:
+        return path.resolve().relative_to(repository_root.resolve()).as_posix()
+    except ValueError as error:
+        raise ValueError(f"path must be inside repository_root: {path}") from error
+
+
+def _load_calculation_policy(
+    path: Path, repository_root: Path
+) -> dict[str, str]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("calculation policy root must be an object")
+    version = payload.get("policy_version")
+    status = payload.get("status")
+    if not isinstance(version, str) or not version.strip():
+        raise ValueError("calculation policy must declare policy_version")
+    if status != "approved":
+        raise ValueError("calculation policy must be approved")
+    return {
+        "path": _repository_relative_path(path, repository_root),
+        "version": version,
+        "status": status,
+        "sha256": _sha256_file(path),
+    }
+
+
+def _source_revision(explicit: str | None, repository_root: Path) -> str:
+    if explicit and explicit.strip():
+        return explicit.strip()
+    environment_revision = os.environ.get("RAG_SOURCE_REVISION", "").strip()
+    if environment_revision:
+        return environment_revision
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -227,22 +333,33 @@ def run_operational(args: argparse.Namespace) -> int:
     database_url = os.environ.get("DATABASE_URL", "").strip()
     if not database_url:
         raise ValueError("DATABASE_URL is required for operational indexing")
+    if not args.environment_id.strip():
+        raise ValueError("environment-id must not be empty")
+    if args.artifact_kind == "official":
+        if set(args.collections or _OPERATIONAL_COLLECTIONS) != set(
+            _OPERATIONAL_COLLECTIONS
+        ):
+            raise ValueError("official qualification must include both collections")
+        if not args.operator_id or not args.operator_id.strip():
+            raise ValueError("official qualification requires --operator-id")
+        if not args.confirm_rag_owner:
+            raise ValueError("official qualification requires --confirm-rag-owner")
     catalog = load_approved_catalog(
         args.catalog,
         repository_root=args.repository_root,
     )
-    collections = args.collections or ["interface-guides", "financial-knowledge"]
-    if (
-        args.promote
-        and "financial-knowledge" in collections
-        and not args.confirm_calculator_aligned
-    ):
-        raise ValueError(
-            "financial-knowledge activation is blocked until calculator alignment is confirmed"
-        )
+    collections = args.collections or list(_OPERATIONAL_COLLECTIONS)
+    if len(collections) != len(set(collections)):
+        raise ValueError("a collection may be specified only once")
     index_version = args.index_version or (
         "catalog-" + catalog.catalog_version.replace(".", "-")
     )
+    if index_version.startswith(("official-", "experiment-")):
+        raise ValueError("index-version must not repeat the artifact kind prefix")
+    calculation_policy = _load_calculation_policy(
+        args.calculation_policy, args.repository_root
+    )
+    source_revision = _source_revision(args.source_revision, args.repository_root)
     embedding = _operational_embedding()
     store = PostgresIndexStore(database_url)
     store.ensure_schema()
@@ -273,49 +390,147 @@ def run_operational(args: argparse.Namespace) -> int:
         maximum_false_evidence=0,
     )
     args.report_dir.mkdir(parents=True, exist_ok=True)
-    outputs: list[dict[str, object]] = []
-    all_passed = True
+    collection_results: list[dict[str, object]] = []
+    candidates = []
+    active_before = {
+        collection: store.active_collection(collection) for collection in collections
+    }
     for collection in collections:
-        target = IndexTarget(collection, index_version, operational=True)
-        documents = catalog.for_collection(collection)
-        manifest = pipeline.build(documents, target)
-        gold_path = args.gold_dir / f"{collection}-gold-v1.json"
-        gold_queries = load_gold_queries(gold_path)
-        report = evaluate_retriever(
-            retriever=retriever,
-            manifest=manifest,
-            gold_queries=gold_queries,
-            evaluation_set_id=f"{collection}-gold-v1",
-            top_k=args.top_k,
-            thresholds=thresholds,
+        target = IndexTarget(
+            collection,
+            index_version,
+            operational=True,
+            artifact_kind=args.artifact_kind,
         )
-        promoted = False
-        pruned_versions = 0
-        if report.passed and args.promote:
-            pipeline.promote(manifest, report)
-            promoted = True
-            pruned_versions = store.prune_retired(
-                collection,
-                retention_days=args.retention_days,
+        try:
+            documents = catalog.for_collection(collection)
+            manifest = pipeline.build(documents, target)
+            gold_path = args.gold_dir / f"{collection}-gold-v1.json"
+            gold_queries = load_gold_queries(gold_path)
+            report = evaluate_retriever(
+                retriever=retriever,
+                manifest=manifest,
+                gold_queries=gold_queries,
+                evaluation_set_id=f"{collection}-gold-v1",
+                top_k=args.top_k,
+                thresholds=thresholds,
             )
-        all_passed = all_passed and report.passed
-        output = {
-            "schema_version": "rag-operational-run/v1",
-            "catalog_version": catalog.catalog_version,
-            "catalog_as_of_date": catalog.as_of_date,
-            "manifest": manifest.to_dict(),
-            "evaluation": report.to_dict(),
-            "promoted": promoted,
-            "active_collection": store.active_collection(collection),
-            "pruned_versions": pruned_versions,
-        }
-        report_path = args.report_dir / f"{target.physical_collection}-report.json"
-        report_path.write_text(
-            json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+            result: dict[str, object] = {
+                "logical_collection": collection,
+                "physical_collection": target.physical_collection,
+                "decision": "PASS" if report.passed else "FAIL",
+                "manifest": manifest.to_dict(),
+                "evaluation": report.to_dict(),
+            }
+            if report.passed:
+                candidates.append((manifest, report))
+        # Provider and database client exceptions are evidence for this collection,
+        # so preserve the other collection result and finalize the qualification.
+        except Exception as error:
+            result = {
+                "logical_collection": collection,
+                "physical_collection": target.physical_collection,
+                "decision": "ERROR",
+                "error": str(error),
+            }
+        _write_json(
+            args.report_dir / f"{target.physical_collection}-report.json",
+            {
+                "schema_version": "rag-collection-qualification/v1",
+                "artifact_kind": args.artifact_kind,
+                "environment_id": args.environment_id,
+                **result,
+            },
         )
-        outputs.append(output)
-    print(json.dumps({"runs": outputs}, ensure_ascii=False, indent=2, sort_keys=True))
+        collection_results.append(result)
+
+    all_passed = len(candidates) == len(collections) and all(
+        result["decision"] == "PASS" for result in collection_results
+    )
+    includes_all_operational = set(collections) == set(_OPERATIONAL_COLLECTIONS)
+    activatable = all_passed and includes_all_operational
+    activation_performed = False
+    activation_error = None
+    pruned_versions: dict[str, int | str] = {
+        collection: 0 for collection in collections
+    }
+    if args.promote and activatable:
+        try:
+            pipeline.promote_many(candidates)
+            activation_performed = True
+        except Exception as error:
+            activation_error = str(error)
+        if activation_performed:
+            for collection in collections:
+                try:
+                    pruned_versions[collection] = store.prune_retired(
+                        collection,
+                        retention_days=args.retention_days,
+                    )
+                except Exception as error:
+                    pruned_versions[collection] = f"ERROR: {error}"
+    active_after = {
+        collection: store.active_collection(collection) for collection in collections
+    }
+    qualification = {
+        "schema_version": "rag-qualification/v1",
+        "qualification_id": f"{args.artifact_kind}-{index_version}",
+        "artifact_kind": args.artifact_kind,
+        "environment_id": args.environment_id,
+        "operator_id": args.operator_id,
+        "source_revision": source_revision,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "catalog": {
+            "path": _repository_relative_path(args.catalog, args.repository_root),
+            "version": catalog.catalog_version,
+            "as_of_date": catalog.as_of_date,
+            "sha256": _sha256_file(args.catalog),
+        },
+        "calculation_policy": calculation_policy,
+        "embedding": {
+            "provider": "gemini",
+            "model": embedding.model_id,
+            "dimensions": embedding.dimensions,
+            "endpoint": "gms",
+        },
+        "retrieval": {
+            "strategy": "dense-bm25-rrf",
+            "top_k": args.top_k,
+            "fetch_k": args.fetch_k,
+            "minimum_dense_score": args.minimum_dense_score,
+        },
+        "thresholds": {
+            "recall_at_5_minimum": thresholds.minimum_recall,
+            "mrr_at_5_minimum": thresholds.minimum_mrr,
+            "provenance_minimum": thresholds.minimum_provenance,
+            "collection_leakage_maximum": thresholds.maximum_collection_leakage,
+            "false_evidence_maximum": thresholds.maximum_false_evidence,
+        },
+        "collections": collection_results,
+        "query_count": sum(
+            int(result.get("evaluation", {}).get("query_count", 0))
+            for result in collection_results
+        ),
+        "overall_decision": "PASS" if all_passed else "FAIL",
+        "activatable": activatable,
+        "deployable": activatable and args.artifact_kind == "official",
+        "activation": {
+            "requested": args.promote,
+            "performed": activation_performed,
+            "error": activation_error,
+            "before": active_before,
+            "after": active_after,
+        },
+        "pruned_versions": pruned_versions,
+    }
+    qualification_path = (
+        args.report_dir
+        / f"{args.artifact_kind}__{index_version}__qualification.json"
+    )
+    _write_json(qualification_path, qualification)
+    print(json.dumps(qualification, ensure_ascii=False, indent=2, sort_keys=True))
+    if args.promote and (not activatable or activation_error is not None):
+        return 1
     return 0 if all_passed else 1
 
 
@@ -329,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
             return run_catalog_dry_run(args)
         if args.command == "run-operational":
             return run_operational(args)
-    except (OSError, ValueError, RuntimeError) as error:
+    except Exception as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 2
     parser.error(f"unsupported command: {args.command}")

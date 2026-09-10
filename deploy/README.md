@@ -149,7 +149,7 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 |---|---|---|
 | `GOOGLE_API_KEY` | 서버 `app.env` (사람이 입력) | **GMS 키**. 변수명이 GOOGLE_* 인 것은 `ai-pjt/core/config.py` 가 이 이름만 읽기 때문 |
 | `GOOGLE_GEMINI_BASE_URL` | `docker-compose.prod.yml` 에 **고정** | `https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com`. GMS 가 정하는 값이라 env 로 열지 않는다(S15P21B109-130 교훈) |
-| `EMBEDDING_MODEL` | `docker-compose.prod.yml` 에 **고정** | `gemini-embedding-2`. 루트 compose 기본값 `gemini-embedding-001` 은 GMS 에 없다 |
+| `EMBEDDING_MODEL` | 루트 compose와 `docker-compose.prod.yml`에 **고정** | `gemini-embedding-2`. GMS embedding은 이 모델과 3,072차원으로 통일한다 |
 | `EMBED_DIM` | 루트 compose 기본값 3072 | 실측 벡터 길이와 일치 확인 |
 
 ### 서버 등록 절차

@@ -104,11 +104,31 @@ class IndexPipeline:
                 )
             ),
             built_at=datetime.now(timezone.utc).isoformat(),
+            artifact_kind=target.artifact_kind,
         )
         self.store.write_manifest(physical, manifest)
         return manifest
 
     def promote(
+        self, manifest: IndexManifest, evaluation: EvaluationReport
+    ) -> None:
+        self.promote_many([(manifest, evaluation)])
+
+    def promote_many(
+        self,
+        candidates: list[tuple[IndexManifest, EvaluationReport]],
+    ) -> None:
+        if not candidates:
+            raise ValueError("at least one evaluated index is required")
+        activations: dict[str, str] = {}
+        for manifest, evaluation in candidates:
+            self._validate_promotion(manifest, evaluation)
+            if manifest.collection in activations:
+                raise ValueError("each logical collection may be promoted only once")
+            activations[manifest.collection] = manifest.physical_collection
+        self.store.activate_many(activations)
+
+    def _validate_promotion(
         self, manifest: IndexManifest, evaluation: EvaluationReport
     ) -> None:
         stored_manifest = self.store.get_manifest(manifest.physical_collection)
@@ -122,7 +142,6 @@ class IndexPipeline:
             raise ValueError("evaluation thresholds did not pass")
         if len(self.store.list_chunks(manifest.physical_collection)) != manifest.chunk_count:
             raise ValueError("stored chunk count differs from manifest")
-        self.store.activate(manifest.collection, manifest.physical_collection)
 
     def _same_build(self, manifest: IndexManifest, digest: str) -> bool:
         return (

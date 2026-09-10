@@ -91,7 +91,7 @@ class Settings:
             "LLM_MODEL", "gemini-2.5-flash-lite"
         ).strip()
         self.embedding_model = active_environ.get(
-            "EMBEDDING_MODEL", "gemini-embedding-001"
+            "EMBEDDING_MODEL", "gemini-embedding-2"
         ).strip()
 
         self.openai_api_key = active_environ.get("OPENAI_API_KEY", "").strip()
