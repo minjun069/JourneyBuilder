@@ -81,6 +81,146 @@ G1은 빈 volume·clean image에서 migration, 두 애플리케이션 readiness,
 `ai-docs/contracts/current-state.md`, 입력별 활성 상태는
 `contract-fixtures/g1/artifact-consistency.json`을 따른다.
 
+## RAG 정상 운영 절차
+
+현재 공식 artifact:
+
+- 파일: `ai-pjt/rag/artifacts/official__official-catalog-2-1-0.tar.gz`
+- SHA-256: `4e8f80a985aed40966f3a00516acb25470a6b3a8c18388202f16969d21cc3ed7`
+- active index: `interface-guides__official-catalog-2-1-0`, `financial-knowledge__official-catalog-2-1-0`
+
+운영 `.env`에는 다음 값을 반드시 설정한다.
+
+```dotenv
+GOOGLE_API_KEY=<GMS-key>
+EMBEDDING_PROVIDER=gemini
+EMBED_DIM=3072
+RAG_FINANCIAL_COLLECTION=financial-knowledge
+RAG_INTERFACE_COLLECTION=interface-guides
+RAG_TOP_K=5
+RAG_FETCH_K=10
+RAG_MIN_DENSE_SCORE=0.52
+```
+
+### 공식 artifact 생성·갱신 — RAG 담당자만 수행
+
+```bash
+mkdir -p ai-pjt/rag/.local
+cp ai-pjt/rag/ops.env.example ai-pjt/rag/.local/ops.env
+```
+
+`ops.env`의 `RAG_INSTANCE_ID`, `RAG_POSTGRES_PASSWORD`, `GOOGLE_API_KEY`를 실제 값으로
+설정한 다음 아래 순서로 실행한다. 공식 실행 전 `git status --short` 출력이 없어야 한다.
+
+```bash
+set -a
+source ai-pjt/rag/.local/ops.env
+set +a
+
+./ai-pjt/rag/ops.sh up
+./ai-pjt/rag/ops.sh db-check
+git status --short
+
+./ai-pjt/rag/ops.sh qualify \
+  --report-dir .local/reports \
+  --artifact-kind official \
+  --environment-id <rag-owner-db> \
+  --operator-id <rag-owner-id> \
+  --confirm-rag-owner \
+  --index-version <catalog-version> \
+  --promote
+```
+
+`ai-pjt/rag/.local/reports/official__<catalog-version>__qualification.json`에서 다음을
+모두 확인한다.
+
+- 두 collection의 `decision`이 `PASS`
+- `overall_decision=PASS`, `activatable=true`, `deployable=true`
+- `activation.performed=true`이고 `activation.after`가 새 공식 physical ID와 일치
+- Recall@5 0.85 이상, MRR@5 0.70 이상, provenance 1.0
+- collection leakage 0건, false evidence 0건
+- `embedding.model=gemini-embedding-2`, `dimensions=3072`
+- `retrieval.minimum_dense_score=0.52`
+
+하나라도 충족하지 않으면 artifact를 만들지 않고 기존 active pointer를 유지한다. 전부
+충족하면 export와 checksum 검사를 실행한다.
+
+```bash
+./ai-pjt/rag/ops.sh export \
+  --qualification .local/reports/official__<catalog-version>__qualification.json \
+  --output-dir artifacts
+
+PYTHONPATH=ai-pjt python3 -m rag.artifacts inspect \
+  --artifact ai-pjt/rag/artifacts/official__official-<catalog-version>.tar.gz
+sha256sum ai-pjt/rag/artifacts/official__official-<catalog-version>.tar.gz
+./ai-pjt/rag/ops.sh stop
+```
+
+첫 artifact가 20 MiB 이하이면 일반 Git으로 커밋한다. 누적 크기가 문제가 될 때만
+`ai-pjt/rag/artifacts/*.tar.gz`를 Git LFS로 전환한다.
+
+### 애플리케이션 DB에 artifact 반영
+
+배포할 commit을 checkout한 뒤 PostgreSQL과 AI 이미지를 먼저 준비한다.
+
+```bash
+docker compose config --quiet
+docker compose up -d postgres
+docker compose build ai-pjt
+```
+
+현재 pointer를 기록하고 artifact 자체를 검사한다.
+
+```bash
+docker compose exec --no-TTY postgres psql \
+  --username retirewise \
+  --dbname retirewise_db \
+  --command "SELECT logical_collection, physical_collection FROM rag_active_indexes ORDER BY logical_collection;"
+
+docker compose run --rm --no-TTY ai-pjt \
+  python -m rag.artifacts inspect \
+  --artifact rag/artifacts/official__official-<catalog-version>.tar.gz
+```
+
+먼저 활성화 없이 import한다. `inserted_physical_collections` 또는
+`reused_physical_collections`에 두 공식 index가 있고 `activation_performed=false`인지
+확인한다.
+
+```bash
+docker compose run --rm --no-TTY ai-pjt \
+  python -m rag.artifacts import \
+  --artifact rag/artifacts/official__official-<catalog-version>.tar.gz
+```
+
+manifest와 chunk가 충돌하면 중단한다. 이상이 없을 때만 두 pointer를 함께 활성화한다.
+
+```bash
+docker compose run --rm --no-TTY ai-pjt \
+  python -m rag.artifacts import \
+  --artifact rag/artifacts/official__official-<catalog-version>.tar.gz \
+  --activate
+
+docker compose exec --no-TTY postgres psql \
+  --username retirewise \
+  --dbname retirewise_db \
+  --command "SELECT logical_collection, physical_collection FROM rag_active_indexes ORDER BY logical_collection;"
+```
+
+`activation_performed=true`와 두 공식 physical ID를 확인한 뒤 전체 서비스를 기동하고
+readiness와 실제 검색을 검사한다.
+
+```bash
+docker compose up --build -d
+docker compose exec ai-pjt python readiness.py
+docker compose exec backend python readiness.py
+
+docker compose exec --no-TTY ai-pjt python -c \
+  'from rag.retriever import get_retriever; r=get_retriever("financial-knowledge"); assert r.retrieve("연금저축 IRP 세액공제 한도", top_k=5); assert not r.retrieve("김치찌개 조리법", top_k=5)'
+```
+
+검증에 실패하면 서비스를 중단하고, 반영 전에 기록한 이전 공식 artifact를 같은 import
+명령의 `--artifact`에 지정해 `--activate`한 뒤 pointer와 readiness를 다시 확인한다.
+
 ## PB 관리자 대시보드
 
 PB(프라이빗 뱅커)가 전체 고객의 재무 데이터를 통합 조회하는 화면이다. 프론트 라우트는
