@@ -65,6 +65,12 @@ project와 volume 이름에 `RAG_INSTANCE_ID`를 넣으므로 개발자별 데�
 cd ai-pjt/rag
 mkdir -p .local
 cp ops.env.example .local/ops.env
+```
+
+`.local/ops.env`의 `RAG_INSTANCE_ID`, `RAG_POSTGRES_PASSWORD`, `GOOGLE_API_KEY`를 실제
+값으로 설정한다. 이 파일은 Git에 추가하지 않는다.
+
+```bash
 set -a
 source .local/ops.env
 set +a
@@ -91,19 +97,24 @@ physical collection(`interface-guides__experiment-...`)과 DB manifest에 기록
   --index-version catalog-2-1-0
 ```
 
+### 공식 artifact 생성과 갱신
+
 승인 corpus 변경, 공식 physical index, 공식 qualification report와 배포 artifact는
 RAG 담당자만 만든다. 공식 실행은 생산자 식별자와 권한 확인을 반드시 기록하고,
 GMS의 `gemini-embedding-2` 3,072차원만 허용한다. catalog와 승인된 계산 정책 파일을
 읽어 각각의 SHA-256과 버전을 embedding 호출 전에 고정한다.
 
+공식 실행 전에 `git status --short` 출력이 없어야 한다.
+
 ```bash
+git status --short
 ./ops.sh qualify \
   --report-dir .local/reports \
   --artifact-kind official \
   --environment-id <rag-owner-db> \
   --operator-id <rag-owner-id> \
   --confirm-rag-owner \
-  --index-version catalog-2-1-0 \
+  --index-version <catalog-version> \
   --promote
 ```
 
@@ -121,23 +132,38 @@ similarity가 `0.52` 미만인 후보는 제외한다. 이 경계는 GMS `gemini
 `0.5401` 사이에서 정했다. 실제 실행의 `top_k`, `fetch_k`, 경계값은 qualification의
 `retrieval`에 기록한다. 모델이나 corpus가 바뀌면 같은 방식으로 다시 검증해야 한다.
 
-## 논리 백업 artifact 승계
+`.local/reports/official__<catalog-version>__qualification.json`에서 다음을 모두
+확인한다.
 
-공식 qualification의 manifest·chunk 수·active pointer가 DB와 일치하는지 확인한 뒤
-RAG 테이블의 대상 행만 압축 artifact로 내보낸다. Django 테이블이나 DB 자격 증명은
-포함하지 않는다.
+- 두 collection의 `decision`이 `PASS`
+- `overall_decision=PASS`, `activatable=true`, `deployable=true`
+- `activation.performed=true`이고 `activation.after`가 새 공식 physical ID와 일치
+- Recall@5 0.85 이상, MRR@5 0.70 이상, provenance 1.0
+- collection leakage 0건, false evidence 0건
+- `embedding.model=gemini-embedding-2`, `dimensions=3072`
+- `retrieval.minimum_dense_score=0.52`
+
+하나라도 충족하지 않으면 export하지 않고 기존 active pointer를 유지한다. 전부
+충족하면 다음을 실행한다.
 
 ```bash
 ./ops.sh export \
-  --qualification .local/reports/official__catalog-2-1-0__qualification.json \
+  --qualification .local/reports/official__<catalog-version>__qualification.json \
   --output-dir artifacts
-python3 -m rag.artifacts inspect \
-  --artifact artifacts/official__official-catalog-2-1-0.tar.gz
+
+PYTHONPATH=.. python3 -m rag.artifacts inspect \
+  --artifact artifacts/official__official-<catalog-version>.tar.gz
+sha256sum artifacts/official__official-<catalog-version>.tar.gz
+./ops.sh stop
 ```
 
-첫 실제 dump가 20 MiB 이하이면 `artifacts/`에서 일반 Git으로 추적하고, 누적 크기가
-문제가 될 때 `*.tar.gz`를 Git LFS로 전환한다. 실패 qualification은 증거로 남지만
-artifact로 내보낼 수 없다.
+첫 artifact가 20 MiB 이하이면 일반 Git으로 커밋한다. 누적 크기가 문제가 될 때만
+`artifacts/*.tar.gz`를 Git LFS로 전환한다.
+
+## 논리 백업 artifact 승계
+
+artifact에는 qualified physical ID의 RAG 테이블 행, active snapshot, qualification과
+checksum manifest만 포함한다. Django 테이블과 DB 자격 증명은 포함하지 않는다.
 
 소비자는 기존 RAG 데이터가 있는 같은 애플리케이션 DB에 가져올 수 있다. 같은
 physical ID가 이미 있으면 manifest와 모든 chunk가 동일한 경우만 재사용하고, 다르면
@@ -145,13 +171,13 @@ physical ID가 이미 있으면 manifest와 모든 chunk가 동일한 경우만 
 artifact에 `--activate`를 준 경우에만 두 pointer를 함께 전환한다.
 
 ```bash
-DATABASE_URL='postgresql://...' PYTHONPATH=ai-pjt \
+DATABASE_URL='postgresql://...' PYTHONPATH=.. \
   python3 -m rag.artifacts import \
-  --artifact ai-pjt/rag/artifacts/official__official-catalog-2-1-0.tar.gz
+  --artifact artifacts/official__official-catalog-2-1-0.tar.gz
 
-DATABASE_URL='postgresql://...' PYTHONPATH=ai-pjt \
+DATABASE_URL='postgresql://...' PYTHONPATH=.. \
   python3 -m rag.artifacts import \
-  --artifact ai-pjt/rag/artifacts/official__official-catalog-2-1-0.tar.gz \
+  --artifact artifacts/official__official-catalog-2-1-0.tar.gz \
   --activate
 ```
 

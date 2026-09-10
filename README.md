@@ -102,62 +102,8 @@ RAG_FETCH_K=10
 RAG_MIN_DENSE_SCORE=0.52
 ```
 
-### 공식 artifact 생성·갱신 — RAG 담당자만 수행
-
-```bash
-mkdir -p ai-pjt/rag/.local
-cp ai-pjt/rag/ops.env.example ai-pjt/rag/.local/ops.env
-```
-
-`ops.env`의 `RAG_INSTANCE_ID`, `RAG_POSTGRES_PASSWORD`, `GOOGLE_API_KEY`를 실제 값으로
-설정한 다음 아래 순서로 실행한다. 공식 실행 전 `git status --short` 출력이 없어야 한다.
-
-```bash
-set -a
-source ai-pjt/rag/.local/ops.env
-set +a
-
-./ai-pjt/rag/ops.sh up
-./ai-pjt/rag/ops.sh db-check
-git status --short
-
-./ai-pjt/rag/ops.sh qualify \
-  --report-dir .local/reports \
-  --artifact-kind official \
-  --environment-id <rag-owner-db> \
-  --operator-id <rag-owner-id> \
-  --confirm-rag-owner \
-  --index-version <catalog-version> \
-  --promote
-```
-
-`ai-pjt/rag/.local/reports/official__<catalog-version>__qualification.json`에서 다음을
-모두 확인한다.
-
-- 두 collection의 `decision`이 `PASS`
-- `overall_decision=PASS`, `activatable=true`, `deployable=true`
-- `activation.performed=true`이고 `activation.after`가 새 공식 physical ID와 일치
-- Recall@5 0.85 이상, MRR@5 0.70 이상, provenance 1.0
-- collection leakage 0건, false evidence 0건
-- `embedding.model=gemini-embedding-2`, `dimensions=3072`
-- `retrieval.minimum_dense_score=0.52`
-
-하나라도 충족하지 않으면 artifact를 만들지 않고 기존 active pointer를 유지한다. 전부
-충족하면 export와 checksum 검사를 실행한다.
-
-```bash
-./ai-pjt/rag/ops.sh export \
-  --qualification .local/reports/official__<catalog-version>__qualification.json \
-  --output-dir artifacts
-
-PYTHONPATH=ai-pjt python3 -m rag.artifacts inspect \
-  --artifact ai-pjt/rag/artifacts/official__official-<catalog-version>.tar.gz
-sha256sum ai-pjt/rag/artifacts/official__official-<catalog-version>.tar.gz
-./ai-pjt/rag/ops.sh stop
-```
-
-첫 artifact가 20 MiB 이하이면 일반 Git으로 커밋한다. 누적 크기가 문제가 될 때만
-`ai-pjt/rag/artifacts/*.tar.gz`를 Git LFS로 전환한다.
+공식 artifact 생성·갱신은 RAG 담당자만 수행한다. 생산자 DB 준비, qualification,
+export와 Git 추적 절차는 [RAG pipeline 운영 문서](ai-pjt/rag/README.md#공식-artifact-생성과-갱신)를 따른다.
 
 ### 애플리케이션 DB에 artifact 반영
 
