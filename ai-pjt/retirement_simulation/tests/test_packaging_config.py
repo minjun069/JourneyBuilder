@@ -80,6 +80,7 @@ class PackagingConfigurationTests(unittest.TestCase):
             "include tests/__init__.py tests/test_*.py",
             "include tests/run_installation_checks.py tests/installed/check_package.py",
             "include docs/*.md docs/analysis-performance-results.json",
+            "include docs/simulation-policy.json",
             "prune build",
             "prune dist",
             "global-exclude *.py[cod] *~ .*",
