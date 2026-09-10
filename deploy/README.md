@@ -182,5 +182,36 @@ print('embed len =', len(embed_model.get_text_embedding('연금')))"
 - 검증 기록(2026-09-09, 운영 이미지 컨테이너): 임베딩 **성공 3072**, `EMBED_DIM` 일치. 원시 HTTP 로 gemini 채팅도 200 OK
 - **LLM 은 `ai-pjt` 코드 변경이 있어야 동작한다.** 컨테이너의 `langchain-google-genai` 2.1.12 는 구형 클라이언트를 써 `GOOGLE_GEMINI_BASE_URL` 을 읽지 않는다. 4.x 로 올리면 `langchain-core` 가 1.x 로 끌려 올라가 `langchain`·`langchain-openai` 0.3.x 와 충돌한다(새 SDK 를 쓰는 3.0.0+ 전부가 `langchain-core>=1.0.0` 요구). 해결책은 의존성 변경 없이 gemini 분기에 `transport="rest"` + `client_options={"api_endpoint": <base_url 에서 scheme 제거>}` 를 넘기는 것 — 운영 이미지에서 `invoke`·`stream()` 모두 검증했다. 담당: AI 파트
 
+## 배포 실패 알림 (S15P21B109-126, A11)
+
+파이프라인이 깨지면 팀 Mattermost 채널로 알린다. **실패를 아무도 모르면 자동 배포는 의미가 없다** — `master` 머지가 곧 운영 반영이라 실패는 롤백된 상태를 뜻한다.
+
+| 항목 | 값 |
+|---|---|
+| 방식 | GitLab `Settings → Integrations → **Mattermost notifications**` |
+| 트리거 | **`A pipeline status changes` 하나만.** push·work item·MR·댓글·tag·wiki·deployment·incident 전부 해제 |
+| Notify only broken pipelines | **켬** — 성공까지 알리면 하루 수십 건이라 정작 실패를 놓친다 |
+| Notify only when pipeline status changes | **끔** — 켜면 직전과 상태가 달라졌을 때만 온다. 연속 실패 시 두 번째부터 알림이 없어진다 |
+| Branches to be notified | **`Default branch`** — `master` 만. 배포는 master 에서만 돌고, 기능 브랜치 실패는 MR 올린 본인이 화면에서 본다 |
+| 채널 override(`my-channel` 칸) | 비움 — 웹훅 생성 시 지정한 채널로 간다 |
+
+### 왜 CI 잡이 아니라 GitLab 연동인가
+
+`.gitlab-ci.yml` 에 `when: on_failure` 잡을 두고 웹훅을 쏘는 방법도 있지만, 그러면 **웹훅 URL 이 저장소나 CI 변수에 들어간다.** 이 URL 은 그것만 있으면 누구나 채널에 글을 쓸 수 있는 값이다. GitLab 연동으로 붙이면 프로젝트 설정에만 남고 저장소에서 사라지며, 메시지 포맷도 GitLab 이 만든다.
+
+### 웹훅 URL 취급
+
+Mattermost 에서 incoming webhook 을 만들어 **사람이 GitLab 설정 화면에 직접 붙여넣는다.** 저장소·CI 변수·이 문서 어디에도 적지 않는다. `/srv/s15p21b109/secrets/app.env` 와 같은 원칙이다.
+
+### 끄기 / 바꾸기
+
+같은 화면에서 `Enable integration` 을 해제하면 즉시 멈춘다. 채널을 옮기려면 Mattermost 에서 새 웹훅을 만들어 URL 만 교체한다.
+
+### 확인된 것 / 남은 것
+
+- 서버 값 확인: `active=true` `pipeline_events=true` `notify_only_broken_pipelines=true` `branches_to_be_notified=default`, 나머지 이벤트 전부 `false`
+- **`job_events=true` 는 끄지 못했다.** 이 GitLab 버전의 Trigger 목록에 Job 항목이 없고, API 로 끄려면 `webhook` 이 필수 파라미터라 URL 을 다시 실어 보내야 한다. 잡 단위 알림이 실제로 오는지는 파이프라인을 돌려 관찰해 판단한다
+- `Test settings` 샘플은 트리거 설정과 무관하게 **push 이벤트 모양**으로 온다. `push_events=false` 이므로 실제 푸시로는 가지 않는다
+
 ## 이후 절 (해당 이슈에서 채움)
-- 데이터 배치 컨테이너·보호 브랜치·알림 — S15P21B109-126
+- `master` 머지 조건 "파이프라인 통과"(A3) — S15P21B109-126
