@@ -2,7 +2,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { applyCanonicalChanges, readCanonicalValue } from './formChanges.js'
+import {
+  applyCanonicalChanges,
+  applyErrorReviewSuggestion,
+  cancelErrorReviewSuggestion,
+  continueSaveAfterOptionalReview,
+  errorReviewConfidenceLevel,
+  readCanonicalValue,
+  visibleErrorReviewItems,
+} from './formChanges.js'
 
 const fixtureUrl = new URL(
   '../../../contract-fixtures/ai-lifecycle/v2/form-actions.json',
@@ -100,4 +108,59 @@ test('Error Review 후보는 검토 당시 canonical 값과 현재 draft가 같�
     readCanonicalValue(currentForm, { ...change, parent_client_item_id: 'other-period' }),
     { found: false, value: undefined },
   )
+})
+
+test('Error Review confidence는 세 등급으로 나누고 낮음은 숨긴다', () => {
+  assert.equal(errorReviewConfidenceLevel(0.59), 'low')
+  assert.equal(errorReviewConfidenceLevel(0.60), 'medium')
+  assert.equal(errorReviewConfidenceLevel(0.849), 'medium')
+  assert.equal(errorReviewConfidenceLevel(0.85), 'high')
+  assert.deepEqual(
+    visibleErrorReviewItems([
+      { confidence: 0.59, confidence_level: 'low' },
+      { confidence: 0.75, confidence_level: 'medium' },
+      { confidence: 0.91, confidence_level: 'high' },
+      { confidence: 0.91, confidence_level: 'medium' },
+    ]).map((item) => item.confidence_level),
+    ['medium', 'high'],
+  )
+})
+
+test('Error Review 후보 적용과 취소는 draft만 결정론적으로 바꾼다', () => {
+  const form = { earnings: 2 }
+  const canonical = { monthly_income: 20000 }
+  const applied = {
+    section: 'basic_info', path: 'monthly_income', current_value: 20000,
+    suggested_value: 2000000, reason: '단위 착오', decision: 'pending',
+  }
+  assert.equal(
+    applyErrorReviewSuggestion('basic-info', form, canonical, applied),
+    'applied',
+  )
+  assert.equal(form.earnings, 200)
+  assert.equal(applied.decision, 'applied')
+
+  const cancelled = { decision: 'pending' }
+  assert.equal(cancelErrorReviewSuggestion(cancelled), 'cancelled')
+  assert.equal(cancelled.decision, 'cancelled')
+  assert.equal(form.earnings, 200)
+})
+
+test('저장 시 Error Review 실패나 무경고 결과는 기존 저장을 막지 않는다', async () => {
+  let saved = 0
+  const persist = async () => { saved += 1 }
+
+  assert.equal(
+    await continueSaveAfterOptionalReview(async () => { throw new Error('timeout') }, persist),
+    'saved',
+  )
+  assert.equal(
+    await continueSaveAfterOptionalReview(async () => false, persist),
+    'saved',
+  )
+  assert.equal(
+    await continueSaveAfterOptionalReview(async () => true, persist),
+    'review_required',
+  )
+  assert.equal(saved, 2)
 })

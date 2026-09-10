@@ -1,3 +1,5 @@
+import asyncio
+
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -17,11 +19,45 @@ settings.validate_runtime()
 # 1. LLM
 # ==========================================
 
+
+async def _generate_with_sync_rest_client(
+    model: BaseChatModel,
+    messages,
+    stop=None,
+    **kwargs,
+):
+    """Keep path-based GMS endpoints on the provider's REST transport."""
+
+    return await asyncio.to_thread(
+        model._generate,
+        messages,
+        stop,
+        None,
+        **kwargs,
+    )
+
+
 def _create_llm() -> BaseChatModel:
     provider = settings.llm_provider
 
     if provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
+
+        class GMSRestChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
+            async def _agenerate(
+                self,
+                messages,
+                stop=None,
+                run_manager=None,
+                **kwargs,
+            ):
+                return await _generate_with_sync_rest_client(
+                    self,
+                    messages,
+                    stop,
+                    **kwargs,
+                )
+
         # GOOGLE_GEMINI_BASE_URL 이 있으면 그 주소로 보낸다(GMS 등 프록시).
         # 설치된 langchain-google-genai 2.x 는 구형 generativelanguage 클라이언트를 써서
         # 이 환경변수를 스스로 읽지 않으므로 client_options 로 명시해야 한다.
@@ -34,7 +70,12 @@ def _create_llm() -> BaseChatModel:
                     "api_endpoint": settings.gemini_base_url.split("://", 1)[-1],
                 },
             }
-        return ChatGoogleGenerativeAI(
+        model_class = (
+            GMSRestChatGoogleGenerativeAI
+            if settings.gemini_base_url
+            else ChatGoogleGenerativeAI
+        )
+        return model_class(
             model=settings.llm_model,
             google_api_key=settings.gemini_api_key,
             streaming=True,

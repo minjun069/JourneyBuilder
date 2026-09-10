@@ -348,6 +348,7 @@ class CallbackValidationTests(SimpleTestCase):
                 'reason': '다른 소득 정보와 비교해 단위 착오가 의심됩니다.',
                 'suggested_value': 2_000_000,
                 'confidence': 0.91,
+                'confidence_level': 'high',
             }],
         }
         payload = completed_callback(output={'response': '확인이 필요합니다.', 'review': review})
@@ -368,6 +369,20 @@ class CallbackValidationTests(SimpleTestCase):
                     'items': [{**review['items'][0], 'path': 'unknown_field'}],
                 },
             }, 'basic-info')
+
+        low_confidence = completed_callback(output={
+            'response': '확인이 필요합니다.',
+            'review': {
+                **review,
+                'items': [{
+                    **review['items'][0],
+                    'confidence': 0.59,
+                    'confidence_level': 'low',
+                }],
+            },
+        })
+        with self.assertRaises(LifecycleError):
+            validate_terminal_callback(low_confidence)
 
 
 class FormChangeDecisionTests(SimpleTestCase):

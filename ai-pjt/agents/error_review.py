@@ -10,6 +10,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
+from agents.error_review_confidence import confidence_level, visible_review_items
 from agents.error_review_manuals import load_error_review_manual
 from core.llm import llm
 from graph.state import ChatState
@@ -23,9 +24,9 @@ class ReviewItem(BaseModel):
     client_item_id: str | None = None
     parent_item_id: int | None = None
     parent_client_item_id: str | None = None
-    current_value: Any
+    current_value_json: str
     reason: str = Field(min_length=1)
-    suggested_value: Any | None = None
+    suggested_value_json: str | None = None
     confidence: float = Field(ge=0, le=1)
 
 
@@ -43,21 +44,29 @@ Frontend의 필수값·자료형·범위 검증을 이미 통과한 현재 draft
 - 형식상 유효하지만 오기, 단위 착오, 다른 필드와의 문맥 불일치가 의심되는 값만 반환합니다.
 - 정상값 또는 단순히 드문 값이라는 이유만으로 경고하지 않습니다.
 - section/path는 canonical registry에 있는 현재 단계 field만 사용합니다.
-- current_value는 현재 draft 값을 그대로 복사합니다.
-- suggested_value는 한 가지 수정 후보가 명확할 때만 넣고, 추측이면 null로 둡니다.
+- current_value_json은 현재 draft 값을 JSON으로 직렬화한 문자열입니다.
+- suggested_value_json은 한 가지 수정 후보가 명확할 때만 그 값을 JSON
+  문자열로 넣고, 추측이면 null로 둡니다.
 - 반복 항목에는 현재 draft의 id 또는 client_item_id를 반드시 그대로 넣습니다.
 - 중첩 목표 항목에는 부모 identity도 그대로 넣습니다.
 - 결정론적 필수값·자료형·범위 오류를 다시 설명하지 않습니다.
 - 매뉴얼에 없는 규칙이나 값을 만들지 않습니다.
+- confidence는 다음 의미로 보수적으로 부여합니다.
+  - low: 단지 가능성만 있거나 드문 값이라는 점 외에 근거가 부족함
+  - medium: 현재 폼이나 매뉴얼과 구체적인 불일치가 있으나 수정값은 확정하기 어려움
+  - high: 단위 착오 또는 다른 입력과의 직접 모순이 명확함
 """
 
 
-async def _run(state: ChatState) -> dict:
+async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, Any]]]:
+    """Run the production review once and retain low-confidence items for evals."""
+
     manual = load_error_review_manual(state["step_id"])
     current_form = state.get("customer_info", {}).get("current_form", {})
     registry = [
         field for field in state.get("field_registry", [])
         if isinstance(field, dict) and field.get("step_id") == state["step_id"]
+        and field.get("sensitivity") != "operational"
     ]
     result = await _review_chain.ainvoke([
         SystemMessage(content=SYSTEM_PROMPT),
@@ -72,13 +81,39 @@ async def _run(state: ChatState) -> dict:
     ])
     validated_items = [
         item for raw in result.items
+        if (normalized := _decode_review_item(raw.model_dump())) is not None
         if (item := _validated_item(
-            raw.model_dump(),
+            normalized,
             step_id=state["step_id"],
             current_form=current_form,
             field_registry=registry,
         )) is not None
     ]
+    return manual, validated_items
+
+
+def _decode_review_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
+    try:
+        current_value = json.loads(item["current_value_json"])
+        suggested_raw = item.get("suggested_value_json")
+        suggested_value = (
+            json.loads(suggested_raw) if suggested_raw is not None else None
+        )
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return None
+    return {
+        **{
+            key: value for key, value in item.items()
+            if key not in {"current_value_json", "suggested_value_json"}
+        },
+        "current_value": current_value,
+        "suggested_value": suggested_value,
+    }
+
+
+async def _run(state: ChatState) -> dict:
+    manual, all_items = await analyze_review_items(state)
+    validated_items = visible_review_items(all_items)
     if validated_items:
         response = f"입력값에서 확인이 필요한 항목 {len(validated_items)}개를 찾았습니다."
     else:
@@ -175,6 +210,7 @@ def _validated_item(
         "reason": item["reason"],
         "suggested_value": candidate,
         "confidence": item["confidence"],
+        "confidence_level": confidence_level(float(item["confidence"])),
     }
 
 

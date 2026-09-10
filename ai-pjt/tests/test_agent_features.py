@@ -120,6 +120,22 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
 
 class ErrorReviewManualTests(unittest.TestCase):
+    def test_confidence_bands_are_exact_and_low_is_hidden(self) -> None:
+        from agents.error_review_confidence import confidence_level, visible_review_items
+
+        self.assertEqual(confidence_level(0.59), "low")
+        self.assertEqual(confidence_level(0.60), "medium")
+        self.assertEqual(confidence_level(0.849), "medium")
+        self.assertEqual(confidence_level(0.85), "high")
+        self.assertEqual(
+            [item["confidence_level"] for item in visible_review_items([
+                {"confidence_level": "low"},
+                {"confidence_level": "medium"},
+                {"confidence_level": "high"},
+            ])],
+            ["medium", "high"],
+        )
+
     def test_every_supported_step_has_one_hash_verified_manual(self) -> None:
         configure_runtime()
         from agents.error_review_manuals import SUPPORTED_STEPS, load_error_review_manual

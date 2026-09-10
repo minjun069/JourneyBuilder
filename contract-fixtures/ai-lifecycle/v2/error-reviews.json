@@ -1,6 +1,11 @@
 {
   "fixture_kind": "error-reviews",
   "contract_version": "2.0",
+  "confidence_policy": {
+    "low": {"minimum": 0.0, "maximum_exclusive": 0.6, "visible": false},
+    "medium": {"minimum": 0.6, "maximum_exclusive": 0.85, "visible": true},
+    "high": {"minimum": 0.85, "maximum_inclusive": 1.0, "visible": true}
+  },
   "cases": {
     "save_suspicious_income": {
       "browser_request_fragment": {
@@ -26,12 +31,20 @@
               "current_value": 20000,
               "reason": "월 소득의 단위 착오 가능성을 확인해야 합니다.",
               "suggested_value": 2000000,
-              "confidence": 0.91
+              "confidence": 0.91,
+              "confidence_level": "high"
             }
           ]
         }
       },
-      "frontend_behavior": "후보 적용은 draft를 직접 수정하고 승인 API를 호출하지 않는다. 취소·닫기는 현재 값을 유지한다."
+      "expected_frontend": {
+        "visible_item_count": 1,
+        "apply_updates_draft_directly": true,
+        "apply_calls_input_assist_approval_api": false,
+        "cancel_preserves_current_value": true,
+        "close_preserves_current_value": true,
+        "save_waits_for_user_decision": true
+      }
     },
     "user_review_no_suspicion": {
       "browser_request_fragment": {
@@ -52,6 +65,22 @@
           },
           "items": []
         }
+      },
+      "expected_frontend": {
+        "visible_item_count": 0,
+        "save_continues": true
+      }
+    },
+    "save_agent_failure": {
+      "browser_request_fragment": {
+        "request_mode": "error_review",
+        "review_trigger": "save",
+        "step_id": "basic-info"
+      },
+      "agent_result": "timeout_or_error",
+      "expected_frontend": {
+        "persist_existing_draft": true,
+        "save_blocked": false
       }
     }
   }

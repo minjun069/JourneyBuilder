@@ -6,6 +6,11 @@ from datetime import date
 from math import isfinite
 from typing import Any, Mapping
 
+from agents.error_review_confidence import (
+    VISIBLE_CONFIDENCE_LEVELS,
+    confidence_level,
+)
+
 
 SAFE_VALIDATION_FAILURE_RESPONSE = (
     "응답 또는 입력 제안이 결정론적 검증을 통과하지 못했습니다. "
@@ -145,6 +150,7 @@ def _validate_error_review(
     allowed = {
         "section", "path", "item_id", "client_item_id", "parent_item_id",
         "parent_client_item_id", "current_value", "reason", "suggested_value", "confidence",
+        "confidence_level",
     }
     for index, item in enumerate(items):
         path = f"output.review.items[{index}]"
@@ -163,6 +169,17 @@ def _validate_error_review(
             or not 0 <= float(confidence) <= 1
         ):
             issues.append(_issue("INVALID_REVIEW_CONFIDENCE", f"{path}.confidence", "review confidence가 올바르지 않습니다."))
+            continue
+        level = item.get("confidence_level")
+        if (
+            level not in VISIBLE_CONFIDENCE_LEVELS
+            or level != confidence_level(float(confidence))
+        ):
+            issues.append(_issue(
+                "INVALID_REVIEW_CONFIDENCE_LEVEL",
+                f"{path}.confidence_level",
+                "낮은 신뢰도이거나 confidence와 일치하지 않는 review item은 노출할 수 없습니다.",
+            ))
     return issues
 
 

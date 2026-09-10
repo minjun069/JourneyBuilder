@@ -2,7 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useAiStore } from '@/stores/ai'
 import { mapCurrentForm } from '@/api/consulting'
-import { applyCanonicalChanges, readCanonicalValue } from '@/utils/formChanges'
+import {
+  applyCanonicalChanges,
+  applyErrorReviewSuggestion,
+  cancelErrorReviewSuggestion,
+  continueSaveAfterOptionalReview,
+  visibleErrorReviewItems,
+} from '@/utils/formChanges'
 import { PROCESS_STEPS, STEP_IDS } from './data/processSteps.js'
 import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.js'
 import BasicInfoForm from '@/components/forms/BasicInfoForm.vue'
@@ -260,10 +266,11 @@ function toChatMessage(message) {
   }
   const review = message.extracted_data?.review
   if (review?.type === 'error_review' && Array.isArray(review.items)) {
+    const visibleItems = visibleErrorReviewItems(review.items)
     bubble.action = {
       type: 'error-review',
       trigger: review.trigger,
-      items: review.items.map((item) => ({ ...item, decision: 'pending' })),
+      items: visibleItems.map((item) => ({ ...item, decision: 'pending' })),
     }
   }
   const uiAction = message.extracted_data?.ui_action
@@ -533,41 +540,25 @@ const submitButtonLabel   = computed(() => {
   return '작성 완료'
 })
 
-function reviewItemChange(item) {
-  return {
-    section: item.section,
-    path: item.path,
-    operation: item.item_id != null || item.client_item_id ? 'update' : 'set',
-    value: item.suggested_value,
-    reason: item.reason,
-    ...(item.item_id != null ? { item_id: item.item_id } : {}),
-    ...(item.client_item_id ? { client_item_id: item.client_item_id } : {}),
-    ...(item.parent_item_id != null ? { parent_item_id: item.parent_item_id } : {}),
-    ...(item.parent_client_item_id ? { parent_client_item_id: item.parent_client_item_id } : {}),
-  }
-}
-
 function applyReviewSuggestion(item) {
   if (item.suggested_value == null || !activeFormRef.value?.form) return
   try {
-    const change = reviewItemChange(item)
-    const current = readCanonicalValue(
+    const result = applyErrorReviewSuggestion(
+      currentStepId.value,
+      activeFormRef.value.form,
       mapCurrentForm(currentStepId.value, activeFormRef.value.form),
-      change,
+      item,
     )
-    if (!current.found || JSON.stringify(current.value) !== JSON.stringify(item.current_value)) {
+    if (result === 'stale') {
       sessionError.value = '검토 이후 입력값이 바뀌어 후보를 적용하지 않았습니다. 다시 검토해주세요.'
-      return
     }
-    applyCanonicalChanges(currentStepId.value, activeFormRef.value.form, [change])
-    item.decision = 'applied'
   } catch {
     sessionError.value = '검토 제안을 현재 폼에 반영하지 못했습니다. 값을 직접 확인해주세요.'
   }
 }
 
 function cancelReviewSuggestion(item) {
-  item.decision = 'cancelled'
+  cancelErrorReviewSuggestion(item)
 }
 
 async function requestErrorReview(trigger, nextStepId = null) {
@@ -624,9 +615,10 @@ async function submitForm() {
     return
   }
 
-  const needsDecision = await requestErrorReview('save', nextStepId)
-  if (needsDecision) return
-  await persistFormAndAdvance(nextStepId)
+  await continueSaveAfterOptionalReview(
+    () => requestErrorReview('save', nextStepId),
+    () => persistFormAndAdvance(nextStepId),
+  )
 }
 
 async function persistFormAndAdvance(nextStepId) {
@@ -790,7 +782,7 @@ onBeforeUnmount(() => {
                         <div class="update-change-copy">
                           <strong>{{ `${item.section}.${item.path}` }}</strong>
                           <span>현재 값: {{ item.current_value }}</span>
-                          <small>{{ item.reason }} · 신뢰도 {{ Math.round(item.confidence * 100) }}%</small>
+                          <small>{{ item.reason }} · 신뢰도 {{ item.confidence_level === 'high' ? '높음' : '보통' }}</small>
                           <span v-if="item.suggested_value != null">수정 후보: {{ item.suggested_value }}</span>
                         </div>
                         <div v-if="item.decision === 'pending'" class="update-actions">

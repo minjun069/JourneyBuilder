@@ -105,3 +105,15 @@ python -m unittest discover -s tests -p 'test_agent_bindings.py' -v
 계약 검사가 통과한 뒤 F03 후속 평가에서 실행한다. 같은
 `fixtures/router-evaluation-v1.json`을 사용하되 모델·prompt ID와 버전, 실행 시각,
 예측 결과를 함께 남긴다. 기본 unit test에서는 네트워크나 credential을 요구하지 않는다.
+
+F07-T04·F08-T04는 `test_agent_features.py`와 `evals/tests/test_agent_baseline.py`에서
+다음 계약을 결정론적으로 검사한다.
+
+- binding을 고정한 QA의 보충 RAG, 근거 부족 재검색과 표현 재생성의 분리
+- 승인 기본값 매핑과 미매핑 field의 무작위 유지
+- Error Review의 전 step 수동 manual 매핑, confidence 구간과 low 비표시
+- Backend 검증 chart payload만 설명하는 계약과 Fallback·Aggregator 책임 분리
+- Elicit UI 동의, 필드별 확인, QA 일시정지·재개, 결정론적 capture
+
+Frontend 회귀에서는 Error Review 후보 적용·취소가 draft에만 영향을 주고,
+저장 시 AI timeout·오류 또는 무경고 결과가 기존 저장을 막지 않는지 확인한다.

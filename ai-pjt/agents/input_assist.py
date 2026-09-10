@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal, NotRequired, TypedDict, Union
+from typing import Any, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
@@ -73,7 +73,7 @@ class IdentifyResult(BaseModel):
 
 
 class ResolveResult(BaseModel):
-    value: Union[str, int, float, bool, dict, list, None]
+    value_json: str
     confidence: float
 
 
@@ -133,6 +133,8 @@ _RESOLVE_SYSTEM = """\
 
 [공통 작성 규칙]
 - 항목의 type 과 unit 에 맞는 형식으로 반환하세요.
+- value_json은 해석한 값 하나를 JSON으로 직렬화한 문자열입니다. 예를 들어 숫자
+  3200000은 `3200000`, 문자열 직장인은 `"직장인"`으로 반환하세요.
 - constraints 범위를 벗어나면 가장 가까운 경계값으로 조정하세요.
 - confidence는 사용자 발화와 명세만으로 값과 대상을 확정할 수 있는 정도를 0~1로 반환하세요.
 {hint}"""
@@ -339,9 +341,15 @@ async def _resolve(state: InputAssistState) -> dict:
         )),
         HumanMessage(content=f"[사용자 입력]\n{item['excerpt']}"),
     ])
+    try:
+        resolution = json.loads(result.value_json)
+    except (TypeError, json.JSONDecodeError):
+        resolution = None
     return {
-        "resolution": result.value,
-        "resolution_confidence": max(0.0, min(1.0, result.confidence)),
+        "resolution": resolution,
+        "resolution_confidence": (
+            max(0.0, min(1.0, result.confidence)) if resolution is not None else 0.0
+        ),
         "field_spec": field_spec,
     }
 
