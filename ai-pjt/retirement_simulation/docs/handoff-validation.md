@@ -52,6 +52,9 @@ conda run --no-capture-output -n retirewise-ai python -S -B -m retirement_simula
 
 ## 3. 자동 검증 범위
 
+추가 자동 검사는 25개이며 기존 643개를 포함한 소스 668개를 일반 실행/`-S`에서 모두 통과했다.
+실제 저장소 밖 venv의 설치 검사 14개는 소스 테스트와 별도로 통과했다.
+
 저장소 루트에서 실행한다.
 
 ```bash

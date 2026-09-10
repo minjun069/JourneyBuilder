@@ -2,7 +2,8 @@
 
 작성일: 2026-09-10. `feat/ai-retirement-packaging` 4번 작업.
 모듈 개발자가 **로컬에서 빌드·설치·호출을 재현하는 방법**이다. BE Dockerfile·의존성 잠금·
-인증 API·FE 연결 방법을 확정하는 문서가 아니며, BE 전달 문서 보완은 별도 요청 시 진행한다.
+인증 API·FE 연결 방법을 확정하는 문서는 아니다. 후속 사용자 요청으로 보완한
+[BE 전달 자료](be-handoff.md)와 [FE 안내](fe-handoff.md), [확정 정책](simulation-policy.md)을 함께 참고한다.
 
 ## 1. 먼저 구분할 것
 
