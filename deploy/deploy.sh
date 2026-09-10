@@ -6,6 +6,8 @@
 #   deploy/deploy.sh --no-build                       # 이미지 재빌드 없이 재기동만
 #   deploy/deploy.sh --health-url http://127.0.0.1:8080/ --timeout 180
 #   deploy/deploy.sh --api-health-url http://127.0.0.1:8080/api/v1/consultations/
+#   deploy/deploy.sh --ai-required                    # ai-pjt healthy 를 배포 성공 조건에 포함 (AI_REQUIRED=1 과 동일)
+#   AI_REQUIRED=0 deploy/deploy.sh                    # AI 가 깨진 상황에서 서빙만 급히 배포할 때 (CI 잡 기본값을 끈다)
 #
 # 흐름
 #   1. 사전 점검: env 파일, compose 병합(config)
@@ -15,7 +17,8 @@
 #        스스로 회복하지만, 배포 직후 헬스체크가 TTL 을 기다리지 않도록 up 뒤에 즉시 다시 해석시킨다.
 #   4. 헬스체크: web·backend 컨테이너 healthy + web HTTP 200 + API 경로가 5xx 가 아닌 응답
 #      (API 프로브는 host→web→gateway→backend 전 구간을 검사한다. 인증 필요 경로라 401 이 정상 응답)
-#      ai-pjt 는 상태만 보고(AI_REQUIRED=1 이면 필수)
+#      ai-pjt 는 AI_REQUIRED=1 이면 healthy 까지 같은 루프에서 대기하고 판정에 포함한다(운영 기본).
+#      0 이면 상태만 로그에 남기고 판정에서 뺀다
 #   5. 실패 → 직전 이미지로 태그를 되돌려 up -d --no-build, exit 1 (파이프라인 failed)
 #      성공 → 이미지 ID 를 last_good 에 저장, dangling 이미지 정리
 #
@@ -39,7 +42,7 @@ while [ $# -gt 0 ]; do
     --timeout) TIMEOUT="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
     --ai-required) AI_REQUIRED=1; shift ;;
-    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 64 ;;
   esac
 done
@@ -97,20 +100,32 @@ health_of() {  # 컨테이너 Health.Status (healthcheck 없으면 running 여�
   docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid"
 }
 
-log "헬스체크 (최대 ${TIMEOUT}s): web·backend healthy + GET $HEALTH_URL 200 + GET $API_HEALTH_URL 이 5xx 아님"
+# ai-pjt 의 판정 참여 여부. AI_REQUIRED=1 이면 healthy 를 "대기 조건" 에 포함한다.
+# 루프 밖에서 한 번만 읽으면 web·backend 가 이미 healthy 인 배포에서 루프가 즉시 탈출해
+# ai 의 HEALTHCHECK start-period(20s)를 기다리지 못하고 정상 배포를 실패로 판정한다 (S15P21B109-132).
+ai_ok() { [ "$AI_REQUIRED" != 1 ] || [ "$1" = healthy ]; }
+
+gate="web·backend healthy + GET $HEALTH_URL 200 + GET $API_HEALTH_URL 이 5xx 아님"
+if [ "$AI_REQUIRED" = 1 ]; then gate="$gate + ai-pjt healthy"; fi
+log "헬스체크 (최대 ${TIMEOUT}s): $gate"
 deadline=$(( $(date +%s) + TIMEOUT ))
 ok=0
+w=unknown; b=unknown; a=unknown; code=000; api=000   # TIMEOUT<=0 이면 루프가 한 번도 안 돌아 set -u 에서 unbound
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  w="$(health_of web)"; b="$(health_of backend)"
+  w="$(health_of web)"; b="$(health_of backend)"; a="$(health_of ai-pjt)"
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" 2>/dev/null)" || code="${code:-000}"
   api="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$API_HEALTH_URL" 2>/dev/null)" || api="${api:-000}"
-  if [ "$w" = healthy ] && [ "$b" = healthy ] && [ "$code" = 200 ] && responded "$api"; then ok=1; break; fi
+  if [ "$w" = healthy ] && [ "$b" = healthy ] && [ "$code" = 200 ] && responded "$api" && ai_ok "$a"; then ok=1; break; fi
   sleep 5
 done
-a="$(health_of ai-pjt)"
 log "결과: web=$w backend=$b http=$code api=$api ai-pjt=$a"
-if [ "$AI_REQUIRED" = 1 ] && [ "$a" != healthy ]; then ok=0; log "ai-pjt 가 필수인데 healthy 가 아님"; fi
-if [ "$a" != healthy ]; then log "경고: ai-pjt 상태 '$a' — GOOGLE_API_KEY 등 env 를 확인하세요 (배포 판정에는 미포함)"; fi
+if [ "$a" != healthy ]; then
+  if [ "$AI_REQUIRED" = 1 ]; then
+    log "실패: ai-pjt 가 필수(AI_REQUIRED=1)인데 '$a' — GOOGLE_API_KEY 등 env 와 컨테이너 로그를 확인하세요"
+  else
+    log "경고: ai-pjt 상태 '$a' — GOOGLE_API_KEY 등 env 를 확인하세요 (AI_REQUIRED=0 이라 배포 판정에는 미포함)"
+  fi
+fi
 
 # ── 5. 판정 ──────────────────────────────────────────────────────────────
 if [ "$ok" = 1 ]; then

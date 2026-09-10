@@ -79,6 +79,8 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 ```
 deploy/deploy.sh                       # /srv/s15p21b109/secrets/app.env, 빌드 포함
 deploy/deploy.sh --no-build            # 재기동만
+deploy/deploy.sh --ai-required          # ai-pjt healthy 를 성공 조건에 포함 (= AI_REQUIRED=1)
+AI_REQUIRED=0 deploy/deploy.sh         # AI 가 깨진 상황에서 서빙만 급히 배포
 ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 서버 상태 파일과 분리)
 ```
 
@@ -87,7 +89,7 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 | 사전 점검 | env 파일 읽기 가능, `compose config --quiet` |
 | 직전 기록 | 떠 있는 web·backend·ai-pjt·migrate 컨테이너의 이미지 ID (롤백 대상). 첫 배포면 없음 |
 | 기동 | `compose build --pull` → `up -d --remove-orphans` → **`restart gateway`**. migrate one-shot → backend 순서는 compose `depends_on` 이 보장. gateway 재시작 배경: 원래 gateway nginx 의 upstream 이 고정(`server backend:8000`)이라 backend 가 재생성돼 IP 가 바뀌면 옛 IP 를 물고 `/api` 가 502 가 됐다(2026-09-08 첫 자동 배포에서 발생, S15P21B109-127). S15P21B109-128 에서 upstream 을 `resolve` 방식(10s 주기 재조회)으로 바꿔 배포 외 경로(수동 `up`, 크래시 후 재생성)에서도 자동 회복하도록 했고, 재시작은 즉시 반영용 안전망으로 유지한다. web 의 nginx 는 처음부터 `resolver` 방식 |
-| 헬스체크 | 최대 150s: `web`·`backend` 컨테이너 healthy **and** `GET http://127.0.0.1:8080/` 200 **and** `GET http://127.0.0.1:8080/api/v1/consultations/` 가 5xx·000 이 아님(host→web→gateway→backend 전 구간 검사. 로그인 필요 경로라 **401 이 정상**. `--api-health-url` 로 변경). **ai-pjt 는 판정에 넣지 않고 상태만 경고**(`--ai-required` 로 필수 전환) |
+| 헬스체크 | 최대 150s: `web`·`backend` 컨테이너 healthy **and** `GET http://127.0.0.1:8080/` 200 **and** `GET http://127.0.0.1:8080/api/v1/consultations/` 가 5xx·000 이 아님(host→web→gateway→backend 전 구간 검사. 로그인 필요 경로라 **401 이 정상**. `--api-health-url` 로 변경). **ai-pjt 는 `AI_REQUIRED=1`(운영 기본) 이면 같은 대기 조건에 포함하고, `0` 이면 상태만 경고**(`--ai-required` 로 필수 전환) |
 | 성공 | `/srv/s15p21b109/state/last_good_images` 갱신, `docker image prune -f`, exit 0 |
 | 실패 | backend 로그 20줄 출력 → 직전 이미지 ID 를 compose 이미지 이름에 다시 태그 → `up -d --no-build` → `restart gateway` → exit 1 (파이프라인 failed) |
 
@@ -111,8 +113,33 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 
 - **재배포(코드 변경 없음, env 만 바뀐 경우)**: master 최신 파이프라인의 `deploy:production` 잡을 GitLab 에서 Retry. 또는 서버에서 러너 체크아웃 디렉터리로 가서 `bash deploy/deploy.sh --no-build`
 - **ai 컨테이너만 재기동(LLM 키 입력·회전 후)**: 러너 체크아웃 디렉터리에서 `sudo docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate ai-pjt` (app.env 가 root:gitlab-runner 640 이라 `ubuntu` 계정은 `sudo` 필요. deploy 잡을 Retry 하면 러너 권한으로 돌아 sudo 불필요)
-- **주의**: `master` 는 아직 보호 브랜치가 아니고 "파이프라인 통과 시 머지" 조건도 없다. 빨간불 MR 을 머지하면 test 가 실패해 deploy 는 실행되지 않지만(스테이지 순서), 테스트가 잡지 못하는 결함은 그대로 배포된다. 보호 브랜치 설정은 S15P21B109-126
+- **주의**: `master` 는 보호 브랜치이지만(push·merge 는 Maintainer, force push 금지) **"파이프라인 통과 시 머지" 조건이 꺼져 있다**(`only_allow_merge_if_pipeline_succeeds=false`, 2026-09-10 확인). 빨간불 MR 을 머지하면 test 가 실패해 deploy 는 실행되지 않지만(스테이지 순서), 테스트가 잡지 못하는 결함은 그대로 배포된다. 이 머지 조건을 켜는 것은 S15P21B109-126
 - 검증 기록(2026-09-08, 서버): 기능 브랜치에서 `when: manual` 로 실행. 1차(파이프라인 #183374) 2초 실패 — 첫 배포 경로 `PREV: unbound variable` → deploy.sh 수정. 2차(파이프라인 #183408, 잡 #495972) **62초 성공**: 이미지 3종 빌드 → postgres·redis healthy → migrate 완료 → backend healthy → web healthy → 8080 200 → last_good 4개 기록. `https://j15b109.p.ssafy.io` 502 → **200**. ai-pjt 는 `GOOGLE_API_KEY is required` 로 재시작 반복(예상된 상태, LLM 키 조합 확정 후 입력). 호스트 노출 포트는 22/80/443 과 127.0.0.1 의 8080/8081 만
+
+## AI 컨테이너 기동 실패를 배포 실패로 판정 (S15P21B109-132)
+
+`ai-pjt` 가 healthy 가 되지 못한 배포는 **성공으로 기록하지 않는다.** `deploy:production` 잡이 `AI_REQUIRED=1` 로 실행한다.
+
+왜 필요했나 — S15P21B109-122 때 `ai-pjt` 가 `GOOGLE_API_KEY` 부재로 **이틀간 재시작을 반복**했는데 배포는 계속 성공으로 남았다. 판정에서 빠져 있어 발견이 늦었다. S15P21B109-131 로 AI 상담이 실제로 동작하게 된 뒤로는 서빙 경로의 일부다.
+
+| 항목 | 내용 |
+|---|---|
+| 동작 | `AI_REQUIRED=1` 이면 `web`·`backend`·HTTP·API 와 **같은 대기 루프**에서 `ai-pjt` healthy 를 함께 기다린다. 최대 `TIMEOUT`(기본 150s) |
+| 실패 시 | 다른 대상과 동일 — backend 로그 20줄 → 직전 이미지로 롤백 → exit 1 |
+| 기본값 | 스크립트 자체 기본은 `0`(사람이 서버에서 직접 돌릴 때). **CI 잡만 `1`** |
+
+**끄는 법** (AI env 가 깨져 배포가 계속 실패하고 서빙 수정을 급히 내보내야 할 때)
+
+| 범위 | 방법 |
+|---|---|
+| 그 실행만 | GitLab **Run pipeline** 화면에서 변수 `AI_REQUIRED` = `0` |
+| 상시 | Settings → CI/CD → Variables 에 `AI_REQUIRED` = `0` (잡 `variables` 보다 우선) |
+| 서버에서 직접 | 러너 체크아웃 디렉터리에서 `AI_REQUIRED=0 bash deploy/deploy.sh --no-build` |
+
+**한계 — healthy 는 LLM 정상을 증명하지 않는다.** `ai-pjt` 의 `/health` 는 `{"status":"ok"}` 만 반환하고 LLM·임베딩 공급자를 호출하지 않는다(배포마다 크레딧을 태우지 않기 위한 설계). 이 판정이 잡는 것은 **컨테이너가 아예 뜨지 못하는 경우**(env 누락, import 실패, 크래시 루프)다. GMS 키가 만료돼 응답만 실패하는 상황은 이 게이트를 통과한다 — 그건 파이프라인 실패 알림(S15P21B109-126) 쪽 과제다.
+
+- 검증 기록(2026-09-10, 로컬): `docker`·`curl` 을 스텁으로 갈아끼운 하네스로 판정 로직만 격리해 검사했다(실제 컨테이너·키 불필요). **교정 전 2건 실패 → 교정 후 7건 통과.** 시나리오: `AI_REQUIRED=0` 에 ai `starting` → 성공(경고만, 기존 동작 유지) / `AI_REQUIRED=1` 에 ai 가 12s 뒤 healthy → **16s 대기 후 성공**(교정 전에는 0초에 탈출해 실패·롤백) / ai 끝까지 `starting` → 실패·롤백 / ai 컨테이너 없음 → 실패 / web `unhealthy` + ai healthy → 실패(기존 판정 회귀) / `--ai-required` 플래그 경로도 동일
+- `--ai-required` 는 **한 번도 실행된 적 없는 분기**였다. 루프 밖에서 헬스를 1회만 읽어 `ai-pjt` 의 HEALTHCHECK `start-period=20s` 를 기다리지 못했고, 켜면 정상 배포까지 실패했다. 2026-09-08 첫 배포를 2초에 깬 `PREV: unbound variable` 과 같은 종류의 사각지대다 — `deploy.sh` 를 고칠 때는 밟지 않는 분기가 있는지 본다
 
 ## AI 키 (GMS) 등록 — S15P21B109-122 잔여분
 
