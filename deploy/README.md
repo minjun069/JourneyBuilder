@@ -207,11 +207,64 @@ Mattermost 에서 incoming webhook 을 만들어 **사람이 GitLab 설정 화�
 
 같은 화면에서 `Enable integration` 을 해제하면 즉시 멈춘다. 채널을 옮기려면 Mattermost 에서 새 웹훅을 만들어 URL 만 교체한다.
 
-### 확인된 것 / 남은 것
+### 확인된 것
 
-- 서버 값 확인: `active=true` `pipeline_events=true` `notify_only_broken_pipelines=true` `branches_to_be_notified=default`, 나머지 이벤트 전부 `false`
-- **`job_events=true` 는 끄지 못했다.** 이 GitLab 버전의 Trigger 목록에 Job 항목이 없고, API 로 끄려면 `webhook` 이 필수 파라미터라 URL 을 다시 실어 보내야 한다. 잡 단위 알림이 실제로 오는지는 파이프라인을 돌려 관찰해 판단한다
+- 서버 값: `active=true` `pipeline_events=true` `notify_only_broken_pipelines=true` `branches_to_be_notified=default`, 나머지 이벤트 전부 `false`
+- **성공 파이프라인은 오지 않는다** — MR·master 파이프라인 성공 2회 모두 채널 무음 (2026-09-10)
+- **MR 파이프라인은 실패해도 오지 않는다** — A3 검증에서 MR 파이프라인을 의도적으로 실패시켰을 때도 무음. `branches_to_be_notified=default` 가 `master` 외 ref 를 걸러낸다
+- **`job_events=true` 이지만 잡 단위 알림은 오지 않는다** — 위 실패 파이프라인에서 잡 하나가 실패했는데도 무음이었다. 이 GitLab 버전의 Trigger 목록에는 Job 항목 자체가 없고(API 로 끄려면 `webhook` 을 다시 실어 보내야 해서 손대지 않았다), 실측 결과 조용하므로 그대로 둔다
 - `Test settings` 샘플은 트리거 설정과 무관하게 **push 이벤트 모양**으로 온다. `push_events=false` 이므로 실제 푸시로는 가지 않는다
 
-## 이후 절 (해당 이슈에서 채움)
-- `master` 머지 조건 "파이프라인 통과"(A3) — S15P21B109-126
+**아직 관찰하지 못한 경우: `master` 파이프라인 실패.** 알림이 실제로 도착하는 유일한 조건인데 아직 겪지 않았다. 첫 실패가 곧 실검증이다.
+
+## master 머지 조건 — 파이프라인 통과 (S15P21B109-126, A3)
+
+`master` 머지는 곧 운영 배포다(S15P21B109-125). 그래서 **파이프라인이 통과한 MR 만 머지할 수 있다.**
+
+| 설정 | 값 | 변경 |
+|---|---|---|
+| Protected branch `master` | push·merge **Maintainers**, force push 금지 | 원래부터 설정돼 있었다 |
+| `only_allow_merge_if_pipeline_succeeds` | **`true`** | `false` → `true` (2026-09-10) |
+| `allow_merge_on_skipped_pipeline` | **`true`** | `null` → `true` (2026-09-10) |
+
+### `allow_merge_on_skipped_pipeline` 을 켠 이유
+
+`.gitlab-ci.yml` 의 `workflow` 규칙이 **MR 이 열린 브랜치의 푸시 파이프라인을 `never`** 로 만든다(브랜치·MR 이중 실행 방지). 이 경우 파이프라인이 `skipped` 로 남는데, 이 값을 켜두지 않으면 **정상 MR 이 "파이프라인이 성공하지 않았다"로 막힌다.** 조건을 우회하는 설정이 아니라, 우리 workflow 규칙과 짝을 맞추는 설정이다.
+
+### 막혔을 때
+
+MR 화면의 머지 버튼이 비활성화되고 사유가 표시된다. **재실행하면 된다** — 일시적 실패(러너 혼잡, 빌드 실패)면 파이프라인만 다시 돌리고, 실제 결함이면 고쳐서 푸시한다.
+
+API 로 확인하려면:
+
+```
+glab api "projects/:id/merge_requests/<iid>" | grep detailed_merge_status
+```
+
+`ci_must_pass` 면 이 조건 때문에 막힌 것이다. 구 필드 `merge_status` 는 **충돌 여부만** 뜻하므로 판단에 쓰지 않는다(막힌 MR 에서도 `can_be_merged` 로 나온다).
+
+### 검증 기록 (2026-09-10)
+
+설정값만 확인하지 않고 **실제로 막히는지** 확인했다. `.gitlab-ci.yml` 에 5초 만에 실패하는 잡 하나만 넣은 브랜치로 MR 을 만들어(제목에 `[검증용·머지금지]` 명시) 파이프라인을 실패시켰다.
+
+- 파이프라인 #187061 `failed` → MR `detailed_merge_status = **ci_must_pass**`, `has_conflicts=false` (충돌이 아니라 정확히 이 조건 때문에 막혔다)
+- **머지 버튼을 실제로 누르지는 않았다.** 해석이 틀렸다면 의도적으로 깨진 커밋이 master 에 들어가 그대로 배포된다. `ci_must_pass` 로 충분한 증거라 그 위험을 감수하지 않았다
+- 확인 후 MR 을 닫고 브랜치를 삭제했다. `master` 에는 반영되지 않았다
+- 부수 확인: 이때 **Mattermost 채널에는 알림이 오지 않았다**(MR 파이프라인은 알림 대상이 아니다 — 위 절 참고)
+
+
+### A3 와 알림의 역할 구분
+
+둘은 겹치지 않는다. **A3 는 머지 전 MR 파이프라인을, 알림은 머지 후 master 파이프라인을** 본다.
+
+특히 **`deploy:production` 잡은 MR 파이프라인에 존재하지 않는다**(위 deploy 스테이지 절의 `rules` 참고 — MR 에서는 `never`, `master` 에서만 생성). 즉 빌드·헬스체크·롤백 전 과정은 머지 전에는 한 번도 실행되지 않으므로, A3 가 초록불을 보장해도 **배포 실패는 걸러낼 수 없다.** 실제로 이 저장소에서 난 배포 사고는 전부 이 영역이었다 — 첫 배포의 `PREV: unbound variable`(S15P21B109-125), 배포는 성공인데 미반영(S15P21B109-129·130), ai-pjt 가 이틀간 재시작 반복인데 배포는 성공 기록(S15P21B109-122·132).
+
+A3 로 막히지 않는 master 실패가 더 있다.
+
+- **머지 커밋에서만 나는 실패** — MR 파이프라인은 `refs/merge-requests/<iid>/head`, 즉 MR 브랜치에서 돈다. master 파이프라인은 병합 결과에서 돈다. 각자 초록불인 두 MR 이 합쳐지며 깨지는 경우는 A3 가 잡지 못한다
+- 러너·디스크·도커 데몬 같은 인프라성 실패
+- Maintainer 의 master 직접 푸시
+
+정리하면 **A3 는 사전 차단, 알림은 사후 감지**다. 알림이 울린다는 것은 "머지는 됐는데 운영에는 반영되지 않고 직전 이미지로 롤백된 상태" 라는 뜻이고, 이 상태는 화면 어디에도 표시되지 않는다.
+
+반대로 **"머지가 막혔다"는 알림은 만들 수 없다** — GitLab 에 해당 이벤트가 없다. 필요하지도 않다. 막힌 사람은 MR 화면에서 즉시 사유를 본다.
