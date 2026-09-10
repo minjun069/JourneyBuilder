@@ -55,6 +55,28 @@ PROJECT_NAME="${COMPOSE_PROJECT_NAME:-s15p21b109}"
 compose() { docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f docker-compose.yml -f docker-compose.prod.yml "$@"; }
 image_ref() { printf '%s-%s' "$PROJECT_NAME" "$1"; }
 log() { printf '[deploy %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+# 유지 태그를 붙일 원본 이미지를 고른다 (없으면 빈 값).
+#   1순위: 그 서비스의 컨테이너가 실제로 돌리고 있는 이미지
+#   2순위: <이름>:latest — 컨테이너가 참조하는 이미지가 저장소에 없을 때다. #122 에서 web·backend·migrate 가
+#          "No such image" 로 실패했다. #116 의 실패한 롤백이 남긴 상태이고, 컨테이너는 그대로 도는데
+#          이미지 레코드만 사라져 있었다. 이때는 같은 소스로 방금 빌드된 태그가 최선의 대체물이다.
+promote_source() {
+  local svc="$1" name cid img_id
+  name="$(image_ref "$svc")"
+  cid="$(compose ps -aq "$svc" 2>/dev/null | head -1 || true)"
+  if [ -n "$cid" ]; then
+    img_id="$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)"
+    if [ -n "$img_id" ] && docker image inspect "$img_id" >/dev/null 2>&1; then
+      printf '%s' "$img_id"
+      return
+    fi
+  fi
+  if docker image inspect "$name:latest" >/dev/null 2>&1; then
+    printf '%s' "$name:latest"
+  fi
+}
+# 로그용 — 위 두 경로 중 어느 쪽이었는지 한눈에 보이게 한다
+source_label() { case "$1" in *:latest) printf '현재 빌드 이미지' ;; *) printf '기동 중 이미지' ;; esac; }
 # gateway(nginx, 외부 이미지)는 up 에서 재생성되지 않는다. conf 의 upstream 은 resolve 방식이라 backend IP 변경을
 # 10s 안에 스스로 따라가지만(S15P21B109-128), 배포 직후 502 창을 없애기 위해 up 뒤에 재시작해 즉시 해석시킨다(1~2초 단절).
 # web 의 nginx 는 resolver 방식이라 대상이 아니다.
@@ -87,12 +109,11 @@ ROLLBACK_READY=()
 for svc in "${BUILT_SERVICES[@]}"; do
   ref="$(image_ref "$svc"):$ROLLBACK_TAG"
   if ! docker image inspect "$ref" >/dev/null 2>&1; then
-    cid="$(compose ps -aq "$svc" 2>/dev/null | head -1 || true)"
-    if [ -n "$cid" ]; then
-      img_id="$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)"
-      if [ -n "$img_id" ] && docker tag "$img_id" "$ref" 2>/dev/null; then
-        log "  $svc: 기동 중인 이미지를 유지 태그로 승격 (부트스트랩)"
-      fi
+    src="$(promote_source "$svc")"
+    if [ -n "$src" ] && docker tag "$src" "$ref" 2>/dev/null; then
+      log "  $svc: 유지 태그로 승격 — $(source_label "$src") (부트스트랩)"
+    else
+      log "  $svc: 승격할 이미지가 없다 — 이번 배포가 실패해도 롤백되지 않는다"
     fi
   fi
   if docker image inspect "$ref" >/dev/null 2>&1; then
@@ -153,13 +174,12 @@ if [ "$ok" = 1 ]; then
   : > "$STATE_DIR/last_good_images"
   tagged=()
   for svc in "${BUILT_SERVICES[@]}"; do
-    cid="$(compose ps -aq "$svc" 2>/dev/null | head -1 || true)"
-    [ -n "$cid" ] || continue
-    img_id="$(docker inspect --format '{{.Image}}' "$cid")"
-    echo "$svc=$img_id" >> "$STATE_DIR/last_good_images"
+    src="$(promote_source "$svc")"
+    [ -n "$src" ] || { log "경고: $svc 유지 태그 갱신 실패 — 붙일 이미지가 없다"; continue; }
+    echo "$svc=$src" >> "$STATE_DIR/last_good_images"
     # 유지 태그를 방금 성공한 이미지로 옮긴다. 다음 배포가 실패하면 여기로 되돌아온다.
     # 태그를 옮기면 직전 세대는 dangling 이 되어 아래 prune 이 정리한다 → 서비스당 한 세대만 남는다.
-    if docker tag "$img_id" "$(image_ref "$svc"):$ROLLBACK_TAG"; then
+    if docker tag "$src" "$(image_ref "$svc"):$ROLLBACK_TAG"; then
       tagged+=("$svc")
     else
       log "경고: $svc 유지 태그 갱신 실패 — 다음 배포가 실패해도 이 서비스는 롤백되지 않는다"
