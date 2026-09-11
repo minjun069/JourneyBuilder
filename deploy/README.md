@@ -25,7 +25,7 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 | 서버 | `/srv/s15p21b109/secrets/app.env` (root:gitlab-runner 640 — deploy 잡의 러너가 읽어야 한다) | `sudo bash deploy/make-env.sh --output /srv/s15p21b109/secrets/app.env` | 1회 |
 | CI | 없음 — `.gitlab-ci.yml` 의 `ci-only-*` 더미 | 자동 | 매 실행 |
 
-`make-env.sh` 는 `.env.example` 을 복사해 필수 4개를 채운다.
+`make-env.sh` 는 `.env.example` 을 복사해 필수 5개를 채운다.
 
 | 변수 | 출처 | 바꾸면 |
 |---|---|---|
@@ -33,12 +33,41 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 | `POSTGRES_PASSWORD` | 무작위 생성 | **볼륨이 이미 있으면 DB 는 옛 비밀번호 유지 → 접속 끊김.** 데이터는 남음. 절차: DB 에서 `ALTER USER retirewise PASSWORD '...'` → 파일 갱신 → 재기동. **`down -v` 금지** |
 | `DATABASE_URL` | 위 비밀번호로 자동 조립 | POSTGRES_* 와 항상 일치시킨다 |
 | `AI_SERVICE_BEARER_TOKEN` | 무작위 생성 | backend·ai 동시 재기동이면 문제 없음 |
+| `AI_MASKING_PSEUDONYM_KEY` | 무작위 생성 | 가명화 결과가 전부 바뀐다 — 이전 관측 기록과 같은 사람을 같은 가명으로 더 이상 잇지 못한다. **다만 로그·트레이스에만 쓰이므로**(`core/observability_masking.py` 의 `APPLICATION_LOG`·`TRACE_EXPORT`) **서비스 동작·저장 데이터·API 응답에는 영향이 없다** — 재로그인도 필요 없다. 로그가 30MB(`json-file 10m×3`)에서 회전하고 집계 스택이 없어 실질 손실은 거의 없다. **단 장애 대응 중에는 바꾸지 않는다** — 추적 중이던 가명이 그 순간 끊긴다. `AI_SERVICE_BEARER_TOKEN` 과 다른 값이어야 하고 32바이트 이상이어야 한다 (`ai-pjt/core/config.py` `validate_runtime`) |
 | `GOOGLE_API_KEY` | **GMS 키**를 직접 입력 (개인 Google 계정 키 아님 — 아래 절 참고) | 외부 회전 시만 |
 
 - 스크립트는 파일이 이미 있으면 덮어쓰지 않는다(exit 2).
 - 서버 파일은 백업 1부를 `/srv/s15p21b109/secrets/app.env.bak`(root 600)으로 둔다 — DB 비밀번호를 잃지 않기 위해.
 - 누락 확인: `docker compose --env-file <파일> -f docker-compose.yml -f docker-compose.prod.yml config --quiet`
 - 거부되는 값: `change-me`, `password`, `postgres`, `secret`, `ssafy` 등 (`backend-pjt/config/runtime_env.py`).
+
+### 필수 변수를 새로 추가할 때 (2026-09-11 추가)
+
+`docker-compose.yml` 에 `${VAR:?}` 를 새로 추가하는 MR 은 **저장소 파일만 고쳐서는 배포가 안 된다.** `make-env.sh` 는 기존 파일을 덮어쓰지 않으므로(exit 2) 서버 `app.env` 에는 그 변수가 생기지 않고, 다음 `master` 배포의 `deploy:production` 이 `deploy.sh` 1단계 사전 점검에서 멈춘다.
+
+MR 체크리스트:
+
+1. `.env.example` 과 해당 서비스의 `<서브프로젝트>/.env.example` 에 변수 추가
+2. `deploy/make-env.sh` 에 생성 규칙 추가 (무작위 값이면 `openssl rand`)
+3. `.gitlab-ci.yml` 에 `CI_*` 더미 변수 + 해당 test 잡의 `-e` 추가
+4. 이 문서의 변수 표 갱신
+5. **머지 전에 서버 `app.env` 에 줄 추가** (아래)
+
+서버 갱신 — sudo 필요, 값은 사람이 넣는다:
+
+```bash
+sudo cp -a /srv/s15p21b109/secrets/app.env /srv/s15p21b109/secrets/app.env.bak
+printf 'VAR_NAME=%s\n' "$(openssl rand -hex 32)" | sudo tee -a /srv/s15p21b109/secrets/app.env >/dev/null
+sudo chmod 600 /srv/s15p21b109/secrets/app.env.bak
+```
+
+확인은 러너 체크아웃에서. 파일이 `root:gitlab-runner 640` 이라 `ubuntu` 로는 못 읽으니 `sudo` 를 붙인다:
+
+```bash
+sudo docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml config --quiet && echo OK
+```
+
+실측(2026-09-11): `AI_MASKING_PSEUDONYM_KEY` 가 이 절차 없이 머지돼 파이프라인 #189299 의 `deploy:production` 이 실패했다. 사전 점검이 빌드·기동 전에 멈추므로 운영 컨테이너는 그대로였고, 서버에 줄을 추가한 뒤 잡을 재실행해 복구했다. 같은 실패가 다시 나면 `deploy.sh` 가 누락된 변수 이름을 로그에 찍는다.
 
 ## 서버 초기 세팅 (2026-09-07 수행 기록)
 
