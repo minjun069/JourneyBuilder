@@ -14,6 +14,9 @@ from core.checkpointer import build_context_state_api, get_checkpointer
 from core.config import settings
 from core.context import ContextScope
 from core.monitoring import get_callbacks
+from core.runtime_instrumentation_adapter import (
+    build_export_blocked_instrumentation,
+)
 from graph.builder import build_graph
 from schemas.chat import ChatRequest, ChatStreamRequest
 from tools.graph_adapter import build_graph_tool_executors
@@ -43,8 +46,14 @@ async def lifespan(app: FastAPI):
     settings.validate_runtime()
     async with get_checkpointer() as checkpointer:
         tool_runtime = build_production_tool_runtime()
+        instrumentation, instrumentation_sink = (
+            build_export_blocked_instrumentation()
+        )
+        app.state.instrumentation = instrumentation
+        app.state.instrumentation_sink = instrumentation_sink
         app.state.chat_graph = build_graph(
             checkpointer,
+            instrumentation=instrumentation,
             tool_executors=build_graph_tool_executors(tool_runtime),
         )
         app.state.context_api = build_context_state_api(checkpointer)
@@ -127,6 +136,7 @@ def _graph_input(request: ChatRequest | ChatStreamRequest | ChatV2Request) -> di
         customer_info = customer_info.model_dump(mode="json")
     payload = {
         "request_id": request.request_id,
+        "thread_id": request.thread_id,
         "message": request.message,
         "step_id": request.step_id,
         "customer_info": customer_info,

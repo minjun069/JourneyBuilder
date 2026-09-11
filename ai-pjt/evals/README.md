@@ -5,10 +5,13 @@
 확정하지 않는다.
 
 현재 단계는 P11 합성 이벤트와 F10-T01의 sink-independent
-`InstrumentationPort`·`FakeInstrumentationSink`가 준비된 상태다. 실제
-planner·task·dependency·artifact producer 연결은 F10-T02가 소유한다. F11 마스킹
-구현이 production 직렬화 경계에 연결되기 전에는 Langfuse·LangSmith exporter를
-활성화하지 않는다.
+`InstrumentationPort`·`FakeInstrumentationSink`에 F10-T02 runtime adapter가 연결된
+상태다. `build_graph`는 adapter를 필수로 받으며 planner·plan
+검증·binding·task·artifact·dependency·aggregation·Agent/tool producer가 typed
+event를 전송한다. callback용 adapter API는 후속 transport 통합에서 같은 port에
+연결할 수 있다. F11 마스킹 구현이 production 직렬화 경계에 연결되기
+전에는 명시적인 export-blocked sink가 이벤트를 폐기하고 Langfuse·LangSmith
+exporter를 활성화하지 않는다.
 
 ## 이벤트와 측정 단위
 
@@ -28,9 +31,12 @@ route·검색·도구·모델·공통 출력 검증·callback은 `OperationTrace
 토큰은 모델 이벤트에만 기록하고, 비용은 고정 가격표가 아니라 해당 실행에
 적용된 provider 가격 버전이 계산한 `cost_microusd`를 받는다.
 
-`RuntimeTraceEvent`는 request·thread·plan correlation과 task의 `depends_on`,
+`RuntimeTraceEvent` 1.1은 request·thread·plan correlation과 task의 `depends_on`,
 dependency 차단의 `blocked_by`, typed artifact 식별자만 기록한다. artifact 식별자는
 TaskResult schema를 바꾸지 않고 `plan_id:producer_task_id:artifact_type`으로 만든다.
+task 실행 event는 executor 종류·이름과 최종 응답 owner를 제한된 token으로
+기록하며, 실제 Agent·tool 호출과 callback adapter 입력은 같은 trace의
+`OperationTraceEvent` 계약을 사용한다.
 이벤트에는 사용자 메시지, 고객 snapshot, 도구 인자나 artifact 값 같은 자유 형식
 payload를 넣지 않는다. P11 이벤트와 runtime 이벤트는 같은 `InstrumentationPort`로
 전달할 수 있고, fake sink의 `baseline_events`는 기존 baseline 입력만 분리한다.
@@ -65,8 +71,8 @@ payload를 넣지 않는다. P11 이벤트와 runtime 이벤트는 같은 `Instr
 python3 -m unittest discover -s evals/tests -v
 ```
 
-F10-T02에서 실제 producer가 이 포트를 사용하도록 연결하고, F11의 production
-masker와 exporter 직전 sentinel 검사를 통과시킨 후 실제 baseline을 측정한다.
+F11의 production masker와 exporter 직전 sentinel 검사를 통과시킨 후 실제
+baseline을 측정한다.
 
 ## F07-T04·F08-T04 Agent 통합 평가
 

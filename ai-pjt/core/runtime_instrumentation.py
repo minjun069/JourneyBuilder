@@ -23,7 +23,7 @@ from core.monitoring import (
 )
 
 
-RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.0"
+RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.1"
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 _PSEUDONYMOUS_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -127,6 +127,9 @@ class RuntimeTraceEvent:
     producer_task_id: str | None = None
     duration_ms: int | None = None
     reason_code: str | None = None
+    executor_kind: str | None = None
+    executor_name: str | None = None
+    response_owner: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.stage, RuntimeStage):
@@ -161,6 +164,20 @@ class RuntimeTraceEvent:
             raise ValueError("started or succeeded events cannot contain reason_code")
         if self.reason_code is not None:
             _validate_safe_token(self.reason_code, "reason_code")
+        for field_name in ("executor_kind", "executor_name", "response_owner"):
+            value = getattr(self, field_name)
+            if value is not None:
+                _validate_safe_token(value, field_name)
+        if self.stage is not RuntimeStage.TASK_EXECUTION and (
+            self.executor_kind is not None
+            or self.executor_name is not None
+            or self.response_owner is not None
+        ):
+            raise ValueError(
+                "executor and response-owner fields are allowed only on task execution events"
+            )
+        if (self.executor_kind is None) != (self.executor_name is None):
+            raise ValueError("executor_kind and executor_name must be provided together")
 
         if self.status is RuntimeStatus.BLOCKED and (
             self.stage is not RuntimeStage.DEPENDENCY_BLOCK
@@ -228,6 +245,9 @@ class RuntimeTraceEvent:
             "producer_task_id",
             "duration_ms",
             "reason_code",
+            "executor_kind",
+            "executor_name",
+            "response_owner",
         ):
             value = getattr(self, field_name)
             if value is not None:

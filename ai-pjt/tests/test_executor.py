@@ -7,6 +7,7 @@ from graph.executor import (
     execute_route_plan,
     validate_agent_executor_registry,
 )
+from tests.instrumentation import bound_fake_instrumentation
 
 
 FIELD_SPEC = {
@@ -148,6 +149,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             field_registry=[FIELD_SPEC],
             agent_executors={"qa": qa, "input_assist": input_assist},
             tool_executors={"lookup_reference_value": lookup},
+            instrumentation=bound_fake_instrumentation()[0],
         )
 
         self.assertEqual([name for name, _ in calls], ["lookup", "qa", "input_assist"])
@@ -206,6 +208,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": dependent, "qa": independent},
             tool_executors={"lookup_reference_value": failing_lookup},
+            instrumentation=bound_fake_instrumentation()[0],
         )
 
         self.assertEqual(dependent_calls, 0)
@@ -230,6 +233,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": input_assist},
             tool_executors={"lookup_reference_value": lookup},
+            instrumentation=bound_fake_instrumentation()[0],
         )
         self.assertEqual(
             report.task_results["task-2"]["reason_code"],
@@ -257,6 +261,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": dependent},
             tool_executors={},
+            instrumentation=bound_fake_instrumentation()[0],
         )
         self.assertEqual(calls, 0)
         self.assertEqual(
@@ -304,6 +309,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             agent_executors={"qa": qa},
             tool_executors={},
             task_limit=3,
+            instrumentation=bound_fake_instrumentation()[0],
         )
 
         self.assertEqual(calls, ["task-1", "task-2", "task-3"])
@@ -342,6 +348,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             field_registry=[FIELD_SPEC],
             agent_executors={"qa": invalid_qa, "fallback": fallback},
             tool_executors={},
+            instrumentation=bound_fake_instrumentation()[0],
         )
 
         self.assertEqual(len(fallback_calls), 1)
@@ -385,6 +392,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
                 "fallback": fallback,
             },
             tool_executors={},
+            instrumentation=bound_fake_instrumentation()[0],
         )
 
         self.assertEqual(fallback_calls, 0)

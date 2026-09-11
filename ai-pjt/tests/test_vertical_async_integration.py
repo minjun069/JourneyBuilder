@@ -16,6 +16,7 @@ from tests.test_graph_execution import (
     FakePlanner,
     all_agent_graphs,
 )
+from tests.instrumentation import fake_instrumentation
 from transport.contracts import ChatV2Request
 from transport.runtime import (
     AsyncChatTransport,
@@ -62,6 +63,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         context_api = ContextStateAPI(checkpointer)
         app.state.chat_graph = build_graph(
             checkpointer,
+            instrumentation=fake_instrumentation()[0],
             planner=planner,
             classifier=FakeClassifier(),
             agent_graphs=all_agent_graphs(),

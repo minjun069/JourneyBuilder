@@ -1,0 +1,318 @@
+"""Producer-facing runtime instrumentation for F10-T02.
+
+The graph must receive this adapter explicitly.  Export policy remains a sink
+concern: before F11-T03 installs a masking sink, production uses the explicit
+``ExportBlockedInstrumentationSink`` instead of an implicit no-op.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from hashlib import sha256
+from time import monotonic, time
+from typing import Callable
+
+from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
+from core.runtime_instrumentation import (
+    InstrumentationEvent,
+    InstrumentationPort,
+    RuntimeStage,
+    RuntimeStatus,
+    RuntimeTraceEvent,
+)
+
+
+def _epoch_ms() -> int:
+    return int(time() * 1000)
+
+
+def _stable_id(prefix: str, *parts: str) -> str:
+    material = "\x1f".join(parts).encode("utf-8")
+    return f"{prefix}_{sha256(material).hexdigest()[:24]}"
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCorrelation:
+    trace_id: str
+    attempt_id: str
+    request_id: str
+    thread_id: str
+    plan_id: str
+    step_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeStageSpan:
+    correlation: RuntimeCorrelation
+    stage: RuntimeStage
+    started_at_monotonic: float
+    task_id: str | None = None
+    depends_on: tuple[str, ...] = ()
+    executor_kind: str | None = None
+    executor_name: str | None = None
+    artifact_id: str | None = None
+    artifact_type: str | None = None
+    producer_task_id: str | None = None
+
+
+class ExportBlockedInstrumentationSink:
+    """Explicitly discard typed events until a reviewed masked sink is wired."""
+
+    def __init__(self) -> None:
+        self._discarded_count = 0
+
+    def emit(self, _event: InstrumentationEvent) -> None:
+        self._discarded_count += 1
+
+    @property
+    def discarded_count(self) -> int:
+        return self._discarded_count
+
+
+class RuntimeInstrumentationAdapter:
+    """Create validated orchestration and operation events for one graph."""
+
+    __slots__ = ("_port", "_epoch_ms", "_monotonic")
+
+    def __init__(
+        self,
+        port: InstrumentationPort,
+        *,
+        epoch_ms: Callable[[], int] = _epoch_ms,
+        monotonic_clock: Callable[[], float] = monotonic,
+    ) -> None:
+        if not isinstance(port, InstrumentationPort):
+            raise TypeError("instrumentation port is required")
+        if not callable(epoch_ms) or not callable(monotonic_clock):
+            raise TypeError("instrumentation clocks must be callable")
+        self._port = port
+        self._epoch_ms = epoch_ms
+        self._monotonic = monotonic_clock
+
+    def bind(
+        self,
+        *,
+        request_id: str,
+        thread_id: str,
+        plan_id: str,
+        step_id: str,
+    ) -> "BoundRuntimeInstrumentation":
+        for name, value in (
+            ("request_id", request_id),
+            ("thread_id", thread_id),
+            ("plan_id", plan_id),
+            ("step_id", step_id),
+        ):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} is required for instrumentation")
+        correlation = RuntimeCorrelation(
+            trace_id=_stable_id("trace", request_id),
+            attempt_id=_stable_id("attempt", request_id, step_id),
+            request_id=request_id,
+            thread_id=thread_id,
+            plan_id=plan_id,
+            step_id=step_id,
+        )
+        return BoundRuntimeInstrumentation(
+            port=self._port,
+            correlation=correlation,
+            epoch_ms=self._epoch_ms,
+            monotonic_clock=self._monotonic,
+        )
+
+    def record_callback_attempt(
+        self,
+        *,
+        request_id: str,
+        thread_id: str,
+        plan_id: str,
+        step_id: str,
+        status: OperationStatus,
+        duration_ms: int,
+        error_code: str | None = None,
+    ) -> None:
+        """Translate one transport-owned callback attempt into the shared port."""
+
+        if status not in {
+            OperationStatus.SUCCEEDED,
+            OperationStatus.FAILED,
+            OperationStatus.TIMEOUT,
+        }:
+            raise ValueError("callback attempt status must be terminal")
+        self.bind(
+            request_id=request_id,
+            thread_id=thread_id,
+            plan_id=plan_id,
+            step_id=step_id,
+        ).record_operation(
+            stage=OperationStage.CALLBACK,
+            status=status,
+            operation_name="backend_callback",
+            duration_ms=duration_ms,
+            error_code=error_code,
+        )
+
+
+class BoundRuntimeInstrumentation:
+    """Instrumentation API bound to one request, thread, plan, and step."""
+
+    __slots__ = ("_port", "correlation", "_epoch_ms", "_monotonic")
+
+    def __init__(
+        self,
+        *,
+        port: InstrumentationPort,
+        correlation: RuntimeCorrelation,
+        epoch_ms: Callable[[], int],
+        monotonic_clock: Callable[[], float],
+    ) -> None:
+        self._port = port
+        self.correlation = correlation
+        self._epoch_ms = epoch_ms
+        self._monotonic = monotonic_clock
+
+    def start(
+        self,
+        stage: RuntimeStage,
+        *,
+        task_id: str | None = None,
+        depends_on: tuple[str, ...] = (),
+        executor_kind: str | None = None,
+        executor_name: str | None = None,
+        artifact_id: str | None = None,
+        artifact_type: str | None = None,
+        producer_task_id: str | None = None,
+    ) -> RuntimeStageSpan:
+        if stage is RuntimeStage.DEPENDENCY_BLOCK:
+            raise ValueError("dependency blocks are terminal-only events")
+        span = RuntimeStageSpan(
+            correlation=self.correlation,
+            stage=stage,
+            started_at_monotonic=self._monotonic(),
+            task_id=task_id,
+            depends_on=depends_on,
+            executor_kind=executor_kind,
+            executor_name=executor_name,
+            artifact_id=artifact_id,
+            artifact_type=artifact_type,
+            producer_task_id=producer_task_id,
+        )
+        self._emit_runtime(span, status=RuntimeStatus.STARTED)
+        return span
+
+    def succeed(
+        self,
+        span: RuntimeStageSpan,
+        *,
+        artifact_id: str | None = None,
+        artifact_type: str | None = None,
+        producer_task_id: str | None = None,
+        response_owner: str | None = None,
+    ) -> None:
+        self._emit_runtime(
+            span,
+            status=RuntimeStatus.SUCCEEDED,
+            artifact_id=artifact_id,
+            artifact_type=artifact_type,
+            producer_task_id=producer_task_id,
+            response_owner=response_owner,
+        )
+
+    def fail(self, span: RuntimeStageSpan, *, reason_code: str) -> None:
+        self._emit_runtime(
+            span,
+            status=RuntimeStatus.FAILED,
+            reason_code=reason_code,
+        )
+
+    def record_block(
+        self,
+        *,
+        task_id: str,
+        depends_on: tuple[str, ...],
+        blocked_by: tuple[str, ...],
+        reason_code: str = "dependency_failed",
+    ) -> None:
+        span = RuntimeStageSpan(
+            correlation=self.correlation,
+            stage=RuntimeStage.DEPENDENCY_BLOCK,
+            started_at_monotonic=self._monotonic(),
+            task_id=task_id,
+            depends_on=depends_on,
+        )
+        self._emit_runtime(
+            span,
+            status=RuntimeStatus.BLOCKED,
+            blocked_by=blocked_by,
+            reason_code=reason_code,
+        )
+
+    def record_operation(
+        self,
+        *,
+        stage: OperationStage,
+        status: OperationStatus,
+        operation_name: str,
+        duration_ms: int,
+        agent: str | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        self._port.emit(OperationTraceEvent(
+            trace_id=self.correlation.trace_id,
+            attempt_id=self.correlation.attempt_id,
+            occurred_at_epoch_ms=self._epoch_ms(),
+            stage=stage,
+            status=status,
+            duration_ms=duration_ms,
+            operation_name=operation_name,
+            step_id=self.correlation.step_id,
+            agent=agent,
+            error_code=error_code,
+        ))
+
+    def elapsed_ms(self, span: RuntimeStageSpan) -> int:
+        return max(0, int((self._monotonic() - span.started_at_monotonic) * 1000))
+
+    def _emit_runtime(
+        self,
+        span: RuntimeStageSpan,
+        *,
+        status: RuntimeStatus,
+        blocked_by: tuple[str, ...] = (),
+        reason_code: str | None = None,
+        artifact_id: str | None = None,
+        artifact_type: str | None = None,
+        producer_task_id: str | None = None,
+        response_owner: str | None = None,
+    ) -> None:
+        terminal = status is not RuntimeStatus.STARTED
+        self._port.emit(RuntimeTraceEvent(
+            trace_id=span.correlation.trace_id,
+            request_id=span.correlation.request_id,
+            thread_id=span.correlation.thread_id,
+            plan_id=span.correlation.plan_id,
+            occurred_at_epoch_ms=self._epoch_ms(),
+            stage=span.stage,
+            status=status,
+            task_id=span.task_id,
+            depends_on=span.depends_on,
+            blocked_by=blocked_by,
+            artifact_id=artifact_id or span.artifact_id,
+            artifact_type=artifact_type or span.artifact_type,
+            producer_task_id=producer_task_id or span.producer_task_id,
+            duration_ms=self.elapsed_ms(span) if terminal else None,
+            reason_code=reason_code,
+            executor_kind=span.executor_kind,
+            executor_name=span.executor_name,
+            response_owner=response_owner,
+        ))
+
+
+def build_export_blocked_instrumentation() -> tuple[
+    RuntimeInstrumentationAdapter,
+    ExportBlockedInstrumentationSink,
+]:
+    """Create the explicit pre-F11 production policy used by startup."""
+
+    sink = ExportBlockedInstrumentationSink()
+    return RuntimeInstrumentationAdapter(InstrumentationPort(sink)), sink

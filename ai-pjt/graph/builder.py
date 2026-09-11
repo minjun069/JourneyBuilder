@@ -15,6 +15,8 @@ from core.context import (
     build_context_window,
     resolve_confirmed_facts,
 )
+from core.runtime_instrumentation import RuntimeStage
+from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 from graph.executor import (
     RuntimeExecutor,
     execute_route_plan,
@@ -246,12 +248,16 @@ def _flatten_customer_info(
 def build_graph(
     checkpointer: BaseCheckpointSaver,
     *,
+    instrumentation: RuntimeInstrumentationAdapter,
     planner=plan_tasks_with_model,
     classifier=classify_task_with_model,
     agent_graphs: Mapping[str, Any] | None = None,
     tool_executors: Mapping[str, RuntimeExecutor] | None = None,
 ):
     """Build the planner → sequential executor → validator orchestration graph."""
+
+    if not isinstance(instrumentation, RuntimeInstrumentationAdapter):
+        raise TypeError("build_graph requires a RuntimeInstrumentationAdapter")
 
     active_graphs = dict(
         _default_agent_graphs() if agent_graphs is None else agent_graphs
@@ -265,6 +271,22 @@ def build_graph(
 
     def plan_request(state: ChatState) -> dict[str, Any]:
         paused_state = None
+        request_id = str(state.get("request_id") or "request-unknown")
+        plan_id = f"plan-{request_id}"
+        scope = state.get("context_scope", {})
+        thread_id = str(
+            state.get("thread_id")
+            or (scope.get("thread_id") if isinstance(scope, Mapping) else None)
+            or "thread-unknown"
+        )
+        observed = instrumentation.bind(
+            request_id=request_id,
+            thread_id=thread_id,
+            plan_id=plan_id,
+            step_id=str(state.get("step_id") or "step-unknown"),
+        )
+        planner_span = observed.start(RuntimeStage.PLANNER)
+        validation_span = observed.start(RuntimeStage.PLAN_VALIDATION)
         context_payload = state.get("conversation_context")
         try:
             context = (
@@ -288,6 +310,8 @@ def build_graph(
                 current_confirmed_facts=confirmed_facts,
             )
         except (TypeError, ValueError):
+            observed.fail(planner_span, reason_code="context_invalid")
+            observed.fail(validation_span, reason_code="context_invalid")
             return {
                 "route_plan": _direct_agent_plan(
                     request_id=str(state.get("request_id", "request-unknown")),
@@ -304,13 +328,9 @@ def build_graph(
                 }],
             }
 
-        request_id = state.get("request_id")
-        plan_id = (
-            f"plan-{request_id}"
-            if isinstance(request_id, str) and request_id.strip()
-            else None
-        )
         if state.get("request_mode") == "error_review":
+            observed.succeed(planner_span)
+            observed.succeed(validation_span)
             return {
                 "route_plan": _direct_agent_plan(
                     request_id=str(request_id or "request-unknown"),
@@ -327,6 +347,8 @@ def build_graph(
         if elicit_action in {"start", "resume"} or (
             phase in {"asking", "confirming"} and not _looks_like_qa(state["message"])
         ):
+            observed.succeed(planner_span)
+            observed.succeed(validation_span)
             return {
                 "route_plan": _direct_agent_plan(
                     request_id=str(request_id or "request-unknown"),
@@ -340,16 +362,33 @@ def build_graph(
         if phase in {"asking", "confirming"} and _looks_like_qa(state["message"]):
             paused_state = _pause_elicit_state(existing_elicit)
             state = {**state, "elicit_state": paused_state}
-        validation = create_route_plan(
-            message=state["message"],
-            step_id=state["step_id"],
-            context_window=window,
-            planner=planner,
-            classifier=classifier,
-            registered_tool_capabilities=tuple(active_tools),
-            plan_id=plan_id,
-        )
+        try:
+            validation = create_route_plan(
+                message=state["message"],
+                step_id=state["step_id"],
+                context_window=window,
+                planner=planner,
+                classifier=classifier,
+                registered_tool_capabilities=tuple(active_tools),
+                plan_id=plan_id,
+            )
+        except Exception:
+            observed.fail(planner_span, reason_code="planner_error")
+            observed.fail(validation_span, reason_code="plan_validation_error")
+            raise
         if not validation.valid:
+            issue_codes = {
+                str(issue.code).lower()
+                for issue in validation.issues
+            }
+            if "planner_error" in issue_codes:
+                observed.fail(planner_span, reason_code="planner_error")
+            else:
+                observed.succeed(planner_span)
+            observed.fail(
+                validation_span,
+                reason_code=(next(iter(sorted(issue_codes)), "plan_invalid")),
+            )
             return {
                 "route_plan": _direct_agent_plan(
                     request_id=str(request_id or "request-unknown"),
@@ -361,6 +400,8 @@ def build_graph(
                 ),
                 "plan_issues": [issue.to_dict() for issue in validation.issues],
             }
+        observed.succeed(planner_span)
+        observed.succeed(validation_span)
         plan = deepcopy(validation.plan)
         plan.update({
             "chart_payload": deepcopy(state.get("chart_payload")),
@@ -388,8 +429,20 @@ def build_graph(
             if isinstance(budget_state, Mapping)
             else 3
         )
+        plan = state["route_plan"]
+        scope = state.get("context_scope", {})
+        observed = instrumentation.bind(
+            request_id=str(state.get("request_id") or "request-unknown"),
+            thread_id=str(
+                state.get("thread_id")
+                or (scope.get("thread_id") if isinstance(scope, Mapping) else None)
+                or "thread-unknown"
+            ),
+            plan_id=str(plan.get("plan_id") or "plan-unknown"),
+            step_id=str(state.get("step_id") or "step-unknown"),
+        )
         report = await execute_route_plan(
-            plan=state["route_plan"],
+            plan=plan,
             step_id=state["step_id"],
             customer_info=customer_info if isinstance(customer_info, Mapping) else {},
             field_registry=registry if isinstance(registry, list) else [],
@@ -420,6 +473,7 @@ def build_graph(
                     else 0
                 ),
             ),
+            instrumentation=observed,
         )
         updated_budget = (
             {
