@@ -17,6 +17,7 @@ from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
 from core.monitoring import OperationStatus
+from core.model_boundary import ModelOutputBlockedError
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 
 from .contracts import (
@@ -550,6 +551,13 @@ class AsyncChatTransport:
                     code="LLM_TIMEOUT",
                     message="AI 응답 생성 시간이 초과되었습니다.",
                     retryable=True,
+                )
+            except ModelOutputBlockedError:
+                raw_payload = self._failed_payload(
+                    request,
+                    code="POLICY_BLOCKED",
+                    message="AI 응답이 데이터 처리 정책에 의해 차단되었습니다.",
+                    retryable=False,
                 )
             except Exception:
                 raw_payload = self._failed_payload(

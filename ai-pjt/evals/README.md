@@ -5,15 +5,22 @@
 확정하지 않는다.
 
 현재 단계는 P11 합성 이벤트와 F10-T01의 sink-independent
-`InstrumentationPort`·`FakeInstrumentationSink`에 F10-T02 runtime adapter가 연결된
-상태다. `build_graph`는 adapter를 필수로 받으며 planner·plan
+`InstrumentationPort`·`FakeInstrumentationSink`에 F10-T02 runtime adapter가 연결되고,
+F10-T03·F11-T04 수직 경로와 누출 회귀까지 완료된 상태다. `build_graph`는 adapter를
+필수로 받으며 planner·plan
 검증·binding·task·artifact·dependency·aggregation·Agent/tool producer가 typed
-event를 전송한다. callback용 adapter API는 후속 transport 통합에서 같은 port에
-연결되어 각 HTTP 성공·실패·timeout 시도를 같은 correlation으로 기록한다. terminal
+event를 전송한다. callback transport도 같은 port에 연결되어 각 HTTP 성공·실패·timeout
+시도를 graph와 같은 correlation으로 기록한다. terminal
 callback은 frozen schema 검증 뒤 마스킹된 payload만 checkpoint에 저장하고 동일 값을
 재전송한다. F11-T03의 `MaskedInstrumentationSink`는 production 직렬화 경계에서
 typed event를 trace 정책으로 마스킹한 뒤 structured application log exporter에만
 전달한다. Langfuse·LangSmith exporter는 별도 검토 전까지 활성화하지 않는다.
+
+F11-T04 통합 누출 회귀는 등록된 task type 전체를 실제 executor 경계까지 실행하고,
+model input, completed/failed callback HTTP body와 checkpoint, v2 SSE, application log,
+trace exporter의 최종 직렬화 값을 P13 sentinel 계약으로 검사한다. 실패·dependency
+blocked·악성 model output 경로도 포함하며, callback 최상위 correlation과 허용된
+금융 business value를 제외한 금지 원문은 어느 sink에도 도달하면 안 된다.
 
 ## 이벤트와 측정 단위
 

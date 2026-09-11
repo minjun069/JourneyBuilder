@@ -26,12 +26,14 @@ class Sink(str, Enum):
 
     MODEL_INPUT = "model_input"
     MODEL_OUTPUT = "model_output"
+    CALLBACK = "callback"
     APPLICATION_LOG = "application_log"
     TRACE_EXPORT = "trace_export"
 
 
 ALL_SINKS = frozenset(Sink)
 OBSERVABILITY_SINKS = frozenset({Sink.APPLICATION_LOG, Sink.TRACE_EXPORT})
+NON_CALLBACK_SINKS = frozenset(Sink) - {Sink.CALLBACK}
 
 
 @dataclass(frozen=True)
@@ -129,7 +131,7 @@ MASKING_SENTINELS = (
         data_class=DataClass.OPERATIONAL_INFORMATION,
         raw_value="P13-REQUEST-RAW-0001",
         forbidden_fragments=("P13-REQUEST-RAW-0001",),
-        forbidden_sinks=ALL_SINKS,
+        forbidden_sinks=NON_CALLBACK_SINKS,
         safe_example="[PSEUDONYMIZED_REQUEST]",
     ),
 )

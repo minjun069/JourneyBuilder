@@ -232,8 +232,8 @@ _FINANCIAL_ARTIFACT_TYPES = frozenset(
 )
 
 _EMAIL_PATTERN = re.compile(
-    r"(?<![\w.+-])[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+"
-    r"@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?![\w.-])"
+    r"(?<![A-Za-z0-9_.+-])[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+"
+    r"@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?![A-Za-z0-9_.-])"
 )
 _PHONE_PATTERN = re.compile(
     r"(?<!\d)(?:\+?82[- .]?)?0?1[016789][- .]?\d{3,4}[- .]?\d{4}(?!\d)"

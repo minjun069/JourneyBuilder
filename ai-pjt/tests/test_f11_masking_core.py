@@ -72,6 +72,7 @@ class RecursiveMaskingTests(unittest.TestCase):
         sink_pairs = (
             (MaskingSink.MODEL_INPUT, ContractSink.MODEL_INPUT),
             (MaskingSink.MODEL_OUTPUT, ContractSink.MODEL_OUTPUT),
+            (MaskingSink.CALLBACK, ContractSink.CALLBACK),
             (MaskingSink.APPLICATION_LOG, ContractSink.APPLICATION_LOG),
             (MaskingSink.TRACE_EXPORT, ContractSink.TRACE_EXPORT),
         )
