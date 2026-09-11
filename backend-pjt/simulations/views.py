@@ -12,15 +12,16 @@ mode 는 scenarios 의 공백 여부로 파생되며, What-if 응답은 같은 �
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
+from hmac import compare_digest
+import logging
 
 from rest_framework.permissions import IsAuthenticated
 
 from consulting.models import ConsultingSession
 from reports.views import SessionMixin
 
-from .baseline import issue_baseline_key
+from .baseline import has_baseline_key_shape, issue_baseline_key
 from .errors import SimulationError, SimulationAPIView, success_response
 from .services import (
     SLOW_EXECUTION_MS,
@@ -30,20 +31,27 @@ from .services import (
     prepare_input,
     run_analysis,
 )
+from .whatif import build_scenario
 
 logger = logging.getLogger(__name__)
 
-# 이번 단계에서 허용하는 요청 본문 키. 가정값·경로 수·시드·confirmed_empty_sections 는
-# 요청으로 받지 않는다 — 브라우저가 계산 가정을 정하게 두지 않는다.
-_ALLOWED_FIELDS = {'mode'}
-_SUPPORTED_MODES = ('baseline',)
+# 허용하는 요청 본문 키. 가정값·경로 수·시드·confirmed_empty_sections 는 요청으로 받지
+# 않는다 — 브라우저가 계산 가정을 정하게 두지 않는다. scenarios 배열도 받지 않는다:
+# MVP 는 비교안 1개이고 scenario_id 는 서버가 부여한다.
+_ALLOWED_FIELDS = {'mode', 'baseline_key', 'changes'}
+_SUPPORTED_MODES = ('baseline', 'what_if')
+# 모듈이 고정한 값. baseline_key 재료로 쓰이며 응답의 analysis 와 일치해야 한다.
+CONTRACT_VERSION = 'retirement-analysis-v1'
+MAPPING_VERSION = 'retirement-input-v1'
 
 
 class SimulationRunView(SessionMixin, SimulationAPIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, session_id):
-        self._validate_body(request.data)
+        body = request.data
+        self._validate_body(body)
+        mode = body['mode']
 
         session = self.get_session(session_id, request.user)
         if session is None:
@@ -56,7 +64,24 @@ class SimulationRunView(SessionMixin, SimulationAPIView):
         assumptions, policy_version = load_policy()
         snapshot, snapshot_digest = load_consistent_snapshot(session)
         prepared = prepare_input(snapshot)
-        payload, elapsed_ms = run_analysis(prepared, assumptions)
+
+        def key_for(contract_version: str, mapping_version: str) -> str:
+            return issue_baseline_key(
+                user_id=request.user.id,
+                session_id=session.id,
+                snapshot_digest=snapshot_digest,
+                policy_version=policy_version,
+                contract_version=contract_version,
+                mapping_version=mapping_version,
+                package_version=package_version(),
+            )
+
+        scenarios = ()
+        if mode == 'what_if':
+            self._verify_baseline(body['baseline_key'], key_for)
+            scenarios = (build_scenario(body['changes'], prepared.saved_data),)
+
+        payload, elapsed_ms = run_analysis(prepared, assumptions, scenarios=scenarios)
 
         if elapsed_ms >= SLOW_EXECUTION_MS:
             # 비식별. 상담 id 와 소요 시간만 남긴다.
@@ -64,15 +89,19 @@ class SimulationRunView(SessionMixin, SimulationAPIView):
                 'simulation slow: session=%s elapsed_ms=%s', session.id, elapsed_ms
             )
 
-        baseline_key = issue_baseline_key(
-            user_id=request.user.id,
-            session_id=session.id,
-            snapshot_digest=snapshot_digest,
-            policy_version=policy_version,
-            contract_version=payload['contract_version'],
-            mapping_version=payload['mapping_version'],
-            package_version=package_version(),
-        )
+        # 발급과 검증이 같은 재료를 써야 한다. 모듈 출력을 쓰면 what_if 검증(모듈 실행 전)과
+        # 어긋나 항상 409 가 된다. 상수가 모듈 출력과 같은지는 계약 테스트가 고정한다.
+        if (payload['contract_version'], payload['mapping_version']) != (
+            CONTRACT_VERSION,
+            MAPPING_VERSION,
+        ):
+            raise SimulationError(
+                503,
+                'POLICY_UNAVAILABLE',
+                '계산 모듈 계약 버전이 서버 설정과 다릅니다.',
+                retryable=False,
+            )
+        baseline_key = key_for(CONTRACT_VERSION, MAPPING_VERSION)
         return success_response(
             # analysis 는 모듈 출력 그대로다. notices·units·contract_version 을 보존해야
             # 안내를 버린 채 성공확률만 표시하는 상황이 구조적으로 막힌다.
@@ -103,13 +132,52 @@ class SimulationRunView(SessionMixin, SimulationAPIView):
         if mode is None:
             raise SimulationError(400, 'REQUEST_INVALID', 'mode 는 필수입니다.')
         if mode not in _SUPPORTED_MODES:
-            # what_if 는 다음 단계다. 지금 조용히 기준으로 처리하면 사용자는 비교가
-            # 된 줄 안다.
             raise SimulationError(
                 400,
                 'REQUEST_INVALID',
                 '지원하지 않는 mode 입니다.',
                 details={'supported': list(_SUPPORTED_MODES)},
+            )
+        # mode 별 필수·금지 필드. baseline 요청에 changes 가 섞이면 조용히 무시하지 않는다 —
+        # 무시하면 사용자는 비교가 된 줄 안다.
+        required = {'baseline_key', 'changes'} if mode == 'what_if' else set()
+        forbidden = {'baseline_key', 'changes'} - required
+        missing = sorted(field for field in required if data.get(field) is None)
+        if missing:
+            raise SimulationError(
+                400,
+                'REQUEST_INVALID',
+                f'{mode} 모드에는 {", ".join(missing)} 이(가) 필요합니다.',
+                details={'missing_fields': missing},
+            )
+        present = sorted(field for field in forbidden if field in data)
+        if present:
+            raise SimulationError(
+                400,
+                'REQUEST_INVALID',
+                f'{mode} 모드에서는 {", ".join(present)} 을(를) 보낼 수 없습니다.',
+                details={'unsupported_fields': present},
+            )
+
+    @staticmethod
+    def _verify_baseline(supplied, key_for) -> None:
+        """기준이 그대로인지 확인한다.
+
+        불일치 시 **새 키를 함께 주지 않는다.** 주면 화면이 조용히 다른 기준으로
+        비교할 수 있다. 사용자는 기준 시뮬레이션을 다시 실행해야 한다.
+        """
+        if not has_baseline_key_shape(supplied):
+            raise SimulationError(
+                400, 'REQUEST_INVALID', 'baseline_key 형식이 올바르지 않습니다.'
+            )
+        # 기준 실행과 같은 재료로 만든 키여야 한다. 계약·매핑 버전은 모듈이 고정한다.
+        expected = key_for(CONTRACT_VERSION, MAPPING_VERSION)
+        if not compare_digest(supplied, expected):
+            raise SimulationError(
+                409,
+                'BASELINE_STALE',
+                '상담 정보나 계산 기준이 바뀌었습니다. '
+                '기본 시뮬레이션을 다시 실행한 뒤 비교해 주세요.',
             )
 
     @staticmethod
