@@ -179,6 +179,7 @@ class FinancialAssetTests(unittest.TestCase):
                 self.assertIn("asset_type_missing", codes(result))
 
     def test_free_text_asset_type_is_blocked_for_now(self) -> None:
+        # 모듈 한계가 아니라 화면 안내가 없어서 막는다(AdapterMatchesModuleTests 참조).
         result = self._with_asset(asset_type="전세보증금")
         self.assertIn("asset_type_unsupported", codes(result))
         issue = next(i for i in result.issues if i.code == "asset_type_unsupported")
@@ -373,6 +374,10 @@ class AdapterMatchesModuleTests(unittest.TestCase):
 
     BE 사전 점검이 모듈 규칙보다 **넓으면** 정상 사용자가 막힌다. **좁으면** 모듈이
     잡고 뷰가 ANALYSIS_REJECTED 를 낸다. 둘 다 이 테스트로 드러난다.
+
+    예외는 현재 한 건뿐이다 — 5종 밖 `asset_type`. 모듈이 받아주지만 BE 가 먼저
+    막는다. 예외를 여기 적어두지 않으면 다음 사람이 구멍으로 읽는다.
+    test_free_text_asset_type_is_blocked_by_be_only 참조.
     """
 
     ASSUMPTIONS = {
@@ -425,15 +430,24 @@ class AdapterMatchesModuleTests(unittest.TestCase):
             "pension_outside_horizon", {n["code"] for n in payload["notices"]}
         )
 
-    def test_every_rejected_case_is_also_rejected_by_the_module(self) -> None:
-        """어댑터가 막은 입력은 모듈도 막아야 한다. 아니면 우리가 더 엄격한 것이다."""
-        from retirement_simulation import (  # noqa: PLC0415
-            RetirementAnalysisError,
-            analyze_retirement,
-        )
+    def test_free_text_asset_type_is_blocked_by_be_only(self) -> None:
+        """5종 밖 자유 입력은 모듈이 아니라 BE 만 막는다 — 위 대조 규칙의 의도된 예외다.
 
-        cases = {
-            "free_text_asset_type": snapshot(
+        모듈 담당 회신(2026-09-11)으로 0.1.2 부터는 5종 밖 문자열을 `기타` 와 같이
+        행 단위 제외로 처리한다 — 즉 모듈은 더 이상 거부하지 않는다. 0.1.2 저장소
+        반영은 이 커밋 시점에 아직이고, 그래서 이 분리를 먼저 넣는다(0.1.2 가 먼저
+        들어오면 아래 대조 테스트가 그 자리에서 깨진다). 모듈이 받아주더라도 지금
+        통과시키면 사용자는 자기 자산이 계산에서 빠진 줄 모른 채 결과를 본다.
+        **화면에 제외 안내가 붙을 때까지만** BE 가 앞에서 막는다
+        (ai-pjt/retirement_simulation/docs/be-integration-checklist.md 미결 항목).
+
+        여기서 모듈을 돌려 대조하지 않는 이유: 결과가 이미지에 설치된 모듈 버전에
+        따라 갈린다(0.1.1 거부 / 0.1.2 통과). 모듈 쪽 동작은 모듈 테스트가 지키고,
+        이 테스트가 지키는 것은 '차단이 아직 살아 있다' 는 사실 하나다. 화면 안내가
+        붙으면 adapter 의 asset_type_unsupported 분기와 이 테스트를 함께 지운다.
+        """
+        result = build_simulation_input(
+            snapshot(
                 financial_assets=[
                     {
                         "asset_type": "전세보증금",
@@ -441,7 +455,22 @@ class AdapterMatchesModuleTests(unittest.TestCase):
                         "monthly_savings": 0,
                     }
                 ]
-            ),
+            )
+        )
+        self.assertEqual(codes(result), ["asset_type_unsupported"])
+
+    def test_every_rejected_case_is_also_rejected_by_the_module(self) -> None:
+        """어댑터가 막은 입력은 모듈도 막아야 한다. 아니면 우리가 더 엄격한 것이다.
+
+        자유 입력 asset_type 은 위 테스트로 분리했다 — 모듈 0.1.2 가 받아주므로
+        여기 남기면 모듈 업데이트와 동시에 BE CI 가 깨진다.
+        """
+        from retirement_simulation import (  # noqa: PLC0415
+            RetirementAnalysisError,
+            analyze_retirement,
+        )
+
+        cases = {
             "lump_sum_pension": snapshot(
                 pension_assets=[
                     {
