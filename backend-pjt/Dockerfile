@@ -31,9 +31,14 @@ COPY ai-pjt/retirement_simulation/ ./retirement_simulation/
 # --no-build-isolation: 위에서 해시 검증으로 설치한 setuptools 를 그대로 쓴다
 #   (pyproject 의 build-system.requires 와 같은 84.0.0 이어야 한다).
 # --no-index --no-deps: 이 단계는 네트워크를 쓰지 않는다. 런타임 의존성은 원래 0개다.
+#
+# wheel 파일명에 버전을 적지 않는다 (S15P21B109-142). 모듈이 버전을 올리면
+# 이미지 빌드가 깨지고, 그 사실이 모듈 담당 MR 의 충돌로 드러난다.
+# 대신 "정확히 하나가 만들어졌는지" 만 확인한다 — --no-deps 라 항상 1개여야 한다.
 RUN python -m pip wheel --no-cache-dir --no-index --no-deps --no-build-isolation \
         --wheel-dir /wheels ./retirement_simulation \
- && test -f /wheels/retirewise_retirement_simulation-0.1.0-py3-none-any.whl
+ && count="$(ls -1 /wheels/retirewise_retirement_simulation-*-py3-none-any.whl | wc -l)" \
+ && { [ "$count" = "1" ] || { echo "wheel 이 1개가 아니다: $count"; exit 1; }; }
 
 
 # ── 2단계: 런타임 ───────────────────────────────────────────────────────────────
@@ -54,10 +59,10 @@ RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 # 조작을 쓰지 않는다. --no-deps 는 "런타임 외부 의존성 0" 이라는 패키징 계약을
 # 이미지에서도 강제한다. BE 소스 COPY 보다 앞에 둬서 코드 변경이 이 레이어를 무효화하지 않게 한다.
 COPY --from=simulation-builder \
-    /wheels/retirewise_retirement_simulation-0.1.0-py3-none-any.whl /tmp/
+    /wheels/retirewise_retirement_simulation-*-py3-none-any.whl /tmp/
 RUN python -m pip install --no-cache-dir --no-index --no-deps \
-        /tmp/retirewise_retirement_simulation-0.1.0-py3-none-any.whl \
- && rm /tmp/retirewise_retirement_simulation-0.1.0-py3-none-any.whl
+        /tmp/retirewise_retirement_simulation-*-py3-none-any.whl \
+ && rm /tmp/retirewise_retirement_simulation-*-py3-none-any.whl
 
 COPY --chown=app:app backend-pjt/ .
 COPY --chown=app:app contract-fixtures/financial-calculation/v1/policy.json \

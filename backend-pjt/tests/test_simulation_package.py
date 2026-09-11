@@ -17,13 +17,21 @@ from importlib import metadata, util
 import json
 from pathlib import Path
 import sysconfig
+import tomllib
 import unittest
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
+MODULE_ROOT = REPOSITORY_ROOT / "ai-pjt/retirement_simulation"
 DISTRIBUTION = "retirewise-retirement-simulation"
-WHEEL_NAME = "retirewise_retirement_simulation-0.1.0-py3-none-any.whl"
+# 버전은 어디에도 적지 않는다. 모듈 pyproject 가 단일 출처다 (S15P21B109-142).
+WHEEL_GLOB = "retirewise_retirement_simulation-*-py3-none-any.whl"
+
+
+def module_version() -> str:
+    with (MODULE_ROOT / "pyproject.toml").open("rb") as handle:
+        return tomllib.load(handle)["project"]["version"]
 
 
 class SimulationImageContractTests(unittest.TestCase):
@@ -41,10 +49,20 @@ class SimulationImageContractTests(unittest.TestCase):
         self.assertIn("COPY backend-pjt/requirements-build.lock", dockerfile)
         self.assertIn("--require-hashes -r requirements-build.lock", dockerfile)
         self.assertIn("COPY ai-pjt/retirement_simulation/", dockerfile)
-        self.assertIn(WHEEL_NAME, dockerfile)
+        self.assertIn(WHEEL_GLOB, dockerfile)
         # 소스 폴백 금지 — PYTHONPATH 로 우회하면 설치본이 아닌 소스가 잡힌다.
         # 지시자만 본다. 이 규칙을 설명하는 주석 자체는 허용한다.
         self.assertNotIn("PYTHONPATH", self._dockerfile_instructions())
+
+    def test_dockerfile_does_not_pin_the_module_version(self) -> None:
+        """버전을 적으면 모듈이 올릴 때마다 이미지 빌드가 깨진다 (S15P21B109-142).
+
+        실제로 0.1.0 을 네 곳에 적었다가 모듈 담당의 0.1.1 MR 이 충돌했다.
+        """
+        instructions = self._dockerfile_instructions()
+        self.assertNotRegex(
+            instructions, r"retirewise_retirement_simulation-\d+\.\d+"
+        )
 
     def test_runtime_dependency_lock_is_not_touched_by_the_module_install(self) -> None:
         dockerfile = (BACKEND_ROOT / "Dockerfile").read_text(encoding="utf-8")
@@ -78,8 +96,13 @@ class SimulationImageContractTests(unittest.TestCase):
 class InstalledSimulationTests(unittest.TestCase):
     """이미지 안에서만 통과한다 — 이 클래스가 실제 설치 게이트다."""
 
-    def test_distribution_is_installed_at_the_pinned_version(self) -> None:
-        self.assertEqual(metadata.version(DISTRIBUTION), "0.1.0")
+    def test_installed_version_matches_the_module_source(self) -> None:
+        """설치본 버전이 모듈 pyproject 와 같아야 한다.
+
+        값을 여기 적지 않는다. 모듈이 버전을 올리면 이 테스트는 그대로 통과하고,
+        이미지에 낡은 wheel 이 남아 있을 때만 실패한다.
+        """
+        self.assertEqual(metadata.version(DISTRIBUTION), module_version())
 
     def test_import_resolves_from_site_packages_not_the_repository_source(self) -> None:
         import retirement_simulation  # noqa: PLC0415
