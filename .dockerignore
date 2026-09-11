@@ -8,3 +8,21 @@
 **/dist
 data-pjt
 front-pjt
+
+# 테스트는 이미지에 넣지 않는다. CI 는 저장소를 /src 에 마운트해서 돌므로 이미지 안의 사본은 쓰이지 않고,
+# 넣으면 .git/info/exclude 로 가려둔 로컬 하네스(backend-pjt/config/settings_test.py·tests.py)까지 같이 들어간다
+# — 빌드 컨텍스트는 git 이 아니라 파일시스템을 읽는다. front-pjt/.dockerignore 와 같은 방침이다.
+# ai-pjt/.dockerignore 에도 같은 규칙이 있지만 그 파일은 읽히지 않는다 — backend·ai 이미지는 빌드
+# 컨텍스트가 저장소 루트라서 BuildKit 이 이 파일만 본다. ai 쪽 제외도 여기에 적어야 실제로 적용된다.
+backend-pjt/tests
+backend-pjt/contract_tests
+backend-pjt/**/tests.py
+backend-pjt/**/test_*.py
+backend-pjt/config/settings_test.py
+ai-pjt/tests
+ai-pjt/**/tests
+ai-pjt/experiments
+
+# 로컬에서 모듈을 빌드한 적이 있으면 낡은 build/lib 를 setuptools 가 재사용해 소스와 다른 wheel 이 나온다
+**/build
+**/*.egg-info
