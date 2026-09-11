@@ -49,6 +49,11 @@ class RuntimeInstrumentationTests(unittest.TestCase):
         )
         events = (
             runtime_event(
+                stage=RuntimeStage.REQUEST_PROCESSING,
+                status=RuntimeStatus.SUCCEEDED,
+                duration_ms=3,
+            ),
+            runtime_event(
                 stage=RuntimeStage.PLANNER,
                 status=RuntimeStatus.STARTED,
             ),

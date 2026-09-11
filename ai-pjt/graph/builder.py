@@ -15,7 +15,7 @@ from core.context import (
     build_context_window,
     resolve_confirmed_facts,
 )
-from core.runtime_instrumentation import RuntimeStage
+from core.runtime_instrumentation import RuntimeStage, SecurityDecision
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 from graph.executor import (
     RuntimeExecutor,
@@ -26,6 +26,11 @@ from graph.planner import create_route_plan, plan_tasks_with_model
 from graph.router import classify_task_with_model
 from graph.state import ChatState
 from graph.task_contracts import failed_task_result
+from guardrails.boundary_policy import (
+    BOUNDARY_POLICY_VERSION,
+    evaluate_user_message,
+)
+from guardrails.plan_policy import evaluate_route_plan
 from tools.output_validation import validate_form_update, validate_form_update_contract
 from tools.runtime import ToolCallBudget
 
@@ -104,6 +109,32 @@ def _direct_agent_plan(
         "elicit_state": deepcopy(state.get("elicit_state", {})),
         "context_scope": deepcopy(state.get("context_scope", {})),
         "conversation_context": deepcopy(state.get("conversation_context", {})),
+    }
+
+
+def _policy_blocked_result(
+    *,
+    state: Mapping[str, Any],
+    plan_id: str,
+    reason_code: str,
+) -> dict[str, Any]:
+    return {
+        "route_plan": {
+            "schema_version": "1.0",
+            "plan_id": plan_id,
+            "tasks": [],
+        },
+        "plan_issues": [{
+            "code": reason_code,
+            "path": "security_policy",
+            "message": "보안 정책이 요청의 실행을 차단했습니다.",
+        }],
+        "output": {
+            "response": "요청에 포함된 지시를 안전하게 처리할 수 없어 실행하지 않았습니다.",
+            "step_id": str(state.get("step_id", "step-unknown")),
+            "action": None,
+        },
+        "security_blocked": True,
     }
 
 
@@ -287,6 +318,57 @@ def build_graph(
         )
         planner_span = observed.start(RuntimeStage.PLANNER)
         validation_span = observed.start(RuntimeStage.PLAN_VALIDATION)
+
+        def guard_plan(plan: Mapping[str, Any]):
+            decision = evaluate_route_plan(
+                plan,
+                step_id=str(state.get("step_id") or "step-unknown"),
+                registered_tool_capabilities=tuple(active_tools),
+            )
+            observed.record_security_decision(
+                task_id="plan",
+                boundary="plan_guardrail",
+                decision=(
+                    SecurityDecision.ALLOWED
+                    if decision.allowed
+                    else SecurityDecision.DENIED
+                ),
+                actor_kind="runtime",
+                actor_name="route_planner",
+                target_name="route_plan",
+                target_version="1.0",
+                call_source="graph_plan",
+                reason_code=decision.reason_code,
+            )
+            return decision
+
+        input_decision = evaluate_user_message(str(state.get("message", "")))
+        observed.record_security_decision(
+            task_id="request",
+            boundary="input_guardrail",
+            decision=(
+                SecurityDecision.ALLOWED
+                if input_decision.allowed
+                else SecurityDecision.DENIED
+            ),
+            actor_kind="user",
+            actor_name="requester",
+            target_name="user_message",
+            target_version=BOUNDARY_POLICY_VERSION,
+            call_source="graph_plan",
+            reason_code=input_decision.reason_code,
+        )
+        if not input_decision.allowed:
+            observed.fail(planner_span, reason_code=input_decision.reason_code.lower())
+            observed.fail(
+                validation_span,
+                reason_code=input_decision.reason_code.lower(),
+            )
+            return _policy_blocked_result(
+                state=state,
+                plan_id=plan_id,
+                reason_code=input_decision.reason_code,
+            )
         context_payload = state.get("conversation_context")
         try:
             context = (
@@ -312,15 +394,23 @@ def build_graph(
         except (TypeError, ValueError):
             observed.fail(planner_span, reason_code="context_invalid")
             observed.fail(validation_span, reason_code="context_invalid")
-            return {
-                "route_plan": _direct_agent_plan(
-                    request_id=str(state.get("request_id", "request-unknown")),
-                    task_type="fallback",
-                    description="안전한 대화 문맥을 복원할 수 없음",
-                    agent="fallback",
+            fallback_plan = _direct_agent_plan(
+                request_id=str(state.get("request_id", "request-unknown")),
+                task_type="fallback",
+                description="안전한 대화 문맥을 복원할 수 없음",
+                agent="fallback",
+                state=state,
+                reason_code="plan_invalid",
+            )
+            decision = guard_plan(fallback_plan)
+            if not decision.allowed:
+                return _policy_blocked_result(
                     state=state,
-                    reason_code="plan_invalid",
-                ),
+                    plan_id=plan_id,
+                    reason_code=decision.reason_code,
+                )
+            return {
+                "route_plan": fallback_plan,
                 "plan_issues": [{
                     "code": "CONTEXT_INVALID",
                     "path": "conversation_context",
@@ -329,16 +419,26 @@ def build_graph(
             }
 
         if state.get("request_mode") == "error_review":
+            direct_plan = _direct_agent_plan(
+                request_id=str(request_id or "request-unknown"),
+                task_type="review_validation_error",
+                description="현재 draft의 오기·단위 착오·문맥 불일치 검토",
+                agent="error_review",
+                state=state,
+            )
+            decision = guard_plan(direct_plan)
             observed.succeed(planner_span)
-            observed.succeed(validation_span)
-            return {
-                "route_plan": _direct_agent_plan(
-                    request_id=str(request_id or "request-unknown"),
-                    task_type="review_validation_error",
-                    description="현재 draft의 오기·단위 착오·문맥 불일치 검토",
-                    agent="error_review",
+            if decision.allowed:
+                observed.succeed(validation_span)
+            else:
+                observed.fail(validation_span, reason_code=decision.reason_code.lower())
+                return _policy_blocked_result(
                     state=state,
-                ),
+                    plan_id=plan_id,
+                    reason_code=decision.reason_code,
+                )
+            return {
+                "route_plan": direct_plan,
                 "plan_issues": [],
             }
         existing_elicit = state.get("elicit_state", {})
@@ -347,16 +447,26 @@ def build_graph(
         if elicit_action in {"start", "resume"} or (
             phase in {"asking", "confirming"} and not _looks_like_qa(state["message"])
         ):
+            direct_plan = _direct_agent_plan(
+                request_id=str(request_id or "request-unknown"),
+                task_type="collect_qualitative_info",
+                description=state["message"],
+                agent="elicit",
+                state=state,
+            )
+            decision = guard_plan(direct_plan)
             observed.succeed(planner_span)
-            observed.succeed(validation_span)
-            return {
-                "route_plan": _direct_agent_plan(
-                    request_id=str(request_id or "request-unknown"),
-                    task_type="collect_qualitative_info",
-                    description=state["message"],
-                    agent="elicit",
+            if decision.allowed:
+                observed.succeed(validation_span)
+            else:
+                observed.fail(validation_span, reason_code=decision.reason_code.lower())
+                return _policy_blocked_result(
                     state=state,
-                ),
+                    plan_id=plan_id,
+                    reason_code=decision.reason_code,
+                )
+            return {
+                "route_plan": direct_plan,
                 "plan_issues": [],
             }
         if phase in {"asking", "confirming"} and _looks_like_qa(state["message"]):
@@ -389,19 +499,25 @@ def build_graph(
                 validation_span,
                 reason_code=(next(iter(sorted(issue_codes)), "plan_invalid")),
             )
-            return {
-                "route_plan": _direct_agent_plan(
-                    request_id=str(request_id or "request-unknown"),
-                    task_type="fallback",
-                    description="유효한 실행 계획을 만들 수 없음",
-                    agent="fallback",
+            fallback_plan = _direct_agent_plan(
+                request_id=str(request_id or "request-unknown"),
+                task_type="fallback",
+                description="유효한 실행 계획을 만들 수 없음",
+                agent="fallback",
+                state=state,
+                reason_code="plan_invalid",
+            )
+            decision = guard_plan(fallback_plan)
+            if not decision.allowed:
+                return _policy_blocked_result(
                     state=state,
-                    reason_code="plan_invalid",
-                ),
+                    plan_id=plan_id,
+                    reason_code=decision.reason_code,
+                )
+            return {
+                "route_plan": fallback_plan,
                 "plan_issues": [issue.to_dict() for issue in validation.issues],
             }
-        observed.succeed(planner_span)
-        observed.succeed(validation_span)
         plan = deepcopy(validation.plan)
         plan.update({
             "chart_payload": deepcopy(state.get("chart_payload")),
@@ -412,6 +528,19 @@ def build_graph(
             "context_scope": deepcopy(state.get("context_scope", {})),
             "conversation_context": deepcopy(state.get("conversation_context", {})),
         })
+        decision = guard_plan(plan)
+        observed.succeed(planner_span)
+        if not decision.allowed:
+            observed.fail(validation_span, reason_code=decision.reason_code.lower())
+            return {
+                **_policy_blocked_result(
+                    state=state,
+                    plan_id=plan_id,
+                    reason_code=decision.reason_code,
+                ),
+                **({"elicit_state": paused_state} if paused_state is not None else {}),
+            }
+        observed.succeed(validation_span)
         return {
             "route_plan": plan,
             "plan_issues": [],
@@ -497,6 +626,8 @@ def build_graph(
         }
 
     def persist_context(state: ChatState) -> dict[str, Any]:
+        if state.get("security_blocked") is True:
+            return {}
         scope_payload = state.get("context_scope")
         context_payload = state.get("conversation_context")
         if not isinstance(scope_payload, Mapping) or not isinstance(

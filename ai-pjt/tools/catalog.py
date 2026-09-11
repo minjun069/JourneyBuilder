@@ -56,6 +56,9 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
                 required=("query", "results"),
             ),
             allowed_agents=frozenset({"qa", "input_assist", "error_review"}),
+            allowed_task_types=frozenset({
+                "answer_question", "propose_form_change", "review_validation_error"
+            }),
             handler=_search_financial_knowledge,
             timeout_seconds=5.0,
             argument_classes=("public_knowledge_query",),
@@ -72,6 +75,9 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
                 required=("reference",),
             ),
             allowed_agents=frozenset({"qa", "input_assist"}),
+            allowed_task_types=frozenset({
+                "answer_question", "lookup_reference_value", "propose_form_change"
+            }),
             handler=_get_approved_reference_value,
             timeout_seconds=0.5,
             argument_classes=(
@@ -100,6 +106,9 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
                 required=("step_id", "fields"),
             ),
             allowed_agents=frozenset({"qa", "input_assist", "error_review"}),
+            allowed_task_types=frozenset({
+                "answer_question", "propose_form_change", "review_validation_error"
+            }),
             handler=_get_form_field_spec,
             timeout_seconds=0.5,
             argument_classes=("canonical_field_identifier",),
@@ -122,6 +131,9 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
                 required=("metric",),
             ),
             allowed_agents=frozenset({"qa", "chart_interpret"}),
+            allowed_task_types=frozenset({
+                "answer_question", "interpret_chart", "lookup_retirement_gap"
+            }),
             handler=_get_dashboard_metric,
             timeout_seconds=1.0,
             argument_classes=("financial_metric_identifier",),
@@ -143,6 +155,7 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
                 required=("scenario",),
             ),
             allowed_agents=frozenset({"qa", "chart_interpret"}),
+            allowed_task_types=frozenset({"answer_question", "interpret_chart"}),
             handler=_get_retirement_scenario,
             timeout_seconds=1.0,
             argument_classes=("retirement_scenario_identifier",),
@@ -160,6 +173,7 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
                 required=("reports",),
             ),
             allowed_agents=frozenset({"qa", "chart_interpret"}),
+            allowed_task_types=frozenset({"answer_question", "interpret_chart"}),
             handler=_list_available_reports,
             timeout_seconds=0.5,
         ),
@@ -185,6 +199,9 @@ def default_tool_definitions() -> tuple[FunctionToolDefinition, ...]:
                 ),
             ),
             allowed_agents=frozenset({"qa", "input_assist", "elicit"}),
+            allowed_task_types=frozenset({
+                "answer_question", "collect_qualitative_info", "propose_form_change"
+            }),
             handler=_get_step_completion_status,
             timeout_seconds=0.5,
         ),

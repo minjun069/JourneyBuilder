@@ -84,6 +84,17 @@ production masker 뒤의 가명화된 structured event로 baseline을 측정한�
 trace 저장소가 일시적으로 실패하면 해당 export만 폐기하고 raw event로 우회하지
 않으며, 업무 graph 결과에는 실패를 전파하지 않는다.
 
+F10 runtime baseline은 request 처리와 planner·binding·task·artifact·dependency·
+aggregation span, Agent·tool operation, callback 시도를 하나의 닫힌 cohort로
+검증한다. 시작만 있고 종료가 없거나 같은 span의 terminal이 중복된 입력은 보고서를
+만들지 않는다. 저장소에 고정한 합성 baseline은 임계값이나 SLO가 아니라 현재 측정
+형태와 산출 재현성을 확인하는 기준이다.
+
+```bash
+PYTHONPATH=. python -m evals.runtime_observability_report \
+  --output evals/artifacts/f10-runtime-observability-baseline.json
+```
+
 ## F07-T04·F08-T04 Agent 통합 평가
 
 `agent_baseline.py`는 production Agent prompt·graph를 그대로 실행하고, F06-T06이

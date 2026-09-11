@@ -13,6 +13,7 @@ TOOL_CONTRACT_VERSION = "1.0"
 class ToolErrorCode(str, Enum):
     UNKNOWN_TOOL = "UNKNOWN_TOOL"
     FORBIDDEN = "TOOL_FORBIDDEN"
+    CONTEXT_MISMATCH = "TOOL_CONTEXT_MISMATCH"
     INVALID_ARGUMENTS = "INVALID_TOOL_ARGUMENTS"
     DEADLINE_EXCEEDED = "TOOL_TIMEOUT"
     BUDGET_EXCEEDED = "TOOL_BUDGET_EXCEEDED"
@@ -62,9 +63,12 @@ class ToolAuditEvent:
     request_id: str
     plan_id: str
     task_id: str
+    step_id: str
+    task_type: str
     tool_name: str
     tool_version: str
     agent: str
+    decision: str
     status: str
     duration_ms: int
     argument_classes: tuple[str, ...]
@@ -77,9 +81,12 @@ class ToolAuditEvent:
             "request_id": self.request_id,
             "plan_id": self.plan_id,
             "task_id": self.task_id,
+            "step_id": self.step_id,
+            "task_type": self.task_type,
             "tool_name": self.tool_name,
             "tool_version": self.tool_version,
             "agent": self.agent,
+            "decision": self.decision,
             "status": self.status,
             "duration_ms": self.duration_ms,
             "argument_classes": list(self.argument_classes),
@@ -102,6 +109,7 @@ class ToolExecutionContext:
     request_id: str
     step_id: str
     agent: str
+    task_type: str = "answer_question"
     plan_id: str = "plan-unknown"
     task_id: str = "task-unknown"
     call_source: str = "graph_task"
@@ -151,6 +159,7 @@ class FunctionToolDefinition:
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
     allowed_agents: frozenset[str]
+    allowed_task_types: frozenset[str]
     handler: ToolHandler
     version: str = "1.0"
     timeout_seconds: float = 3.0

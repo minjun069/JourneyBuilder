@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
                 timeout_seconds=settings.callback_timeout_seconds,
             ),
             callback_masker=callback_masker,
+            instrumentation=instrumentation,
         )
         yield
 

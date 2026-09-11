@@ -18,7 +18,9 @@ from psycopg.types.json import Jsonb
 
 from core.monitoring import OperationStatus
 from core.model_boundary import ModelOutputBlockedError
+from core.runtime_instrumentation import RuntimeStage, SecurityDecision
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
+from guardrails.boundary_policy import BOUNDARY_POLICY_VERSION
 
 from .contracts import (
     CallbackError,
@@ -505,14 +507,18 @@ class AsyncChatTransport:
         processor: GraphProcessor,
         callback_client: CallbackClient,
         callback_masker: CallbackPayloadMaskerPort,
+        instrumentation: RuntimeInstrumentationAdapter,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         if not callable(getattr(callback_masker, "mask", None)):
             raise TypeError("callback payload masker is required")
+        if not isinstance(instrumentation, RuntimeInstrumentationAdapter):
+            raise TypeError("request instrumentation adapter is required")
         self._checkpoint_store = checkpoint_store
         self._processor = processor
         self._callback_client = callback_client
         self._callback_masker = callback_masker
+        self._instrumentation = instrumentation
         self._clock = clock
 
     async def accept(
@@ -530,6 +536,14 @@ class AsyncChatTransport:
         if checkpoint is not None and checkpoint.terminal_payload is not None:
             payload = self._callback_masker.mask(checkpoint.terminal_payload)
         else:
+            observed = self._instrumentation.bind(
+                request_id=request.request_id,
+                thread_id=request.thread_id,
+                plan_id=f"plan-{request.request_id}",
+                step_id=request.step_id,
+            )
+            request_span = observed.start(RuntimeStage.REQUEST_PROCESSING)
+            request_failure: str | None = None
             await self._checkpoint_store.mark_running(request.request_id)
             budget = ExecutionBudget.from_request(request)
             try:
@@ -546,13 +560,26 @@ class AsyncChatTransport:
                     output=dict(output),
                 ).model_dump(mode="json")
             except (TimeoutError, asyncio.TimeoutError):
+                request_failure = "request_timeout"
                 raw_payload = self._failed_payload(
                     request,
                     code="LLM_TIMEOUT",
                     message="AI 응답 생성 시간이 초과되었습니다.",
                     retryable=True,
                 )
-            except ModelOutputBlockedError:
+            except ModelOutputBlockedError as exc:
+                request_failure = "policy_blocked"
+                observed.record_security_decision(
+                    task_id="response",
+                    boundary="output_guardrail",
+                    decision=SecurityDecision.DENIED,
+                    actor_kind="model",
+                    actor_name="response_model",
+                    target_name="model_output",
+                    target_version=BOUNDARY_POLICY_VERSION,
+                    call_source="request_processing",
+                    reason_code=exc.reason_code,
+                )
                 raw_payload = self._failed_payload(
                     request,
                     code="POLICY_BLOCKED",
@@ -560,17 +587,29 @@ class AsyncChatTransport:
                     retryable=False,
                 )
             except Exception:
+                request_failure = "request_processing_failed"
                 raw_payload = self._failed_payload(
                     request,
                     code="INTERNAL_ERROR",
                     message="AI 응답 생성에 실패했습니다.",
                     retryable=False,
                 )
-            payload = self._callback_masker.mask(raw_payload)
-            checkpoint = await self._checkpoint_store.save_terminal(
-                request.request_id,
-                payload,
-            )
+            try:
+                payload = self._callback_masker.mask(raw_payload)
+                checkpoint = await self._checkpoint_store.save_terminal(
+                    request.request_id,
+                    payload,
+                )
+            except Exception:
+                observed.fail(
+                    request_span,
+                    reason_code="terminal_persistence_failed",
+                )
+                raise
+            if request_failure is None:
+                observed.succeed(request_span)
+            else:
+                observed.fail(request_span, reason_code=request_failure)
             payload = checkpoint.terminal_payload or payload
 
         await self._callback_client.send(

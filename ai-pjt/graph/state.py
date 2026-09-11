@@ -47,4 +47,5 @@ class ChatState(TypedDict):
     task_results: NotRequired[dict[str, dict[str, Any]]]
     bound_inputs: NotRequired[dict[str, Any]]
     plan_issues: NotRequired[list[dict[str, str]]]
+    security_blocked: NotRequired[bool]
     execution_budget: NotRequired[ExecutionBudgetState]

@@ -15,13 +15,24 @@ def runtime_payload() -> dict:
     return {
         "request_id": "req-search",
         "plan_id": "plan-search",
-        "task": {"id": "task-search"},
+        "task": {
+            "id": "task-search",
+            "type": "answer_question",
+            "step_id": "intro",
+            "executor_kind": "agent",
+            "produces": "text_response",
+            "route": {
+                "executor_kind": "agent",
+                "executor": "qa",
+            },
+        },
         "step_id": "intro",
         "deadline_at": (
             datetime.now(timezone.utc) + timedelta(seconds=30)
         ).isoformat(),
         "tool_context": {},
         "tool_call_budget": ToolCallBudget(limit=1),
+        "tool_audit_sink": lambda _event: None,
     }
 
 

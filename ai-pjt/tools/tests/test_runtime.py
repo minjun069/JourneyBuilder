@@ -13,7 +13,17 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
         return {
             "request_id": "req-1",
             "plan_id": "plan-req-1",
-            "task": {"id": "task-1"},
+            "task": {
+                "id": "task-1",
+                "type": "answer_question",
+                "step_id": "basic-info",
+                "executor_kind": "agent",
+                "produces": "text_response",
+                "route": {
+                    "executor_kind": "agent",
+                    "executor": "qa",
+                },
+            },
             "step_id": "basic-info",
             "deadline_at": (
                 datetime.now(timezone.utc) + timedelta(seconds=30)
@@ -26,12 +36,14 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 "section_completion": {"basic_info": True},
             },
             "tool_call_budget": budget,
+            "tool_audit_sink": self.events.append,
         }
 
+    def setUp(self) -> None:
+        self.events = []
+
     async def test_runtime_injects_ids_source_snapshot_and_budget(self) -> None:
-        events = []
         payload = self.payload(ToolCallBudget(limit=1))
-        payload["tool_audit_sink"] = events.append
         runtime = FunctionToolRuntime(build_default_registry())
 
         result = await runtime.invoke(
@@ -45,10 +57,11 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(payload["tool_call_budget"].used, 1)
-        self.assertEqual(events[0].request_id, "req-1")
-        self.assertEqual(events[0].plan_id, "plan-req-1")
-        self.assertEqual(events[0].task_id, "task-1")
-        self.assertEqual(events[0].call_source, "graph_task")
+        self.assertEqual(self.events[0].request_id, "req-1")
+        self.assertEqual(self.events[0].plan_id, "plan-req-1")
+        self.assertEqual(self.events[0].task_id, "task-1")
+        self.assertEqual(self.events[0].call_source, "graph_task")
+        self.assertEqual(self.events[0].decision, "allowed")
 
     async def test_budget_exhaustion_fails_before_registry_invocation(self) -> None:
         runtime = FunctionToolRuntime(build_default_registry())
@@ -63,6 +76,38 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, ToolErrorCode.BUDGET_EXCEEDED)
+
+    async def test_claimed_agent_mismatch_is_denied_before_budget(self) -> None:
+        payload = self.payload(ToolCallBudget(limit=1))
+        payload["task"] = {
+            "id": "task-1",
+            "type": "lookup_retirement_gap",
+            "step_id": "basic-info",
+            "executor_kind": "tool",
+            "produces": "dashboard_metric",
+            "capability": "get_dashboard_metric",
+            "tool_name": "get_dashboard_metric",
+            "authorized_agent": "chart_interpret",
+            "route": {
+                "executor_kind": "tool",
+                "executor": "get_dashboard_metric",
+            },
+        }
+        runtime = FunctionToolRuntime(build_default_registry())
+
+        result = await runtime.invoke(
+            RuntimeToolRequest(
+                tool_name="get_dashboard_metric",
+                arguments={"metric_id": "retirement_gap"},
+                agent="chart_interpret",
+            ),
+            payload,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error.code, ToolErrorCode.CONTEXT_MISMATCH)
+        self.assertEqual(payload["tool_call_budget"].used, 0)
+        self.assertEqual(self.events[-1].decision, "denied")
 
     async def test_missing_trusted_task_binding_fails_closed(self) -> None:
         payload = self.payload(ToolCallBudget())

@@ -51,6 +51,7 @@ class F12AIReplaySecurityTests(IsolatedAsyncioTestCase):
             processor=processor,
             callback_client=callback,
             callback_masker=fake_callback_masker(),
+            instrumentation=fake_instrumentation()[0],
         )
         scheduled = []
         request = _request()

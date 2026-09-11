@@ -37,9 +37,9 @@ def _reference_executor(runtime: FunctionToolRuntime) -> RuntimeExecutor:
             return failed_task_result(task_id, "invalid_tool_arguments")
         result = await runtime.invoke(
             RuntimeToolRequest(
-                tool_name="get_approved_reference_value",
+                tool_name=str(task.get("tool_name")),
                 arguments=deepcopy(dict(arguments)),
-                agent="qa",
+                agent=str(task.get("authorized_agent")),
             ),
             payload,
         )
@@ -72,9 +72,9 @@ def _dashboard_metric_executor(runtime: FunctionToolRuntime) -> RuntimeExecutor:
             return failed_task_result(task_id, "invalid_tool_arguments")
         result = await runtime.invoke(
             RuntimeToolRequest(
-                tool_name="get_dashboard_metric",
+                tool_name=str(task.get("tool_name")),
                 arguments={"metric_id": "retirement_gap"},
-                agent="qa",
+                agent=str(task.get("authorized_agent")),
             ),
             payload,
         )

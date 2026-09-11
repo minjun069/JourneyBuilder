@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 from pathlib import Path
 import sys
@@ -15,6 +14,7 @@ from tools.catalog import default_tool_definitions  # noqa: E402
 
 from security_regression import (
     SUPPORTED_CATEGORIES,
+    build_report,
     load_suite,
     run_suite,
     validate_suite,
@@ -48,9 +48,6 @@ P14_CASE_IDS = {
     "SEC-OBF-003",
     "SEC-OBF-004",
 }
-P14_ID_INPUT_EXPECTED_SHA256 = (
-    "83e39291a031b49c2661dc0f1968ab20a52d60288647dc297d4c7557c95038b7"
-)
 
 
 class SecurityRegressionSuiteTests(unittest.TestCase):
@@ -74,7 +71,7 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
             all(count > 0 for decisions in coverage.values() for count in decisions.values())
         )
 
-    def test_promoted_p14_cases_and_route_plan_dispatch_are_explicit(self) -> None:
+    def test_promoted_p14_cases_use_only_production_payloads(self) -> None:
         foundation_cases = {
             case["id"]: case
             for case in self.suite["cases"]
@@ -82,36 +79,16 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
         }
         self.assertEqual(set(foundation_cases), P14_CASE_IDS)
         self.assertTrue(all(
-            case["input_kind"] == "security_signals"
-            and case["evaluator"] == "mock_policy"
+            case["input_kind"] == "production_payload"
+            and case["evaluator"] == "production_policy"
+            and "signals" not in case["input"]
             for case in foundation_cases.values()
         ))
-        preserved_contract = [
-            {
-                "id": case["id"],
-                "input": case["input"],
-                "expected": case["expected"],
-            }
-            for case in self.suite["cases"]
-            if case["id"] in P14_CASE_IDS
-        ]
-        digest = hashlib.sha256(json.dumps(
-            preserved_contract,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()).hexdigest()
-        self.assertEqual(digest, P14_ID_INPUT_EXPECTED_SHA256)
-
-        route_cases = [
-            case
-            for case in self.suite["cases"]
-            if case["input_kind"] == "route_plan"
-        ]
-        self.assertTrue(route_cases)
         self.assertTrue(all(
-            case["evaluator"] == "plan_guardrail"
-            for case in route_cases
+            case["evaluator"] == "production_policy"
+            and case["input_kind"] == "production_payload"
+            and "signals" not in case["input"]
+            for case in self.suite["cases"]
         ))
 
     def test_declared_evaluators_match_every_expected_decision(self) -> None:
@@ -124,6 +101,25 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
         }
         self.assertEqual({}, failures)
 
+    def test_checked_in_report_records_a_clean_production_run(self) -> None:
+        report_path = (
+            AI_ROOT
+            / "evals"
+            / "artifacts"
+            / "f13-production-security-regression.json"
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        fresh_report = build_report(self.suite, run_suite(self.suite))
+
+        self.assertEqual(fresh_report, report)
+        self.assertEqual("security-regression-v3", report["schema_version"])
+        self.assertEqual("AI-F13-T03", report["suite_id"])
+        self.assertEqual("production_policy", report["evaluator"])
+        self.assertEqual(len(self.suite["cases"]), report["summary"]["total"])
+        self.assertEqual(report["summary"]["total"], report["summary"]["passed"])
+        self.assertEqual(0, report["summary"]["failed"])
+        self.assertTrue(all(result["passed"] for result in report["results"]))
+
     def test_allowlisted_tool_cases_match_the_p10_registry_and_agent_scope(self) -> None:
         definitions = {
             definition.name: definition
@@ -134,20 +130,12 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
             if case["category"] != "tool_manipulation":
                 continue
             payload = case["input"]["payload"]
-            signals = case["input"]["signals"]
             tool_name = payload["tool_name"]
             with self.subTest(case=case["id"]):
-                if signals["tool_allowlisted"]:
-                    self.assertIn(tool_name, definitions)
-                else:
+                if case["expected"]["reason_code"] == "TOOL_NOT_ALLOWLISTED":
                     self.assertNotIn(tool_name, definitions)
-
-                agent = payload.get("agent")
-                if signals["tool_allowlisted"] and agent is not None:
-                    self.assertEqual(
-                        signals["scope_allowed"],
-                        agent in definitions[tool_name].allowed_agents,
-                    )
+                else:
+                    self.assertIn(tool_name, definitions)
 
     def test_critical_cases_are_fail_closed(self) -> None:
         critical_cases = [
@@ -182,13 +170,12 @@ class SecurityRegressionSuiteTests(unittest.TestCase):
 
     def test_validator_rejects_evaluator_input_kind_mismatch(self) -> None:
         mutated = copy.deepcopy(self.suite)
-        mutated["cases"][0]["evaluator"] = "plan_guardrail"
+        mutated["cases"][0]["evaluator"] = "unknown_evaluator"
 
         errors = validate_suite(mutated)
 
         self.assertIn(
-            "cases[0].evaluator 'plan_guardrail' does not accept "
-            "input_kind 'security_signals'",
+            "cases[0].evaluator is unsupported: 'unknown_evaluator'",
             errors,
         )
 

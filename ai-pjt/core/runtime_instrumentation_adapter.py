@@ -19,6 +19,8 @@ from core.runtime_instrumentation import (
     RuntimeStage,
     RuntimeStatus,
     RuntimeTraceEvent,
+    SecurityDecision,
+    SecurityDecisionTraceEvent,
 )
 
 
@@ -268,6 +270,68 @@ class BoundRuntimeInstrumentation:
             step_id=self.correlation.step_id,
             agent=agent,
             error_code=error_code,
+        ))
+
+    def record_tool_audit(self, event: object) -> None:
+        """Translate a tool audit without accepting values or raw arguments."""
+
+        required = {
+            "request_id": self.correlation.request_id,
+            "plan_id": self.correlation.plan_id,
+            "step_id": self.correlation.step_id,
+        }
+        for field_name, expected in required.items():
+            if getattr(event, field_name, None) != expected:
+                raise ValueError(f"tool audit {field_name} does not match correlation")
+        decision_value = getattr(event, "decision", None)
+        try:
+            decision = SecurityDecision(decision_value)
+        except ValueError as exc:
+            raise ValueError("tool audit decision is invalid") from exc
+        self.record_security_decision(
+            task_id=str(getattr(event, "task_id")),
+            boundary="tool_authorization",
+            decision=decision,
+            actor_kind="agent",
+            actor_name=str(getattr(event, "agent")),
+            target_name=str(getattr(event, "tool_name")),
+            target_version=str(getattr(event, "tool_version")),
+            argument_classes=tuple(getattr(event, "argument_classes")),
+            call_source=str(getattr(event, "call_source")),
+            reason_code=getattr(event, "error_code", None),
+        )
+
+    def record_security_decision(
+        self,
+        *,
+        task_id: str,
+        boundary: str,
+        decision: SecurityDecision,
+        actor_kind: str,
+        actor_name: str,
+        target_name: str,
+        target_version: str,
+        argument_classes: tuple[str, ...] = (),
+        call_source: str = "graph_task",
+        reason_code: str | None = None,
+    ) -> None:
+        self._port.emit(SecurityDecisionTraceEvent(
+            trace_id=self.correlation.trace_id,
+            request_id=self.correlation.request_id,
+            thread_id=self.correlation.thread_id,
+            plan_id=self.correlation.plan_id,
+            step_id=self.correlation.step_id,
+            task_id=task_id,
+            occurred_at_epoch_ms=self._epoch_ms(),
+            boundary=boundary,
+            decision=decision,
+            actor_kind=actor_kind,
+            actor_name=actor_name,
+            target_name=target_name,
+            target_version=target_version,
+            argument_classes=argument_classes,
+            call_source=call_source,
+            reason_code=reason_code,
         ))
 
     def elapsed_ms(self, span: RuntimeStageSpan) -> int:

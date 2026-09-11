@@ -23,7 +23,7 @@ from core.monitoring import (
 )
 
 
-RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.1"
+RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.3"
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 _PSEUDONYMOUS_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -37,6 +37,7 @@ _FOUNDATION_EVENT_TYPES = (
 
 
 class RuntimeStage(str, Enum):
+    REQUEST_PROCESSING = "request_processing"
     PLANNER = "planner"
     PLAN_VALIDATION = "plan_validation"
     BINDING_RESOLUTION = "binding_resolution"
@@ -51,6 +52,11 @@ class RuntimeStatus(str, Enum):
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     BLOCKED = "blocked"
+
+
+class SecurityDecision(str, Enum):
+    ALLOWED = "allowed"
+    DENIED = "denied"
 
 
 _TASK_SCOPED_STAGES = frozenset(
@@ -255,7 +261,80 @@ class RuntimeTraceEvent:
         return payload
 
 
-InstrumentationEvent: TypeAlias = ObservabilityEvent | RuntimeTraceEvent
+@dataclass(frozen=True, slots=True)
+class SecurityDecisionTraceEvent:
+    """A value-free authorization decision emitted through the masked port."""
+
+    trace_id: str
+    request_id: str
+    thread_id: str
+    plan_id: str
+    step_id: str
+    task_id: str
+    occurred_at_epoch_ms: int
+    boundary: str
+    decision: SecurityDecision
+    actor_kind: str
+    actor_name: str
+    target_name: str
+    target_version: str
+    argument_classes: tuple[str, ...] = ()
+    call_source: str = "graph_task"
+    reason_code: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_trace_id(self.trace_id)
+        for field_name in (
+            "request_id",
+            "thread_id",
+            "plan_id",
+            "step_id",
+            "task_id",
+            "boundary",
+            "actor_kind",
+            "actor_name",
+            "target_name",
+            "target_version",
+            "call_source",
+        ):
+            _validate_safe_token(getattr(self, field_name), field_name)
+        _validate_nonnegative_int(self.occurred_at_epoch_ms, "occurred_at_epoch_ms")
+        _validate_identifier_tuple(self.argument_classes, "argument_classes")
+        if not isinstance(self.decision, SecurityDecision):
+            raise ValueError("decision must be a SecurityDecision")
+        if self.decision is SecurityDecision.DENIED and self.reason_code is None:
+            raise ValueError("denied security decisions require reason_code")
+        if self.reason_code is not None:
+            _validate_safe_token(self.reason_code, "reason_code")
+
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "contract_version": RUNTIME_INSTRUMENTATION_CONTRACT_VERSION,
+            "event_family": "security_decision",
+            "trace_id": self.trace_id,
+            "request_id": self.request_id,
+            "thread_id": self.thread_id,
+            "plan_id": self.plan_id,
+            "step_id": self.step_id,
+            "task_id": self.task_id,
+            "occurred_at_epoch_ms": self.occurred_at_epoch_ms,
+            "boundary": self.boundary,
+            "decision": self.decision.value,
+            "actor_kind": self.actor_kind,
+            "actor_name": self.actor_name,
+            "target_name": self.target_name,
+            "target_version": self.target_version,
+            "argument_classes": list(self.argument_classes),
+            "call_source": self.call_source,
+        }
+        if self.reason_code is not None:
+            payload["reason_code"] = self.reason_code
+        return payload
+
+
+InstrumentationEvent: TypeAlias = (
+    ObservabilityEvent | RuntimeTraceEvent | SecurityDecisionTraceEvent
+)
 
 
 def _is_foundation_event(event: object) -> bool:
@@ -263,7 +342,10 @@ def _is_foundation_event(event: object) -> bool:
 
 
 def _is_instrumentation_event(event: object) -> bool:
-    return isinstance(event, RuntimeTraceEvent) or _is_foundation_event(event)
+    return isinstance(
+        event,
+        (RuntimeTraceEvent, SecurityDecisionTraceEvent),
+    ) or _is_foundation_event(event)
 
 
 class InstrumentationSink(Protocol):
@@ -311,6 +393,14 @@ class FakeInstrumentationSink:
     def runtime_events(self) -> tuple[RuntimeTraceEvent, ...]:
         return tuple(
             event for event in self._events if isinstance(event, RuntimeTraceEvent)
+        )
+
+    @property
+    def security_events(self) -> tuple[SecurityDecisionTraceEvent, ...]:
+        return tuple(
+            event
+            for event in self._events
+            if isinstance(event, SecurityDecisionTraceEvent)
         )
 
     def serialized_events(self) -> tuple[dict[str, object], ...]:
