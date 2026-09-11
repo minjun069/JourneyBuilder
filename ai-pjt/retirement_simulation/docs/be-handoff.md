@@ -22,10 +22,46 @@ FE 담당은 [화면 연결 안내](fe-handoff.md), 기술 확인 항목은 [설
 
 패키지는 [설치 가이드](package-installation.md)대로 소스 커밋과 빌드 보고서·SHA-256을 함께 고정한다.
 `0.1.0` 이름만 같아도 README 메타데이터/빌드 시각 때문에 산출물 해시가 달라질 수 있다.
-계산 Python 18개와 공개 인터페이스는 변경하지 않았으므로 런타임 버전은 그대로 유지했다.
+2026-09-10 전달 준비에서는 계산 Python 18개와 공개 인터페이스를 변경하지 않아 런타임 버전을 유지했다.
+아래 2026-09-11 매핑 보완은 그 이후의 **소스 변경**이며 기존 `0.1.0` 설치 파일에 포함됐다고 보지 않는다.
 정책 JSON과 docs/tests는 **sdist/저장소 자료**이며 wheel 설치 경로에서 읽을 수 없다.
 BE는 [정책 JSON](simulation-policy.json)을 검토한 서버 설정으로 별도 배치하고 버전을 응답에 기록한다.
 공통 재무 정책·Dockerfile·requirements를 모듈 담당이 임의 변경하지 않는다.
+
+### 2026-09-11: 기타 금융자산 매핑 보완
+
+`fix/ai-simulation-other-assets`, 시작 기준 `master=4ed89b5`. 사용자에게 전달된 BE 수정 요청에
+따라 `asset_type="기타"`를 인식하되 모델링하지 않는 범주로 처리한다. 이 단계는 소스 수정·검증이며
+**패키지 버전 갱신·수정본 빌드/설치 검증·BE 적용은 아직 진행하지 않는다.**
+일반/`-S` 전체 소스 회귀는 각각 680개 통과했다. 상세 경계와 재실행 명령은
+[기타 금융자산 검증 기록](input-adapter-validation.md)을 참고한다.
+
+- `기타` 행의 `current_value`와 `monthly_savings`는 모두 합산에서 제외한다. 금액을 읽거나
+  누락/null을 0으로 보충하지 않으며, 원본 행·저장 금액은 변경하지 않는다. 행 구조·ID 검증은 유지한다.
+- 제외 행마다 `other_financial_asset_not_modeled`를 생성한다. `field_name="financial_assets[N]"`의
+  `N`은 0부터 시작하는 원본 배열 위치이며 DB ID가 아니다. 최종 `analysis_to_dict()`의 `notices`에 보존된다.
+- 기타만 있는 경우 모델링 자산·적립 합계는 0이다. 실제 자산 없음으로 확정하지 않으며 원본 목록이
+  비어 있지 않으므로 `confirmed_empty_sections`에 `financial_assets`를 넣지 않는다.
+- 기존 5종 계산·미지원 문자열 오류·원본 보존·MC/What-if 엔진·가정·준비율 처리 범위는 유지한다.
+  What-if 월 적립 명시값은 기존처럼 변경 후 총 월액이며 제외한 행의 적립액을 다시 합산하지 않는다.
+
+합성 예: `[예금/적금(평가액 10,000,000원, 월 적립 200,000원),
+기타(평가액 5,000,000원, 월 적립 100,000원)]`이면 모델링 합계는 `10,000,000원 / 월 200,000원`이다.
+아래 안내가 기존 범위 안내들과 함께 반환된다.
+
+```json
+{"code": "other_financial_asset_not_modeled", "field_name": "financial_assets[1]"}
+```
+
+적용 순서는 **수정 패키지 버전·소스 커밋·해시 확인 → BE 설치 → 실제 API의 두 합계와 notices 확인 →
+BE의 기타 사전 차단만 제거**다. 그전까지 BE가 안내한 사전 감지/422는 유지한다. 미지원 문자열은
+여전히 `input_mapping_failed` / `reason_code="unsupported_value"`이며 다른 검증은 제거하지 않는다.
+성공 응답에 새 notice를 추가하는 변경이지 HTTP 오류를 모듈에서 처리하거나 기존 준비율을 바꾸는 변경은 아니다.
+
+확인한 master의 [금융자산 폼](../../../front-pjt/src/components/forms/FinancialAssetsForm.vue)이 사용하는
+[AddableTable.vue](../../../front-pjt/src/components/ui/AddableTable.vue)에는 `기타` 선택 시 직접 입력 경로가 있다.
+연결 대상의 실제 저장 문자열과 입력 제약은 BE/화면 담당 확인 사항이며 이 브랜치에서 FE를 수정하지 않는다.
+양 끝 공백을 제외한 정확한 `기타`만 이 범주로 인식하고, 임의 문자열을 자동 치환하지 않는다.
 
 ## 1. 호출 경계
 

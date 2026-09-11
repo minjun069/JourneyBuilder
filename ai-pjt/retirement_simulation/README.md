@@ -17,6 +17,14 @@ What-if 시나리오 생성·공통 경로 비교 계산·입력 검증·기본 
 변경 후 준비율 제외·안내를 유지한 부분 분석 허용을 기록했다.
 정책은 엔진의 자동 기본값이 아니며 BE/FE 계약·설정 배포는 별도다.
 
+2026-09-11 입력 매핑 보완: 금융자산 `기타`는 자산·월 적립 합산에서 제외하고 원본 행 위치의
+`other_financial_asset_not_modeled` 안내를 남긴다. 기존 5종 계산과 미지원 문자열 오류는 유지한다.
+처리 규칙은 [입력 매핑 규격](docs/input-mapping-rules.md), 적용 전 확인 사항은
+[BE 인수인계](docs/be-handoff.md)에 정리한다. **이번 단계는 소스 수정이며 패키지 버전 갱신·
+수정본 빌드/설치 검증·BE 적용은 후속 작업**이다. 기존 `0.1.0` 설치본에 반영됐다는 뜻이 아니다.
+[이번 수정의 검증 기록](docs/input-adapter-validation.md): 기존 668개에 회귀 12개를 추가했고,
+일반·`-S` 전체 소스 테스트가 각각 680개 통과했다.
+
 전달 자료는 [담당별 묶음·다음 작업 순서](docs/handoff-next-steps.md)에서 시작한다.
 [BE 설치/호출 안내](docs/be-handoff.md), [FE 화면 연결 안내](docs/fe-handoff.md),
 [기술 확인서](docs/be-integration-checklist.md), [MVP 가정 검증·샘플](docs/handoff-validation.md)을 준비했다.
