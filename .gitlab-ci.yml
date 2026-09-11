@@ -100,7 +100,7 @@ test:ai:
         python -m unittest discover -s rag/tests -v &&
         python -m unittest discover -s tools/tests -v &&
         python -m unittest discover -s evals/tests -v &&
-        cd evals/security && python -m unittest -v test_security_regression.py"
+        cd evals/security && python -m unittest discover -p 'test_*.py' -q"
   after_script:
     - docker image rm -f ci-ai:$CI_COMMIT_SHORT_SHA >/dev/null 2>&1 || true
 
@@ -121,6 +121,14 @@ test:front:
       -v "$CI_PROJECT_DIR:/workspace:ro" -w /workspace
       node:22-bookworm
       node --test front-pjt/tests/e2e/p07/p07-preparation.test.mjs
+
+# ── F14 전체 release regression: Django 앱 내부 transaction test까지 포함 ──
+# 기존 세 언어 잡의 빠른 실패 피드백과 별도로, 격리 PostgreSQL·Redis에서 Backend 전체
+# Django suite를 실행하고 T01/T02/T04 artifact·calculation policy 소비자 digest를 G6로 묶는다.
+test:f14-regression:
+  stage: test
+  script:
+    - bash deploy/f14-regression.sh
 
 # ── deploy: master 에 머지되면 서버에 배포 (S15P21B109-125) ──
 # 러너가 곧 배포 서버(shell executor)라서 SSH·이미지 레지스트리 없이 체크아웃 디렉터리에서 compose 를 올린다.
