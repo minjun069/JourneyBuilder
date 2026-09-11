@@ -148,10 +148,14 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(result["task_results"]["task-2"]["status"], "completed")
-        self.assertEqual(len(sink.security_events), 1)
-        self.assertEqual(sink.security_events[0].decision.value, "allowed")
+        tool_events = [
+            event for event in sink.security_events
+            if event.boundary == "tool_authorization"
+        ]
+        self.assertEqual(len(tool_events), 1)
+        self.assertEqual(tool_events[0].decision.value, "allowed")
         self.assertEqual(
-            sink.security_events[0].target_name,
+            tool_events[0].target_name,
             "get_dashboard_metric",
         )
 

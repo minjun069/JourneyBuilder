@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.step_registry import load_step_candidates
-from graph.planner import TASK_FIELDS, validate_route_plan
+from graph.planner import TASK_FIELDS, TASK_TYPE_CONTRACTS, validate_route_plan
 
 
 PLAN_GUARDRAIL_ALLOW_REASON = "PLAN_GUARDRAIL_ALLOWED"
@@ -200,6 +200,14 @@ def evaluate_route_plan(
 
         executor = route.get("executor")
         if expected_kind == "agent":
+            if trusted.get("type") == "fallback":
+                if executor != "fallback":
+                    violations.append(_violation(
+                        "AGENT_NOT_ALLOWLISTED",
+                        f"{path}.route.executor",
+                        "Fallback task는 fallback Agent만 실행할 수 있습니다.",
+                    ))
+                continue
             allowed_agents = active_steps.get(step_id)
             if allowed_agents is None:
                 violations.append(_violation(
@@ -250,10 +258,12 @@ def _planner_view(plan: Any) -> Any:
         if not isinstance(task, Mapping):
             projected.append(task)
             continue
+        contract = TASK_TYPE_CONTRACTS.get(str(task.get("type")), {})
         projected.append({
             key: deepcopy(value)
             for key, value in task.items()
             if key not in ROUTED_TASK_METADATA_FIELDS
+            and not (key == "arguments" and "fixed_arguments" in contract)
         })
     return {"tasks": projected}
 

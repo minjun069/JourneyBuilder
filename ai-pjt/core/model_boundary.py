@@ -34,6 +34,10 @@ class ModelPurpose(str, Enum):
 class ModelOutputBlockedError(ValueError):
     """Raised when a model attempts to return direct identifiers or secrets."""
 
+    def __init__(self, message: str, *, reason_code: str = "DATA_POLICY_BLOCKED") -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+
 
 _ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
     ModelPurpose.PLANNER: (),
@@ -303,6 +307,14 @@ def _block_forbidden_output(result: Any) -> None:
     if _contains_forbidden_text(payload) or _contains_forbidden_field(payload):
         raise ModelOutputBlockedError(
             "model output contained a direct identifier or secret"
+        )
+    from guardrails.boundary_policy import evaluate_financial_output
+
+    decision = evaluate_financial_output(payload)
+    if not decision.allowed:
+        raise ModelOutputBlockedError(
+            "model output contained unsupported financial certainty",
+            reason_code=decision.reason_code,
         )
 
 

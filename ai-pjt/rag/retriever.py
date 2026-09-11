@@ -67,7 +67,9 @@ async def search_financial_knowledge(
         query,
         top_k=top_k,
     )
-    return [result.to_dict() for result in results]
+    from guardrails.boundary_policy import filter_rag_results
+
+    return [result.to_dict() for result in filter_rag_results(results)]
 
 
 def initialize_test_retriever(documents: Sequence[Any]) -> None:
@@ -98,6 +100,9 @@ def reset_retrievers() -> None:
 
 
 def format_docs(results: Sequence[Any]) -> str:
+    from guardrails.boundary_policy import filter_rag_results
+
+    results = filter_rag_results(results)
     if not results:
         return "검색된 승인 근거가 없습니다. 현재 자료만으로는 답변할 수 없습니다."
 

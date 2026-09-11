@@ -570,6 +570,12 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
 
         self.assertEqual(terminal["status"], "failed")
         self.assertEqual(terminal["error"]["code"], "POLICY_BLOCKED")
+        output_audits = [
+            payload for payload in downstream.payloads
+            if payload.get("boundary") == "output_guardrail"
+        ]
+        self.assertEqual(len(output_audits), 1)
+        self.assertEqual(output_audits[0]["decision"], "denied")
         rendered = json.dumps(received, ensure_ascii=False, sort_keys=True)
         self.assertNotIn("p13-user@example.invalid", rendered)
         self.assertNotIn("010-0000-0000", rendered)

@@ -18,8 +18,9 @@ from psycopg.types.json import Jsonb
 
 from core.monitoring import OperationStatus
 from core.model_boundary import ModelOutputBlockedError
-from core.runtime_instrumentation import RuntimeStage
+from core.runtime_instrumentation import RuntimeStage, SecurityDecision
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
+from guardrails.boundary_policy import BOUNDARY_POLICY_VERSION
 
 from .contracts import (
     CallbackError,
@@ -566,8 +567,19 @@ class AsyncChatTransport:
                     message="AI 응답 생성 시간이 초과되었습니다.",
                     retryable=True,
                 )
-            except ModelOutputBlockedError:
+            except ModelOutputBlockedError as exc:
                 request_failure = "policy_blocked"
+                observed.record_security_decision(
+                    task_id="response",
+                    boundary="output_guardrail",
+                    decision=SecurityDecision.DENIED,
+                    actor_kind="model",
+                    actor_name="response_model",
+                    target_name="model_output",
+                    target_version=BOUNDARY_POLICY_VERSION,
+                    call_source="request_processing",
+                    reason_code=exc.reason_code,
+                )
                 raw_payload = self._failed_payload(
                     request,
                     code="POLICY_BLOCKED",
