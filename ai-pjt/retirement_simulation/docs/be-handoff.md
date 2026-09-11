@@ -66,6 +66,10 @@ BE 설치 → 실제 API의 두 합계와 notices 확인 → 화면의 제외 �
 미사용 금액을 다시 거절하지 않는지도 BE에서 확인하되 저장 serializer 제약과는 구분한다.
 기존 notice 발생 대상을 넓히는 변경이지 HTTP 오류를 모듈에서 처리하거나 준비율을 바꾸는 변경은 아니다.
 
+첫 단계인 BE 테스트 분리는 MR !80(`master=a2f8650`)에서 완료했다. 해당 master 위로 rebase한 뒤
+설치된 0.1.2의 BE 패키지·어댑터 **46개 전부 통과**를 확인했다. 화면 안내 전 차단은 계속 유지하며,
+모듈 MR에서 BE/FE 파일을 변경하거나 차단을 해제하지 않는다.
+
 확인한 master의 [금융자산 폼](../../../front-pjt/src/components/forms/FinancialAssetsForm.vue)이 사용하는
 [AddableTable.vue](../../../front-pjt/src/components/ui/AddableTable.vue)에는 `기타` 선택 시 직접 입력 경로가 있다.
 이 경로에서는 선택 직후 빈 값, 입력 후 자유 문자열이 저장될 수 있다. 이 브랜치에서 FE나 BE를

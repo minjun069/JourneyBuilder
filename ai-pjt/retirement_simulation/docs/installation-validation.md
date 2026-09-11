@@ -180,7 +180,7 @@ packaging **26.3**, pyproject_hooks **1.2.0**. 빌드 도구는 공식 PyPI에�
 - `0.1.0`·`0.1.1` 파일명과 내부 버전은 임시 설치 환경을 만들기 전에 거절하는 방어 검사를 유지했다.
 - 계산 Python 18개는 `eb693e1`과 동일하다. 패키징 때문에 계산·가정·공개 export·JSON을 바꾸지 않았다.
 
-### BE 호환성 결과 — 실패 1건 유지
+### BE 호환성 결과 — 3번 당시 실패 기록
 
 별도 임시 venv에 0.1.2 wheel을 실제 설치하고 BE의 `test_simulation_package.py`와
 `test_simulation_adapter.py`를 수정 없이 실행했다. **45개 중 44개 통과, 1개 실패, error/skip 0**이다.
@@ -208,3 +208,25 @@ setuptools **84.0.0**, packaging **26.3**, pyproject_hooks **1.2.0**을 재사�
 BE/FE·Agent·CI·Docker·공통 정책·requirements는 수정하지 않았다. 실제 HTTP/DB·화면 안내·
 운영 부하·배포는 미검증이다. **사용자가 제외 사실을 확인할 수 있는 화면과 묶어서 BE 임시 차단을 해제**하며,
 모듈 설치 검증만으로 차단을 해제하지 않는다. 푸시/MR·병합·외부 전달은 별도 요청 범위다.
+
+## 8. BE MR !80 반영 후 재검증
+
+2026-09-11, 사용자 요청의 5~7번 작업. 최신 master `a2f8650`의 선행 BE 변경은
+`test_free_text_asset_type_is_blocked_by_be_only`를 추가하고 자유 입력 사례를 영구 입력 오류의
+모듈 대조에서 분리한 것이다. 차단 분기는 제거하지 않았다. **위 7절의 BE 실패 1건은 해결됐다.**
+
+- 로컬 master를 fast-forward하고 기존 세 커밋을 충돌 없이 rebase했다.
+  `git range-diff` 세 패치 동일, `3d96ed0`/`6674bc2`의 모듈 tree 동일을 확인했다.
+- 소스 **685개**가 일반 실행과 `-S`의 AI CI 발견 방식(`-s retirement_simulation/tests -t .`)에서 통과했다.
+- 설치된 0.1.2의 BE 패키지 검사 10개·어댑터 검사 36개, 총 **46개 통과**, 실패/error/skip 0.
+  기존 45개에서 임시 차단 전용 검사 1개가 추가된 것이며 모듈 소스로 설치를 우회하지 않았다.
+- `g1_gate.py` 통과: 15 inputs·16 commits·23 UI steps·4 form-action steps·24 governed RAG documents.
+- 후속 문서 외에 런타임 Python 18개·모듈 테스트·패키지 버전·빌드 설정은 rebase 직후와 동일하다.
+
+최종 커밋은 별도로 추출해 sdist→wheel 빌드와 파일/메타데이터/해시 검증, 격리 설치 18개·
+BE 46개를 반복하고 결과를 새 소스 커밋의 `dist/0.1.2/<source-commit>/`에 보관한다.
+이전 `3d96ed0`의 산출물/실패 보고서는 당시 기록으로 보존한다. 실행 환경/범위는 위 7절과 같다.
+
+GitLab CI는 요청된 푸시/MR 이후 별도로 확인해 MR에 기록한다. 로컬 검사만으로 전체 원격 CI·
+실제 Docker 이미지·HTTP/DB·화면·배포 완료를 선언하지 않는다. 병합/자동 병합은 수행하지 않으며,
+화면에서 제외 안내가 가능해지기 전까지 BE 임시 차단을 유지한다.

@@ -34,8 +34,9 @@ What-if 시나리오 생성·공통 경로 비교 계산·입력 검증·기본 
 [확정 규칙·BE 테스트 호환성](docs/unmodeled-financial-assets.md)을 참고한다. BE 임시 차단은 화면에서
 제외 안내를 보여줄 수 있을 때까지 유지한다. 소스 **685개**와 별도 격리 설치 **18개**를 검증했다.
 sdist→wheel 빌드/파일·해시 검사 결과는 [0.1.2 설치 검증](docs/installation-validation.md)에 기록했다.
-BE 패키지·어댑터 검사에서는 **45개 중 44개 통과, 기존 자유 입력 오류 기대값 1개 실패**가 남아 있다.
-BE/FE 파일·임시 차단을 수정하지 않았으며 전체 CI나 서비스 연결 완료로 해석하지 않는다.
+후속 BE MR !80 병합(`master=a2f8650`) 후 rebase하고 BE 패키지·어댑터 **46개 전부 통과**를 확인했다.
+기존 자유 입력 오류 기대값 충돌은 해결됐으며 과거 실패 기록과 [후속 검증](docs/installation-validation.md)을
+구분한다. 이 브랜치에서 BE/FE 파일·임시 차단을 수정하지 않았고 서비스 연결 완료로 해석하지 않는다.
 
 전달 자료는 [담당별 묶음·다음 작업 순서](docs/handoff-next-steps.md)에서 시작한다.
 [BE 설치/호출 안내](docs/be-handoff.md), [FE 화면 연결 안내](docs/fe-handoff.md),
