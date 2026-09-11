@@ -87,15 +87,19 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 | 단계 | 내용 |
 |---|---|
 | 사전 점검 | env 파일 읽기 가능, `compose config --quiet` |
-| 직전 기록 | 떠 있는 web·backend·ai-pjt·migrate 컨테이너의 이미지 ID (롤백 대상). 첫 배포면 없음 |
+| 롤백 대상 확인 | 직전 성공 배포가 남긴 유지 태그 `<프로젝트>-<서비스>:last-good` (web·backend·ai-pjt·migrate). 태그가 없는 서비스는 **부트스트랩 승격** — 1순위 그 서비스가 기동 중인 이미지, 없으면 2순위 `<이름>:latest`(컨테이너가 참조하는 이미지 레코드가 사라진 경우). 승격할 이미지도 없으면 그 서비스는 이번 배포가 실패해도 복원되지 않으며 로그에 명시된다. 첫 배포면 대상 없음 → 실패 시 중단만 |
 | 기동 | `compose build --pull` → `up -d --remove-orphans` → **`restart gateway`**. migrate one-shot → backend 순서는 compose `depends_on` 이 보장. gateway 재시작 배경: 원래 gateway nginx 의 upstream 이 고정(`server backend:8000`)이라 backend 가 재생성돼 IP 가 바뀌면 옛 IP 를 물고 `/api` 가 502 가 됐다(2026-09-08 첫 자동 배포에서 발생, S15P21B109-127). S15P21B109-128 에서 upstream 을 `resolve` 방식(10s 주기 재조회)으로 바꿔 배포 외 경로(수동 `up`, 크래시 후 재생성)에서도 자동 회복하도록 했고, 재시작은 즉시 반영용 안전망으로 유지한다. web 의 nginx 는 처음부터 `resolver` 방식 |
 | 헬스체크 | 최대 150s: `web`·`backend` 컨테이너 healthy **and** `GET http://127.0.0.1:8080/` 200 **and** `GET http://127.0.0.1:8080/api/v1/consultations/` 가 5xx·000 이 아님(host→web→gateway→backend 전 구간 검사. 로그인 필요 경로라 **401 이 정상**. `--api-health-url` 로 변경). **ai-pjt 는 `AI_REQUIRED=1`(운영 기본) 이면 같은 대기 조건에 포함하고, `0` 이면 상태만 경고**(`--ai-required` 로 필수 전환) |
-| 성공 | `/srv/s15p21b109/state/last_good_images` 갱신, `docker image prune -f`, exit 0 |
-| 실패 | backend 로그 20줄 출력 → 직전 이미지 ID 를 compose 이미지 이름에 다시 태그 → `up -d --no-build` → `restart gateway` → exit 1 (파이프라인 failed) |
+| 성공 | 방금 성공한 이미지에 `:last-good` 을 다시 붙인다(다음 롤백 대상). 태그가 옮겨가면 직전 세대는 dangling 이 되어 뒤따르는 `docker image prune -f` 가 정리한다 → 서비스당 한 세대만 남는다. `/srv/s15p21b109/state/last_good_images` 는 사람이 읽는 기록용이고 롤백은 이 파일을 읽지 않는다. exit 0 |
+| 실패 | backend 로그 20줄 출력 → `:last-good` 을 `:latest` 로 재태그 → `up -d --no-build` → `restart gateway` → 10s 뒤 롤백 후 상태(web·backend·ai-pjt·http·api) 로그 → exit 1 (파이프라인 failed). 롤백 대상이 없으면 컨테이너를 그대로 두고 중단만 한다 — 그때는 **방금 배포한 이미지가 운영에 남는다** |
 
 - 하지 않는 것: 볼륨 삭제(`-v`), DB 스키마 롤백. 마이그레이션은 앞으로만 간다. 스키마를 되돌려야 하면 사람이 한다
 - 롤백은 "이미지" 롤백이다. 직전 배포와 이미지가 같으면(코드 변경 없는 재배포) 복원 로그가 없는 것이 정상
-- 검증 기록(2026-09-07, 로컬): 성공 경로 exit 0 · last_good 4개 기록 / 닫힌 포트를 헬스 URL 로 준 실패 경로 → 롤백 분기 → exit 1, 서비스 유지 / **E2E 롤백**: `s15p21b109-web` 태그를 CMD 없는 alpine 으로 바꿔 배포 → web `restarting` 감지 → 4개 서비스 태그를 직전 ID 로 복원 → `up` → web healthy·8080 200, exit 1
+- **왜 이미지 ID 가 아니라 유지 태그인가** (2026-09-10 교체): 원래는 배포 전에 기동 중인 이미지 ID 를 기억해 두고 실패 시 그 ID 를 다시 태그하는 방식이었다. 그 이미지는 태그를 잃은 채 남아 있어야 복원되는데, **성공 배포 끝의 `docker image prune -f` 가 정확히 그런 이미지를 지운다.** 2026-09-10 저녁 파이프라인 #188176 에서 web·backend·ai-pjt·migrate **4개 전부 "복원 불가"** 로 롤백이 실패했고 깨진 빌드가 운영에 남았다. 태그가 붙은 이미지는 dangling 이 아니라서 prune 대상에서 빠진다
+- 유지 태그 이름은 `ROLLBACK_TAG` 로 바꿀 수 있다(기본 `last-good`). 이미지 이름이 `<프로젝트>-<서비스>` 라서 `deploy.sh` 는 compose 프로젝트 이름을 `s15p21b109` 로 **고정**한다 — 체크아웃 디렉터리 이름에 기대지 않는다
+- 검증 기록(2026-09-07, 로컬) — **이 검증은 prune 이 한 번도 돌지 않은 상태에서 통과했고, 그래서 위 결함을 놓쳤다**: 성공 경로 exit 0 · last_good 4개 기록 / 닫힌 포트를 헬스 URL 로 준 실패 경로 → 롤백 분기 → exit 1, 서비스 유지 / **E2E 롤백**: `s15p21b109-web` 태그를 CMD 없는 alpine 으로 바꿔 배포 → web `restarting` 감지 → 4개 서비스 태그를 직전 ID 로 복원 → `up` → web healthy·8080 200, exit 1
+- 검증 기록(2026-09-10, 운영): 유지 태그 방식으로 배포 3회(#188209 · #188248 · #188256) 성공. 마지막 잡에서 `web backend ai-pjt migrate` 4개 전부 `:last-good` 승격 확인
+- **한계 — 롤백 분기 자체의 회귀 검사는 없다.** "성공 배포 → prune → 다음 배포 실패 → 롤백" 을 자동으로 돌리는 하네스가 없어, 실패 경로는 운영 관측에만 의존한다
 
 ## deploy 스테이지 — master 자동 배포 (S15P21B109-125)
 
@@ -112,8 +116,17 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 | 실패 | deploy.sh 가 롤백 후 exit 1 → 잡 failed. 파이프라인 알림은 S15P21B109-126 |
 
 - **재배포(코드 변경 없음, env 만 바뀐 경우)**: master 최신 파이프라인의 `deploy:production` 잡을 GitLab 에서 Retry. 또는 서버에서 러너 체크아웃 디렉터리로 가서 `bash deploy/deploy.sh --no-build`
-- **ai 컨테이너만 재기동(LLM 키 입력·회전 후)**: 러너 체크아웃 디렉터리에서 `sudo docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate ai-pjt` (app.env 가 root:gitlab-runner 640 이라 `ubuntu` 계정은 `sudo` 필요. deploy 잡을 Retry 하면 러너 권한으로 돌아 sudo 불필요)
-- **주의**: `master` 는 보호 브랜치이지만(push·merge 는 Maintainer, force push 금지) **"파이프라인 통과 시 머지" 조건이 꺼져 있다**(`only_allow_merge_if_pipeline_succeeds=false`, 2026-09-10 확인). 빨간불 MR 을 머지하면 test 가 실패해 deploy 는 실행되지 않지만(스테이지 순서), 테스트가 잡지 못하는 결함은 그대로 배포된다. 이 머지 조건을 켜는 것은 S15P21B109-126
+- **특정 서비스만 재기동·강제 재생성** (예: LLM 키 입력·회전 후의 ai-pjt): 러너 체크아웃에서 아래 형태로 실행한다
+
+  ```
+  sudo bash -c 'cd /home/gitlab-runner/builds/<id>/0/s15-fintech-finance-sub1/S15P21B109 && docker compose --project-name s15p21b109 --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate --no-build ai-pjt'
+  ```
+
+  - **`--project-name s15p21b109` 을 빼면 안 된다.** compose 는 프로젝트 이름을 현재 디렉터리 이름에서 정하므로, 홈에서 실행하면 프로젝트 `ubuntu` 로 운영 스택과 별개인 중복 컨테이너를 만들려 든다(`web` 이 `127.0.0.1:8080` 을 물어 포트 충돌). `deploy.sh` 가 이름을 고정하는 것과 같은 이유다
+  - `app.env` 가 root:gitlab-runner 640, `/home/gitlab-runner` 가 0700 이라 `ubuntu` 계정은 `cd` 까지 `sudo` 안에서 해야 한다. deploy 잡을 Retry 하면 러너 권한으로 돌아 sudo 가 필요 없다
+  - **`web`·`backend` 를 대상으로 할 때는 `migrate` 를 함께 지정한다** (`up -d --force-recreate --no-build migrate backend web`). `backend` 가 `migrate: service_completed_successfully` 에 의존해서 compose 가 기존 migrate 컨테이너를 *재생성이 아니라 기동*하려 드는데, 그 컨테이너가 참조하는 이미지가 사라진 상태면 `No such image` 로 명령 전체가 실패한다 (2026-09-11 실측)
+  - `--no-build` 를 붙이면 기존 `:latest` 를 그대로 써서 재빌드를 피하고, 이미지가 없을 때 조용히 빌드로 넘어가지 않고 즉시 실패한다. root 로 실행하므로 러너 체크아웃에 root 소유 파일을 남기지 않는 편이 안전하다(다음 잡의 `git clean` 이 깨진다)
+- **주의**: `master` 는 보호 브랜치이고(push·merge 는 Maintainer, force push 금지) **"파이프라인 통과 시 머지" 조건도 2026-09-10 에 켰다**(`only_allow_merge_if_pipeline_succeeds=true` — 아래 「master 머지 조건」 절). 빨간불 MR 이 막히는 것과 별개로, **테스트가 잡지 못하는 결함은 그대로 배포된다.** `deploy:production` 은 `rules` 상 MR 파이프라인에 존재하지 않으므로 빌드·헬스체크·롤백 전 과정은 머지 후에야 처음 실행된다
 - 검증 기록(2026-09-08, 서버): 기능 브랜치에서 `when: manual` 로 실행. 1차(파이프라인 #183374) 2초 실패 — 첫 배포 경로 `PREV: unbound variable` → deploy.sh 수정. 2차(파이프라인 #183408, 잡 #495972) **62초 성공**: 이미지 3종 빌드 → postgres·redis healthy → migrate 완료 → backend healthy → web healthy → 8080 200 → last_good 4개 기록. `https://j15b109.p.ssafy.io` 502 → **200**. ai-pjt 는 `GOOGLE_API_KEY is required` 로 재시작 반복(예상된 상태, LLM 키 조합 확정 후 입력). 호스트 노출 포트는 22/80/443 과 127.0.0.1 의 8080/8081 만
 
 ## AI 컨테이너 기동 실패를 배포 실패로 판정 (S15P21B109-132)
