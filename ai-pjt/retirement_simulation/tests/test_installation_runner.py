@@ -13,6 +13,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 import warnings
@@ -31,12 +32,12 @@ class InstallationRunnerTests(unittest.TestCase):
         self.wheel = Path(self.temporary.name) / runner.WHEEL_NAME
 
     def wheel_fixture(self, *, missing=None, extra=None, headers="", symlink=None,
-                      bad_record=False, tamper_content=False):
+                      bad_record=False, tamper_content=False, version="0.1.1"):
         # Archive-validation fixture only: never install/execute these dummy modules.
         files = {f"retirement_simulation/{name}.py": b"# synthetic archive member\n" for name in runner.MODULES}
         files.update({
             runner.DIST_INFO + "METADATA": (
-                "Metadata-Version: 2.4\nName: retirewise-retirement-simulation\nVersion: 0.1.0\n"
+                f"Metadata-Version: 2.4\nName: retirewise-retirement-simulation\nVersion: {version}\n"
                 "Requires-Python: <3.14,>=3.13\n" + headers + "\n"
             ).encode(),
             runner.DIST_INFO + "WHEEL": b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
@@ -67,6 +68,28 @@ class InstallationRunnerTests(unittest.TestCase):
         with patch.object(runner.subprocess, "run", side_effect=AssertionError("must not execute")):
             self.assertIsNone(runner.verify_wheel(self.wheel, digest))
             self.assertIsNone(runner.verify_wheel(self.wheel, digest.upper()))
+
+    def test_runner_identity_matches_current_packaging_configuration(self):
+        config = tomllib.loads((AI_PROJECT_ROOT / "retirement_simulation/pyproject.toml").read_text())
+        self.assertEqual((runner.DISTRIBUTION, runner.VERSION),
+                         (config["project"]["name"], config["project"]["version"]))
+        self.assertEqual(runner.VERSION, "0.1.1")
+        self.assertEqual(runner.WHEEL_NAME, "retirewise_retirement_simulation-0.1.1-py3-none-any.whl")
+        self.assertEqual(runner.DIST_INFO, "retirewise_retirement_simulation-0.1.1.dist-info/")
+
+    def test_old_version_or_filename_is_rejected_before_installation(self):
+        digest = self.wheel_fixture(version="0.1.0")
+        with patch.object(runner.tempfile, "TemporaryDirectory") as create:
+            with self.assertRaisesRegex(ValueError, "Version metadata"):
+                runner.run_checks(self.wheel, digest)
+            create.assert_not_called()
+        digest = self.wheel_fixture()
+        old_name = self.wheel.with_name("retirewise_retirement_simulation-0.1.0-py3-none-any.whl")
+        self.wheel.rename(old_name)
+        with patch.object(runner.tempfile, "TemporaryDirectory") as create:
+            with self.assertRaisesRegex(ValueError, "regular local 0\\.1\\.1 wheel"):
+                runner.run_checks(old_name, digest)
+            create.assert_not_called()
 
     def test_wrong_or_malformed_hash_is_rejected_before_temporary_environment(self):
         self.wheel_fixture()

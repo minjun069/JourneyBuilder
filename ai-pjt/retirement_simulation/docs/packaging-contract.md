@@ -5,6 +5,9 @@
 로컬 wheel/sdist·소스/설치 재검증과 [모듈 설치 가이드](package-installation.md)를 완료했다. BE 이미지/API 연결은 아직 진행하지 않았다.
 아래 선택은 모듈 내부 구현 기준이며 BE·배포 담당자가 설치 방식을 승인했다는 뜻이 아니다.
 
+2026-09-11 보완: `기타` 금융자산 제외 수정 `84a67b5`를 포함하는 패키지를 `0.1.1`로 구분한다.
+아래 현재 설정과 설치 runner는 `0.1.1`을 대상으로 하며, 8~11절의 `0.1.0` 검증 기록은 당시 결과로 유지한다.
+
 ## 1. 목표와 변경 경계
 
 기존 `retirement_simulation`을 **단일 소스에서 빌드해 설치 가능한 독립 Python 패키지**로 준비한다.
@@ -45,7 +48,7 @@ DB의 동일 시점 읽기·없음 확인·원본 계산과 digest의 일치가 
 |---|---|
 | 배포 이름 | `retirewise-retirement-simulation`. 프로젝트 내부 산출물의 이름이며 공개 저장소의 이름 선점/게시를 의미하지 않음 |
 | import 이름 | 기존 `retirement_simulation` 유지 |
-| 최초 패키지 버전 | `0.1.0`. 정적 메타데이터로 관리하고 계산 코드 import·Git 명령으로 동적 생성하지 않음 |
+| 패키지 버전 | 현재 `0.1.1`, 최초 `0.1.0`. 정적 메타데이터로 관리하고 계산 코드 import·Git 명령으로 동적 생성하지 않음 |
 | Python 범위 | 초기 `>=3.13,<3.14`. 우선 CPython 3.13 계열에 한정. 이 메타데이터는 모든 patch/OS를 실제 검증했다는 뜻이 아님 |
 | 우선 검증 환경 | Linux/WSL의 로컬 3.13.15, BE 연결 인수 시 실제 3.13.14 이미지. 다른 Python/OS는 미검증 |
 | 런타임 의존성 | `dependencies = []`. AI/BE 전체 requirements를 패키지 의존성으로 가져오지 않음 |
@@ -70,7 +73,8 @@ DB의 동일 시점 읽기·없음 확인·원본 계산과 digest의 일치가 
 [setuptools의 명시적 package-dir 지원](https://setuptools.pypa.io/en/latest/userguide/package_discovery.html)을
 사용하며 실제 산출물의 경로는 2·3번에서 검사한다.
 
-아래는 2번에서 추가한 [실제 빌드 설정](../pyproject.toml)이다. 설정 테스트에서 문서와 파일의 일치를 검사한다.
+아래는 최초 2번에서 추가하고 `0.1.1`로 갱신한 [현재 빌드 설정](../pyproject.toml)이다.
+설정 테스트에서 문서와 파일의 일치를 검사한다.
 
 ```toml
 [build-system]
@@ -79,7 +83,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "retirewise-retirement-simulation"
-version = "0.1.0"
+version = "0.1.1"
 description = "Standalone retirement Monte Carlo and what-if simulation"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
@@ -320,3 +324,18 @@ BE 전달 문서는 이번에 수정하지 않았으며 사용자 요청 전까�
 
 다음은 5번 최종 범위·최신 master 확인 후 별도 요청한 푸시/MR이다. 이번에 원격 갱신·rebase·
 푸시/MR·실제 BE 이미지/API·FE 연결을 진행했다는 뜻이 아니다. BE 전달 보완은 브랜치 종료 후 별도 요청 시 진행한다.
+
+## 12. 0.1.1 패키지 갱신
+
+2026-09-11, 기타 금융자산 매핑 수정 `84a67b5` 이후 별도 패키징 커밋이다.
+정적 패키지 버전과 설치 runner/테스트를 `0.1.1`로 갱신하고 기존 설치본과 구분했다.
+Python 지원 범위·빌드 도구·런타임 의존성·포함 규칙·계산 Python 18개는 그대로 유지한다.
+
+- 소스 전체 **682개**, 실제 wheel 설치 **17개** 검증. 두 개수는 별개다.
+- wheel **22개**, sdist **96개 일반 파일**. 정확한 포함 목록과 소스 내용·메타데이터·CRC/RECORD·해시 확인.
+- 기타 혼합/전용 입력·미지원 분류 오류를 설치된 공개 API에서 검증한다. 옛 파일명/내부 버전은 설치 전에 거절한다.
+- 현재 설치 명령과 전달본 보관은 [설치 가이드](package-installation.md), 실행 기록과 한계는
+  [설치 경계 검증](installation-validation.md)에 있다. 최종 커밋과 실제 파일 해시는 별도 보고서로 고정한다.
+
+기존 기록의 소스 해시·성능 JSON·0.1.0 파일명/개수는 역사적 결과로 유지했다.
+실제 BE 설치·API 검증·기타 사전 차단 제거는 후속 연결 담당 작업이며 이 로컬 검증에 포함하지 않는다.

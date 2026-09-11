@@ -17,6 +17,17 @@ What-if 시나리오 생성·공통 경로 비교 계산·입력 검증·기본 
 변경 후 준비율 제외·안내를 유지한 부분 분석 허용을 기록했다.
 정책은 엔진의 자동 기본값이 아니며 BE/FE 계약·설정 배포는 별도다.
 
+2026-09-11 입력 매핑 보완: 금융자산 `기타`는 자산·월 적립 합산에서 제외하고 원본 행 위치의
+`other_financial_asset_not_modeled` 안내를 남긴다. 기존 5종 계산과 미지원 문자열 오류는 유지한다.
+처리 규칙은 [입력 매핑 규격](docs/input-mapping-rules.md), 적용 전 확인 사항은
+[BE 인수인계](docs/be-handoff.md)에 정리한다. 이 수정의 패키지 버전은 **`0.1.1`**이며,
+기존 `0.1.0` 설치본에 자동 반영되지 않는다. 빌드/설치 결과는 [설치 검증 기록](docs/installation-validation.md)과
+구분해 확인하며 실제 BE 설치·API 적용은 별도 작업이다.
+[이번 수정의 검증 기록](docs/input-adapter-validation.md): 기존 668개에 회귀 12개를 추가했고,
+일반·`-S` 전체 소스 테스트가 각각 680개 통과했다.
+후속 0.1.1 패키징에서는 버전/구버전 거절 검사 2개를 추가해 소스 **682개**, 별도 격리 설치 **17개**를 검증했다.
+최종 전달 파일의 소스 커밋·버전·해시는 [설치 가이드](docs/package-installation.md)대로 별도 기록한다.
+
 전달 자료는 [담당별 묶음·다음 작업 순서](docs/handoff-next-steps.md)에서 시작한다.
 [BE 설치/호출 안내](docs/be-handoff.md), [FE 화면 연결 안내](docs/fe-handoff.md),
 [기술 확인서](docs/be-integration-checklist.md), [MVP 가정 검증·샘플](docs/handoff-validation.md)을 준비했다.
@@ -110,7 +121,7 @@ BE/FE 전달 문서 보완은 사용자 요청에 따라 완료했다. 실제 �
 소스로 실행할 때 추가 설치, API key, Django 설정 또는 PostgreSQL 기동이 필요 없다.
 패키지 빌드 도구는 별도 임시 환경에서만 사용하며 런타임 의존성과 구분한다.
 빌드 설정·재실행 방법·산출물 검증 범위는 [패키징 규격](docs/packaging-contract.md)에 있다.
-현재 패키지 배포 버전은 `0.1.0`, import 이름은 기존 `retirement_simulation`이다.
+현재 패키지 배포 버전은 `0.1.1`, import 이름은 기존 `retirement_simulation`이다.
 별도 설치 검증은 [설치 검증 runner](tests/run_installation_checks.py)가 새 venv를 만들어 수행한다.
 기존 환경에는 설치하지 않으며 빌드한 wheel 경로와 기록된 SHA-256을 명시해야 한다.
 처음 wheel을 빌드/설치하는 경우 [모듈 설치 가이드](docs/package-installation.md)를 따른다.

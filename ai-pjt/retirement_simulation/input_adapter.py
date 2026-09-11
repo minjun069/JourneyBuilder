@@ -31,7 +31,7 @@ _SECTIONS = (
     "real_estate_assets", "liabilities", "goal_milestones",
 )
 _EMPTY_SECTIONS = ("financial_assets", "pension_assets")
-_ASSET_TYPES = ("예금/적금", "주식", "펀드/ETF", "채권", "가상자산")
+_MODELED_ASSET_TYPES = ("예금/적금", "주식", "펀드/ETF", "채권", "가상자산")
 _ASSUMPTION_FIELDS = (
     "annual_return_mean", "annual_return_volatility", "annual_inflation_rate",
     "num_paths", "seed",
@@ -58,6 +58,7 @@ _NOTICE_PATHS = {
     "milestones_not_modeled": "goal_milestones",
     "confirmed_empty_financial_assets": "financial_assets",
     "confirmed_empty_pensions": "pension_assets",
+    "other_financial_asset_not_modeled": r"financial_assets\[[0-9]+\]",
     "pension_outside_horizon": r"pension_assets\[[0-9]+\]",
     "pension_horizon_limited": r"pension_assets\[[0-9]+\]",
 }
@@ -190,16 +191,25 @@ def _confirm_empty(value: object, sections: _SourceSections) -> frozenset[str]:
     return frozenset(confirmed)
 
 
-def _financial_totals(rows: _SourceRows) -> tuple[int, int]:
+def _financial_totals(rows: _SourceRows) -> tuple[int, int, tuple[InputMappingNotice, ...]]:
+    """Sum modeled rows only; retain source positions for recognized exclusions."""
     assets = savings = 0
+    notices = []
     for index, row in enumerate(rows):
         path = f"financial_assets[{index}]"
         kind = _required(row, "asset_type", f"{path}.asset_type")
-        if not isinstance(kind, str) or kind.strip() not in _ASSET_TYPES:
+        if not isinstance(kind, str):
+            raise InputMappingError("unsupported_value", f"{path}.asset_type")
+        kind = kind.strip()
+        if kind == "기타":
+            # As with excluded real estate, unused amounts are not read or imputed.
+            notices.append(InputMappingNotice(code="other_financial_asset_not_modeled", field_name=path))
+            continue
+        if kind not in _MODELED_ASSET_TYPES:
             raise InputMappingError("unsupported_value", f"{path}.asset_type")
         assets += _int_field(row, "current_value", path)
         savings += _int_field(row, "monthly_savings", path)
-    return assets, savings
+    return assets, savings, tuple(notices)
 
 
 def _expense_periods(rows: _SourceRows) -> tuple[RetirementExpensePeriod, ...]:
@@ -297,7 +307,7 @@ The returned profile/notices contain no references to the supplied mutable rows.
     end_age = _int_field(basic, "end_age", "basic_info", 18, MAX_AGE)
     if end_age < max(current_age, retirement_age):
         raise InputMappingError("invalid_value", "basic_info.end_age")
-    assets, savings = _financial_totals(sections["financial_assets"])
+    assets, savings, financial_notices = _financial_totals(sections["financial_assets"])
     expenses = _expense_periods(sections["goal_periods"])
     pensions, pension_notices = _pension_incomes(sections["pension_assets"], current_age, end_age)
     try:
@@ -310,7 +320,7 @@ The returned profile/notices contain no references to the supplied mutable rows.
         raise InputMappingError(
             "invalid_profile", _PROFILE_SOURCE_FIELDS.get(error.field_name, "saved_data"),
         ) from None
-    notices = (*_scope_notices(sections, confirmed), *pension_notices)
+    notices = (*_scope_notices(sections, confirmed), *financial_notices, *pension_notices)
     return ProfileMappingResult(profile=profile, notices=notices)
 
 

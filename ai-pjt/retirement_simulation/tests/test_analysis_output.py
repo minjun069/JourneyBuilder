@@ -109,6 +109,80 @@ class AnalysisOutputTests(unittest.TestCase):
         self.assertEqual(output["metadata"]["mc_model_version"], "retirement-mc-v1")
         self.assertEqual(output["metadata"]["what_if_model_version"], "retirement-what-if-v1")
 
+    def test_other_assets_preserve_seeded_baseline_and_what_if_except_notices(self):
+        for scenarios in ([], [{"scenario_id": "keep", "changes": {}}],
+                          [{"scenario_id": "zero", "changes": {"monthly_savings": 0}}],
+                          [{"scenario_id": "save_more", "changes": {"monthly_savings": 900_000}}]):
+            with self.subTest(scenarios=scenarios):
+                values = {
+                    "saved_data": saved_data(),
+                    "assumption_values": assumption_data(annual_return_mean=0.04, annual_return_volatility=0.1,
+                                                         num_paths=20, seed=42),
+                    "scenarios": scenarios,
+                }
+                rng_state = random.getstate()
+                expected = analysis_to_dict(analyze_retirement(**values))
+                values["saved_data"]["financial_assets"].insert(0, {
+                    "id": 91, "asset_type": "기타", "current_value": 900_000_000,
+                    "monthly_savings": 99_000_000, "name": "PRIVATE_OTHER_ASSET",
+                })
+                values["saved_data"]["financial_assets"].append({"id": 73, "asset_type": "기타"})
+                original = deepcopy(values)
+                model = analyze_retirement(**values)
+                output = analysis_to_dict(model)
+                self.assertEqual(output["notices"], [{"code": notice.code, "field_name": notice.field_name}
+                                                    for notice in model.mapped_input.notices])
+                self.assertEqual([notice for notice in output["notices"]
+                                  if notice["code"] == "other_financial_asset_not_modeled"], [
+                    {"code": "other_financial_asset_not_modeled", "field_name": "financial_assets[0]"},
+                    {"code": "other_financial_asset_not_modeled", "field_name": "financial_assets[3]"},
+                ])
+                self.assertEqual([notice for notice in output["notices"]
+                                  if notice["code"] != "other_financial_asset_not_modeled"], expected["notices"])
+                self.assertEqual({key: value for key, value in output.items() if key != "notices"},
+                                 {key: value for key, value in expected.items() if key != "notices"})
+                self.assertEqual(json.loads(json.dumps(output, allow_nan=False)), output)
+                self.assertNotIn("PRIVATE_OTHER_ASSET", json.dumps(output))
+                self.assertEqual(analysis_to_dict(analyze_retirement(**values)), output)
+                self.assertEqual(random.getstate(), rng_state)
+                self.assertEqual(values, original)
+
+    def test_only_other_assets_produce_results_without_false_empty_confirmation(self):
+        for scenarios in ([], [lower_expenses()]):
+            with self.subTest(scenarios=scenarios):
+                values = request() | {"scenarios": scenarios}
+                values["saved_data"]["financial_assets"][0]["asset_type"] = "기타"
+                original = deepcopy(values)
+                output = analysis_to_dict(analyze_retirement(**values))
+                self.assertEqual(output["baseline_profile"]["liquid_assets"], 0)
+                self.assertEqual(output["baseline_profile"]["monthly_savings"], 0)
+                self.assertEqual(output["baseline"]["final_balance_percentiles"]["p50"], -12_000)
+                self.assertIn({"code": "other_financial_asset_not_modeled", "field_name": "financial_assets[0]"},
+                              output["notices"])
+                self.assertNotIn("confirmed_empty_financial_assets", [notice["code"] for notice in output["notices"]])
+                if scenarios:
+                    self.assertEqual(output["scenarios"][0]["profile"]["liquid_assets"], 0)
+                    self.assertEqual(output["scenarios"][0]["result"]["final_balance_percentiles"]["p50"], -9_600)
+                self.assertEqual(json.loads(json.dumps(output, allow_nan=False)), output)
+                self.assertEqual(values, original)
+
+    def test_unsupported_asset_after_other_preserves_public_error_contract(self):
+        values = request()
+        values["saved_data"]["financial_assets"] = [
+            {"asset_type": "기타"},
+            {"asset_type": "PRIVATE_ASSET", "current_value": 10_000, "monthly_savings": 0},
+        ]
+        original = deepcopy(values)
+        with self.assertRaises(RetirementAnalysisError) as raised:
+            analyze_retirement(**values)
+        output = analysis_error_to_dict(raised.exception)
+        self.assertEqual(output["error"]["code"], "input_mapping_failed")
+        self.assertEqual(output["error"]["reason_code"], "unsupported_value")
+        self.assertEqual(output["error"]["field_name"], "financial_assets[1].asset_type")
+        self.assertEqual(set(output), {"contract_version", "error"})
+        self.assertNotIn("PRIVATE_ASSET", json.dumps(output, allow_nan=False))
+        self.assertEqual(values, original)
+
     def test_missing_and_null_changes_normalize_to_three_null_fields(self):
         values = request()
         missing = analysis_to_dict(analyze_retirement(**values, scenarios=[{"scenario_id": "keep", "changes": {}}]))

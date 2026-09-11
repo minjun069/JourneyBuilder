@@ -22,9 +22,9 @@ import zipfile
 
 
 DISTRIBUTION = "retirewise-retirement-simulation"
-VERSION = "0.1.0"
-DIST_INFO = "retirewise_retirement_simulation-0.1.0.dist-info/"
-WHEEL_NAME = "retirewise_retirement_simulation-0.1.0-py3-none-any.whl"
+VERSION = "0.1.1"
+DIST_INFO = f"retirewise_retirement_simulation-{VERSION}.dist-info/"
+WHEEL_NAME = f"retirewise_retirement_simulation-{VERSION}-py3-none-any.whl"
 MODULES = frozenset({
     "__init__", "analysis", "analysis_benchmark", "analysis_errors", "analysis_output",
     "analysis_samples", "cashflow", "input_adapter", "input_samples", "models",
@@ -41,7 +41,7 @@ def verify_wheel(wheel: Path, expected_sha256: str) -> None:
     if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
         raise ValueError("SHA-256 must contain exactly 64 hexadecimal characters")
     if wheel.is_symlink() or not wheel.is_file() or wheel.name != WHEEL_NAME:
-        raise ValueError("select the regular local 0.1.0 wheel file, not a URL, directory, or symlink")
+        raise ValueError(f"select the regular local {VERSION} wheel file, not a URL, directory, or symlink")
     if hashlib.sha256(wheel.read_bytes()).hexdigest() != expected_sha256.lower():
         raise ValueError("wheel SHA-256 mismatch")
     with zipfile.ZipFile(wheel) as archive:
