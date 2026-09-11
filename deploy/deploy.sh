@@ -10,7 +10,7 @@
 #   AI_REQUIRED=0 deploy/deploy.sh                    # AI 가 깨진 상황에서 서빙만 급히 배포할 때 (CI 잡 기본값을 끈다)
 #
 # 흐름
-#   1. 사전 점검: env 파일, compose 병합(config)
+#   1. 사전 점검: env 파일, compose 병합(config). 병합이 깨지면 값이 빈 필수 변수를 이름으로 찍는다
 #   2. 롤백 대상 확인: 직전 성공 배포가 남긴 유지 태그(:last-good) 존재 여부
 #   3. build → up -d --remove-orphans   (migrate one-shot → backend 순서는 compose 가 보장)
 #      → gateway 재시작. gateway(nginx) 의 upstream 은 resolve 방식(10s 주기 재조회)이라 backend 재생성 뒤
@@ -92,9 +92,33 @@ BUILT_SERVICES=(web backend ai-pjt migrate)
 # "복원 불가" 로 롤백에 실패했고, 깨진 빌드가 그대로 운영에 남았다.
 ROLLBACK_TAG="${ROLLBACK_TAG:-last-good}"
 
+# compose 병합이 깨졌을 때 "어느 변수가 비었는지" 를 이름으로 알려준다 (S15P21B109-140).
+# 서버 app.env 는 make-env.sh 가 한 번 만든 뒤 갱신되지 않는다(기존 파일은 덮어쓰지 않는다).
+# 그래서 compose 에 ${VAR:?} 가 새로 추가된 MR 이 머지되면 그 다음 배포가 여기서 멈추는데,
+# compose 가 내는 메시지는 처음 걸린 변수 하나뿐이라 남은 것을 한 번에 알 수 없었다
+# (2026-09-11 #189299: AI_MASKING_PSEUDONYM_KEY). 값은 절대 찍지 않고 이름만 찍는다.
+report_missing_env() {
+  local names name missing=()
+  # compose() 가 쓰는 것과 같은 파일 목록이어야 한다
+  names="$(grep -hoE '\$\{[A-Za-z_][A-Za-z0-9_]*:\?' docker-compose.yml docker-compose.prod.yml 2>/dev/null \
+    | sed -e 's/^\${//' -e 's/:?$//' | sort -u)"
+  [ -n "$names" ] || return 0
+  for name in $names; do
+    # env 파일에 없으면 러너 환경변수로도 채워질 수 있다(compose 가 그 순서로 본다)
+    if [ -z "$(sed -n "s/^${name}=//p" "$ENV_FILE" | tail -1)" ] \
+       && [ -z "$(printenv "$name" 2>/dev/null || true)" ]; then
+      missing+=("$name")
+    fi
+  done
+  [ "${#missing[@]}" -gt 0 ] || return 0
+  log "  값이 없는 필수 변수: ${missing[*]}"
+  log "  서버에서 한 줄씩 추가한다(백업 먼저) — 절차: deploy/README.md '필수 변수를 새로 추가할 때'"
+  log "    printf '<이름>=%s\n' \"\$(openssl rand -hex 32)\" | sudo tee -a $ENV_FILE >/dev/null"
+}
+
 # ── 1. 사전 점검 ─────────────────────────────────────────────────────────
 [ -r "$ENV_FILE" ] || { log "env 파일을 읽을 수 없습니다: $ENV_FILE"; exit 1; }
-compose config --quiet || { log "compose 병합 실패 (필수 env 누락?)"; exit 1; }
+compose config --quiet || { log "compose 병합 실패 (필수 env 누락?)"; report_missing_env; exit 1; }
 mkdir -p "$STATE_DIR"
 log "저장소 $(git rev-parse --short HEAD 2>/dev/null || echo '?') · env $ENV_FILE · build=$BUILD"
 
