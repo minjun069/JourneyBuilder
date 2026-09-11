@@ -9,6 +9,11 @@ from pydantic import BaseModel
 
 from agents.input_assist_defaults import build_default_proposals
 from core.llm import llm
+from core.model_boundary import (
+    ModelPurpose,
+    secure_ainvoke,
+    secure_system_prompt,
+)
 
 MAX_RETRIES = 2
 
@@ -92,7 +97,7 @@ _error_check_2_chain = llm.with_structured_output(ErrorCheck2Result)
 # 프롬프트
 # ---------------------------------------------------------------------------
 
-_CLASSIFY_SYSTEM = """\
+_CLASSIFY_SYSTEM = secure_system_prompt("""\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 
 사용자 발화의 의도를 다음 중 하나로 분류하세요.
@@ -100,9 +105,9 @@ _CLASSIFY_SYSTEM = """\
 - find_field: 값은 알지만 어느 항목에 입력해야 할지 모르는 경우
 - organize  : 입력할 내용이 있으나 정리가 필요한 경우
 user_requested_change는 사용자가 입력·수정·추가·삭제를 명시적으로 요청한 경우에만 true이고,
-질문하거나 추천만 구한 경우에는 false입니다."""
+질문하거나 추천만 구한 경우에는 false입니다.""")
 
-_IDENTIFY_SYSTEM = """\
+_IDENTIFY_SYSTEM = secure_system_prompt("""\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 
 [현재 단계의 canonical 필드 레지스트리]
@@ -122,9 +127,9 @@ _IDENTIFY_SYSTEM = """\
   parent_client_item_id로 지정하세요.
 
 [현재 저장 전 폼]
-{current_form}"""
+{current_form}""")
 
-_RESOLVE_SYSTEM = """\
+_RESOLVE_SYSTEM = secure_system_prompt("""\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 {intent_instruction}
 
@@ -137,7 +142,7 @@ _RESOLVE_SYSTEM = """\
   3200000은 `3200000`, 문자열 직장인은 `"직장인"`으로 반환하세요.
 - constraints 범위를 벗어나면 가장 가까운 경계값으로 조정하세요.
 - confidence는 사용자 발화와 명세만으로 값과 대상을 확정할 수 있는 정도를 0~1로 반환하세요.
-{hint}"""
+{hint}""")
 
 _RESOLVE_INTENT_INSTRUCTIONS: dict[str, str] = {
     "fill_avg": "executor가 검증해 전달한 binding 값만 사용하세요. binding 값이 없으면 평균값·추천값을 임의로 생성하지 마세요.",
@@ -145,7 +150,7 @@ _RESOLVE_INTENT_INSTRUCTIONS: dict[str, str] = {
     "organize": "발췌 내용을 이 항목의 type·unit·constraints 에 맞게 정리하여 반환하세요.",
 }
 
-_ERROR_CHECK_2_SYSTEM = """\
+_ERROR_CHECK_2_SYSTEM = secure_system_prompt("""\
 분류 기준에 따라 확정된 값의 오류 여부와 판단 근거를 작성하세요.
 
 오류 유형:
@@ -156,15 +161,15 @@ _ERROR_CHECK_2_SYSTEM = """\
 - unreasonable : 값의 합리성 의심 (참고 자료 미반영 또는 범위 이탈)
 
 [항목 명세서]
-{field_spec}"""
+{field_spec}""")
 
-_MERGE_SYSTEM = """\
+_MERGE_SYSTEM = secure_system_prompt("""\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 
 아래 항목별 입력 처리 결과를 바탕으로 사용자에게 전달할 자연스러운 한국어 안내 멘트를 작성하세요.
 - 항목별로 두괄식으로 작성하세요.
 - 입력에 성공한 항목은 어떤 값을 왜 선택했는지 설명하세요.
-- 실패한 항목은 실패 이유와 사용자가 직접 확인해야 할 사항을 안내하세요. 실패한 항목이 없다면 생략하세요."""
+- 실패한 항목은 실패 이유와 사용자가 직접 확인해야 할 사항을 안내하세요. 실패한 항목이 없다면 생략하세요.""")
 
 
 # ---------------------------------------------------------------------------
@@ -190,10 +195,15 @@ def _init(_: InputAssistState) -> dict:
 
 
 async def _classify(state: InputAssistState) -> dict:
-    result = await _classify_chain.ainvoke([
-        SystemMessage(content=_CLASSIFY_SYSTEM),
-        HumanMessage(content=state["message"]),
-    ])
+    result = await secure_ainvoke(
+        _classify_chain,
+        [
+            SystemMessage(content=_CLASSIFY_SYSTEM),
+            HumanMessage(content=state["message"]),
+        ],
+        purpose=ModelPurpose.INPUT_ASSIST,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     return {
         "classification": result.intent,
         "user_requested_change": result.user_requested_change,
@@ -220,13 +230,18 @@ async def _identify(state: InputAssistState) -> dict:
             "resolution_confidence": 0,
             "cur_index": 0,
         }
-    result = await _identify_chain.ainvoke([
-        SystemMessage(content=_IDENTIFY_SYSTEM.format(
-            guideline=guideline,
-            current_form=json.dumps(current_form, ensure_ascii=False, indent=2),
-        )),
-        HumanMessage(content=state["message"]),
-    ])
+    result = await secure_ainvoke(
+        _identify_chain,
+        [
+            SystemMessage(content=_IDENTIFY_SYSTEM.format(
+                guideline=guideline,
+                current_form=json.dumps(current_form, ensure_ascii=False, indent=2),
+            )),
+            HumanMessage(content=state["message"]),
+        ],
+        purpose=ModelPurpose.INPUT_ASSIST,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     return {
         "guideline": guideline,
         "identification": [item.model_dump() for item in result.items],
@@ -333,14 +348,19 @@ async def _resolve(state: InputAssistState) -> dict:
             "validation_reason": "검증된 선행 기준값 binding 없음",
         }
 
-    result = await _resolve_chain.ainvoke([
-        SystemMessage(content=_RESOLVE_SYSTEM.format(
-            field_spec=field_spec,
-            intent_instruction=_RESOLVE_INTENT_INSTRUCTIONS.get(state["classification"], ""),
-            hint=hint,
-        )),
-        HumanMessage(content=f"[사용자 입력]\n{item['excerpt']}"),
-    ])
+    result = await secure_ainvoke(
+        _resolve_chain,
+        [
+            SystemMessage(content=_RESOLVE_SYSTEM.format(
+                field_spec=field_spec,
+                intent_instruction=_RESOLVE_INTENT_INSTRUCTIONS.get(state["classification"], ""),
+                hint=hint,
+            )),
+            HumanMessage(content=f"[사용자 입력]\n{item['excerpt']}"),
+        ],
+        purpose=ModelPurpose.INPUT_ASSIST,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     try:
         resolution = json.loads(result.value_json)
     except (TypeError, json.JSONDecodeError):
@@ -427,15 +447,20 @@ async def _error_check_2(state: InputAssistState) -> dict:
             "validation_reason": reason,
         }
 
-    result = await _error_check_2_chain.ainvoke([
-        SystemMessage(content=_ERROR_CHECK_2_SYSTEM.format(
-            field_spec=state["field_spec"]
-        )),
-        HumanMessage(content=(
-            f"사용자 입력: {item['excerpt']}\n"
-            f"해석된 값: {state['resolution']}\n"
-        )),
-    ])
+    result = await secure_ainvoke(
+        _error_check_2_chain,
+        [
+            SystemMessage(content=_ERROR_CHECK_2_SYSTEM.format(
+                field_spec=state["field_spec"]
+            )),
+            HumanMessage(content=(
+                f"사용자 입력: {item['excerpt']}\n"
+                f"해석된 값: {state['resolution']}\n"
+            )),
+        ],
+        purpose=ModelPurpose.INPUT_ASSIST,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     if result.error_type == "ok":
         return {
             "partial_results": state["partial_results"] + [{
@@ -536,13 +561,18 @@ async def _merge(state: InputAssistState) -> dict:
         else:
             parts.append(f"[{field_name}] 입력 실패 — {item['reason']}")
 
-    result = await llm.ainvoke([
-        SystemMessage(content=_MERGE_SYSTEM),
-        HumanMessage(content=(
-            f"사용자 입력: {state['message']}\n\n"
-            f"항목별 처리 결과:\n" + "\n".join(parts)
-        )),
-    ])
+    result = await secure_ainvoke(
+        llm,
+        [
+            SystemMessage(content=_MERGE_SYSTEM),
+            HumanMessage(content=(
+                f"사용자 입력: {state['message']}\n\n"
+                f"항목별 처리 결과:\n" + "\n".join(parts)
+            )),
+        ],
+        purpose=ModelPurpose.INPUT_ASSIST,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     return {
         "output": {
             "response": result.content,
@@ -555,6 +585,17 @@ async def _merge(state: InputAssistState) -> dict:
                 "changes": changes,
             } if changes else None,
         }
+    }
+
+
+def _model_sensitive_payload(state: InputAssistState) -> dict[str, Any]:
+    return {
+        "message": state.get("message", ""),
+        "customer_info": state.get("customer_info", {}),
+        "bound_inputs": state.get("bound_inputs", {}),
+        "identification": state.get("identification", []),
+        "resolution": state.get("resolution"),
+        "partial_results": state.get("partial_results", []),
     }
 
 

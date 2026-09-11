@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
+from tests.instrumentation import fake_instrumentation
+
 
 LANGGRAPH_AVAILABLE = importlib.util.find_spec("langgraph") is not None
 
@@ -178,6 +180,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         graph = build_graph(
             None,
+            instrumentation=fake_instrumentation()[0],
             planner=planner,
             classifier=FakeClassifier(),
             agent_graphs=agents,
@@ -206,6 +209,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            instrumentation=fake_instrumentation()[0],
             planner=FakePlanner({"tasks": []}),
             classifier=FakeClassifier(),
             agent_graphs=agents,

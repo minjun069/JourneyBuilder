@@ -22,6 +22,10 @@ def configure_disposable_runtime() -> None:
         "postgresql://f03:f03-disposable-db@postgres/f03",
     )
     os.environ.setdefault("AI_SERVICE_BEARER_TOKEN", "f03-disposable-bearer")
+    os.environ.setdefault(
+        "AI_MASKING_PSEUDONYM_KEY",
+        "f03-disposable-masking-key-at-least-32-bytes",
+    )
 
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
@@ -98,7 +102,9 @@ class QABindingTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             qa,
             "_decision_chain",
-            SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(need_retrieval=True))),
+            SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RetrievalDecision(
+                need_retrieval=True,
+            ))),
         ):
             decision = await qa._decide({
                 "message": "이 기준값의 의미와 배경을 설명해줘",

@@ -12,6 +12,11 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from core.llm import llm
+from core.model_boundary import (
+    ModelPurpose,
+    secure_ainvoke,
+    secure_system_prompt,
+)
 from graph.state import ChatState
 
 
@@ -54,7 +59,7 @@ class ElicitAnalysis(BaseModel):
 
 _analysis_chain = llm.with_structured_output(ElicitAnalysis)
 
-ANALYZE_PROMPT = """\
+ANALYZE_PROMPT = secure_system_prompt("""\
 정성정보 수집 질문에 대한 사용자의 현재 답변 하나만 분류하세요.
 - substantive: 필드에 기록할 사용자의 직접 표현이 있음
 - uncertain: 잘 모르겠음 또는 생각할 시간이 필요함
@@ -64,7 +69,7 @@ ANALYZE_PROMPT = """\
 - reset: 현재 항목 답변을 처음부터 다시 함
 captured_text는 substantive일 때만 사용자의 의미를 보태지 말고 간결히 정리합니다.
 재무 조언이나 다음 질문을 생성하지 마세요.
-"""
+""")
 
 
 def _scope(state: ChatState) -> dict:
@@ -284,14 +289,19 @@ async def _run(state: ChatState) -> dict:
         )
         return {"output": _output(state, response), "elicit_state": elicit_state}
 
-    result = await _analysis_chain.ainvoke([
-        SystemMessage(content=ANALYZE_PROMPT),
-        HumanMessage(content=(
-            f"현재 필드: {FIELDS[elicit_state['field_index']][0]}\n"
-            f"현재 질문: {_question(elicit_state)}\n"
-            f"사용자 답변: {state['message']}"
-        )),
-    ])
+    result = await secure_ainvoke(
+        _analysis_chain,
+        [
+            SystemMessage(content=ANALYZE_PROMPT),
+            HumanMessage(content=(
+                f"현재 필드: {FIELDS[elicit_state['field_index']][0]}\n"
+                f"현재 질문: {_question(elicit_state)}\n"
+                f"사용자 답변: {state['message']}"
+            )),
+        ],
+        purpose=ModelPurpose.ELICIT,
+        sensitive_payload={"message": state["message"]},
+    )
     response_class = result.response_class
     if response_class == "stop":
         elicit_state["phase"] = "stopped"

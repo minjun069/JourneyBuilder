@@ -8,6 +8,11 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from core.llm import llm
+from core.model_boundary import (
+    ModelPurpose,
+    secure_ainvoke,
+    secure_system_prompt,
+)
 from rag.retriever import format_docs, get_retriever
 
 MAX_RETRIES = 2
@@ -75,7 +80,7 @@ _refine_chain = llm.with_structured_output(RefineResult)
 # 프롬프트
 # ---------------------------------------------------------------------------
 
-_SPECIFY_SYSTEM = """\
+_SPECIFY_SYSTEM = secure_system_prompt("""\
 당신은 사용자 질문에 답하기 위해 필요한 핵심 정보를 추출하는 에이전트입니다.
 사용자 질문을 분석하여, 질문에서 요구하는 정보를 명세하세요.
 
@@ -86,9 +91,9 @@ _SPECIFY_SYSTEM = """\
 [예시]
 사용자 질문: "세액 공제 한도 구조 알려주세요"
 나쁜 예시: 세액 공제 한도, 자녀 세액 공제, 월세 세액 공제, 연금계좌 한도
-좋은 예시: 세액 공제 한도 산출 구조"""
+좋은 예시: 세액 공제 한도 산출 구조""")
 
-_DECIDE_SYSTEM = """\
+_DECIDE_SYSTEM = secure_system_prompt("""\
 아래 정보를 보고, 고객 정보와 검증된 선행 값만으로 답변 가능한지 판단하세요.
 
 - direct: 고객 정보(나이·자산·연금잔액 등)로 직접 답변 가능
@@ -96,27 +101,27 @@ _DECIDE_SYSTEM = """\
 
 검증된 선행 값이 있다는 이유만으로 retrieve를 금지하지 마세요. 검색 문서는 그 값을
 바꾸거나 다른 공식 숫자를 만들기 위한 근거가 아니라 보충 설명에만 사용합니다.
-requests_new_official_value는 binding에 없는 새 공식 수치·한도·비율을 묻는 경우 true입니다."""
+requests_new_official_value는 binding에 없는 새 공식 수치·한도·비율을 묻는 경우 true입니다.""")
 
-_ANSWER_SYSTEM = """\
+_ANSWER_SYSTEM = secure_system_prompt("""\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 제공된 승인 문서 근거만 사용해 사용자 질문에 정확하고 이해하기 쉽게 답변하세요.
 문서에 없는 내용은 추측하지 말고 현재 근거로 확인할 수 없다고 밝히세요.
 사실을 설명할 때는 참고 문서에 표시된 문서 제목과 원문 위치를 함께 인용하세요.
-검증된 선행 task 입력이 있으면 그 값·단위·출처를 그대로 사용하고 다시 계산하거나 바꾸지 마세요."""
+검증된 선행 task 입력이 있으면 그 값·단위·출처를 그대로 사용하고 다시 계산하거나 바꾸지 마세요.""")
 
-_DIRECT_ANSWER_SYSTEM = """\
+_DIRECT_ANSWER_SYSTEM = secure_system_prompt("""\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 사용자 질문에 정확하고 이해하기 쉽게 답변하세요.
-검증된 선행 task 입력이 있으면 그 값·단위·출처를 그대로 사용하고 다시 조회·추정·계산하지 마세요."""
+검증된 선행 task 입력이 있으면 그 값·단위·출처를 그대로 사용하고 다시 조회·추정·계산하지 마세요.""")
 
-_MERGE_SYSTEM = """\
+_MERGE_SYSTEM = secure_system_prompt("""\
 아래 부분 답변들을 하나의 완결된 답변으로 통합하세요.
 두괄식으로 작성하세요: 핵심 결론을 먼저 제시하고, 이후 근거와 세부 내용을 자연스럽게 설명하세요.
 중복 내용은 제거하세요. 검증된 선행 값·단위·출처·기준일은 그대로 보존하고
-다른 값으로 바꾸거나 재계산하지 마세요."""
+다른 값으로 바꾸거나 재계산하지 마세요.""")
 
-_JUDGE_SYSTEM = """\
+_JUDGE_SYSTEM = secure_system_prompt("""\
 답변의 품질을 평가하세요.
 
 판정 기준:
@@ -124,12 +129,12 @@ _JUDGE_SYSTEM = """\
 - bad + answer_quality: 근거는 충분하지만 표현·구성·질문 충실도가 부족함
 - bad + evidence_insufficient: 현재 승인 문서 context만으로 질문의 근거를 뒷받침할 수 없음
 
-검증된 선행 값 자체는 다시 평가하거나 변경하지 마세요."""
+검증된 선행 값 자체는 다시 평가하거나 변경하지 마세요.""")
 
-_REFINE_SYSTEM = """\
+_REFINE_SYSTEM = secure_system_prompt("""\
 현재 검색 결과가 질문의 설명 근거로 부족합니다. 사용자 질문 범위를 넓히지 말고,
 같은 개념의 승인 문서를 찾을 수 있도록 검색어 하나만 보정하세요.
-검증된 선행 공식 값과 다른 숫자를 찾도록 유도하지 마세요."""
+검증된 선행 공식 값과 다른 숫자를 찾도록 유도하지 마세요.""")
 
 
 # ---------------------------------------------------------------------------
@@ -154,10 +159,15 @@ def _init(_: QAState) -> dict:
 
 
 async def _specify(state: QAState) -> dict:
-    result = await _specify_chain.ainvoke([
-        SystemMessage(content=_SPECIFY_SYSTEM),
-        HumanMessage(content=state["message"]),
-    ])
+    result = await secure_ainvoke(
+        _specify_chain,
+        [
+            SystemMessage(content=_SPECIFY_SYSTEM),
+            HumanMessage(content=state["message"]),
+        ],
+        purpose=ModelPurpose.QA,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     return {"search_queries": result.queries or [state["message"]], "query_index": 0}
 
 
@@ -180,14 +190,19 @@ async def _decide(state: QAState) -> dict:
             "need_retrieval": False,
             "official_value_unavailable": True,
         }
-    decision = await _decision_chain.ainvoke([
-        SystemMessage(content=_DECIDE_SYSTEM),
-        HumanMessage(content=(
-            f"고객 정보: {state.get('customer_info', {})}\n"
-            f"검증된 선행 입력: {json.dumps(state.get('bound_inputs', {}), ensure_ascii=False, sort_keys=True)}\n"
-            f"필요한 정보 명세: {state['current_query']}"
-        )),
-    ])
+    decision = await secure_ainvoke(
+        _decision_chain,
+        [
+            SystemMessage(content=_DECIDE_SYSTEM),
+            HumanMessage(content=(
+                f"고객 정보: {state.get('customer_info', {})}\n"
+                f"검증된 선행 입력: {json.dumps(state.get('bound_inputs', {}), ensure_ascii=False, sort_keys=True)}\n"
+                f"필요한 정보 명세: {state['current_query']}"
+            )),
+        ],
+        purpose=ModelPurpose.QA,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     if getattr(decision, "requests_new_official_value", False):
         return {
             "need_retrieval": False,
@@ -237,10 +252,15 @@ async def _generate(state: QAState) -> dict:
         )
     if state["retry_hint"]:
         human_parts.append(f"이전 답변 실패 이유: {state['retry_hint']}")
-    result = await llm.ainvoke([
-        SystemMessage(content=system),
-        HumanMessage(content="\n\n".join(human_parts)),
-    ])
+    result = await secure_ainvoke(
+        llm,
+        [
+            SystemMessage(content=system),
+            HumanMessage(content="\n\n".join(human_parts)),
+        ],
+        purpose=ModelPurpose.QA,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     return {**update, "current_answer": result.content}
 
 
@@ -253,15 +273,20 @@ async def _judge(state: QAState) -> dict:
             "retries": 0,
         }
     bound_inputs = state.get("bound_inputs", {})
-    result = await _judge_chain.ainvoke([
-        SystemMessage(content=_JUDGE_SYSTEM),
-        HumanMessage(content=(
-            f"질문: {state['message']}\n"
-            f"검증된 선행 task 입력: {json.dumps(bound_inputs, ensure_ascii=False, sort_keys=True)}\n"
-            f"사용한 승인 문서 context: {state['current_context']}\n"
-            f"답변: {state['current_answer']}"
-        )),
-    ])
+    result = await secure_ainvoke(
+        _judge_chain,
+        [
+            SystemMessage(content=_JUDGE_SYSTEM),
+            HumanMessage(content=(
+                f"질문: {state['message']}\n"
+                f"검증된 선행 task 입력: {json.dumps(bound_inputs, ensure_ascii=False, sort_keys=True)}\n"
+                f"사용한 승인 문서 context: {state['current_context']}\n"
+                f"답변: {state['current_answer']}"
+            )),
+        ],
+        purpose=ModelPurpose.QA,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     if result.verdict == "good":
         return {
             "partial_answers": state["partial_answers"] + [state["current_answer"]],
@@ -281,14 +306,19 @@ async def _judge(state: QAState) -> dict:
         and state["need_retrieval"]
         and state["retrieval_refreshes"] == 0
     ):
-        refined = await _refine_chain.ainvoke([
-            SystemMessage(content=_REFINE_SYSTEM),
-            HumanMessage(content=(
-                f"사용자 질문: {state['message']}\n"
-                f"현재 검색어: {state['current_query']}\n"
-                f"부족한 이유: {result.reason}"
-            )),
-        ])
+        refined = await secure_ainvoke(
+            _refine_chain,
+            [
+                SystemMessage(content=_REFINE_SYSTEM),
+                HumanMessage(content=(
+                    f"사용자 질문: {state['message']}\n"
+                    f"현재 검색어: {state['current_query']}\n"
+                    f"부족한 이유: {result.reason}"
+                )),
+            ],
+            purpose=ModelPurpose.QA,
+            sensitive_payload=_model_sensitive_payload(state),
+        )
         query = refined.query.strip() or state["current_query"]
         return {
             "current_query": query,
@@ -321,14 +351,19 @@ async def _merge(state: QAState) -> dict:
             }
         }
     combined = "\n\n".join(f"[{i+1}] {a}" for i, a in enumerate(state["partial_answers"]))
-    result = await llm.ainvoke([
-        SystemMessage(content=_MERGE_SYSTEM),
-        HumanMessage(content=(
-            f"질문: {state['message']}\n"
-            f"검증된 선행 task 입력: {json.dumps(state.get('bound_inputs', {}), ensure_ascii=False, sort_keys=True)}\n\n"
-            f"부분 답변:\n{combined}"
-        )),
-    ])
+    result = await secure_ainvoke(
+        llm,
+        [
+            SystemMessage(content=_MERGE_SYSTEM),
+            HumanMessage(content=(
+                f"질문: {state['message']}\n"
+                f"검증된 선행 task 입력: {json.dumps(state.get('bound_inputs', {}), ensure_ascii=False, sort_keys=True)}\n\n"
+                f"부분 답변:\n{combined}"
+            )),
+        ],
+        purpose=ModelPurpose.QA,
+        sensitive_payload=_model_sensitive_payload(state),
+    )
     return {"output": {"response": result.content, "update": {}}}
 
 
@@ -343,6 +378,16 @@ def _requests_unbound_official_value(state: QAState) -> bool:
     return any(token in text for token in official_tokens) and any(
         token in text for token in value_tokens
     )
+
+
+def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
+    return {
+        "message": state.get("message", ""),
+        "customer_info": state.get("customer_info", {}),
+        "bound_inputs": state.get("bound_inputs", {}),
+        "evidence": state.get("current_context", ""),
+        "current_answer": state.get("current_answer", ""),
+    }
 
 
 # ---------------------------------------------------------------------------

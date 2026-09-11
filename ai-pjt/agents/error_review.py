@@ -13,6 +13,11 @@ from pydantic import BaseModel, Field
 from agents.error_review_confidence import confidence_level, visible_review_items
 from agents.error_review_manuals import load_error_review_manual
 from core.llm import llm
+from core.model_boundary import (
+    ModelPurpose,
+    secure_ainvoke,
+    secure_system_prompt,
+)
 from graph.state import ChatState
 from tools.output_validation import validate_form_update_contract
 
@@ -36,7 +41,7 @@ class ReviewResult(BaseModel):
 
 _review_chain = llm.with_structured_output(ReviewResult)
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT = secure_system_prompt("""\
 당신은 저장을 막지 않는 입력값 검토 자문 Agent입니다.
 Frontend의 필수값·자료형·범위 검증을 이미 통과한 현재 draft만 검토합니다.
 
@@ -55,7 +60,7 @@ Frontend의 필수값·자료형·범위 검증을 이미 통과한 현재 draft
   - low: 단지 가능성만 있거나 드문 값이라는 점 외에 근거가 부족함
   - medium: 현재 폼이나 매뉴얼과 구체적인 불일치가 있으나 수정값은 확정하기 어려움
   - high: 단위 착오 또는 다른 입력과의 직접 모순이 명확함
-"""
+""")
 
 
 async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, Any]]]:
@@ -68,17 +73,22 @@ async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, An
         if isinstance(field, dict) and field.get("step_id") == state["step_id"]
         and field.get("sensitivity") != "operational"
     ]
-    result = await _review_chain.ainvoke([
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=(
-            f"검토 trigger: {state.get('review_trigger', 'user_request')}\n"
-            f"step_id: {state['step_id']}\n"
-            f"canonical registry: {json.dumps(registry, ensure_ascii=False)}\n"
-            f"현재 draft: {json.dumps(current_form, ensure_ascii=False)}\n\n"
-            f"직접 매핑된 승인 매뉴얼 [{manual.document_id}@{manual.version}]\n"
-            f"{manual.text}"
-        )),
-    ])
+    result = await secure_ainvoke(
+        _review_chain,
+        [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=(
+                f"검토 trigger: {state.get('review_trigger', 'user_request')}\n"
+                f"step_id: {state['step_id']}\n"
+                f"canonical registry: {json.dumps(registry, ensure_ascii=False)}\n"
+                f"현재 draft: {json.dumps(current_form, ensure_ascii=False)}\n\n"
+                f"직접 매핑된 승인 매뉴얼 [{manual.document_id}@{manual.version}]\n"
+                f"{manual.text}"
+            )),
+        ],
+        purpose=ModelPurpose.ERROR_REVIEW,
+        sensitive_payload={"current_form": current_form},
+    )
     validated_items = [
         item for raw in result.items
         if (normalized := _decode_review_item(raw.model_dump())) is not None

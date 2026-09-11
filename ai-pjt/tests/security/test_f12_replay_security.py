@@ -6,11 +6,13 @@ from unittest.mock import AsyncMock
 
 import httpx
 
+from tests.instrumentation import fake_callback_masker, fake_instrumentation
 from tests.security.service_tool_security_contract import cases_for_owner, load_suite
 from transport.contracts import ChatV2Request, ServiceContractError
 from transport.runtime import (
     AsyncChatTransport,
     CallbackClient,
+    CallbackDeliveryContext,
     InMemoryRequestCheckpointStore,
 )
 
@@ -48,6 +50,7 @@ class F12AIReplaySecurityTests(IsolatedAsyncioTestCase):
             checkpoint_store=InMemoryRequestCheckpointStore(),
             processor=processor,
             callback_client=callback,
+            callback_masker=fake_callback_masker(),
         )
         scheduled = []
         request = _request()
@@ -96,6 +99,7 @@ class F12AIReplaySecurityTests(IsolatedAsyncioTestCase):
         client = CallbackClient(
             url="http://backend/api/v2/internal/ai/callback/",
             bearer_token="f12-service-token",
+            instrumentation=fake_instrumentation()[0],
             sleeper=mutate_source_during_backoff,
             jitter=lambda: 0,
             client_factory=lambda **kwargs: httpx.AsyncClient(
@@ -104,7 +108,12 @@ class F12AIReplaySecurityTests(IsolatedAsyncioTestCase):
             ),
         )
 
-        await client.send(source_payload)
+        await client.send(
+            source_payload,
+            context=CallbackDeliveryContext.from_request(
+                _request(request_id=source_payload["request_id"])
+            ),
+        )
 
         self.assertEqual(len(received), case["input"]["attempts"])
         self.assertEqual(len(set(received)), 1)

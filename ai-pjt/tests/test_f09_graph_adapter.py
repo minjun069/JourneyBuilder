@@ -6,6 +6,7 @@ from pathlib import Path
 import unittest
 
 from graph.builder import build_graph
+from tests.instrumentation import fake_instrumentation
 from tests.test_graph_execution import FakeClassifier, FakePlanner, all_agent_graphs
 from tools.catalog import build_default_registry
 from tools.graph_adapter import build_graph_tool_executors
@@ -112,6 +113,7 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            instrumentation=fake_instrumentation()[0],
             planner=FakePlanner(_dashboard_plan()),
             classifier=FakeClassifier(),
             agent_graphs=agents,
@@ -155,6 +157,7 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            instrumentation=fake_instrumentation()[0],
             planner=FakePlanner(_dashboard_plan()),
             classifier=FakeClassifier(),
             agent_graphs=agents,
@@ -176,6 +179,7 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            instrumentation=fake_instrumentation()[0],
             planner=planner,
             classifier=FakeClassifier(),
             agent_graphs=agents,
@@ -199,6 +203,7 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            instrumentation=fake_instrumentation()[0],
             planner=FakePlanner(_reference_plan(period="monthly")),
             classifier=FakeClassifier(),
             agent_graphs=agents,

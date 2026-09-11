@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from core.config import settings
 from main import app
+from tests.instrumentation import fake_instrumentation
 from transport.contracts import (
     ChatAccepted,
     ChatV2Request,
@@ -124,9 +125,11 @@ class V2AICallbackConsumerContractTests(TestCase):
 
     def test_runtime_ttls_and_callback_policy_match_fixture_timing(self):
         timing = FIXTURE["timing"]
+        instrumentation, _sink = fake_instrumentation()
         callback = CallbackClient(
             url="http://backend.test/api/v2/internal/ai/callback/",
             bearer_token="fixture-token",
+            instrumentation=instrumentation,
         )
 
         self.assertEqual(ACTIVE_TTL, timedelta(seconds=timing["active_state_ttl_seconds"]))

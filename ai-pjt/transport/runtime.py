@@ -16,6 +16,10 @@ import httpx
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
+from core.monitoring import OperationStatus
+from core.model_boundary import ModelOutputBlockedError
+from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
+
 from .contracts import (
     CallbackError,
     ChatAccepted,
@@ -105,6 +109,23 @@ class RequestCheckpoint:
 class ClaimResult:
     created: bool
     checkpoint: RequestCheckpoint
+
+
+@dataclass(frozen=True, slots=True)
+class CallbackDeliveryContext:
+    request_id: str
+    thread_id: str
+    plan_id: str
+    step_id: str
+
+    @classmethod
+    def from_request(cls, request: ChatV2Request) -> "CallbackDeliveryContext":
+        return cls(
+            request_id=request.request_id,
+            thread_id=request.thread_id,
+            plan_id=f"plan-{request.request_id}",
+            step_id=request.step_id,
+        )
 
 
 class RequestCheckpointStore(Protocol):
@@ -353,21 +374,34 @@ class CallbackClient:
         *,
         url: str,
         bearer_token: str,
+        instrumentation: RuntimeInstrumentationAdapter,
         timeout_seconds: float = 5.0,
         max_attempts: int = 4,
         sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
         jitter: Callable[[], float] = random.random,
         client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
+        monotonic_clock: Callable[[], float] = monotonic,
     ) -> None:
+        if not isinstance(instrumentation, RuntimeInstrumentationAdapter):
+            raise TypeError("callback instrumentation adapter is required")
         self._url = url
         self._bearer_token = bearer_token
+        self._instrumentation = instrumentation
         self._timeout_seconds = timeout_seconds
         self._max_attempts = max_attempts
         self._sleeper = sleeper
         self._jitter = jitter
         self._client_factory = client_factory
+        self._monotonic = monotonic_clock
 
-    async def send(self, payload: Mapping[str, Any]) -> None:
+    async def send(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        context: CallbackDeliveryContext,
+    ) -> None:
+        if not isinstance(context, CallbackDeliveryContext):
+            raise TypeError("callback delivery context is required")
         frozen_payload = json.dumps(
             dict(payload),
             ensure_ascii=False,
@@ -376,6 +410,7 @@ class CallbackClient:
         ).encode("utf-8")
         last_error: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
+            started_at = self._monotonic()
             try:
                 async with self._client_factory(timeout=self._timeout_seconds) as client:
                     response = await client.post(
@@ -393,13 +428,38 @@ class CallbackClient:
                         response=response,
                     )
                 response.raise_for_status()
+                self._record_attempt(
+                    context=context,
+                    status=OperationStatus.SUCCEEDED,
+                    started_at=started_at,
+                )
                 return
+            except httpx.TimeoutException as exc:
+                last_error = exc
+                self._record_attempt(
+                    context=context,
+                    status=OperationStatus.TIMEOUT,
+                    started_at=started_at,
+                    error_code="callback_timeout",
+                )
             except httpx.HTTPStatusError as exc:
                 last_error = exc
+                self._record_attempt(
+                    context=context,
+                    status=OperationStatus.FAILED,
+                    started_at=started_at,
+                    error_code=f"callback_http_{exc.response.status_code}",
+                )
                 if exc.response.status_code not in CALLBACK_RETRYABLE_STATUSES:
                     raise
             except httpx.TransportError as exc:
                 last_error = exc
+                self._record_attempt(
+                    context=context,
+                    status=OperationStatus.FAILED,
+                    started_at=started_at,
+                    error_code="callback_transport_error",
+                )
             if attempt < self._max_attempts:
                 backoff = 2 ** (attempt - 1)
                 await self._sleeper(backoff + min(0.25, self._jitter() * 0.25))
@@ -407,11 +467,34 @@ class CallbackClient:
             raise last_error
         raise RuntimeError("callback delivery exhausted")
 
+    def _record_attempt(
+        self,
+        *,
+        context: CallbackDeliveryContext,
+        status: OperationStatus,
+        started_at: float,
+        error_code: str | None = None,
+    ) -> None:
+        duration_ms = max(0, int((self._monotonic() - started_at) * 1000))
+        self._instrumentation.record_callback_attempt(
+            request_id=context.request_id,
+            thread_id=context.thread_id,
+            plan_id=context.plan_id,
+            step_id=context.step_id,
+            status=status,
+            duration_ms=duration_ms,
+            error_code=error_code,
+        )
+
 
 GraphProcessor = Callable[
     [ChatV2Request, ExecutionBudget],
     Awaitable[Mapping[str, Any]],
 ]
+
+
+class CallbackPayloadMaskerPort(Protocol):
+    def mask(self, payload: Mapping[str, Any]) -> dict[str, Any]: ...
 
 
 class AsyncChatTransport:
@@ -421,11 +504,15 @@ class AsyncChatTransport:
         checkpoint_store: RequestCheckpointStore,
         processor: GraphProcessor,
         callback_client: CallbackClient,
+        callback_masker: CallbackPayloadMaskerPort,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
+        if not callable(getattr(callback_masker, "mask", None)):
+            raise TypeError("callback payload masker is required")
         self._checkpoint_store = checkpoint_store
         self._processor = processor
         self._callback_client = callback_client
+        self._callback_masker = callback_masker
         self._clock = clock
 
     async def accept(
@@ -441,7 +528,7 @@ class AsyncChatTransport:
     async def run(self, request: ChatV2Request) -> dict[str, Any]:
         checkpoint = await self._checkpoint_store.get(request.request_id)
         if checkpoint is not None and checkpoint.terminal_payload is not None:
-            payload = checkpoint.terminal_payload
+            payload = self._callback_masker.mask(checkpoint.terminal_payload)
         else:
             await self._checkpoint_store.mark_running(request.request_id)
             budget = ExecutionBudget.from_request(request)
@@ -451,7 +538,7 @@ class AsyncChatTransport:
                     self._processor(request, budget),
                     timeout=budget.remaining_seconds(),
                 )
-                payload = CompletedCallback(
+                raw_payload = CompletedCallback(
                     request_id=request.request_id,
                     session_id=request.session_id,
                     thread_id=request.thread_id,
@@ -459,26 +546,37 @@ class AsyncChatTransport:
                     output=dict(output),
                 ).model_dump(mode="json")
             except (TimeoutError, asyncio.TimeoutError):
-                payload = self._failed_payload(
+                raw_payload = self._failed_payload(
                     request,
                     code="LLM_TIMEOUT",
                     message="AI 응답 생성 시간이 초과되었습니다.",
                     retryable=True,
                 )
+            except ModelOutputBlockedError:
+                raw_payload = self._failed_payload(
+                    request,
+                    code="POLICY_BLOCKED",
+                    message="AI 응답이 데이터 처리 정책에 의해 차단되었습니다.",
+                    retryable=False,
+                )
             except Exception:
-                payload = self._failed_payload(
+                raw_payload = self._failed_payload(
                     request,
                     code="INTERNAL_ERROR",
                     message="AI 응답 생성에 실패했습니다.",
                     retryable=False,
                 )
+            payload = self._callback_masker.mask(raw_payload)
             checkpoint = await self._checkpoint_store.save_terminal(
                 request.request_id,
                 payload,
             )
             payload = checkpoint.terminal_payload or payload
 
-        await self._callback_client.send(payload)
+        await self._callback_client.send(
+            payload,
+            context=CallbackDeliveryContext.from_request(request),
+        )
         await self._checkpoint_store.mark_callback_delivered(request.request_id)
         return payload
 

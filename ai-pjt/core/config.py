@@ -144,6 +144,9 @@ class Settings:
         self.ai_callback_secret = active_environ.get(
             "AI_CALLBACK_SECRET", ""
         ).strip()
+        self.masking_pseudonym_key = active_environ.get(
+            "AI_MASKING_PSEUDONYM_KEY", ""
+        ).strip()
         self.callback_timeout_seconds = float(
             active_environ.get("AI_CALLBACK_TIMEOUT_SECONDS", "5")
         )
@@ -193,6 +196,18 @@ class Settings:
             "AI_SERVICE_BEARER_TOKEN",
             self.ai_service_bearer_token,
         )
+        self._require_runtime_value(
+            "AI_MASKING_PSEUDONYM_KEY",
+            self.masking_pseudonym_key,
+        )
+        if len(self.masking_pseudonym_key.encode("utf-8")) < 32:
+            raise RuntimeConfigurationError(
+                "AI_MASKING_PSEUDONYM_KEY must contain at least 32 bytes"
+            )
+        if self.masking_pseudonym_key == self.ai_service_bearer_token:
+            raise RuntimeConfigurationError(
+                "AI_MASKING_PSEUDONYM_KEY must differ from AI_SERVICE_BEARER_TOKEN"
+            )
 
         selected_providers = {self.llm_provider, self.embedding_provider}
         if "gemini" in selected_providers:
@@ -201,6 +216,15 @@ class Settings:
             self._require_runtime_value("OPENAI_API_KEY", self.openai_api_key)
         if "opensource" in selected_providers and not self.llm_base_url:
             raise RuntimeConfigurationError("LLM_BASE_URL is required")
+
+    @property
+    def masking_pseudonym_key_bytes(self) -> bytes:
+        value = self.masking_pseudonym_key.encode("utf-8")
+        if len(value) < 32:
+            raise RuntimeConfigurationError(
+                "AI_MASKING_PSEUDONYM_KEY must contain at least 32 bytes"
+            )
+        return value
 
 
 settings = Settings()

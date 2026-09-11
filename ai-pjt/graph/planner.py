@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from core.context import ContextWindow
+from core.model_boundary import ModelPurpose, secure_invoke, secure_system_prompt
 from core.step_registry import load_step_candidates
 from graph.router import TaskClassifier, select_route
 from tools.financial_policy import REFERENCE_VALUE_INPUT_SCHEMA
@@ -184,7 +185,7 @@ FORBIDDEN_PLANNER_FIELDS = {
 }
 
 
-PLANNER_PROMPT = """\
+PLANNER_PROMPT = secure_system_prompt("""\
 사용자 메시지를 실행 가능한 task plan으로 분해하세요.
 반드시 {{"tasks": [...]}} JSON object만 반환하세요.
 
@@ -214,7 +215,7 @@ PLANNER_PROMPT = """\
 현재 단계: {step_id}
 제한된 대화 문맥: {context}
 사용자 메시지: {message}
-"""
+""")
 
 
 @dataclass(frozen=True)
@@ -587,7 +588,12 @@ def plan_tasks_with_model(
         context=json.dumps(context, ensure_ascii=False, sort_keys=True),
         message=message,
     ))
-    response = llm.invoke([system, HumanMessage(content=message)])
+    response = secure_invoke(
+        llm,
+        [system, HumanMessage(content=message)],
+        purpose=ModelPurpose.PLANNER,
+        sensitive_payload={"message": message, "context": dict(context)},
+    )
     content = response.content if isinstance(response.content, str) else ""
     payload = json.loads(content)
     if not isinstance(payload, dict):

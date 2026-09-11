@@ -4,9 +4,23 @@
 기준과 SLO는 별도 합의가 소유하며, 여기서는 임계값이나 provider 가격표를
 확정하지 않는다.
 
-현재 단계는 합성 이벤트와 `FakeTraceSink`를 사용한 준비 상태다. F11 마스킹
-구현이 production 직렬화 경계에 연결되기 전에는 Langfuse·LangSmith exporter를
-활성화하지 않는다.
+현재 단계는 P11 합성 이벤트와 F10-T01의 sink-independent
+`InstrumentationPort`·`FakeInstrumentationSink`에 F10-T02 runtime adapter가 연결되고,
+F10-T03·F11-T04 수직 경로와 누출 회귀까지 완료된 상태다. `build_graph`는 adapter를
+필수로 받으며 planner·plan
+검증·binding·task·artifact·dependency·aggregation·Agent/tool producer가 typed
+event를 전송한다. callback transport도 같은 port에 연결되어 각 HTTP 성공·실패·timeout
+시도를 graph와 같은 correlation으로 기록한다. terminal
+callback은 frozen schema 검증 뒤 마스킹된 payload만 checkpoint에 저장하고 동일 값을
+재전송한다. F11-T03의 `MaskedInstrumentationSink`는 production 직렬화 경계에서
+typed event를 trace 정책으로 마스킹한 뒤 structured application log exporter에만
+전달한다. Langfuse·LangSmith exporter는 별도 검토 전까지 활성화하지 않는다.
+
+F11-T04 통합 누출 회귀는 등록된 task type 전체를 실제 executor 경계까지 실행하고,
+model input, completed/failed callback HTTP body와 checkpoint, v2 SSE, application log,
+trace exporter의 최종 직렬화 값을 P13 sentinel 계약으로 검사한다. 실패·dependency
+blocked·악성 model output 경로도 포함하며, callback 최상위 correlation과 허용된
+금융 business value를 제외한 금지 원문은 어느 sink에도 도달하면 안 된다.
 
 ## 이벤트와 측정 단위
 
@@ -25,6 +39,16 @@ route·검색·도구·모델·공통 출력 검증·callback은 `OperationTrace
 검색 이벤트는 승인된 문서 ID와 점수만 가지며 query·excerpt는 기록하지 않는다.
 토큰은 모델 이벤트에만 기록하고, 비용은 고정 가격표가 아니라 해당 실행에
 적용된 provider 가격 버전이 계산한 `cost_microusd`를 받는다.
+
+`RuntimeTraceEvent` 1.1은 request·thread·plan correlation과 task의 `depends_on`,
+dependency 차단의 `blocked_by`, typed artifact 식별자만 기록한다. artifact 식별자는
+TaskResult schema를 바꾸지 않고 `plan_id:producer_task_id:artifact_type`으로 만든다.
+task 실행 event는 executor 종류·이름과 최종 응답 owner를 제한된 token으로
+기록하며, 실제 Agent·tool 호출과 callback adapter 입력은 같은 trace의
+`OperationTraceEvent` 계약을 사용한다.
+이벤트에는 사용자 메시지, 고객 snapshot, 도구 인자나 artifact 값 같은 자유 형식
+payload를 넣지 않는다. P11 이벤트와 runtime 이벤트는 같은 `InstrumentationPort`로
+전달할 수 있고, fake sink의 `baseline_events`는 기존 baseline 입력만 분리한다.
 
 ## AX 산식
 
@@ -56,8 +80,9 @@ route·검색·도구·모델·공통 출력 검증·callback은 `OperationTrace
 python3 -m unittest discover -s evals/tests -v
 ```
 
-W1-L11에서 실제 producer가 동일한 event 계약을 사용하도록 연결하고, F11의
-production masker와 exporter 직전 sentinel 검사를 통과시킨 후 실제 baseline을 측정한다.
+production masker 뒤의 가명화된 structured event로 baseline을 측정한다. downstream
+trace 저장소가 일시적으로 실패하면 해당 export만 폐기하고 raw event로 우회하지
+않으며, 업무 graph 결과에는 실패를 전파하지 않는다.
 
 ## F07-T04·F08-T04 Agent 통합 평가
 

@@ -1,8 +1,8 @@
-"""Safe P11 observability foundation used before a production exporter exists.
+"""Safe P11 observability contracts for the typed production exporter.
 
 The contract deliberately provides no free-form fields for messages, customer
-snapshots, tool arguments, or financial result values. External tracing remains
-fail-closed until F11 production masking is integrated and tested.
+snapshots, tool arguments, or financial result values. Raw LangChain tracing
+callbacks remain disabled because they bypass this masking-safe export boundary.
 """
 
 from __future__ import annotations
@@ -456,15 +456,16 @@ def _external_tracing_requested() -> bool:
 
 
 def get_callbacks() -> list[object]:
-    """Return no external callbacks until the F11 masking boundary is integrated.
+    """Reject raw LangChain tracing and return no model-level callbacks.
 
     LangSmith may attach itself from environment variables without an explicit
-    callback, so its enable flags are checked here too. Failing the request is
-    safer than silently exporting unverified prompt or financial content.
+    callback, so its enable flags are checked here too. Production startup calls
+    this function before accepting traffic; runtime calls keep the boundary
+    fail-closed if process environment is mutated later.
     """
 
     if _external_tracing_requested():
         raise TraceExportBlockedError(
-            "F11 production masking is not integrated; external tracing is blocked"
+            "raw external tracing bypasses the masked instrumentation exporter"
         )
     return []

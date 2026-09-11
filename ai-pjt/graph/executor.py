@@ -7,6 +7,9 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from core.monitoring import OperationStage, OperationStatus
+from core.runtime_instrumentation import RuntimeStage, build_artifact_id
+from core.runtime_instrumentation_adapter import BoundRuntimeInstrumentation
 from core.step_registry import load_agent_descriptions
 from graph.planner import binding_expectations_for
 from graph.task_contracts import (
@@ -61,6 +64,7 @@ async def execute_route_plan(
     deadline_at: str | None = None,
     tool_context: Mapping[str, Any] | None = None,
     tool_call_budget: Any = None,
+    instrumentation: BoundRuntimeInstrumentation,
 ) -> ExecutionReport:
     """Run validated tasks in source order and pass only explicit bindings.
 
@@ -96,8 +100,18 @@ async def execute_route_plan(
         ]
         if blockers:
             task_results[task_id] = blocked_task_result(task_id, blockers)
+            instrumentation.record_block(
+                task_id=task_id,
+                depends_on=tuple(str(item) for item in dependencies),
+                blocked_by=tuple(str(item) for item in blockers),
+            )
             continue
 
+        binding_span = instrumentation.start(
+            RuntimeStage.BINDING_RESOLUTION,
+            task_id=task_id,
+            depends_on=tuple(str(item) for item in dependencies),
+        )
         try:
             bound_inputs = resolve_task_bindings(
                 task=task,
@@ -105,6 +119,10 @@ async def execute_route_plan(
                 expectations=binding_expectations_for(task),
             )
         except BindingResolutionError as exc:
+            instrumentation.fail(
+                binding_span,
+                reason_code=exc.code.lower(),
+            )
             binding_sources = _binding_source_ids(task)
             blockers = binding_sources or dependencies
             if blockers:
@@ -117,6 +135,7 @@ async def execute_route_plan(
                     "binding_resolution_failed",
                 )
             continue
+        instrumentation.succeed(binding_span)
 
         route = task.get("route")
         if not isinstance(route, Mapping):
@@ -124,6 +143,12 @@ async def execute_route_plan(
                 task_id,
                 "route_missing",
             )
+            task_span = instrumentation.start(
+                RuntimeStage.TASK_EXECUTION,
+                task_id=task_id,
+                depends_on=tuple(str(item) for item in dependencies),
+            )
+            instrumentation.fail(task_span, reason_code="route_missing")
             continue
 
         executor_kind = route.get("executor_kind")
@@ -136,6 +161,14 @@ async def execute_route_plan(
                 task_id,
                 "capability_unavailable",
             )
+            task_span = instrumentation.start(
+                RuntimeStage.TASK_EXECUTION,
+                task_id=task_id,
+                depends_on=tuple(str(item) for item in dependencies),
+                executor_kind="tool",
+                executor_name=str(executor_name or "unavailable"),
+            )
+            instrumentation.fail(task_span, reason_code="capability_unavailable")
             continue
 
         registry = tool_executors if executor_kind == "tool" else agent_executors
@@ -145,6 +178,14 @@ async def execute_route_plan(
                 task_id,
                 "executor_unavailable",
             )
+            task_span = instrumentation.start(
+                RuntimeStage.TASK_EXECUTION,
+                task_id=task_id,
+                depends_on=tuple(str(item) for item in dependencies),
+                executor_kind=str(executor_kind or "agent"),
+                executor_name=str(executor_name or "unavailable"),
+            )
+            instrumentation.fail(task_span, reason_code="executor_unavailable")
             continue
 
         if tasks_used >= task_limit:
@@ -152,6 +193,14 @@ async def execute_route_plan(
                 task_id,
                 "task_budget_exhausted",
             )
+            task_span = instrumentation.start(
+                RuntimeStage.TASK_EXECUTION,
+                task_id=task_id,
+                depends_on=tuple(str(item) for item in dependencies),
+                executor_kind=str(executor_kind),
+                executor_name=str(executor_name),
+            )
+            instrumentation.fail(task_span, reason_code="task_budget_exhausted")
             continue
         tasks_used += 1
 
@@ -180,15 +229,69 @@ async def execute_route_plan(
             "context_scope": deepcopy(plan.get("context_scope", {})),
             "conversation_context": deepcopy(plan.get("conversation_context", {})),
         }
+        task_span = instrumentation.start(
+            RuntimeStage.TASK_EXECUTION,
+            task_id=task_id,
+            depends_on=tuple(str(item) for item in dependencies),
+            executor_kind=str(executor_kind),
+            executor_name=str(executor_name),
+        )
+        operation_started = instrumentation.elapsed_ms(task_span)
         try:
             raw_result = await executor(execution_input)
         except Exception:
+            operation_duration = max(
+                0,
+                instrumentation.elapsed_ms(task_span) - operation_started,
+            )
+            instrumentation.record_operation(
+                stage=(
+                    OperationStage.TOOL
+                    if executor_kind == "tool"
+                    else OperationStage.MODEL
+                ),
+                status=OperationStatus.FAILED,
+                operation_name=str(executor_name),
+                duration_ms=operation_duration,
+                agent=str(executor_name) if executor_kind != "tool" else None,
+                error_code="executor_error",
+            )
             task_results[task_id] = failed_task_result(
                 task_id,
                 "executor_error",
             )
+            instrumentation.fail(task_span, reason_code="executor_error")
             continue
 
+        operation_duration = max(
+            0,
+            instrumentation.elapsed_ms(task_span) - operation_started,
+        )
+        instrumentation.record_operation(
+            stage=(
+                OperationStage.TOOL
+                if executor_kind == "tool"
+                else OperationStage.MODEL
+            ),
+            status=OperationStatus.SUCCEEDED,
+            operation_name=str(executor_name),
+            duration_ms=operation_duration,
+            agent=str(executor_name) if executor_kind != "tool" else None,
+        )
+
+        artifact_type = str(task.get("produces", "unknown"))
+        artifact_span = instrumentation.start(
+            RuntimeStage.ARTIFACT_VALIDATION,
+            task_id=task_id,
+            depends_on=tuple(str(item) for item in dependencies),
+            artifact_id=build_artifact_id(
+                plan_id=str(plan.get("plan_id", "plan-unknown")),
+                producer_task_id=task_id,
+                artifact_type=artifact_type,
+            ),
+            artifact_type=artifact_type,
+            producer_task_id=task_id,
+        )
         validation = validate_task_result(
             task=task,
             result=raw_result,
@@ -198,7 +301,29 @@ async def execute_route_plan(
         result = validation.result
         if validation.valid and not _uses_bound_values(result, bound_inputs):
             result = failed_task_result(task_id, "binding_not_consumed")
+            instrumentation.fail(
+                artifact_span,
+                reason_code="binding_not_consumed",
+            )
+        elif validation.valid:
+            instrumentation.succeed(artifact_span)
+        else:
+            instrumentation.fail(artifact_span, reason_code="artifact_invalid")
         task_results[task_id] = result
+        if result.get("status") == "completed":
+            response_owner = (
+                "fallback"
+                if str(executor_name) == "fallback"
+                else "aggregator"
+                if executor_kind == "tool"
+                else "agent"
+            )
+            instrumentation.succeed(task_span, response_owner=response_owner)
+        else:
+            instrumentation.fail(
+                task_span,
+                reason_code=str(result.get("reason_code", "artifact_invalid")),
+            )
 
     has_completed = any(
         result.get("status") == "completed" for result in task_results.values()
@@ -243,26 +368,91 @@ async def execute_route_plan(
                 "tool_context": {},
                 "tool_call_budget": tool_call_budget,
             }
+            fallback_span = instrumentation.start(
+                RuntimeStage.TASK_EXECUTION,
+                task_id=fallback_task["id"],
+                executor_kind="agent",
+                executor_name="fallback",
+            )
             try:
+                operation_started = instrumentation.elapsed_ms(fallback_span)
                 fallback_result = await fallback_executor(fallback_payload)
+                operation_duration = max(
+                    0,
+                    instrumentation.elapsed_ms(fallback_span) - operation_started,
+                )
+                instrumentation.record_operation(
+                    stage=OperationStage.MODEL,
+                    status=OperationStatus.SUCCEEDED,
+                    operation_name="fallback",
+                    duration_ms=operation_duration,
+                    agent="fallback",
+                )
+                fallback_artifact_span = instrumentation.start(
+                    RuntimeStage.ARTIFACT_VALIDATION,
+                    task_id=fallback_task["id"],
+                    artifact_id=build_artifact_id(
+                        plan_id=str(plan.get("plan_id", "plan-unknown")),
+                        producer_task_id=fallback_task["id"],
+                        artifact_type="text_response",
+                    ),
+                    artifact_type="text_response",
+                    producer_task_id=fallback_task["id"],
+                )
                 fallback_validation = validate_task_result(
                     task=fallback_task,
                     result=fallback_result,
                     step_id=step_id,
                     field_registry=field_registry,
                 )
+                if fallback_validation.valid:
+                    instrumentation.succeed(fallback_artifact_span)
+                    instrumentation.succeed(
+                        fallback_span,
+                        response_owner="fallback",
+                    )
+                else:
+                    instrumentation.fail(
+                        fallback_artifact_span,
+                        reason_code="artifact_invalid",
+                    )
+                    instrumentation.fail(
+                        fallback_span,
+                        reason_code="artifact_invalid",
+                    )
                 task_results[fallback_task["id"]] = fallback_validation.result
                 aggregate_tasks.append(fallback_task)
                 tasks_used += 1
             except Exception:
-                pass
+                operation_duration = max(
+                    0,
+                    instrumentation.elapsed_ms(fallback_span) - operation_started,
+                )
+                instrumentation.record_operation(
+                    stage=OperationStage.MODEL,
+                    status=OperationStatus.FAILED,
+                    operation_name="fallback",
+                    duration_ms=operation_duration,
+                    agent="fallback",
+                    error_code="executor_error",
+                )
+                instrumentation.fail(
+                    fallback_span,
+                    reason_code="executor_error",
+                )
 
-    output = aggregate_task_results(
-        tasks=aggregate_tasks,
-        task_results=task_results,
-        step_id=step_id,
-        field_registry=field_registry,
-    )
+    aggregation_span = instrumentation.start(RuntimeStage.AGGREGATION)
+    try:
+        output = aggregate_task_results(
+            tasks=aggregate_tasks,
+            task_results=task_results,
+            step_id=step_id,
+            field_registry=field_registry,
+        )
+    except Exception:
+        instrumentation.fail(aggregation_span, reason_code="aggregation_error")
+        raise
+    instrumentation.succeed(aggregation_span)
     return ExecutionReport(
         task_results=task_results,
         output=output,

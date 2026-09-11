@@ -26,6 +26,7 @@ class ExecutionBudgetState(TypedDict):
 
 class ChatState(TypedDict):
     request_id: NotRequired[str]
+    thread_id: NotRequired[str]
     message: str
     step_id: str
     customer_info: dict
