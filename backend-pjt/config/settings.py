@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'accounts',
     'consulting',
     'reports',
+    'simulations',
     'community',
     'adminapi',
     'corsheaders',
