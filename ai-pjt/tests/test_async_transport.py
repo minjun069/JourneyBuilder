@@ -8,6 +8,7 @@ from unittest.mock import patch
 import httpx
 
 from core.monitoring import OperationStage, OperationStatus
+from core.runtime_instrumentation import RuntimeStage, RuntimeStatus
 from tests.instrumentation import fake_callback_masker, fake_instrumentation
 from transport.contracts import (
     ChatAccepted,
@@ -219,6 +220,17 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
                 processor=AsyncMock(),
                 callback_client=AsyncMock(),
                 callback_masker=None,  # type: ignore[arg-type]
+                instrumentation=fake_instrumentation()[0],
+            )
+
+    def test_transport_rejects_missing_request_instrumentation(self):
+        with self.assertRaises(TypeError):
+            AsyncChatTransport(
+                checkpoint_store=InMemoryRequestCheckpointStore(),
+                processor=AsyncMock(),
+                callback_client=AsyncMock(),
+                callback_masker=fake_callback_masker(),
+                instrumentation=None,  # type: ignore[arg-type]
             )
 
     async def test_accept_replay_schedules_graph_only_once(self):
@@ -230,6 +242,7 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             processor=processor,
             callback_client=callback,
             callback_masker=fake_callback_masker(),
+            instrumentation=fake_instrumentation()[0],
         )
         scheduled = []
         request = make_request()
@@ -250,6 +263,7 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             processor=processor,
             callback_client=callback,
             callback_masker=fake_callback_masker(),
+            instrumentation=fake_instrumentation()[0],
         )
         request = make_request()
         await store.claim(request, request_digest(request))
@@ -288,6 +302,7 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             processor=processor,
             callback_client=callback,
             callback_masker=fake_callback_masker(),
+            instrumentation=fake_instrumentation()[0],
         )
         request = make_request()
         await store.claim(request, request_digest(request))
@@ -311,11 +326,13 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
         store = InMemoryRequestCheckpointStore()
         processor = AsyncMock()
         callback = AsyncMock()
+        instrumentation, sink = fake_instrumentation()
         transport = AsyncChatTransport(
             checkpoint_store=store,
             processor=processor,
             callback_client=callback,
             callback_masker=fake_callback_masker(),
+            instrumentation=instrumentation,
         )
         request = make_request(
             deadline_at=datetime.now(timezone.utc) - timedelta(seconds=1)
@@ -327,6 +344,15 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
         self.assertEqual(payload["status"], "failed")
         self.assertEqual(payload["error"]["code"], "LLM_TIMEOUT")
         processor.assert_not_awaited()
+        request_events = [
+            event for event in sink.runtime_events
+            if event.stage is RuntimeStage.REQUEST_PROCESSING
+        ]
+        self.assertEqual(
+            [event.status for event in request_events],
+            [RuntimeStatus.STARTED, RuntimeStatus.FAILED],
+        )
+        self.assertEqual(request_events[-1].reason_code, "request_timeout")
 
 
 class V2EndpointTests(IsolatedAsyncioTestCase):

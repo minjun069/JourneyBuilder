@@ -23,7 +23,7 @@ from core.monitoring import (
 )
 
 
-RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.1"
+RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.2"
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 _PSEUDONYMOUS_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -37,6 +37,7 @@ _FOUNDATION_EVENT_TYPES = (
 
 
 class RuntimeStage(str, Enum):
+    REQUEST_PROCESSING = "request_processing"
     PLANNER = "planner"
     PLAN_VALIDATION = "plan_validation"
     BINDING_RESOLUTION = "binding_resolution"

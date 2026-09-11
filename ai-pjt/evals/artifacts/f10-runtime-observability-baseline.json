@@ -1,0 +1,223 @@
+{
+  "aggregation_success_rate": {
+    "denominator": 2,
+    "numerator": 2,
+    "value": 1.0
+  },
+  "callback_delivery": {
+    "attempts": 8,
+    "eventually_succeeded": 2,
+    "exhausted": 1,
+    "failed_attempts": 2,
+    "latency_ms": {
+      "count": 8,
+      "p50": 31.0,
+      "p90": 50.0,
+      "p95": 50.0
+    },
+    "requests": 3,
+    "retried_requests": 2,
+    "succeeded_attempts": 2,
+    "timeout_attempts": 4
+  },
+  "fallback_request_rate": {
+    "denominator": 3,
+    "numerator": 1,
+    "value": 0.3333333333333333
+  },
+  "measurement_disposition": "baseline_only",
+  "request_success_rate": {
+    "denominator": 3,
+    "numerator": 2,
+    "value": 0.6666666666666666
+  },
+  "request_timeout_count": 1,
+  "requests": 3,
+  "schema_version": "f10-runtime-observability-baseline-v1",
+  "stages": {
+    "aggregation": {
+      "blocked": 0,
+      "failed": 0,
+      "latency_ms": {
+        "count": 2,
+        "p50": 9.0,
+        "p90": 9.8,
+        "p95": 9.9
+      },
+      "reason_counts": {},
+      "succeeded": 2,
+      "success_rate": {
+        "denominator": 2,
+        "numerator": 2,
+        "value": 1.0
+      },
+      "total": 2
+    },
+    "artifact_validation": {
+      "blocked": 0,
+      "failed": 0,
+      "latency_ms": {
+        "count": 2,
+        "p50": 4.5,
+        "p90": 4.9,
+        "p95": 4.95
+      },
+      "reason_counts": {},
+      "succeeded": 2,
+      "success_rate": {
+        "denominator": 2,
+        "numerator": 2,
+        "value": 1.0
+      },
+      "total": 2
+    },
+    "binding_resolution": {
+      "blocked": 0,
+      "failed": 0,
+      "latency_ms": {
+        "count": 1,
+        "p50": 2.0,
+        "p90": 2.0,
+        "p95": 2.0
+      },
+      "reason_counts": {},
+      "succeeded": 1,
+      "success_rate": {
+        "denominator": 1,
+        "numerator": 1,
+        "value": 1.0
+      },
+      "total": 1
+    },
+    "dependency_block": {
+      "blocked": 1,
+      "failed": 0,
+      "latency_ms": {
+        "count": 1,
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0
+      },
+      "reason_counts": {
+        "dependency_failed": 1
+      },
+      "succeeded": 0,
+      "success_rate": {
+        "denominator": 1,
+        "numerator": 0,
+        "value": 0.0
+      },
+      "total": 1
+    },
+    "plan_validation": {
+      "blocked": 0,
+      "failed": 0,
+      "latency_ms": {
+        "count": 1,
+        "p50": 5.0,
+        "p90": 5.0,
+        "p95": 5.0
+      },
+      "reason_counts": {},
+      "succeeded": 1,
+      "success_rate": {
+        "denominator": 1,
+        "numerator": 1,
+        "value": 1.0
+      },
+      "total": 1
+    },
+    "planner": {
+      "blocked": 0,
+      "failed": 0,
+      "latency_ms": {
+        "count": 1,
+        "p50": 10.0,
+        "p90": 10.0,
+        "p95": 10.0
+      },
+      "reason_counts": {},
+      "succeeded": 1,
+      "success_rate": {
+        "denominator": 1,
+        "numerator": 1,
+        "value": 1.0
+      },
+      "total": 1
+    },
+    "request_processing": {
+      "blocked": 0,
+      "failed": 1,
+      "latency_ms": {
+        "count": 3,
+        "p50": 100.0,
+        "p90": 180.0,
+        "p95": 189.99999999999997
+      },
+      "reason_counts": {
+        "request_timeout": 1
+      },
+      "succeeded": 2,
+      "success_rate": {
+        "denominator": 3,
+        "numerator": 2,
+        "value": 0.6666666666666666
+      },
+      "total": 3
+    },
+    "task_execution": {
+      "blocked": 0,
+      "failed": 2,
+      "latency_ms": {
+        "count": 4,
+        "p50": 22.5,
+        "p90": 28.500000000000004,
+        "p95": 29.25
+      },
+      "reason_counts": {
+        "tool_dependency_unavailable": 1,
+        "tool_timeout": 1
+      },
+      "succeeded": 2,
+      "success_rate": {
+        "denominator": 4,
+        "numerator": 2,
+        "value": 0.5
+      },
+      "total": 4
+    }
+  },
+  "task_outcomes": {
+    "blocked": 1,
+    "by_executor": {
+      "dependency_block": {
+        "blocked": 1,
+        "completed": 0,
+        "failed": 0
+      },
+      "fallback": {
+        "blocked": 0,
+        "completed": 1,
+        "failed": 0
+      },
+      "get_dashboard_metric": {
+        "blocked": 0,
+        "completed": 0,
+        "failed": 2
+      },
+      "qa": {
+        "blocked": 0,
+        "completed": 1,
+        "failed": 0
+      }
+    },
+    "completed": 2,
+    "completion_rate": {
+      "denominator": 5,
+      "numerator": 2,
+      "value": 0.4
+    },
+    "failed": 2,
+    "total": 5
+  }
+}

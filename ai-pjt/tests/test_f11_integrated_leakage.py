@@ -484,6 +484,7 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
             processor=processor,
             callback_client=callback_client,
             callback_masker=CallbackPayloadMasker(pseudonym_key=TEST_KEY),
+            instrumentation=instrumentation,
         )
         await store.claim(request, request_digest(request))
 
@@ -561,6 +562,7 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
             processor=processor,
             callback_client=callback_client,
             callback_masker=CallbackPayloadMasker(pseudonym_key=TEST_KEY),
+            instrumentation=instrumentation,
         )
         await store.claim(request, request_digest(request))
 
