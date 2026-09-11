@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import logging
+import traceback
 from typing import Any, Protocol
 
 from core.masking import MaskingPolicy, MaskingSink, mask_payload
@@ -28,6 +29,64 @@ def mask_application_log_payload(
         sink=MaskingSink.APPLICATION_LOG,
         policy=policy,
     )
+
+
+_EXCEPTION_MESSAGE_LIMIT = 1000
+_EXCEPTION_TRACEBACK_LIMIT = 8000
+
+
+def masked_exception_fields(
+    error: BaseException,
+    *,
+    pseudonym_key: bytes | None = None,
+    **context: Any,
+) -> dict[str, Any]:
+    """Serialize one caught exception into APPLICATION_LOG-safe log fields.
+
+    ``str(error)`` and the traceback can echo model input (a pydantic
+    ``ValidationError`` quotes the value it rejected), so both go through the
+    application-log masking policy before any handler can see them.  A masking
+    failure degrades to the exception type instead of falling back to raw text.
+    """
+
+    fields: dict[str, Any] = {
+        **context,
+        "error_type": type(error).__name__,
+        "error_module": type(error).__module__,
+    }
+    try:
+        fields["error_message"] = str(error)[:_EXCEPTION_MESSAGE_LIMIT]
+        fields["error_traceback"] = "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        )[-_EXCEPTION_TRACEBACK_LIMIT:]
+    except Exception:  # noqa: BLE001 - diagnostics must never raise
+        fields["error_message"] = "<exception text unavailable>"
+
+    try:
+        key = (
+            pseudonym_key
+            if pseudonym_key is not None
+            else _runtime_pseudonym_key()
+        )
+        masked = mask_application_log_payload(
+            fields,
+            policy=MaskingPolicy(pseudonym_key=key),
+        )
+    except Exception:  # noqa: BLE001 - never fall back to unmasked text
+        return {
+            "error_type": type(error).__name__,
+            "error_module": type(error).__module__,
+            "masking_status": "failed_closed",
+        }
+    if not isinstance(masked, Mapping):
+        return {"masking_status": "failed_closed"}
+    return dict(masked)
+
+
+def _runtime_pseudonym_key() -> bytes:
+    from core.config import settings
+
+    return settings.masking_pseudonym_key_bytes
 
 
 def mask_trace_payload(

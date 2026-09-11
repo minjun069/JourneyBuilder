@@ -151,6 +151,10 @@ class Settings:
             active_environ.get("AI_CALLBACK_TIMEOUT_SECONDS", "5")
         )
 
+        # 기본값을 두어 compose 에 필수 env 를 늘리지 않는다. 필수 변수를 추가하면
+        # 서버 app.env 드리프트로 deploy 잡이 사전 점검에서 막힌다.
+        self.log_level = active_environ.get("LOG_LEVEL", "INFO").strip().upper()
+
         self.langfuse_enabled = _read_bool(
             "LANGFUSE_ENABLED", False, active_environ
         )
