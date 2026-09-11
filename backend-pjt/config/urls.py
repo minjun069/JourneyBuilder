@@ -28,5 +28,6 @@ urlpatterns = [
     path('api/v1/auth/', include('accounts.urls')),
     path('api/v1/', include('consulting.urls')),
     path('api/v1/', include('reports.urls')),
+    path('api/v1/', include('simulations.urls')),
     path('api/v1/', include('community.urls')),
 ]
