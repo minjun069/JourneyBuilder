@@ -123,7 +123,7 @@ class MonitoringContractTests(unittest.TestCase):
         ):
             self.assertEqual(get_callbacks(), [])
 
-    def test_langfuse_is_fail_closed_before_f11(self):
+    def test_raw_langfuse_callback_is_fail_closed(self):
         with patch.dict(
             os.environ,
             {
@@ -132,10 +132,10 @@ class MonitoringContractTests(unittest.TestCase):
                 "LANGSMITH_TRACING": "false",
             },
         ):
-            with self.assertRaisesRegex(TraceExportBlockedError, "F11"):
+            with self.assertRaisesRegex(TraceExportBlockedError, "bypasses"):
                 get_callbacks()
 
-    def test_automatic_langsmith_tracing_is_fail_closed_before_f11(self):
+    def test_automatic_langsmith_tracing_is_fail_closed(self):
         with patch.dict(
             os.environ,
             {
@@ -144,7 +144,7 @@ class MonitoringContractTests(unittest.TestCase):
                 "LANGSMITH_TRACING": "false",
             },
         ):
-            with self.assertRaisesRegex(TraceExportBlockedError, "F11"):
+            with self.assertRaisesRegex(TraceExportBlockedError, "bypasses"):
                 get_callbacks()
 
 

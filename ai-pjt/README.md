@@ -8,7 +8,11 @@
 - Container port: 8001
 - Application command: `uvicorn main:app --host 0.0.0.0 --port 8001`
 - Required runtime dependency: PostgreSQL
-- Optional external dependencies: LLM provider, Backend callback, Langfuse
+- Optional external dependencies: LLM provider, Backend callback
+
+Langfuse·LangSmith의 model callback tracing은 typed masking 경계를 우회하므로
+활성화하지 않는다. `LANGFUSE_ENABLED`나 자동 LangSmith tracing 환경변수가 켜져
+있으면 서비스는 요청을 받기 전에 startup을 실패시킨다.
 
 `requirements.txt`는 직접 의존성의 호환 범위를 사람이 관리한다. `requirements.lock`은 Python 3.13/Linux에서 해석한 직접·전이 의존성 전체와 배포 파일 hash를 고정하며 Docker와 CI가 설치한다.
 
@@ -39,7 +43,7 @@ uv pip compile \
 | 조건부 필수 | `GOOGLE_API_KEY` | `LLM_PROVIDER=gemini`일 때 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/v2/chat[/stream]` request와 Backend callback에 같은 bearer로 사용 |
-| legacy 내부 전용 | `AI_CALLBACK_SECRET` | 외부 route가 제거된 v1 helper의 격리 테스트 호환값. `/chat[/stream]`은 설정과 무관하게 410 반환 |
+| legacy 설정 호환 | `AI_CALLBACK_SECRET` | 읽기만 하며 endpoint에서는 사용하지 않음. 구형 `/chat[/stream]`은 body·header와 무관하게 항상 410 반환 |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
 | 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.30 |
 | 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM`, `LANGFUSE_*` | retired 인덱스 30일 보관, embedding 차원, 관측 조정값 |

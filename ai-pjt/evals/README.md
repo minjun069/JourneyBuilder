@@ -9,7 +9,9 @@
 상태다. `build_graph`는 adapter를 필수로 받으며 planner·plan
 검증·binding·task·artifact·dependency·aggregation·Agent/tool producer가 typed
 event를 전송한다. callback용 adapter API는 후속 transport 통합에서 같은 port에
-연결할 수 있다. F11-T03의 `MaskedInstrumentationSink`는 production 직렬화 경계에서
+연결되어 각 HTTP 성공·실패·timeout 시도를 같은 correlation으로 기록한다. terminal
+callback은 frozen schema 검증 뒤 마스킹된 payload만 checkpoint에 저장하고 동일 값을
+재전송한다. F11-T03의 `MaskedInstrumentationSink`는 production 직렬화 경계에서
 typed event를 trace 정책으로 마스킹한 뒤 structured application log exporter에만
 전달한다. Langfuse·LangSmith exporter는 별도 검토 전까지 활성화하지 않는다.
 

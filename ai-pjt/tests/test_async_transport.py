@@ -7,6 +7,8 @@ from unittest.mock import patch
 
 import httpx
 
+from core.monitoring import OperationStage, OperationStatus
+from tests.instrumentation import fake_callback_masker, fake_instrumentation
 from transport.contracts import (
     ChatAccepted,
     ChatV2Request,
@@ -16,6 +18,7 @@ from transport.contracts import (
 from transport.runtime import (
     AsyncChatTransport,
     CallbackClient,
+    CallbackDeliveryContext,
     ExecutionBudget,
     InMemoryRequestCheckpointStore,
     request_digest,
@@ -90,6 +93,7 @@ class FeatureControlContractTests(IsolatedAsyncioTestCase):
 class CallbackClientTests(IsolatedAsyncioTestCase):
     async def test_retryable_failures_use_four_attempts_and_same_payload(self):
         received = []
+        instrumentation, sink = fake_instrumentation()
 
         def handler(request):
             received.append((request.headers["Authorization"], request.content))
@@ -101,6 +105,7 @@ class CallbackClientTests(IsolatedAsyncioTestCase):
         client = CallbackClient(
             url="http://backend/api/v2/internal/ai/callback/",
             bearer_token="test-token",
+            instrumentation=instrumentation,
             sleeper=sleeper,
             jitter=lambda: 0,
             client_factory=lambda **kwargs: httpx.AsyncClient(
@@ -110,7 +115,10 @@ class CallbackClientTests(IsolatedAsyncioTestCase):
         )
         payload = {"request_id": "ai_req_transport", "status": "completed"}
 
-        await client.send(payload)
+        await client.send(
+            payload,
+            context=CallbackDeliveryContext.from_request(make_request()),
+        )
 
         self.assertEqual(len(received), 4)
         self.assertEqual({body for _, body in received}, {received[0][1]})
@@ -119,9 +127,23 @@ class CallbackClientTests(IsolatedAsyncioTestCase):
             [call.args[0] for call in sleeper.await_args_list],
             [1, 2, 4],
         )
+        callback_events = [
+            event for event in sink.baseline_events
+            if event.stage is OperationStage.CALLBACK
+        ]
+        self.assertEqual(
+            [event.status for event in callback_events],
+            [
+                OperationStatus.FAILED,
+                OperationStatus.FAILED,
+                OperationStatus.FAILED,
+                OperationStatus.SUCCEEDED,
+            ],
+        )
 
     async def test_non_retryable_callback_response_stops_immediately(self):
         attempts = 0
+        instrumentation, sink = fake_instrumentation()
 
         def handler(request):
             nonlocal attempts
@@ -132,6 +154,7 @@ class CallbackClientTests(IsolatedAsyncioTestCase):
         client = CallbackClient(
             url="http://backend/api/v2/internal/ai/callback/",
             bearer_token="test-token",
+            instrumentation=instrumentation,
             sleeper=AsyncMock(),
             client_factory=lambda **kwargs: httpx.AsyncClient(
                 transport=transport,
@@ -140,8 +163,21 @@ class CallbackClientTests(IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(httpx.HTTPStatusError):
-            await client.send({"status": "completed"})
+            await client.send(
+                {"status": "completed"},
+                context=CallbackDeliveryContext.from_request(make_request()),
+            )
         self.assertEqual(attempts, 1)
+        self.assertEqual(sink.baseline_events[0].status, OperationStatus.FAILED)
+        self.assertEqual(sink.baseline_events[0].error_code, "callback_http_401")
+
+    def test_callback_client_rejects_missing_instrumentation(self):
+        with self.assertRaises(TypeError):
+            CallbackClient(
+                url="http://backend/api/v2/internal/ai/callback/",
+                bearer_token="test-token",
+                instrumentation=None,  # type: ignore[arg-type]
+            )
 
 
 class RequestCheckpointTests(IsolatedAsyncioTestCase):
@@ -176,6 +212,15 @@ class RequestCheckpointTests(IsolatedAsyncioTestCase):
 
 
 class AsyncChatTransportTests(IsolatedAsyncioTestCase):
+    def test_transport_rejects_missing_callback_masker(self):
+        with self.assertRaises(TypeError):
+            AsyncChatTransport(
+                checkpoint_store=InMemoryRequestCheckpointStore(),
+                processor=AsyncMock(),
+                callback_client=AsyncMock(),
+                callback_masker=None,  # type: ignore[arg-type]
+            )
+
     async def test_accept_replay_schedules_graph_only_once(self):
         store = InMemoryRequestCheckpointStore()
         processor = AsyncMock(return_value={"response": "완료", "action": None})
@@ -184,6 +229,7 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             checkpoint_store=store,
             processor=processor,
             callback_client=callback,
+            callback_masker=fake_callback_masker(),
         )
         scheduled = []
         request = make_request()
@@ -203,6 +249,7 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             checkpoint_store=store,
             processor=processor,
             callback_client=callback,
+            callback_masker=fake_callback_masker(),
         )
         request = make_request()
         await store.claim(request, request_digest(request))
@@ -216,6 +263,50 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
         checkpoint = await store.get(request.request_id)
         self.assertTrue(checkpoint.callback_delivered)
 
+    async def test_callback_is_masked_before_checkpoint_and_delivery(self):
+        store = InMemoryRequestCheckpointStore()
+        processor = AsyncMock(return_value={
+            "response": "연락처 010-9876-5432로 안내했습니다.",
+            "step_id": "basic-info",
+            "action": {
+                "type": "form_change",
+                "target": "draft_form",
+                "user_requested": False,
+                "confidence": 0.9,
+                "changes": [{
+                    "section": "basic_info",
+                    "path": "monthly_income",
+                    "operation": "set",
+                    "value": 3_000_000,
+                    "reason": "사용자 요청",
+                }],
+            },
+        })
+        callback = AsyncMock()
+        transport = AsyncChatTransport(
+            checkpoint_store=store,
+            processor=processor,
+            callback_client=callback,
+            callback_masker=fake_callback_masker(),
+        )
+        request = make_request()
+        await store.claim(request, request_digest(request))
+
+        terminal = await transport.run(request)
+        checkpoint = await store.get(request.request_id)
+
+        self.assertNotIn("010-9876-5432", str(terminal))
+        self.assertEqual(
+            terminal["output"]["action"]["changes"][0]["value"],
+            3_000_000,
+        )
+        self.assertEqual(checkpoint.terminal_payload, terminal)
+        self.assertEqual(callback.send.await_args.args[0], terminal)
+        self.assertEqual(
+            callback.send.await_args.kwargs["context"].plan_id,
+            f"plan-{request.request_id}",
+        )
+
     async def test_expired_request_emits_safe_timeout_callback(self):
         store = InMemoryRequestCheckpointStore()
         processor = AsyncMock()
@@ -224,6 +315,7 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             checkpoint_store=store,
             processor=processor,
             callback_client=callback,
+            callback_masker=fake_callback_masker(),
         )
         request = make_request(
             deadline_at=datetime.now(timezone.utc) - timedelta(seconds=1)

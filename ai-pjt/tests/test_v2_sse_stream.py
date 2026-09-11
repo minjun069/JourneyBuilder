@@ -7,6 +7,7 @@ from unittest.mock import patch
 import httpx
 
 from main import app, _stream_v2_chat_events
+from tests.instrumentation import fake_callback_masker
 from transport.contracts import ChatV2Request
 
 
@@ -94,6 +95,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FakeV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
+                fake_callback_masker(),
             )
         ]
 
@@ -114,10 +116,11 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FailingV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
+                fake_callback_masker(),
             )
         ]
 
-        self.assertEqual([name for name, _ in frames], ["start", "delta", "error"])
+        self.assertEqual([name for name, _ in frames], ["start", "error"])
         terminal = frames[-1][1]
         self.assertEqual(terminal["status"], "failed")
         self.assertEqual(terminal["error"]["code"], "INTERNAL_ERROR")
@@ -128,6 +131,7 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         app.state.chat_graph = FakeV2Graph()
         app.state.context_api = FakeContextAPI()
+        app.state.callback_masker = fake_callback_masker()
 
     async def _post(self, payload, authorization=None):
         headers = {"Accept": "text/event-stream"}

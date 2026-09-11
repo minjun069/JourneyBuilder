@@ -16,7 +16,7 @@ from tests.test_graph_execution import (
     FakePlanner,
     all_agent_graphs,
 )
-from tests.instrumentation import fake_instrumentation
+from tests.instrumentation import fake_callback_masker, fake_instrumentation
 from transport.contracts import ChatV2Request
 from transport.runtime import (
     AsyncChatTransport,
@@ -80,6 +80,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             checkpoint_store=store,
             processor=processor,
             callback_client=callback,
+            callback_masker=fake_callback_masker(),
         )
         await store.claim(request, request_digest(request))
         first = await transport.run(request)
@@ -217,7 +218,8 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         self.assertIn("선행 작업", terminal["output"]["response"])
         self.assertIn("qa 응답", terminal["output"]["response"])
         processor.assert_awaited_once()
-        callback.send.assert_awaited_once_with(terminal)
+        callback.send.assert_awaited_once()
+        self.assertEqual(callback.send.await_args.args[0], terminal)
 
         values = await context_api.read_values(
             ContextScope(request.session_id, request.thread_id)
