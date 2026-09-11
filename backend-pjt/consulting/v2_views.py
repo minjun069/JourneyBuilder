@@ -14,10 +14,8 @@ from rest_framework.views import APIView
 from .ai_lifecycle import (
     LifecycleError,
     RedisLifecycleStore,
-    bind_terminal_callback,
     build_v2_ai_payload,
     canonical_digest,
-    create_v2_assistant_message,
     decide_change,
     dispatch_v2_ai_request,
     expire_if_due,
@@ -29,6 +27,11 @@ from .ai_lifecycle import (
     validate_terminal_callback,
     v2_success,
     verify_service_bearer,
+)
+from .ai_security import (
+    finalize_expired_request,
+    finalize_terminal_callback,
+    recover_terminal_state,
 )
 from .models import ConsultingSession, Message
 from .sse import EventStreamRenderer
@@ -234,7 +237,13 @@ class V2MessageStreamView(V2APIView):
                         'IDEMPOTENCY_CONFLICT',
                         '같은 idempotency key의 요청 내용 또는 전송 방식이 다릅니다.',
                     )
-                state = store.get_request(replay.get('request_id'))
+                cached_state = store.get_request(replay.get('request_id'))
+                state = recover_terminal_state(
+                    replay.get('request_id'),
+                    state=cached_state,
+                    expected_session_id=session.id,
+                    expected_user_id=request.user.id,
+                )
                 if state is None:
                     raise LifecycleError(
                         503,
@@ -242,6 +251,8 @@ class V2MessageStreamView(V2APIView):
                         'AI 작업 상태를 사용할 수 없습니다.',
                         True,
                     )
+                if state is not cached_state:
+                    store.save_terminal(state)
                 if state['status'] == 'processing':
                     raise LifecycleError(
                         409,
@@ -320,7 +331,13 @@ class V2PollingView(V2APIView):
             )
         try:
             store = RedisLifecycleStore()
-            state = store.get_request(request_id)
+            cached_state = store.get_request(request_id)
+            state = recover_terminal_state(
+                request_id,
+                state=cached_state,
+                expected_session_id=session.id,
+                expected_user_id=request.user.id,
+            )
             if (
                 state is None
                 or state.get('session_id') != session.id
@@ -331,8 +348,11 @@ class V2PollingView(V2APIView):
                     'AI_REQUEST_NOT_FOUND',
                     'AI 작업을 찾을 수 없습니다.',
                 )
+            if state is not cached_state:
+                store.save_terminal(state)
             state, expired = expire_if_due(state)
             if expired:
+                state = finalize_expired_request(state)
                 store.save_terminal(state)
             data = {'request_id': request_id, 'status': state['status']}
             if state['status'] == 'processing':
@@ -371,47 +391,17 @@ class V2CallbackView(V2APIView):
             store = RedisLifecycleStore()
             state = store.get_request(payload['request_id'])
             if state is None:
-                raise LifecycleError(
-                    404,
-                    'CALLBACK_REQUEST_NOT_FOUND',
-                    'callback 대상 AI 작업을 찾을 수 없습니다.',
+                state = recover_terminal_state(
+                    payload['request_id'],
                 )
-            state, replay = bind_terminal_callback(state, payload)
-            if replay:
-                return Response(v2_success({
-                    'request_id': state['request_id'],
-                    'status': state['status'],
-                    **(
-                        {'message_id': state['assistant_message_id']}
-                        if state.get('assistant_message_id') else {}
-                    ),
-                }))
-            if payload['status'] == 'completed':
-                session = ConsultingSession.objects.filter(
-                    id=payload['session_id']
-                ).first()
-                if session is None:
+                if state is None:
                     raise LifecycleError(
                         404,
                         'CALLBACK_REQUEST_NOT_FOUND',
                         'callback 대상 AI 작업을 찾을 수 없습니다.',
                     )
-                message = create_v2_assistant_message(
-                    session,
-                    payload,
-                    state['step_id'],
-                )
-                state = {
-                    **state,
-                    'status': 'completed',
-                    'assistant_message_id': message.id,
-                }
-            else:
-                state = {
-                    **state,
-                    'status': 'failed',
-                    'error': payload['error'],
-                }
+            finalized = finalize_terminal_callback(state, payload)
+            state = finalized.state
             store.save_terminal(state)
             return Response(v2_success({
                 'request_id': state['request_id'],

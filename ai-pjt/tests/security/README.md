@@ -73,3 +73,9 @@ python3 -m unittest tests.security.test_service_tool_security_contract -v
 `test_f12_service_auth.py`는 `F12-AUTH-001`, `F12-AUTH-003`을 실제 FastAPI `/v2/chat`에 입력한다. bearer가 없으면 request schema 해석과 graph 예약 전 401로 끝나고, 정확한 bearer와 lifecycle fixture 본문은 202로 접수되는지 확인한다. `/chat`, `/chat/stream`은 입력 내용이나 legacy secret과 무관하게 410을 반환하며 graph를 호출하지 않는다.
 
 Backend의 `consulting/test_f12_service_auth.py`는 `F12-AUTH-002`를 실제 DRF callback view에 연결해 잘못된 bearer가 callback schema 검증과 Redis 조회 전에 거부되는지 확인한다. 구형 `/api/ai/callback[/]`도 무조건 410으로 종료되는지를 함께 고정한다.
+
+### F12-T03 production 소유권·재전송 소비자
+
+`test_f12_replay_security.py`는 `F12-RPL-001`, `F12-RPL-002`, `F12-RPL-005`를 AI request checkpoint와 callback client에 연결한다. 같은 request digest는 graph를 한 번만 예약하고, 다른 digest는 원 요청을 보존한 채 충돌하며, callback 재시도 중 원본 객체가 바뀌어도 처음 확정한 JSON bytes만 네 번까지 전송하는지 확인한다.
+
+Backend의 `consulting/test_f12_callback_security.py`는 나머지 T03 사례를 실제 PostgreSQL transaction과 DRF view에 연결한다. session owner·원 user message·thread 결합이 맞는 최초 callback만 assistant message와 고유 terminal receipt를 함께 만들고, 동일·동시 재전송은 그 결과 하나를 공유한다. 다른 digest와 expired tombstone은 409이며, DB commit 뒤 Redis 저장이 실패하거나 Redis 상태가 유실돼도 callback·polling이 receipt에서 같은 결과를 복구한다.

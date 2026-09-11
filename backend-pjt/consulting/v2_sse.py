@@ -8,12 +8,11 @@ from django.conf import settings
 
 from .ai_lifecycle import (
     CONTRACT_VERSION,
-    LifecycleError,
-    create_v2_assistant_message,
     isoformat_utc,
     utc_now,
     validate_terminal_callback,
 )
+from .ai_security import finalize_terminal_callback
 from .sse import SSEProtocolError, aiter_sse_events, encode_sse
 
 
@@ -94,15 +93,27 @@ def _browser_error(state, error):
     }
 
 
-async def _save_failed(store, state, error):
-    terminal_state = {
-        **state,
+def _failed_callback(state, error):
+    return {
+        'contract_version': CONTRACT_VERSION,
+        'request_id': state['request_id'],
+        'session_id': state['session_id'],
+        'thread_id': state['thread_id'],
         'status': 'failed',
         'completed_at': isoformat_utc(utc_now()),
         'error': error,
     }
-    await sync_to_async(store.save_terminal, thread_sensitive=True)(terminal_state)
-    return terminal_state
+
+
+async def _finalize(state, payload):
+    return await sync_to_async(
+        finalize_terminal_callback,
+        thread_sensitive=True,
+    )(state, payload)
+
+
+async def _save_terminal(store, state):
+    await sync_to_async(store.save_terminal, thread_sensitive=True)(state)
 
 
 async def proxy_v2_ai_stream(session, payload, state, store):
@@ -135,8 +146,9 @@ async def proxy_v2_ai_stream(session, payload, state, store):
             if event_name == 'error':
                 if validated['status'] != 'failed':
                     raise SSEProtocolError('error event must have failed status')
-                await _save_failed(store, state, validated['error'])
+                finalized = await _finalize(state, validated)
                 terminal = True
+                await _save_terminal(store, finalized.state)
                 yield encode_sse('error', _browser_error(state, validated['error']))
                 return
 
@@ -150,18 +162,12 @@ async def proxy_v2_ai_stream(session, payload, state, store):
                 output = {**output, 'response': response}
                 validated = {**validated, 'output': output}
 
-            message = await sync_to_async(
-                create_v2_assistant_message,
-                thread_sensitive=True,
-            )(session, validated, state['step_id'])
-            terminal_state = {
-                **state,
-                'status': 'completed',
-                'completed_at': validated['completed_at'],
-                'assistant_message_id': message.id,
-            }
-            await sync_to_async(store.save_terminal, thread_sensitive=True)(terminal_state)
+            finalized = await _finalize(state, validated)
             terminal = True
+            await _save_terminal(store, finalized.state)
+            message = finalized.message
+            if message is None:
+                raise RuntimeError('completed terminal receipt has no assistant message')
             yield encode_sse('done', {
                 'contract_version': CONTRACT_VERSION,
                 'request_id': state['request_id'],
@@ -174,11 +180,14 @@ async def proxy_v2_ai_stream(session, payload, state, store):
     except asyncio.CancelledError:
         logger.info('Django v2 SSE 클라이언트 연결 종료', extra={'request_id': state['request_id']})
         if not terminal:
-            await _save_failed(store, state, {
+            failed = _failed_callback(state, {
                 'code': 'UPSTREAM_UNAVAILABLE',
                 'message': 'AI 스트림 연결이 종료되었습니다.',
                 'retryable': True,
             })
+            finalized = await _finalize(state, failed)
+            terminal = True
+            await _save_terminal(store, finalized.state)
         raise
     except Exception:
         logger.exception('Django v2 SSE 프록시 실패', extra={'request_id': state['request_id']})
@@ -188,7 +197,15 @@ async def proxy_v2_ai_stream(session, payload, state, store):
             'retryable': True,
         }
         if not terminal:
-            await _save_failed(store, state, error)
+            try:
+                finalized = await _finalize(state, _failed_callback(state, error))
+                terminal = True
+                await _save_terminal(store, finalized.state)
+            except Exception:
+                logger.exception(
+                    'Django v2 SSE 실패 상태 확정 실패',
+                    extra={'request_id': state['request_id']},
+                )
         yield encode_sse('error', _browser_error(state, error))
 
 

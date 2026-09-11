@@ -129,8 +129,10 @@ lifecycle 구현에는 다음 항목이 남아 있다.
 5. `/health` 또는 `/ready` endpoint를 추가한다면 process·dependency 의미를 분리하고 `readiness.py`와 서로 다른 판정을 만들지 않는다.
 
 정상 다중 컨테이너 PostgreSQL 연결, secret 기본 거부와 전체 G1 runtime 판정은
-완료됐다. 위 항목은 readiness가 아니라 아직 구현되지 않은 v2 Backend lifecycle의
-후속 인수 조건이다.
+완료됐다. v2 callback과 SSE terminal 결과는 `0006_ai_terminal_receipt` migration의
+`request_id` 고유 receipt와 assistant message를 한 transaction으로 확정한다. callback,
+polling과 SSE replay는 Redis terminal 갱신이 실패하거나 상태가 유실되면 이 receipt에서
+동일 결과를 복구한다. 위의 남은 항목은 readiness·운영 인수 조건이다.
 
 ## P02 당시 검증 결과
 

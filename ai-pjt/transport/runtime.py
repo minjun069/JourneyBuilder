@@ -368,14 +368,23 @@ class CallbackClient:
         self._client_factory = client_factory
 
     async def send(self, payload: Mapping[str, Any]) -> None:
+        frozen_payload = json.dumps(
+            dict(payload),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
         last_error: Exception | None = None
         for attempt in range(1, self._max_attempts + 1):
             try:
                 async with self._client_factory(timeout=self._timeout_seconds) as client:
                     response = await client.post(
                         self._url,
-                        json=dict(payload),
-                        headers={"Authorization": f"Bearer {self._bearer_token}"},
+                        content=frozen_payload,
+                        headers={
+                            "Authorization": f"Bearer {self._bearer_token}",
+                            "Content-Type": "application/json",
+                        },
                     )
                 if response.status_code in CALLBACK_RETRYABLE_STATUSES:
                     raise httpx.HTTPStatusError(

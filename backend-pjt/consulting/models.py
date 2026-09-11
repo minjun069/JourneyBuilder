@@ -100,6 +100,44 @@ class Message(models.Model):
         return {'role': self.role, 'content': self.content}
 
 
+class AITerminalReceipt(models.Model):
+    class Status(models.TextChoices):
+        COMPLETED = 'completed', '완료'
+        FAILED = 'failed', '실패'
+        EXPIRED = 'expired', '만료'
+
+    request_id = models.CharField(max_length=128, unique=True)
+    session = models.ForeignKey(
+        ConsultingSession,
+        on_delete=models.CASCADE,
+        related_name='ai_terminal_receipts',
+    )
+    thread_id = models.CharField(max_length=255)
+    step_id = models.CharField(max_length=100)
+    user_message = models.ForeignKey(
+        Message,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    assistant_message = models.ForeignKey(
+        Message,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    callback_digest = models.CharField(max_length=64, blank=True, default='')
+    status = models.CharField(max_length=10, choices=Status.choices)
+    completed_at = models.DateTimeField()
+    error = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'consulting_ai_terminal_receipts'
+
+
 # ──────────────────────────────────────────────────────────
 # 사용자 정보 입력 처리
 # ──────────────────────────────────────────────────────────
