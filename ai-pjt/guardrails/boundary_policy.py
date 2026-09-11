@@ -136,6 +136,113 @@ def evaluate_financial_output(payload: Any) -> BoundaryDecision:
     )
 
 
+def evaluate_session_access(payload: Mapping[str, Any]) -> BoundaryDecision:
+    """Allow only the authenticated user's current session projection."""
+
+    current_user = payload.get("current_user")
+    requested_user = payload.get("requested_user", current_user)
+    current_session = payload.get("current_session")
+    requested_session = payload.get("requested_session", current_session)
+    if (
+        not isinstance(current_user, str)
+        or requested_user != current_user
+        or requested_session != current_session
+    ):
+        return BoundaryDecision(
+            "block",
+            "SESSION_BOUNDARY_VIOLATION",
+            ("safe_refusal", "audit_security_event"),
+        )
+    return BoundaryDecision(
+        "allow",
+        "CURRENT_SESSION_ACCESS_ALLOWED",
+        ("answer_with_current_session_data",),
+    )
+
+
+def evaluate_callback_payload(payload: Mapping[str, Any]) -> BoundaryDecision:
+    """Apply the production bearer, binding, expiry, and replay invariants."""
+
+    from transport.contracts import ServiceContractError, verify_service_authorization
+
+    try:
+        verify_service_authorization(
+            payload.get("authorization"),
+            str(payload.get("expected_token", "")),
+        )
+    except ServiceContractError:
+        return BoundaryDecision(
+            "block",
+            "CALLBACK_AUTH_INVALID",
+            ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
+        )
+    if payload.get("supplied_binding") != payload.get("expected_binding"):
+        return BoundaryDecision(
+            "block",
+            "CALLBACK_BINDING_MISMATCH",
+            ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
+        )
+    if payload.get("expired") is True:
+        return BoundaryDecision(
+            "block",
+            "CALLBACK_EXPIRED",
+            ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
+        )
+    if payload.get("terminal_exists") is True:
+        if payload.get("stored_digest") == payload.get("request_digest"):
+            return BoundaryDecision(
+                "allow",
+                "CALLBACK_REPLAY_IDEMPOTENT",
+                ("return_existing_result", "no_duplicate_side_effect"),
+            )
+        return BoundaryDecision(
+            "block",
+            "CALLBACK_REPLAY_CONFLICT",
+            ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
+        )
+    return BoundaryDecision(
+        "allow",
+        "CALLBACK_ACCEPTED",
+        ("record_terminal_result",),
+    )
+
+
+def evaluate_resource_usage(payload: Mapping[str, Any]) -> BoundaryDecision:
+    """Enforce the request's concrete input, retry, and tool-call limits."""
+
+    checks = (
+        ("input_tokens", "max_input_tokens"),
+        ("retry_count", "max_retry_count"),
+        ("tool_call_count", "max_tool_call_count"),
+    )
+    invalid = False
+    for used_key, limit_key in checks:
+        used = payload.get(used_key)
+        limit = payload.get(limit_key)
+        if (
+            isinstance(used, bool)
+            or not isinstance(used, int)
+            or isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or used < 0
+            or limit < 0
+            or used > limit
+        ):
+            invalid = True
+            break
+    if invalid:
+        return BoundaryDecision(
+            "block",
+            "RESOURCE_LIMIT_EXCEEDED",
+            ("stop_processing", "audit_limit_violation"),
+        )
+    return BoundaryDecision(
+        "allow",
+        "RESOURCE_USE_ALLOWED",
+        ("process_within_limits",),
+    )
+
+
 def _rag_text(result: Any) -> str:
     chunk = getattr(result, "chunk", None)
     text = getattr(chunk, "text", None)

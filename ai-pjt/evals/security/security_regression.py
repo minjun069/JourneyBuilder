@@ -1,9 +1,4 @@
-"""Run the promoted F13 corpus against its declared deterministic evaluator.
-
-The original P14 cases keep their synthetic inputs and mock evaluator. Routed
-plan cases bind the same corpus to the F13-T01 guardrail core without invoking
-an Agent, tool, model, callback, or production graph.
-"""
+"""Run the F13 corpus against production boundary policies and contracts."""
 
 from __future__ import annotations
 
@@ -22,10 +17,34 @@ if str(AI_ROOT) not in sys.path:
     sys.path.insert(0, str(AI_ROOT))
 
 from core.step_registry import load_step_candidates  # noqa: E402
+from core.masking import MaskingSink  # noqa: E402
+from core.observability_masking import (  # noqa: E402
+    FakeSerializedInstrumentationSink,
+    build_masked_runtime_instrumentation,
+)
+from graph.task_contracts import (  # noqa: E402
+    BindingResolutionError,
+    resolve_task_bindings,
+    seal_validated_artifact,
+    validate_task_result,
+)
+from guardrails.boundary_policy import (  # noqa: E402
+    BoundaryDecision,
+    evaluate_callback_payload,
+    evaluate_financial_output,
+    evaluate_rag_content,
+    evaluate_resource_usage,
+    evaluate_session_access,
+    evaluate_user_message,
+)
 from guardrails.plan_policy import evaluate_route_plan  # noqa: E402
+from tools.catalog import default_tool_definitions  # noqa: E402
+from tools.contracts import ToolAuditEvent  # noqa: E402
+from tools.output_validation import validate_form_update_contract  # noqa: E402
+from tools.registry import validate_json_schema  # noqa: E402
 
 
-SCHEMA_VERSION = "security-regression-v2"
+SCHEMA_VERSION = "security-regression-v3"
 SUITE_PATH = Path(__file__).with_name("cases.json")
 
 SUPPORTED_CATEGORIES = {
@@ -42,6 +61,9 @@ SUPPORTED_CATEGORIES = {
     "dependency_integrity",
     "binding_integrity",
     "route_authorization",
+    "task_identity",
+    "artifact_integrity",
+    "observability_integrity",
 }
 SUPPORTED_DECISIONS = {"allow", "block"}
 SUPPORTED_SEVERITIES = {"critical", "high", "medium", "low"}
@@ -55,12 +77,15 @@ SUPPORTED_SURFACES = {
     "runtime_limits",
     "model_output",
     "route_plan",
+    "task_execution",
+    "task_result",
+    "artifact",
+    "trace_export",
 }
-SUPPORTED_INPUT_KINDS = {"security_signals", "route_plan"}
-SUPPORTED_EVALUATORS = {"mock_policy", "plan_guardrail"}
+SUPPORTED_INPUT_KINDS = {"production_payload"}
+SUPPORTED_EVALUATORS = {"production_policy"}
 EVALUATOR_INPUT_KINDS = {
-    "mock_policy": "security_signals",
-    "plan_guardrail": "route_plan",
+    "production_policy": "production_payload",
 }
 VERSION_KEYS = {"dataset", "model", "prompt", "document", "index", "tool"}
 CASE_ID_PATTERN = re.compile(r"^SEC-[A-Z]+-\d{3}$")
@@ -105,8 +130,8 @@ def validate_suite(suite: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if suite.get("schema_version") != SCHEMA_VERSION:
         errors.append(f"schema_version must be {SCHEMA_VERSION!r}")
-    if suite.get("suite_id") != "AI-F13-T01":
-        errors.append("suite_id must be 'AI-F13-T01'")
+    if suite.get("suite_id") != "AI-F13-T03":
+        errors.append("suite_id must be 'AI-F13-T03'")
     if suite.get("foundation_suite_id") != "AI-P14-D13":
         errors.append("foundation_suite_id must preserve 'AI-P14-D13'")
     baseline_commit = suite.get("baseline_commit")
@@ -115,12 +140,12 @@ def validate_suite(suite: dict[str, Any]) -> list[str]:
         or COMMIT_PATTERN.fullmatch(baseline_commit) is None
     ):
         errors.append("baseline_commit must be a 40-character lowercase commit SHA")
-    if suite.get("execution_scope") != "mock-and-deterministic-core":
-        errors.append(
-            "execution_scope must be 'mock-and-deterministic-core' for F13-T01"
-        )
-    if suite.get("production_binding") != "guardrail-core-only":
-        errors.append("production_binding must remain 'guardrail-core-only'")
+    if suite.get("execution_scope") != "production-boundaries":
+        errors.append("execution_scope must be 'production-boundaries'")
+    if suite.get("production_binding") != (
+        "integrated-input-plan-rag-tool-artifact-output-observability"
+    ):
+        errors.append("production_binding must name the integrated boundaries")
     if suite.get("synthetic_data_only") is not True:
         errors.append("synthetic_data_only must be true")
     for source_name in ("policy_source", "requirements_source"):
@@ -179,7 +204,7 @@ def validate_suite(suite: dict[str, Any]) -> list[str]:
         else:
             seen_ids.add(case_id)
 
-        for key in ("title", "reviewer"):
+        for key in ("title",):
             if not isinstance(case.get(key), str) or not case[key].strip():
                 errors.append(f"{prefix}.{key} must be a non-empty string")
 
@@ -210,24 +235,8 @@ def validate_suite(suite: dict[str, Any]) -> list[str]:
         case_input = case.get("input")
         if not isinstance(case_input, dict):
             errors.append(f"{prefix}.input must be an object")
-        elif input_kind == "security_signals":
-            if not isinstance(case_input.get("signals"), dict):
-                errors.append(f"{prefix}.input.signals must be an object")
-        elif input_kind == "route_plan":
-            if not isinstance(case_input.get("payload"), dict):
-                errors.append(f"{prefix}.input.payload must be a RoutePlan object")
-            if not isinstance(case_input.get("step_id"), str) or not case_input[
-                "step_id"
-            ].strip():
-                errors.append(f"{prefix}.input.step_id must be a non-empty string")
-            capabilities = case_input.get("registered_tool_capabilities", [])
-            if not isinstance(capabilities, list) or not all(
-                isinstance(capability, str) and capability
-                for capability in capabilities
-            ):
-                errors.append(
-                    f"{prefix}.input.registered_tool_capabilities must be strings"
-                )
+        elif not isinstance(case_input.get("payload"), dict):
+            errors.append(f"{prefix}.input.payload must be an object")
 
         expected = case.get("expected")
         if not isinstance(expected, dict):
@@ -260,191 +269,62 @@ def validate_suite(suite: dict[str, Any]) -> list[str]:
     return errors
 
 
-class MockPolicyOracle:
-    """A deterministic fake boundary used only to prove the regression harness."""
+class ProductionSecurityEvaluator:
+    """Drive corpus payloads through the same policies used by production."""
 
-    def evaluate(self, case: dict[str, Any]) -> Decision:
-        category = case["category"]
-        signals = case["input"]["signals"]
-        evaluator = getattr(self, f"_evaluate_{category}")
-        return evaluator(signals)
-
-    @staticmethod
-    def _evaluate_direct_prompt_injection(signals: dict[str, Any]) -> Decision:
-        if signals.get("override_system_instruction") or signals.get("requests_secret"):
-            return Decision(
-                "block",
-                "PROMPT_INJECTION_BLOCKED",
-                ("safe_refusal", "audit_security_event"),
-            )
-        return Decision("allow", "USER_REQUEST_ALLOWED", ("answer_current_request",))
-
-    @staticmethod
-    def _evaluate_cross_session_exfiltration(signals: dict[str, Any]) -> Decision:
-        if not signals.get("same_user") or not signals.get("same_session"):
-            return Decision(
-                "block",
-                "SESSION_BOUNDARY_VIOLATION",
-                ("safe_refusal", "audit_security_event"),
-            )
-        return Decision(
-            "allow",
-            "CURRENT_SESSION_ACCESS_ALLOWED",
-            ("answer_with_current_session_data",),
-        )
-
-    @staticmethod
-    def _evaluate_indirect_rag_injection(signals: dict[str, Any]) -> Decision:
-        if signals.get("rag_instruction_present"):
-            return Decision(
-                "block",
-                "RAG_INSTRUCTION_IGNORED",
-                ("ignore_embedded_instruction", "answer_from_cited_content"),
-            )
-        return Decision(
-            "allow",
-            "RAG_CONTENT_ALLOWED",
-            ("answer_from_cited_content",),
-        )
-
-    @staticmethod
-    def _evaluate_tool_manipulation(signals: dict[str, Any]) -> Decision:
-        checks = (
-            ("tool_allowlisted", "TOOL_NOT_ALLOWLISTED"),
-            ("args_valid", "TOOL_ARGUMENT_INVALID"),
-            ("scope_allowed", "TOOL_SCOPE_DENIED"),
-            ("approval_valid", "TOOL_APPROVAL_REQUIRED"),
-        )
-        for signal, reason_code in checks:
-            if not signals.get(signal):
-                return Decision(
-                    "block",
-                    reason_code,
-                    ("deny_tool_call", "audit_tool_denial"),
-                )
-        return Decision(
-            "allow",
-            "TOOL_CALL_ALLOWED",
-            ("invoke_allowlisted_tool", "audit_tool_call"),
-        )
-
-    @staticmethod
-    def _evaluate_approval_bypass(signals: dict[str, Any]) -> Decision:
-        target = signals.get("target")
-        if target in {"database", "external_side_effect"} and not signals.get("user_approved"):
-            return Decision(
-                "block",
-                "USER_APPROVAL_REQUIRED",
-                ("deny_persistent_change", "preserve_database_state", "audit_approval_denial"),
-            )
-        if (
-            target == "draft_form"
-            and signals.get("user_explicit_request")
-            and signals.get("reversible")
-            and float(signals.get("confidence", 0.0)) >= 0.9
-        ):
-            return Decision(
-                "allow",
-                "REVERSIBLE_DRAFT_ALLOWED",
-                ("apply_reversible_draft", "audit_draft_change"),
-            )
-        return Decision(
-            "block",
-            "FORM_CHANGE_POLICY_BLOCKED",
-            ("deny_form_change", "preserve_database_state"),
-        )
-
-    @staticmethod
-    def _evaluate_callback_integrity(signals: dict[str, Any]) -> Decision:
-        if not signals.get("auth_valid"):
-            return Decision(
-                "block",
-                "CALLBACK_AUTH_INVALID",
-                ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
-            )
-        if not signals.get("binding_valid"):
-            return Decision(
-                "block",
-                "CALLBACK_BINDING_MISMATCH",
-                ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
-            )
-        if signals.get("expired"):
-            return Decision(
-                "block",
-                "CALLBACK_EXPIRED",
-                ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
-            )
-        if signals.get("terminal_exists"):
-            if signals.get("same_digest"):
-                return Decision(
-                    "allow",
-                    "CALLBACK_REPLAY_IDEMPOTENT",
-                    ("return_existing_result", "no_duplicate_side_effect"),
-                )
-            return Decision(
-                "block",
-                "CALLBACK_REPLAY_CONFLICT",
-                ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
-            )
-        return Decision("allow", "CALLBACK_ACCEPTED", ("record_terminal_result",))
-
-    @staticmethod
-    def _evaluate_resource_abuse(signals: dict[str, Any]) -> Decision:
-        over_limit = (
-            signals.get("input_tokens", 0) > signals.get("max_input_tokens", 0)
-            or signals.get("retry_count", 0) > signals.get("max_retry_count", 0)
-            or signals.get("tool_call_count", 0) > signals.get("max_tool_call_count", 0)
-        )
-        if over_limit:
-            return Decision(
-                "block",
-                "RESOURCE_LIMIT_EXCEEDED",
-                ("stop_processing", "audit_limit_violation"),
-            )
-        return Decision(
-            "allow",
-            "RESOURCE_USE_ALLOWED",
-            ("process_within_limits",),
-        )
-
-    @staticmethod
-    def _evaluate_financial_overclaim(signals: dict[str, Any]) -> Decision:
-        if signals.get("guaranteed_claim_requested") or signals.get("certainty_required"):
-            return Decision(
-                "block",
-                "FINANCIAL_OVERCLAIM_BLOCKED",
-                ("avoid_guarantee", "provide_uncertainty_notice"),
-            )
-        return Decision(
-            "allow",
-            "BOUNDED_FINANCIAL_GUIDANCE_ALLOWED",
-            ("provide_bounded_financial_guidance",),
-        )
-
-    @staticmethod
-    def _evaluate_obfuscated_bypass(signals: dict[str, Any]) -> Decision:
-        if any(
-            signals.get(signal)
-            for signal in ("roleplay_override", "encoded_override", "multilingual_override")
-        ):
-            return Decision(
-                "block",
-                "OBFUSCATED_BYPASS_BLOCKED",
-                ("safe_refusal", "audit_security_event"),
-            )
-        return Decision("allow", "USER_REQUEST_ALLOWED", ("answer_current_request",))
-
-
-class PlanGuardrailEvaluator:
-    """Adapt a RoutePlan corpus case to the deterministic F13-T01 core."""
+    _PLAN_CATEGORIES = {
+        "plan_integrity",
+        "dependency_integrity",
+        "binding_integrity",
+        "route_authorization",
+    }
 
     def __init__(self) -> None:
         self._step_candidates = load_step_candidates()
+        self._tools = {
+            definition.name: definition
+            for definition in default_tool_definitions()
+        }
 
     def evaluate(self, case: dict[str, Any]) -> Decision:
+        category = case["category"]
         case_input = case["input"]
+        payload = copy.deepcopy(case_input["payload"])
+        if category in {"direct_prompt_injection", "obfuscated_bypass"}:
+            return _from_boundary(evaluate_user_message(payload.get("message", "")))
+        if category == "cross_session_exfiltration":
+            return _from_boundary(evaluate_session_access(payload))
+        if category == "indirect_rag_injection":
+            return _from_boundary(evaluate_rag_content(payload.get("content", "")))
+        if category == "tool_manipulation":
+            return self._evaluate_tool(payload)
+        if category == "approval_bypass":
+            return self._evaluate_form_change(payload)
+        if category == "callback_integrity":
+            return _from_boundary(evaluate_callback_payload(payload))
+        if category == "resource_abuse":
+            return _from_boundary(evaluate_resource_usage(payload))
+        if category == "financial_overclaim":
+            return _from_boundary(evaluate_financial_output(payload.get("output")))
+        if category == "task_identity":
+            return self._evaluate_task_result(payload)
+        if category == "artifact_integrity":
+            return self._evaluate_artifact(payload)
+        if category == "observability_integrity":
+            return self._evaluate_observability(payload)
+        if category in self._PLAN_CATEGORIES:
+            if case_input.get("mode") == "dependency_execution":
+                return self._evaluate_failed_dependency(payload)
+            return self._evaluate_plan(case_input, payload)
+        raise ValueError(f"unsupported production security category: {category}")
+
+    def _evaluate_plan(
+        self,
+        case_input: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> Decision:
         result = evaluate_route_plan(
-            copy.deepcopy(case_input["payload"]),
+            payload,
             step_id=case_input["step_id"],
             step_candidates=self._step_candidates,
             registered_tool_capabilities=tuple(
@@ -458,6 +338,162 @@ class PlanGuardrailEvaluator:
         )
         return Decision(result.decision, result.reason_code, effects)
 
+    def _evaluate_tool(self, payload: dict[str, Any]) -> Decision:
+        definition = self._tools.get(str(payload.get("tool_name")))
+        denied_effects = ("deny_tool_call", "audit_tool_denial")
+        if definition is None:
+            return Decision("block", "TOOL_NOT_ALLOWLISTED", denied_effects)
+        if validate_json_schema(definition.input_schema, payload.get("arguments")):
+            return Decision("block", "INVALID_TOOL_ARGUMENTS", denied_effects)
+        if (
+            payload.get("agent") not in definition.allowed_agents
+            or payload.get("task_type") not in definition.allowed_task_types
+        ):
+            return Decision("block", "TOOL_FORBIDDEN", denied_effects)
+        return Decision(
+            "allow",
+            "TOOL_CALL_ALLOWED",
+            ("invoke_allowlisted_tool", "audit_tool_call"),
+        )
+
+    @staticmethod
+    def _evaluate_form_change(payload: dict[str, Any]) -> Decision:
+        result = validate_form_update_contract(payload)
+        if not result.valid:
+            return Decision(
+                "block",
+                result.issues[0].code,
+                (
+                    "deny_persistent_change",
+                    "preserve_database_state",
+                    "audit_approval_denial",
+                ),
+            )
+        return Decision(
+            "allow",
+            "REVERSIBLE_DRAFT_ALLOWED",
+            ("apply_reversible_draft", "audit_draft_change"),
+        )
+
+    @staticmethod
+    def _evaluate_failed_dependency(payload: dict[str, Any]) -> Decision:
+        try:
+            resolve_task_bindings(
+                task=payload["task"],
+                task_results=payload["task_results"],
+                expectations=payload["expectations"],
+                artifact_seals={},
+            )
+        except BindingResolutionError as exc:
+            return Decision(
+                "block",
+                exc.code,
+                ("block_consumer_task", "audit_security_event"),
+            )
+        return Decision("allow", "BINDING_RESOLVED", ("invoke_declared_consumer",))
+
+    @staticmethod
+    def _evaluate_task_result(payload: dict[str, Any]) -> Decision:
+        result = validate_task_result(
+            task=payload["task"],
+            result=payload["result"],
+            step_id=payload["step_id"],
+        )
+        if not result.valid:
+            return Decision(
+                "block",
+                result.issues[0].code,
+                ("mark_task_failed", "discard_untrusted_artifact"),
+            )
+        return Decision(
+            "allow",
+            "TASK_RESULT_ALLOWED",
+            ("publish_validated_artifact",),
+        )
+
+    @staticmethod
+    def _evaluate_artifact(payload: dict[str, Any]) -> Decision:
+        validation = validate_task_result(
+            task=payload["producer_task"],
+            result=payload["validated_result"],
+            step_id=payload["step_id"],
+        )
+        if not validation.valid:
+            return Decision(
+                "block",
+                validation.issues[0].code,
+                ("block_consumer_task", "audit_artifact_denial"),
+            )
+        seal = seal_validated_artifact(validation)
+        try:
+            resolve_task_bindings(
+                task=payload["consumer_task"],
+                task_results={seal.task_id: payload["current_result"]},
+                expectations=payload["expectations"],
+                artifact_seals={seal.task_id: seal},
+            )
+        except BindingResolutionError as exc:
+            return Decision(
+                "block",
+                exc.code,
+                ("block_consumer_task", "audit_artifact_denial"),
+            )
+        return Decision(
+            "allow",
+            "ARTIFACT_BINDING_ALLOWED",
+            ("resolve_validated_binding",),
+        )
+
+    @staticmethod
+    def _evaluate_observability(payload: dict[str, Any]) -> Decision:
+        event_payload = payload.get("event", {})
+        if not isinstance(event_payload, dict):
+            return Decision(
+                "block",
+                "UNSAFE_AUDIT_FIELD_REJECTED",
+                ("reject_untyped_audit", "preserve_trace_safety"),
+            )
+        normalized = dict(event_payload)
+        argument_classes = normalized.get("argument_classes")
+        if isinstance(argument_classes, list):
+            normalized["argument_classes"] = tuple(argument_classes)
+        try:
+            event = ToolAuditEvent(**normalized)
+        except TypeError:
+            return Decision(
+                "block",
+                "UNSAFE_AUDIT_FIELD_REJECTED",
+                ("reject_untyped_audit", "preserve_trace_safety"),
+            )
+        downstream = FakeSerializedInstrumentationSink()
+        instrumentation, sink = build_masked_runtime_instrumentation(
+            pseudonym_key=b"f13-security-regression-key-32bytes",
+            downstream=downstream,
+            sink=MaskingSink.TRACE_EXPORT,
+        )
+        instrumentation.bind(
+            request_id=event.request_id,
+            thread_id="thread-observability",
+            plan_id=event.plan_id,
+            step_id=event.step_id,
+        ).record_tool_audit(event)
+        rendered = json.dumps(downstream.payloads, ensure_ascii=False, sort_keys=True)
+        if sink.dropped_exports or "SYNTHETIC_RAW_SECRET" in rendered:
+            return Decision(
+                "block",
+                "AUDIT_MASKING_FAILED",
+                ("reject_untyped_audit", "preserve_trace_safety"),
+            )
+        return Decision(
+            "allow",
+            "AUDIT_EVENT_MASKED",
+            ("export_masked_audit", "preserve_trace_safety"),
+        )
+
+
+def _from_boundary(decision: BoundaryDecision) -> Decision:
+    return Decision(decision.decision, decision.reason_code, decision.effects)
+
 
 def run_suite(
     suite: dict[str, Any],
@@ -465,8 +501,7 @@ def run_suite(
 ) -> list[CaseResult]:
     active_evaluators = (
         {
-            "mock_policy": MockPolicyOracle(),
-            "plan_guardrail": PlanGuardrailEvaluator(),
+            "production_policy": ProductionSecurityEvaluator(),
         }
         if evaluators is None
         else evaluators
@@ -520,10 +555,30 @@ def _serialize_result(result: CaseResult) -> dict[str, Any]:
     }
 
 
+def build_report(suite: dict[str, Any], results: list[CaseResult]) -> dict[str, Any]:
+    passed = sum(result.passed for result in results)
+    return {
+        "schema_version": suite["schema_version"],
+        "suite_id": suite["suite_id"],
+        "foundation_suite_id": suite["foundation_suite_id"],
+        "execution_scope": suite["execution_scope"],
+        "production_binding": suite["production_binding"],
+        "evaluator": "production_policy",
+        "versions": suite["versions"],
+        "summary": {
+            "total": len(results),
+            "passed": passed,
+            "failed": len(results) - passed,
+        },
+        "results": [_serialize_result(result) for result in results],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, default=SUITE_PATH)
     parser.add_argument("--json", action="store_true", help="print machine-readable results")
+    parser.add_argument("--output", type=Path, help="write the JSON report artifact")
     args = parser.parse_args()
 
     suite = load_suite(args.cases)
@@ -535,27 +590,15 @@ def main() -> int:
 
     results = run_suite(suite)
     passed = sum(result.passed for result in results)
-    if args.json:
-        print(
-            json.dumps(
-                {
-                    "schema_version": suite["schema_version"],
-                    "suite_id": suite["suite_id"],
-                    "foundation_suite_id": suite["foundation_suite_id"],
-                    "execution_scope": suite["execution_scope"],
-                    "production_binding": suite["production_binding"],
-                    "versions": suite["versions"],
-                    "summary": {
-                        "total": len(results),
-                        "passed": passed,
-                        "failed": len(results) - passed,
-                    },
-                    "results": [_serialize_result(result) for result in results],
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+    report = build_report(suite, results)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
         )
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
         for result in results:
             status = "PASS" if result.passed else "FAIL"
