@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "policy_version": "simulation-mvp-2026-09-10.v1",
+  "status": "approved",
+  "approved_at": "2026-09-11",
+  "source_policy": "ai-pjt/retirement_simulation/docs/simulation-policy.json",
+  "assumption_values": {
+    "annual_return_mean": 0.04,
+    "annual_return_volatility": 0.1,
+    "annual_inflation_rate": 0.02,
+    "num_paths": 1000,
+    "seed": 42
+  },
+  "max_comparison_scenarios": 1
+}
