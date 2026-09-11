@@ -12,11 +12,13 @@ from core.callback_masking import CallbackPayloadMasker
 from core.checkpointer import build_context_state_api, get_checkpointer
 from core.config import settings
 from core.context import ContextScope
+from core.logging_setup import configure_logging
 from core.masking import MaskingSink
 from core.monitoring import get_callbacks
 from core.observability_masking import (
     StructuredLogInstrumentationExporter,
     build_masked_runtime_instrumentation,
+    masked_exception_fields,
 )
 from graph.builder import build_graph
 from tools.graph_adapter import build_graph_tool_executors
@@ -37,6 +39,10 @@ from transport.runtime import (
     utc_now,
 )
 
+
+# uvicorn 기본 로깅 설정은 uvicorn* 로거만 구성하고 root 에는 핸들러를 붙이지 않는다.
+# 그대로 두면 이 서비스의 로그와 계측 이벤트가 컨테이너 stdout 에 전혀 나오지 않는다.
+configure_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -302,10 +308,16 @@ async def _stream_v2_chat_events(
             ).model_dump(mode="json")
         )
         yield _encode_sse("error", terminal)
-    except Exception:
+    except Exception as error:
         logger.error(
             "AI v2 stream 처리 실패",
-            extra={"error_code": "stream_processing_failed"},
+            extra={
+                "error_code": "stream_processing_failed",
+                "detail": masked_exception_fields(
+                    error,
+                    request_id=str(request.request_id),
+                ),
+            },
         )
         terminal = callback_masker.mask(
             FailedCallback(

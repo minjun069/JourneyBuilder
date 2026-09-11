@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+import logging
 from typing import Any
 
 from core.monitoring import OperationStage, OperationStatus
+from core.observability_masking import masked_exception_fields
 from core.runtime_instrumentation import RuntimeStage, build_artifact_id
 from core.runtime_instrumentation_adapter import BoundRuntimeInstrumentation
 from core.step_registry import load_agent_descriptions
@@ -21,6 +23,8 @@ from graph.task_contracts import (
 )
 from tools.output_validation import validate_form_update_contract
 
+
+logger = logging.getLogger(__name__)
 
 RuntimeExecutor = Callable[[dict[str, Any]], Awaitable[Mapping[str, Any]]]
 
@@ -239,7 +243,24 @@ async def execute_route_plan(
         operation_started = instrumentation.elapsed_ms(task_span)
         try:
             raw_result = await executor(execution_input)
-        except Exception:
+        except Exception as error:
+            # 이 except 는 사용자에게 executor_error 안내문만 남기므로, 여기서 기록하지
+            # 않으면 배포본에서 원인을 되짚을 수 있는 흔적이 전혀 남지 않는다.
+            logger.error(
+                "task executor raised",
+                extra={
+                    "event": "executor_error",
+                    "detail": masked_exception_fields(
+                        error,
+                        request_id=request_id,
+                        plan_id=str(plan.get("plan_id", "plan-unknown")),
+                        step_id=step_id,
+                        task_id=task_id,
+                        executor_kind=str(executor_kind),
+                        executor_name=str(executor_name),
+                    ),
+                },
+            )
             operation_duration = max(
                 0,
                 instrumentation.elapsed_ms(task_span) - operation_started,
@@ -423,7 +444,22 @@ async def execute_route_plan(
                 task_results[fallback_task["id"]] = fallback_validation.result
                 aggregate_tasks.append(fallback_task)
                 tasks_used += 1
-            except Exception:
+            except Exception as error:
+                logger.error(
+                    "fallback executor raised",
+                    extra={
+                        "event": "executor_error",
+                        "detail": masked_exception_fields(
+                            error,
+                            request_id=request_id,
+                            plan_id=str(plan.get("plan_id", "plan-unknown")),
+                            step_id=step_id,
+                            task_id=str(fallback_task["id"]),
+                            executor_kind="agent",
+                            executor_name="fallback",
+                        ),
+                    },
+                )
                 operation_duration = max(
                     0,
                     instrumentation.elapsed_ms(fallback_span) - operation_started,
@@ -449,7 +485,19 @@ async def execute_route_plan(
             step_id=step_id,
             field_registry=field_registry,
         )
-    except Exception:
+    except Exception as error:
+        logger.error(
+            "aggregation raised",
+            extra={
+                "event": "aggregation_error",
+                "detail": masked_exception_fields(
+                    error,
+                    request_id=request_id,
+                    plan_id=str(plan.get("plan_id", "plan-unknown")),
+                    step_id=step_id,
+                ),
+            },
+        )
         instrumentation.fail(aggregation_span, reason_code="aggregation_error")
         raise
     instrumentation.succeed(aggregation_span)
