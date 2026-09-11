@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, datetime
+import json
 from math import isfinite
 from collections.abc import Mapping
 from typing import Any
@@ -96,6 +97,14 @@ class TaskResultValidation:
     valid: bool
     result: dict[str, Any]
     issues: tuple[TaskValidationIssue, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SealedArtifact:
+    """Internal post-validation snapshot used to detect later mutation."""
+
+    task_id: str
+    canonical_payload: str
 
 
 class BindingResolutionError(ValueError):
@@ -208,11 +217,31 @@ def validate_task_result(
     return TaskResultValidation(valid=True, result=candidate, issues=())
 
 
+def seal_validated_artifact(validation: TaskResultValidation) -> SealedArtifact:
+    """Seal only a successfully validated, completed artifact."""
+
+    result = validation.result
+    task_id = result.get("task_id")
+    artifact = result.get("artifact")
+    if (
+        not validation.valid
+        or result.get("status") != "completed"
+        or not isinstance(task_id, str)
+        or not isinstance(artifact, Mapping)
+    ):
+        raise ValueError("only a validated completed artifact can be sealed")
+    return SealedArtifact(
+        task_id=task_id,
+        canonical_payload=_canonical_artifact_payload(artifact),
+    )
+
+
 def resolve_task_bindings(
     *,
     task: Mapping[str, Any],
     task_results: Mapping[str, Mapping[str, Any]],
     expectations: Mapping[str, Mapping[str, Any]],
+    artifact_seals: Mapping[str, SealedArtifact],
 ) -> dict[str, Any]:
     """Resolve only schema-declared fields from completed dependency artifacts."""
 
@@ -256,6 +285,17 @@ def resolve_task_bindings(
                 "DEPENDENCY_ARTIFACT_MISSING",
                 f"dependency artifact가 없습니다: {source_id}",
             )
+        seal = artifact_seals.get(str(source_id))
+        if seal is None or seal.task_id != source_id:
+            raise BindingResolutionError(
+                "ARTIFACT_INTEGRITY_MISSING",
+                f"검증 후 봉인된 dependency artifact가 없습니다: {source_id}",
+            )
+        if _canonical_artifact_payload(artifact) != seal.canonical_payload:
+            raise BindingResolutionError(
+                "ARTIFACT_INTEGRITY_MISMATCH",
+                f"검증 뒤 dependency artifact가 변경되었습니다: {source_id}",
+            )
         artifact_type = artifact.get("type")
         if artifact_type != expectation.get("artifact_type"):
             raise BindingResolutionError(
@@ -295,6 +335,22 @@ def resolve_task_bindings(
             )
         resolved[input_name] = deepcopy(value)
     return resolved
+
+
+def _canonical_artifact_payload(artifact: Mapping[str, Any]) -> str:
+    try:
+        return json.dumps(
+            dict(artifact),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise BindingResolutionError(
+            "ARTIFACT_INTEGRITY_MISMATCH",
+            "dependency artifact를 안전하게 정규화할 수 없습니다.",
+        ) from exc
 
 
 def _validate_completed_result(

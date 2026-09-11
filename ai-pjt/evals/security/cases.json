@@ -1018,6 +1018,8 @@
               "produces": "reference_value",
               "step_id": "financial-goals",
               "capability": "lookup_reference_value",
+              "tool_name": "get_approved_reference_value",
+              "authorized_agent": "qa",
               "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "lookup_reference_value", "reason_code": "capability_match"}
             },
             {
@@ -1068,6 +1070,8 @@
               "produces": "reference_value",
               "step_id": "financial-goals",
               "capability": "lookup_reference_value",
+              "tool_name": "get_approved_reference_value",
+              "authorized_agent": "qa",
               "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "lookup_reference_value", "reason_code": "capability_match"}
             },
             {
@@ -1118,6 +1122,8 @@
               "produces": "reference_value",
               "step_id": "financial-goals",
               "capability": "lookup_reference_value",
+              "tool_name": "get_approved_reference_value",
+              "authorized_agent": "qa",
               "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "lookup_reference_value", "reason_code": "capability_match"}
             },
             {
@@ -1168,6 +1174,8 @@
               "produces": "reference_value",
               "step_id": "financial-goals",
               "capability": "lookup_reference_value",
+              "tool_name": "get_approved_reference_value",
+              "authorized_agent": "qa",
               "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "lookup_reference_value", "reason_code": "capability_match"}
             },
             {
@@ -1255,6 +1263,8 @@
               "produces": "reference_value",
               "step_id": "financial-goals",
               "capability": "lookup_reference_value",
+              "tool_name": "get_approved_reference_value",
+              "authorized_agent": "qa",
               "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "lookup_reference_value", "reason_code": "capability_match"}
             }
           ]
@@ -1294,6 +1304,8 @@
               "produces": "reference_value",
               "step_id": "financial-goals",
               "capability": "get_dashboard_metric",
+              "tool_name": "get_dashboard_metric",
+              "authorized_agent": "qa",
               "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "get_dashboard_metric", "reason_code": "capability_match"}
             }
           ]

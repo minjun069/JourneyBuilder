@@ -15,6 +15,7 @@ from core.observability_masking import (
 )
 from core.runtime_instrumentation import RuntimeStage
 from graph.executor import execute_route_plan
+from tools.contracts import ToolAuditEvent
 from tests.security.masking_contract import (
     MASKING_SENTINELS,
     Sink as ContractSink,
@@ -165,6 +166,45 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
         callback = downstream.payloads[-1]
         self.assertEqual(callback["stage"], OperationStage.CALLBACK.value)
         self.assertEqual(callback["status"], OperationStatus.SUCCEEDED.value)
+
+    def test_tool_authorization_audit_uses_masked_typed_port(self) -> None:
+        downstream = FakeSerializedInstrumentationSink()
+        adapter, sink = build_masked_runtime_instrumentation(
+            pseudonym_key=TEST_MASKING_KEY,
+            downstream=downstream,
+            sink=MaskingSink.TRACE_EXPORT,
+        )
+        observed = adapter.bind(
+            request_id="request-raw-0001",
+            thread_id="thread-raw-0001",
+            plan_id="plan-request-raw-0001",
+            step_id="basic-info",
+        )
+
+        observed.record_tool_audit(ToolAuditEvent(
+            request_id="request-raw-0001",
+            plan_id="plan-request-raw-0001",
+            task_id="task-1",
+            step_id="basic-info",
+            task_type="lookup_retirement_gap",
+            tool_name="get_dashboard_metric",
+            tool_version="1.0",
+            agent="qa",
+            decision="denied",
+            status="failed",
+            duration_ms=0,
+            argument_classes=("financial_metric_identifier",),
+            call_source="graph_task",
+            error_code="TOOL_CONTEXT_MISMATCH",
+        ))
+
+        self.assertEqual(sink.dropped_exports, 0)
+        self.assertEqual(len(downstream.payloads), 1)
+        payload = downstream.payloads[0]
+        self.assertEqual(payload["event_family"], "security_decision")
+        self.assertEqual(payload["decision"], "denied")
+        self.assertNotIn("request-raw-0001", json.dumps(payload))
+        self.assertNotIn("arguments", payload)
 
 
 if __name__ == "__main__":

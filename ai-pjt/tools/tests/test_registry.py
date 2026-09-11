@@ -278,6 +278,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
                 "additionalProperties": False,
             },
             allowed_agents=frozenset({"qa"}),
+            allowed_task_types=frozenset({"answer_question"}),
             handler=slow_handler,
             timeout_seconds=0.001,
         ))
@@ -312,6 +313,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
                 "additionalProperties": False,
             },
             allowed_agents=frozenset({"qa"}),
+            allowed_task_types=frozenset({"answer_question"}),
             handler=invalid_handler,
         ))
         result = await registry.invoke("invalid_result_tool", {}, self.context)
@@ -339,6 +341,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
                     "additionalProperties": False,
                 },
                 allowed_agents=frozenset({"qa"}),
+                allowed_task_types=frozenset({"answer_question"}),
                 handler=sync_handler,
             ))
 

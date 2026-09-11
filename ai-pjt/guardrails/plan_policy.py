@@ -23,6 +23,8 @@ CANONICAL_TASK_FIELDS = TASK_FIELDS | {
     "produces",
     "step_id",
     "capability",
+    "tool_name",
+    "authorized_agent",
     "route",
 }
 ROUTE_FIELDS = {"task_id", "executor_kind", "executor", "reason_code"}
@@ -31,6 +33,8 @@ ROUTED_TASK_METADATA_FIELDS = {
     "produces",
     "step_id",
     "capability",
+    "tool_name",
+    "authorized_agent",
     "route",
 }
 
@@ -133,6 +137,22 @@ def evaluate_route_plan(
                 path,
                 "capability",
                 code="TASK_TOOL_CAPABILITY_MISMATCH",
+            )
+            _compare_trusted_field(
+                violations,
+                candidate,
+                trusted,
+                path,
+                "tool_name",
+                code="TASK_TOOL_NAME_MISMATCH",
+            )
+            _compare_trusted_field(
+                violations,
+                candidate,
+                trusted,
+                path,
+                "authorized_agent",
+                code="TASK_TOOL_AGENT_MISMATCH",
             )
             _compare_trusted_field(
                 violations,

@@ -19,6 +19,7 @@ from graph.task_contracts import (
     blocked_task_result,
     failed_task_result,
     resolve_task_bindings,
+    seal_validated_artifact,
     validate_task_result,
 )
 from tools.output_validation import validate_form_update_contract
@@ -78,6 +79,7 @@ async def execute_route_plan(
     """
 
     task_results: dict[str, dict[str, Any]] = {}
+    artifact_seals = {}
     tasks_used = 0
     if (
         isinstance(task_limit, bool)
@@ -121,6 +123,7 @@ async def execute_route_plan(
                 task=task,
                 task_results=task_results,
                 expectations=binding_expectations_for(task),
+                artifact_seals=artifact_seals,
             )
         except BindingResolutionError as exc:
             instrumentation.fail(
@@ -233,6 +236,8 @@ async def execute_route_plan(
             "context_scope": deepcopy(plan.get("context_scope", {})),
             "conversation_context": deepcopy(plan.get("conversation_context", {})),
         }
+        if executor_kind == "tool":
+            execution_input["tool_audit_sink"] = instrumentation.record_tool_audit
         task_span = instrumentation.start(
             RuntimeStage.TASK_EXECUTION,
             task_id=task_id,
@@ -331,6 +336,8 @@ async def execute_route_plan(
         else:
             instrumentation.fail(artifact_span, reason_code="artifact_invalid")
         task_results[task_id] = result
+        if validation.valid and result.get("status") == "completed":
+            artifact_seals[task_id] = seal_validated_artifact(validation)
         if result.get("status") == "completed":
             response_owner = (
                 "fallback"

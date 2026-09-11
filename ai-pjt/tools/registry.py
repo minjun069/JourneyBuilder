@@ -30,7 +30,15 @@ class FunctionToolRegistry:
                 f"Function tool handler는 timeout 적용을 위해 async 함수여야 합니다: "
                 f"{definition.name}"
             )
+        if not definition.allowed_agents or not definition.allowed_task_types:
+            raise ValueError(
+                f"Function tool은 Agent와 task type allowlist가 필요합니다: "
+                f"{definition.name}"
+            )
         self._definitions[definition.name] = definition
+
+    def definition_for(self, tool_name: str) -> FunctionToolDefinition | None:
+        return self._definitions.get(tool_name)
 
     def registered_names(self) -> tuple[str, ...]:
         return tuple(sorted(self._definitions))
@@ -64,10 +72,16 @@ class FunctionToolRegistry:
                 ToolErrorCode.UNKNOWN_TOOL,
                 "등록되지 않은 Function tool입니다.",
             )
-            self._audit(context, tool_name, "unknown", (), result, started_at)
+            self._audit(
+                context, tool_name, "unknown", (), result, started_at,
+                decision="denied",
+            )
             return result
 
-        if context.agent not in definition.allowed_agents:
+        if (
+            context.agent not in definition.allowed_agents
+            or context.task_type not in definition.allowed_task_types
+        ):
             result = self._failure(
                 definition.name,
                 definition.version,
@@ -81,6 +95,7 @@ class FunctionToolRegistry:
                 definition.argument_classes,
                 result,
                 started_at,
+                decision="denied",
             )
             return result
 
@@ -110,6 +125,7 @@ class FunctionToolRegistry:
                 definition.argument_classes,
                 result,
                 started_at,
+                decision="allowed",
             )
             return result
 
@@ -129,6 +145,7 @@ class FunctionToolRegistry:
                 definition.argument_classes,
                 result,
                 started_at,
+                decision="allowed",
             )
             return result
 
@@ -186,6 +203,7 @@ class FunctionToolRegistry:
             definition.argument_classes,
             result,
             started_at,
+            decision="allowed",
         )
         return result
 
@@ -219,6 +237,8 @@ class FunctionToolRegistry:
         argument_classes: tuple[str, ...],
         result: ToolCallResult,
         started_at: float,
+        *,
+        decision: str,
     ) -> None:
         if context.audit_sink is None:
             return
@@ -226,9 +246,12 @@ class FunctionToolRegistry:
             request_id=context.request_id,
             plan_id=context.plan_id,
             task_id=context.task_id,
+            step_id=context.step_id,
+            task_type=context.task_type,
             tool_name=tool_name,
             tool_version=tool_version,
             agent=context.agent,
+            decision=decision,
             status="succeeded" if result.ok else "failed",
             duration_ms=max(0, int((monotonic() - started_at) * 1000)),
             argument_classes=argument_classes,

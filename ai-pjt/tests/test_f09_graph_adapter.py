@@ -111,9 +111,10 @@ def _reference_plan(*, period: str = "annual") -> dict:
 class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
     async def test_retirement_gap_exact_metadata_reaches_dependent_binding(self):
         agents = all_agent_graphs()
+        instrumentation, sink = fake_instrumentation()
         graph = build_graph(
             None,
-            instrumentation=fake_instrumentation()[0],
+            instrumentation=instrumentation,
             planner=FakePlanner(_dashboard_plan()),
             classifier=FakeClassifier(),
             agent_graphs=agents,
@@ -147,6 +148,12 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(result["task_results"]["task-2"]["status"], "completed")
+        self.assertEqual(len(sink.security_events), 1)
+        self.assertEqual(sink.security_events[0].decision.value, "allowed")
+        self.assertEqual(
+            sink.security_events[0].target_name,
+            "get_dashboard_metric",
+        )
 
     async def test_backend_unavailable_metric_blocks_dependent_task(self):
         context = deepcopy(TOOL_CONTEXT_FIXTURE)

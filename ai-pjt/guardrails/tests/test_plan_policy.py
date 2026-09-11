@@ -54,6 +54,8 @@ def tool_task() -> dict:
         "produces": "reference_value",
         "step_id": "financial-goals",
         "capability": "lookup_reference_value",
+        "tool_name": "get_approved_reference_value",
+        "authorized_agent": "qa",
         "route": {
             "task_id": "task-1",
             "executor_kind": "tool",

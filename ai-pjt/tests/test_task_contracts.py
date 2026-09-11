@@ -6,6 +6,7 @@ from graph.task_contracts import (
     BindingResolutionError,
     blocked_task_result,
     resolve_task_bindings,
+    seal_validated_artifact,
     validate_task_result,
 )
 
@@ -191,11 +192,22 @@ class BindingContractTests(unittest.TestCase):
             }
         }
 
+    def seals_for(self, source: dict) -> dict:
+        validation = validate_task_result(
+            task=reference_task(),
+            result=source,
+            step_id="financial-goals",
+        )
+        self.assertTrue(validation.valid)
+        return {"task-1": seal_validated_artifact(validation)}
+
     def test_binding_reads_only_validated_typed_artifact_field(self) -> None:
+        source = reference_result()
         resolved = resolve_task_bindings(
             task=self.task,
-            task_results={"task-1": reference_result()},
+            task_results={"task-1": source},
             expectations=self.expectations,
+            artifact_seals=self.seals_for(source),
         )
         self.assertEqual(resolved, {"value": 2_500_000})
 
@@ -211,16 +223,19 @@ class BindingContractTests(unittest.TestCase):
                     }
                 },
                 expectations=self.expectations,
+                artifact_seals={},
             )
         self.assertEqual(raised.exception.code, "DEPENDENCY_FAILED")
 
     def test_arbitrary_artifact_path_is_rejected(self) -> None:
         self.task["bindings"]["value"]["path"] = "response.guessed_number"
         with self.assertRaises(BindingResolutionError) as raised:
+            source = reference_result()
             resolve_task_bindings(
                 task=self.task,
-                task_results={"task-1": reference_result()},
+                task_results={"task-1": source},
                 expectations=self.expectations,
+                artifact_seals=self.seals_for(source),
             )
         self.assertEqual(raised.exception.code, "ARTIFACT_PATH_NOT_ALLOWED")
 
@@ -232,8 +247,24 @@ class BindingContractTests(unittest.TestCase):
                 task=self.task,
                 task_results={"task-1": source},
                 expectations=self.expectations,
+                artifact_seals=self.seals_for(source),
             )
         self.assertEqual(raised.exception.code, "ARTIFACT_UNIT_MISMATCH")
+
+    def test_post_validation_artifact_mutation_is_rejected(self) -> None:
+        source = reference_result()
+        seals = self.seals_for(source)
+        source["artifact"]["value"] = 9_999_999
+
+        with self.assertRaises(BindingResolutionError) as raised:
+            resolve_task_bindings(
+                task=self.task,
+                task_results={"task-1": source},
+                expectations=self.expectations,
+                artifact_seals=seals,
+            )
+
+        self.assertEqual(raised.exception.code, "ARTIFACT_INTEGRITY_MISMATCH")
 
 
 if __name__ == "__main__":

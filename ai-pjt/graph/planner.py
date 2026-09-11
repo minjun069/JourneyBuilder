@@ -119,6 +119,8 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
     "lookup_reference_value": {
         "executor_kind": "tool",
         "capability": "lookup_reference_value",
+        "tool_name": "get_approved_reference_value",
+        "authorized_agent": "qa",
         "produces": "reference_value",
         "binding_expectations": {},
         "argument_schema": REFERENCE_VALUE_INPUT_SCHEMA,
@@ -126,6 +128,8 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
     "lookup_retirement_gap": {
         "executor_kind": "tool",
         "capability": "get_dashboard_metric",
+        "tool_name": "get_dashboard_metric",
+        "authorized_agent": "qa",
         "produces": "dashboard_metric",
         "binding_expectations": {},
         "fixed_arguments": {"metric_id": "retirement_gap"},
@@ -518,6 +522,8 @@ def validate_route_plan(
         }
         if contract["executor_kind"] == "tool":
             normalized["capability"] = contract["capability"]
+            normalized["tool_name"] = contract["tool_name"]
+            normalized["authorized_agent"] = contract["authorized_agent"]
             normalized["arguments"] = normalized_arguments or {}
         normalized_tasks.append(normalized)
 
