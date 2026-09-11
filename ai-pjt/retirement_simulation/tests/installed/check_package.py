@@ -103,7 +103,7 @@ class InstalledPackageTests(unittest.TestCase):
                 self.assertTrue(value.__module__.startswith("retirement_simulation."), name)
 
     def test_metadata_and_no_application_or_build_dependencies(self):
-        self.assertEqual(self.distribution.version, "0.1.0")
+        self.assertEqual(self.distribution.version, "0.1.1")
         self.assertEqual(self.distribution.metadata["Requires-Python"], "<3.14,>=3.13")
         self.assertFalse(self.distribution.requires)
         self.assertFalse(self.distribution.entry_points)
@@ -183,6 +183,83 @@ class InstalledPackageTests(unittest.TestCase):
         self.assertIsNotNone(payload["metadata"]["rng_algorithm"])
         self.assertEqual((saved, config, scenarios), original)
         self.assertEqual(random.getstate(), state)
+
+    def test_other_assets_are_excluded_in_installed_baseline_and_what_if(self):
+        cases = ([], [lower_expenses(end_age=61)],
+                 [{"scenario_id": "save_more", "changes": {"monthly_savings": 1200}}])
+        for scenarios in cases:
+            with self.subTest(scenarios=scenarios):
+                saved, config = hand_check(working=True), assumptions()
+                config.update(annual_return_mean=0.04, annual_return_volatility=0.1, num_paths=20)
+                state = random.getstate()
+                expected = self.simulation.analysis_to_dict(self.simulation.analyze_retirement(
+                    saved, config, scenarios=scenarios, confirmed_empty_sections=("pension_assets",),
+                ))
+                saved["financial_assets"].insert(0, {
+                    "id": 37, "asset_type": " 기타 ", "current_value": 900_000_000,
+                    "monthly_savings": 99_000_000, "name": "PRIVATE_OTHER_ASSET",
+                })
+                saved["financial_assets"].append({"id": 91, "asset_type": "기타", "current_value": None})
+                original = deepcopy((saved, config, scenarios))
+                payload = self.simulation.analysis_to_dict(self.simulation.analyze_retirement(
+                    saved, config, scenarios=scenarios, confirmed_empty_sections=("pension_assets",),
+                ))
+                self.assertEqual(payload["baseline_profile"]["liquid_assets"], 10_000)
+                self.assertEqual(payload["baseline_profile"]["monthly_savings"], 1_000)
+                self.assertEqual([notice for notice in payload["notices"]
+                                  if notice["code"] == "other_financial_asset_not_modeled"], [
+                    {"code": "other_financial_asset_not_modeled", "field_name": "financial_assets[0]"},
+                    {"code": "other_financial_asset_not_modeled", "field_name": "financial_assets[2]"},
+                ])
+                self.assertEqual([notice for notice in payload["notices"]
+                                  if notice["code"] != "other_financial_asset_not_modeled"], expected["notices"])
+                self.assertEqual({key: value for key, value in payload.items() if key != "notices"},
+                                 {key: value for key, value in expected.items() if key != "notices"})
+                self.assertEqual(strict_json(json.dumps(payload, allow_nan=False)), payload)
+                self.assertNotIn("PRIVATE_OTHER_ASSET", json.dumps(payload))
+                self.assertEqual((saved, config, scenarios), original)
+                self.assertEqual(random.getstate(), state)
+
+    def test_only_other_assets_are_not_confirmed_empty_in_installed_package(self):
+        for scenarios in ([], [lower_expenses()]):
+            with self.subTest(scenarios=scenarios):
+                saved = hand_check()
+                saved["financial_assets"][0]["asset_type"] = "기타"
+                original = deepcopy(saved)
+                payload = self.simulation.analysis_to_dict(self.simulation.analyze_retirement(
+                    saved, assumptions(), scenarios=scenarios, confirmed_empty_sections=("pension_assets",),
+                ))
+                self.assertEqual(payload["baseline_profile"]["liquid_assets"], 0)
+                self.assertEqual(payload["baseline_profile"]["monthly_savings"], 0)
+                self.assertEqual(payload["baseline"]["final_balance_percentiles"]["p50"], -12_000)
+                self.assertIn({"code": "other_financial_asset_not_modeled", "field_name": "financial_assets[0]"},
+                              payload["notices"])
+                self.assertNotIn("confirmed_empty_financial_assets", {notice["code"] for notice in payload["notices"]})
+                if scenarios:
+                    self.assertEqual(payload["scenarios"][0]["result"]["final_balance_percentiles"]["p50"], -9_600)
+                self.assertEqual(strict_json(json.dumps(payload, allow_nan=False)), payload)
+                with self.assertRaises(self.simulation.RetirementAnalysisError) as caught:
+                    self.simulation.analyze_retirement(saved, assumptions(),
+                                                      confirmed_empty_sections=("financial_assets", "pension_assets"))
+                error = self.simulation.analysis_error_to_dict(caught.exception)["error"]
+                self.assertEqual((error["code"], error["reason_code"]), ("input_mapping_failed", "invalid_confirmation"))
+                self.assertEqual(saved, original)
+
+    def test_unknown_asset_after_other_keeps_installed_public_error_contract(self):
+        for kind in ("PRIVATE_ASSET", "기타자산", None):
+            with self.subTest(kind=kind):
+                saved = hand_check()
+                saved["financial_assets"] = [{"asset_type": "기타"}, {"asset_type": kind}]
+                original = deepcopy(saved)
+                with self.assertRaises(self.simulation.RetirementAnalysisError) as caught:
+                    self.simulation.analyze_retirement(saved, assumptions(), confirmed_empty_sections=("pension_assets",))
+                payload = self.simulation.analysis_error_to_dict(caught.exception)
+                self.assertEqual(set(payload), {"contract_version", "error"})
+                self.assertEqual(payload["error"]["code"], "input_mapping_failed")
+                self.assertEqual(payload["error"]["reason_code"], "unsupported_value")
+                self.assertEqual(payload["error"]["field_name"], "financial_assets[1].asset_type")
+                self.assertNotIn("PRIVATE_ASSET", json.dumps(payload, allow_nan=False))
+                self.assertEqual(saved, original)
 
     def test_public_input_error_remains_an_error_json_not_zero_success(self):
         with self.assertRaises(self.simulation.RetirementAnalysisError) as caught:

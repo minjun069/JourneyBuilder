@@ -172,6 +172,7 @@ conda run -n retirewise-ai python -S -B -m unittest discover -s ai-pjt/retiremen
 git diff --check
 ```
 
-이번 단계에서는 수정 wheel/sdist를 빌드하거나 설치하지 않았다. 기존 `0.1.0` 설치본에 이 수정이
-포함됐다는 뜻이 아니다. 후속 패키지 버전 갱신·설치 검증·BE API 확인 후에만 기타 사전 차단을 제거한다.
+0~2번(`84a67b5`)에서는 수정 wheel/sdist를 빌드하거나 설치하지 않았다. 기존 `0.1.0` 설치본에 이 수정이
+포함됐다는 뜻이 아니다. 후속 `0.1.1`의 [설치 검증 기록](installation-validation.md)과 BE API 확인 후에만
+기타 사전 차단을 제거한다.
 실제 고객 입력·API/화면·운영 부하·배포 검증을 완료한 것으로 해석하지 않는다.
