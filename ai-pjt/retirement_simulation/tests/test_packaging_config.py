@@ -26,7 +26,7 @@ class PackagingConfigurationTests(unittest.TestCase):
     def test_distribution_metadata_is_static_and_separate_from_import_name(self):
         project = self.config["project"]
         self.assertEqual(project["name"], "retirewise-retirement-simulation")
-        self.assertEqual(project["version"], "0.1.1")
+        self.assertEqual(project["version"], "0.1.2")
         self.assertNotIn("dynamic", project)
         self.assertNotIn("dynamic", self.config["tool"]["setuptools"])
 

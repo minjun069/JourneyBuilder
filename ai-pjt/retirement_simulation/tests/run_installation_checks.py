@@ -22,7 +22,7 @@ import zipfile
 
 
 DISTRIBUTION = "retirewise-retirement-simulation"
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 DIST_INFO = f"retirewise_retirement_simulation-{VERSION}.dist-info/"
 WHEEL_NAME = f"retirewise_retirement_simulation-{VERSION}-py3-none-any.whl"
 MODULES = frozenset({

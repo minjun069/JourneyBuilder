@@ -13,7 +13,7 @@ FE 담당은 [화면 연결 안내](fe-handoff.md), 기술 확인 항목은 [설
 
 ## 먼저 전달할 요약
 
-- 패키지: `retirewise-retirement-simulation==0.1.1`, import `retirement_simulation`.
+- 패키지: `retirewise-retirement-simulation==0.1.2`, import `retirement_simulation`.
 - Python `>=3.13,<3.14`, 런타임 외부 의존성 없음. 로컬 검증 3.13.15, BE 이미지 3.13.14는 별도 검증 필요.
 - `analyze_retirement()`에 저장 snapshot·가정 5개·변경안 최대 1개·실제 없음 확인 근거를 연결한다.
 - 정책: 평균 4% / 변동성 10% / 물가 2% / 1,000경로 / seed 42. 서버가 명시적으로 전달한다.
@@ -28,7 +28,7 @@ FE 담당은 [화면 연결 안내](fe-handoff.md), 기술 확인 항목은 [설
 BE는 [정책 JSON](simulation-policy.json)을 검토한 서버 설정으로 별도 배치하고 버전을 응답에 기록한다.
 공통 재무 정책·Dockerfile·requirements를 모듈 담당이 임의 변경하지 않는다.
 
-### 2026-09-11: 기타 금융자산 매핑 보완
+### 2026-09-11: 비모델링 금융자산 매핑 보완
 
 `fix/ai-simulation-other-assets`, 시작 기준 `master=4ed89b5`. 사용자에게 전달된 BE 수정 요청에
 따라 `asset_type="기타"`를 인식하되 모델링하지 않는 범주로 처리했다(`84a67b5`). 후속 3번에서
@@ -37,34 +37,43 @@ BE는 [정책 JSON](simulation-policy.json)을 검토한 서버 설정으로 별
 BE 설치·API 적용은 모듈 로컬 검증과 별개이며 완료로 표시하지 않는다.
 일반/`-S` 전체 소스 회귀는 각각 680개 통과했다. 상세 경계와 재실행 명령은
 [기타 금융자산 검증 기록](input-adapter-validation.md)을 참고한다.
-이는 매핑 수정 당시 기록이며 후속 패키징 방어 검사 2개를 추가한 현재 소스 테스트는 682개다.
+이는 0.1.1 당시 기록이며 아래는 **후속 0.1.2의 입력 규칙**이다.
+변경 이유·오류 구분·BE 테스트 조정은 [0.1.2 변경 안내](unmodeled-financial-assets.md)를 따른다.
 
-- `기타` 행의 `current_value`와 `monthly_savings`는 모두 합산에서 제외한다. 금액을 읽거나
+- 모델링 5종 밖의 비어 있지 않은 분류 문자열 행은 `current_value`와 `monthly_savings`를 모두 제외한다.
+  `기타`·`전세보증금`·`예금적금` 같은 오타도 분류 추정/치환 없이 제외한다. 금액을 읽거나
   누락/null을 0으로 보충하지 않으며, 원본 행·저장 금액은 변경하지 않는다. 행 구조·ID 검증은 유지한다.
 - 제외 행마다 `other_financial_asset_not_modeled`를 생성한다. `field_name="financial_assets[N]"`의
   `N`은 0부터 시작하는 원본 배열 위치이며 DB ID가 아니다. 최종 `analysis_to_dict()`의 `notices`에 보존된다.
-- 기타만 있는 경우 모델링 자산·적립 합계는 0이다. 실제 자산 없음으로 확정하지 않으며 원본 목록이
+- 모든 금융자산이 제외 대상이면 모델링 자산·적립 합계는 0이다. 실제 자산 없음으로 확정하지 않으며 원본 목록이
   비어 있지 않으므로 `confirmed_empty_sections`에 `financial_assets`를 넣지 않는다.
-- 기존 5종 계산·미지원 문자열 오류·원본 보존·MC/What-if 엔진·가정·준비율 처리 범위는 유지한다.
+- 분류 키 누락은 `missing_field`, null/공백은 `missing_value`, 비문자열은 `invalid_type`이다.
+  문자열 `asset_type`에는 더 이상 `unsupported_value`를 쓰지 않지만 연금 등의 기존 미지원 오류는 유지한다.
+- 기존 5종 계산·원본 보존·MC/What-if 엔진·가정·준비율 처리 범위는 유지한다.
   What-if 월 적립 명시값은 기존처럼 변경 후 총 월액이며 제외한 행의 적립액을 다시 합산하지 않는다.
 
 합성 예: `[예금/적금(평가액 10,000,000원, 월 적립 200,000원),
-기타(평가액 5,000,000원, 월 적립 100,000원)]`이면 모델링 합계는 `10,000,000원 / 월 200,000원`이다.
+전세보증금(평가액 5,000,000원, 월 적립 100,000원)]`이면 모델링 합계는 `10,000,000원 / 월 200,000원`이다.
 아래 안내가 기존 범위 안내들과 함께 반환된다.
 
 ```json
 {"code": "other_financial_asset_not_modeled", "field_name": "financial_assets[1]"}
 ```
 
-적용 순서는 **수정 패키지 버전·소스 커밋·해시 확인 → BE 설치 → 실제 API의 두 합계와 notices 확인 →
-BE의 기타 사전 차단만 제거**다. 그전까지 BE가 안내한 사전 감지/422는 유지한다. 미지원 문자열은
-여전히 `input_mapping_failed` / `reason_code="unsupported_value"`이며 다른 검증은 제거하지 않는다.
-성공 응답에 새 notice를 추가하는 변경이지 HTTP 오류를 모듈에서 처리하거나 기존 준비율을 바꾸는 변경은 아니다.
+적용 순서는 **BE 테스트의 임시 차단/모듈 오류 기대값 분리 → 수정 패키지 버전·소스 커밋·해시 확인 →
+BE 설치 → 실제 API의 두 합계와 notices 확인 → 화면의 제외 안내 확인 → BE 임시 분류 차단 제거**다.
+화면 안내가 가능하기 전까지 BE가 안내한 사전 감지/422는 유지한다. 계산용 금액 사전 검사가 제외 행의
+미사용 금액을 다시 거절하지 않는지도 BE에서 확인하되 저장 serializer 제약과는 구분한다.
+기존 notice 발생 대상을 넓히는 변경이지 HTTP 오류를 모듈에서 처리하거나 준비율을 바꾸는 변경은 아니다.
+
+첫 단계인 BE 테스트 분리는 MR !80(`master=a2f8650`)에서 완료했다. 해당 master 위로 rebase한 뒤
+설치된 0.1.2의 BE 패키지·어댑터 **46개 전부 통과**를 확인했다. 화면 안내 전 차단은 계속 유지하며,
+모듈 MR에서 BE/FE 파일을 변경하거나 차단을 해제하지 않는다.
 
 확인한 master의 [금융자산 폼](../../../front-pjt/src/components/forms/FinancialAssetsForm.vue)이 사용하는
 [AddableTable.vue](../../../front-pjt/src/components/ui/AddableTable.vue)에는 `기타` 선택 시 직접 입력 경로가 있다.
-연결 대상의 실제 저장 문자열과 입력 제약은 BE/화면 담당 확인 사항이며 이 브랜치에서 FE를 수정하지 않는다.
-양 끝 공백을 제외한 정확한 `기타`만 이 범주로 인식하고, 임의 문자열을 자동 치환하지 않는다.
+이 경로에서는 선택 직후 빈 값, 입력 후 자유 문자열이 저장될 수 있다. 이 브랜치에서 FE나 BE를
+수정하지 않으며 원본 문자열을 `기타`로 자동 치환하지 않는다.
 
 ## 1. 호출 경계
 
