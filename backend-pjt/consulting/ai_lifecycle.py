@@ -481,7 +481,8 @@ def expire_if_due(state, *, now=None):
 
 def bind_terminal_callback(state, payload):
     if (
-        state.get('session_id') != payload['session_id']
+        state.get('request_id') != payload['request_id']
+        or state.get('session_id') != payload['session_id']
         or state.get('thread_id') != payload['thread_id']
     ):
         raise LifecycleError(
@@ -504,6 +505,12 @@ def bind_terminal_callback(state, payload):
             409,
             'CALLBACK_CONFLICT',
             '이미 종결된 AI 작업과 callback이 충돌합니다.',
+        )
+    if current_status != 'processing':
+        raise LifecycleError(
+            409,
+            'CALLBACK_CONFLICT',
+            '종결할 수 없는 AI 작업 상태입니다.',
         )
     return {**state, 'callback_digest': digest}, False
 

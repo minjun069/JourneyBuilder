@@ -309,6 +309,10 @@ class RequestStateTransitionTests(SimpleTestCase):
             bind_terminal_callback({**state, 'status': 'expired'}, completed_callback())
         self.assertEqual(captured.exception.code, 'CALLBACK_CONFLICT')
 
+        with self.assertRaises(LifecycleError) as captured:
+            bind_terminal_callback({**state, 'status': 'unknown'}, completed_callback())
+        self.assertEqual(captured.exception.code, 'CALLBACK_CONFLICT')
+
 
 class CallbackValidationTests(SimpleTestCase):
     def test_completed_and_failed_terminal_callbacks_are_valid(self):
@@ -597,12 +601,22 @@ class V2LifecycleViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.data['data']['request_id'], 'ai_req_test')
 
+    @patch(
+        'consulting.v2_views.recover_terminal_state',
+        side_effect=lambda _request_id, **kwargs: kwargs['state'],
+    )
+    @patch(
+        'consulting.v2_views.finalize_expired_request',
+        side_effect=lambda state: state,
+    )
     @patch('consulting.v2_views.RedisLifecycleStore')
     @patch('consulting.v2_views.get_owned_session')
     def test_polling_turns_overdue_processing_into_terminal_expired(
         self,
         get_session,
         store_class,
+        _finalize_expired,
+        _recover_terminal,
     ):
         get_session.return_value = self.session
         store = store_class.return_value

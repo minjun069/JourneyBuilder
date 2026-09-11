@@ -16,13 +16,12 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
-from consulting.views import AICallbackView
-from consulting.v2_views import V2CallbackView
+from consulting.v2_views import RetiredAICallbackView, V2CallbackView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/ai/callback/', AICallbackView.as_view(), name='ai-callback'),
-    path('api/ai/callback', AICallbackView.as_view(), name='ai-callback-no-slash'),
+    path('api/ai/callback/', RetiredAICallbackView.as_view(), name='ai-callback'),
+    path('api/ai/callback', RetiredAICallbackView.as_view(), name='ai-callback-no-slash'),
     path('api/v2/internal/ai/callback/', V2CallbackView.as_view(), name='v2-ai-callback'),
     path('api/v2/', include('consulting.v2_urls')),
     path('api/v1/admin/', include('adminapi.urls')),

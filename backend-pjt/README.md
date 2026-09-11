@@ -35,8 +35,8 @@ uv pip compile \
 | 현재 사용 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | Django `DATABASES`의 단일 입력 |
 | 현재 필수 | `REDIS_URL` | AI request 상태 저장과 readiness가 사용하는 Redis URL |
 | 현재 사용 | `AI_SERVICE_URL`, `AI_SERVICE_STREAM_URL`, `AI_CALLBACK_URL`, `AI_REQUEST_TTL_SECONDS`, `AI_SERVICE_TIMEOUT_SECONDS`, `AI_STREAM_READ_TIMEOUT_SECONDS` | Backend의 AI 호출·SSE·callback 설정 |
-| startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 빈 값·placeholder 거부. 양방향 서비스 인증 연결은 후속 작업 범위 |
-| legacy | `AI_CALLBACK_SECRET` | 현재 선택값. v2 bearer 전환 뒤 제거 후보 |
+| startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 빈 값·placeholder를 거부하고 Backend→AI request와 AI→Backend callback에 같은 bearer로 사용 |
+| legacy 내부 전용 | `AI_CALLBACK_SECRET` | route가 제거된 v1 helper의 격리 테스트 호환값. `/api/ai/callback[/]`은 설정과 무관하게 410 반환 |
 | readiness | `READINESS_HOST`, `READINESS_PORT`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `127.0.0.1:8000`, 2초 |
 
 `config/settings.py`는 PostgreSQL과 Django secret/debug/host 설정을 환경변수에서 읽고,
@@ -123,14 +123,16 @@ G1은 환경 기반 Django·PostgreSQL 설정과 실패 폐쇄형 parsing을 반
 lifecycle 구현에는 다음 항목이 남아 있다.
 
 1. PostgreSQL connect timeout을 readiness timeout과 일관되게 제한한다.
-2. `AI_SERVICE_BEARER_TOKEN`을 실제 Backend→AI request와 AI→Backend callback 인증에 연결한다.
-3. legacy `AI_CALLBACK_SECRET` 선택 동작을 v2 bearer 계약으로 교체하고 이행 뒤 환경 예시에서 제거한다.
+2. `AI_SERVICE_BEARER_TOKEN`은 실제 Backend→AI request와 AI→Backend callback 인증에 연결돼 있다.
+3. legacy `/api/ai/callback[/]`은 410으로 종료됐다. 남은 v1 내부 helper를 제거할 때 `AI_CALLBACK_SECRET` 환경 예시도 함께 제거한다.
 4. startup/config/callback 오류에 password, token, 전체 DSN을 남기지 않는다.
 5. `/health` 또는 `/ready` endpoint를 추가한다면 process·dependency 의미를 분리하고 `readiness.py`와 서로 다른 판정을 만들지 않는다.
 
 정상 다중 컨테이너 PostgreSQL 연결, secret 기본 거부와 전체 G1 runtime 판정은
-완료됐다. 위 항목은 readiness가 아니라 아직 구현되지 않은 v2 Backend lifecycle의
-후속 인수 조건이다.
+완료됐다. v2 callback과 SSE terminal 결과는 `0006_ai_terminal_receipt` migration의
+`request_id` 고유 receipt와 assistant message를 한 transaction으로 확정한다. callback,
+polling과 SSE replay는 Redis terminal 갱신이 실패하거나 상태가 유실되면 이 receipt에서
+동일 결과를 복구한다. 위의 남은 항목은 readiness·운영 인수 조건이다.
 
 ## P02 당시 검증 결과
 

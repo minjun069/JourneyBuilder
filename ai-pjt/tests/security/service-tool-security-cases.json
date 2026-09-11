@@ -1,0 +1,395 @@
+{
+  "schema_version": "f12-service-tool-security-v1",
+  "contract_version": "2.0",
+  "work_id": "F12-T01",
+  "lane": "W1-L13",
+  "synthetic_data_only": true,
+  "lifecycle_fixture": "contract-fixtures/ai-lifecycle/v2/lifecycle.json",
+  "required_case_groups": [
+    "service_bearer",
+    "callback_integrity",
+    "replay_idempotency",
+    "request_ownership",
+    "task_identity",
+    "dependency_integrity",
+    "binding_integrity",
+    "artifact_integrity",
+    "tool_authorization"
+  ],
+  "decision_semantics": "allow 또는 block은 요청한 보안 민감 효과의 허용 여부이며, block도 안전한 오류 응답은 반환할 수 있다.",
+  "cases": [
+    {
+      "id": "F12-AUTH-001",
+      "title": "AI 요청의 service bearer 누락을 schema 검증 전에 차단",
+      "group": "service_bearer",
+      "boundary": "ai_http_auth",
+      "downstream_owner": "F12-T02",
+      "source_fixture_case": "service_unauthorized",
+      "input": {"authorization": null, "body": {}},
+      "expected": {
+        "decision": "block",
+        "reason_code": "SERVICE_UNAUTHORIZED",
+        "http_status": 401,
+        "required_effects": ["return_safe_error"],
+        "forbidden_effects": ["validate_request_schema", "claim_request", "schedule_graph"]
+      }
+    },
+    {
+      "id": "F12-AUTH-002",
+      "title": "Django callback의 잘못된 service bearer 차단",
+      "group": "service_bearer",
+      "boundary": "django_callback_auth",
+      "downstream_owner": "F12-T02",
+      "input": {
+        "authorization": "Bearer <INVALID_SERVICE_TOKEN>",
+        "request_id": "F12-SYNTHETIC-REQUEST-002"
+      },
+      "expected": {
+        "decision": "block",
+        "reason_code": "SERVICE_UNAUTHORIZED",
+        "http_status": 401,
+        "required_effects": ["return_safe_error"],
+        "forbidden_effects": ["load_request_state", "create_assistant_message", "save_terminal_state"]
+      }
+    },
+    {
+      "id": "F12-AUTH-003",
+      "title": "정확한 service bearer의 정상 AI 요청 허용",
+      "group": "service_bearer",
+      "boundary": "ai_http_auth",
+      "downstream_owner": "F12-T02",
+      "source_fixture_case": "django_ai_accepted",
+      "input": {"authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
+      "expected": {
+        "decision": "allow",
+        "reason_code": "REQUEST_ACCEPTED",
+        "http_status": 202,
+        "required_effects": ["validate_request_schema", "claim_request"],
+        "forbidden_effects": ["bypass_request_contract"]
+      }
+    },
+    {
+      "id": "F12-OWN-001",
+      "title": "다른 사용자의 상담 session 조회 은닉",
+      "group": "request_ownership",
+      "boundary": "browser_session",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "browser_foreign_session_hidden",
+      "input": {
+        "authenticated_user": "F12-SYNTHETIC-USER-A",
+        "session_owner": "F12-SYNTHETIC-USER-B"
+      },
+      "expected": {
+        "decision": "block",
+        "reason_code": "SESSION_NOT_FOUND",
+        "http_status": 404,
+        "required_effects": ["hide_foreign_session"],
+        "forbidden_effects": ["load_foreign_request", "disclose_foreign_state", "change_foreign_session"]
+      }
+    },
+    {
+      "id": "F12-OWN-002",
+      "title": "callback state 사용자와 실제 session 소유자 불일치 차단",
+      "group": "request_ownership",
+      "boundary": "django_callback",
+      "downstream_owner": "F12-T03",
+      "input": {
+        "request_id": "F12-SYNTHETIC-REQUEST-OWN-002",
+        "state_user_id": "F12-SYNTHETIC-USER-A",
+        "session_owner_id": "F12-SYNTHETIC-USER-B",
+        "session_id": 1202,
+        "thread_id": "F12-SYNTHETIC-THREAD-OWN-002"
+      },
+      "expected": {
+        "decision": "block",
+        "reason_code": "CALLBACK_BINDING_MISMATCH",
+        "http_status": 409,
+        "required_effects": ["preserve_request_state", "audit_callback_denial"],
+        "forbidden_effects": ["create_assistant_message", "save_terminal_state", "cross_user_state_change"]
+      }
+    },
+    {
+      "id": "F12-CBK-001",
+      "title": "인증되고 식별자 결합이 맞는 최초 callback 허용",
+      "group": "callback_integrity",
+      "boundary": "django_callback",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "callback_completed_proposal",
+      "input": {"binding": "request_id+session_id+thread_id"},
+      "expected": {
+        "decision": "allow",
+        "reason_code": "CALLBACK_ACCEPTED",
+        "http_status": 200,
+        "required_effects": ["record_terminal_result", "create_one_assistant_message"],
+        "forbidden_effects": ["create_duplicate_message", "change_foreign_session"]
+      }
+    },
+    {
+      "id": "F12-CBK-002",
+      "title": "request에 결합되지 않은 session과 thread callback 차단",
+      "group": "callback_integrity",
+      "boundary": "django_callback",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "callback_binding_mismatch",
+      "input": {"mutation": ["session_id", "thread_id"]},
+      "expected": {
+        "decision": "block",
+        "reason_code": "CALLBACK_BINDING_MISMATCH",
+        "http_status": 409,
+        "required_effects": ["preserve_request_state", "audit_callback_denial"],
+        "forbidden_effects": ["create_assistant_message", "save_terminal_state", "cross_session_state_change"]
+      }
+    },
+    {
+      "id": "F12-CBK-003",
+      "title": "expired request에 도착한 terminal callback 차단",
+      "group": "callback_integrity",
+      "boundary": "django_callback",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "expired_callback_conflict",
+      "input": {"stored_status": "expired", "callback_status": "completed"},
+      "expected": {
+        "decision": "block",
+        "reason_code": "CALLBACK_CONFLICT",
+        "http_status": 409,
+        "required_effects": ["preserve_expired_state"],
+        "forbidden_effects": ["create_assistant_message", "flip_terminal_state", "overwrite_terminal_payload"]
+      }
+    },
+    {
+      "id": "F12-RPL-001",
+      "title": "동일 AI request ID와 digest 재접수 시 graph 비재실행",
+      "group": "replay_idempotency",
+      "boundary": "ai_request_checkpoint",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "django_ai_identical_replay",
+      "input": {"request_id": "F12-SYNTHETIC-REQUEST-RPL-001", "digest_relation": "same"},
+      "expected": {
+        "decision": "allow",
+        "reason_code": "REQUEST_REPLAY_IDEMPOTENT",
+        "http_status": 202,
+        "required_effects": ["return_existing_acceptance", "no_graph_reexecution", "no_duplicate_side_effect"],
+        "forbidden_effects": ["schedule_graph", "invoke_agent", "invoke_tool"]
+      }
+    },
+    {
+      "id": "F12-RPL-002",
+      "title": "같은 AI request ID의 다른 payload digest 충돌",
+      "group": "replay_idempotency",
+      "boundary": "ai_request_checkpoint",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "django_ai_request_id_conflict",
+      "input": {"request_id": "F12-SYNTHETIC-REQUEST-RPL-002", "digest_relation": "different"},
+      "expected": {
+        "decision": "block",
+        "reason_code": "REQUEST_ID_CONFLICT",
+        "http_status": 409,
+        "required_effects": ["preserve_original_request"],
+        "forbidden_effects": ["schedule_graph", "overwrite_request", "invoke_tool"]
+      }
+    },
+    {
+      "id": "F12-RPL-003",
+      "title": "동일 terminal callback digest 재전송 멱등 허용",
+      "group": "replay_idempotency",
+      "boundary": "django_callback",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "callback_identical_replay",
+      "input": {"digest_relation": "same", "terminal_exists": true},
+      "expected": {
+        "decision": "allow",
+        "reason_code": "CALLBACK_REPLAY_IDEMPOTENT",
+        "http_status": 200,
+        "required_effects": ["return_existing_result", "no_duplicate_side_effect"],
+        "forbidden_effects": ["create_duplicate_message", "create_duplicate_action", "flip_terminal_state"]
+      }
+    },
+    {
+      "id": "F12-RPL-004",
+      "title": "terminal callback의 다른 digest 재전송 충돌",
+      "group": "replay_idempotency",
+      "boundary": "django_callback",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "callback_conflict",
+      "input": {"digest_relation": "different", "terminal_exists": true},
+      "expected": {
+        "decision": "block",
+        "reason_code": "CALLBACK_CONFLICT",
+        "http_status": 409,
+        "required_effects": ["preserve_terminal_state"],
+        "forbidden_effects": ["create_duplicate_message", "flip_terminal_state", "overwrite_terminal_payload"]
+      }
+    },
+    {
+      "id": "F12-RPL-005",
+      "title": "callback HTTP 재시도는 확정 payload만 재전송",
+      "group": "replay_idempotency",
+      "boundary": "ai_callback_delivery",
+      "downstream_owner": "F12-T03",
+      "source_fixture_case": "callback_delivery_timeout_exhausted",
+      "input": {"attempts": 4, "retryable_transport_failure": true},
+      "expected": {
+        "decision": "allow",
+        "reason_code": "CALLBACK_DELIVERY_RETRY",
+        "required_effects": ["reuse_terminal_payload", "no_graph_reexecution", "preserve_request_ids"],
+        "forbidden_effects": ["invoke_planner", "invoke_agent", "invoke_tool", "regenerate_form_action"]
+      }
+    },
+    {
+      "id": "F12-TSK-001",
+      "title": "executor 결과의 위조 task ID 차단",
+      "group": "task_identity",
+      "boundary": "task_result_validation",
+      "downstream_owner": "F12-T04",
+      "input": {"executing_task_id": "task-1", "result_task_id": "task-9"},
+      "expected": {
+        "decision": "block",
+        "reason_code": "TASK_ID_MISMATCH",
+        "required_effects": ["mark_task_failed", "discard_untrusted_artifact"],
+        "forbidden_effects": ["publish_artifact", "resolve_dependent_binding", "invoke_dependent_task"]
+      }
+    },
+    {
+      "id": "F12-TSK-002",
+      "title": "planner가 주입한 executor와 Agent 선택 차단",
+      "group": "task_identity",
+      "boundary": "route_plan_validation",
+      "downstream_owner": "F12-T04",
+      "input": {
+        "task": {
+          "id": "lookup",
+          "type": "answer_question",
+          "executor": "get_dashboard_metric",
+          "agent": "input_assist"
+        }
+      },
+      "expected": {
+        "decision": "block",
+        "reason_code": "PLANNER_EXECUTOR_INJECTION",
+        "required_effects": ["reject_route_plan"],
+        "forbidden_effects": ["select_injected_executor", "invoke_agent", "invoke_tool"]
+      }
+    },
+    {
+      "id": "F12-DEP-001",
+      "title": "plan에 선언되지 않은 dependency 참조 차단",
+      "group": "dependency_integrity",
+      "boundary": "route_plan_validation",
+      "downstream_owner": "F12-T04",
+      "input": {"task_id": "task-2", "depends_on": ["task-outside-plan"]},
+      "expected": {
+        "decision": "block",
+        "reason_code": "UNKNOWN_DEPENDENCY",
+        "required_effects": ["reject_route_plan"],
+        "forbidden_effects": ["invoke_task", "load_external_task_result", "bypass_dependency_failure"]
+      }
+    },
+    {
+      "id": "F12-BND-001",
+      "title": "dependency로 선언하지 않은 다른 task 결과 binding 차단",
+      "group": "binding_integrity",
+      "boundary": "binding_resolution",
+      "downstream_owner": "F12-T04",
+      "input": {
+        "consumer_task_id": "task-2",
+        "depends_on": [],
+        "binding": {"value": {"task_id": "task-1", "path": "value"}}
+      },
+      "expected": {
+        "decision": "block",
+        "reason_code": "UNDECLARED_DEPENDENCY",
+        "required_effects": ["block_consumer_task", "discard_binding_value"],
+        "forbidden_effects": ["invoke_consumer", "read_cross_task_value", "publish_form_change"]
+      }
+    },
+    {
+      "id": "F12-BND-002",
+      "title": "검증된 dependency의 허용 path binding 정상 소비",
+      "group": "binding_integrity",
+      "boundary": "binding_resolution",
+      "downstream_owner": "F12-T04",
+      "input": {
+        "consumer_task_id": "task-2",
+        "depends_on": ["task-1"],
+        "binding": {"value": {"task_id": "task-1", "path": "value"}}
+      },
+      "expected": {
+        "decision": "allow",
+        "reason_code": "BINDING_RESOLVED",
+        "required_effects": ["copy_validated_binding_value", "invoke_declared_consumer"],
+        "forbidden_effects": ["expose_whole_task_result", "mutate_source_artifact"]
+      }
+    },
+    {
+      "id": "F12-ART-001",
+      "title": "artifact producer task ID 바꿔치기 차단",
+      "group": "artifact_integrity",
+      "boundary": "artifact_validation",
+      "downstream_owner": "F12-T04",
+      "input": {"executing_task_id": "task-1", "artifact_producer_task_id": "task-9"},
+      "expected": {
+        "decision": "block",
+        "reason_code": "ARTIFACT_PRODUCER_MISMATCH",
+        "required_effects": ["mark_task_failed", "discard_untrusted_artifact"],
+        "forbidden_effects": ["publish_artifact", "resolve_dependent_binding", "invoke_dependent_task"]
+      }
+    },
+    {
+      "id": "F12-ART-002",
+      "title": "검증 후 artifact schema·단위·출처 바꿔치기 차단",
+      "group": "artifact_integrity",
+      "boundary": "artifact_validation",
+      "downstream_owner": "F12-T04",
+      "input": {
+        "artifact_type": "reference_value",
+        "mutations": {
+          "schema_version": "9.9",
+          "unit": "USD",
+          "source_id": "F12-SYNTHETIC-UNAPPROVED-SOURCE"
+        }
+      },
+      "expected": {
+        "decision": "block",
+        "reason_code": "ARTIFACT_INTEGRITY_MISMATCH",
+        "required_effects": ["block_consumer_task", "audit_artifact_denial"],
+        "forbidden_effects": ["resolve_dependent_binding", "invoke_dependent_task", "publish_mutated_value"]
+      }
+    },
+    {
+      "id": "F12-TOL-001",
+      "title": "RuntimeToolRequest의 Agent 권한 위조 차단",
+      "group": "tool_authorization",
+      "boundary": "tool_runtime_authorization",
+      "downstream_owner": "F12-T04",
+      "input": {
+        "routed_agent": "chart_interpret",
+        "claimed_agent": "qa",
+        "tool_name": "get_dashboard_metric"
+      },
+      "expected": {
+        "decision": "block",
+        "reason_code": "TOOL_CONTEXT_MISMATCH",
+        "required_effects": ["deny_tool_call", "audit_tool_denial"],
+        "forbidden_effects": ["invoke_tool_handler", "trust_model_agent", "read_tool_context"]
+      }
+    },
+    {
+      "id": "F12-TOL-002",
+      "title": "route task와 Agent가 일치하는 허용 도구 호출",
+      "group": "tool_authorization",
+      "boundary": "tool_runtime_authorization",
+      "downstream_owner": "F12-T04",
+      "input": {
+        "routed_agent": "qa",
+        "claimed_agent": "qa",
+        "tool_name": "get_dashboard_metric"
+      },
+      "expected": {
+        "decision": "allow",
+        "reason_code": "TOOL_CALL_ALLOWED",
+        "required_effects": ["validate_tool_schema", "invoke_allowlisted_tool", "audit_tool_call"],
+        "forbidden_effects": ["expose_user_jwt", "bypass_tool_budget"]
+      }
+    }
+  ]
+}

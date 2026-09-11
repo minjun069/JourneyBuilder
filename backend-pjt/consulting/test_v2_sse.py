@@ -93,9 +93,9 @@ class V2AIStreamClientTests(SimpleTestCase):
 
 
 class V2SSEProxyTests(SimpleTestCase):
-    @patch('consulting.v2_sse.create_v2_assistant_message')
+    @patch('consulting.v2_sse.finalize_terminal_callback')
     @patch('consulting.v2_sse.stream_v2_ai_response')
-    def test_done_saves_one_v2_message_and_terminal_state(self, upstream, create_message):
+    def test_done_saves_one_v2_message_and_terminal_state(self, upstream, finalize):
         upstream.return_value = async_items([
             'event: start',
             'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12"}',
@@ -107,11 +107,21 @@ class V2SSEProxyTests(SimpleTestCase):
             'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12","status":"completed","completed_at":"2026-09-08T00:00:01Z","output":{"response":"안녕","step_id":"general","action":null}}',
             '',
         ])
-        create_message.return_value = SimpleNamespace(
+        message = SimpleNamespace(
             id=99,
             role='assistant',
             content='안녕',
             extracted_data={'action': None},
+        )
+        terminal_state = {
+            **processing_state(),
+            'status': 'completed',
+            'assistant_message_id': 99,
+        }
+        finalize.return_value = SimpleNamespace(
+            state=terminal_state,
+            message=message,
+            replay=False,
         )
         store = MagicMock()
 
@@ -126,20 +136,25 @@ class V2SSEProxyTests(SimpleTestCase):
 
         self.assertEqual([event for event, _ in frames], ['start', 'delta', 'done'])
         self.assertEqual(frames[-1][1]['message']['id'], 99)
-        create_message.assert_called_once()
+        finalize.assert_called_once()
         store.save_terminal.assert_called_once()
         saved = store.save_terminal.call_args.args[0]
         self.assertEqual(saved['status'], 'completed')
         self.assertEqual(saved['assistant_message_id'], 99)
 
-    @patch('consulting.v2_sse.create_v2_assistant_message')
+    @patch('consulting.v2_sse.finalize_terminal_callback')
     @patch('consulting.v2_sse.stream_v2_ai_response')
-    def test_protocol_error_does_not_save_partial_message(self, upstream, create_message):
+    def test_protocol_error_does_not_save_partial_message(self, upstream, finalize):
         upstream.return_value = async_items([
             'event: delta',
             'data: {"contract_version":"2.0","request_id":"another","content":"잘못된 응답"}',
             '',
         ])
+        finalize.return_value = SimpleNamespace(
+            state={**processing_state(), 'status': 'failed'},
+            message=None,
+            replay=False,
+        )
         store = MagicMock()
 
         frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
@@ -152,7 +167,7 @@ class V2SSEProxyTests(SimpleTestCase):
         ))]
 
         self.assertEqual([event for event, _ in frames], ['start', 'error'])
-        create_message.assert_not_called()
+        finalize.assert_called_once()
         self.assertEqual(store.save_terminal.call_args.args[0]['status'], 'failed')
 
 
@@ -167,7 +182,6 @@ class V2MessageStreamViewTests(SimpleTestCase):
             format='json',
             HTTP_ACCEPT='text/event-stream',
             HTTP_IDEMPOTENCY_KEY='idem-test',
-            HTTP_ACCEPT='text/event-stream',
         )
         force_authenticate(request, user=SimpleNamespace(id=3, is_authenticated=True))
         return request
@@ -208,6 +222,10 @@ class V2MessageStreamViewTests(SimpleTestCase):
         store.save_active.assert_called_once_with(processing_state())
         store.save_idempotency.assert_called_once()
 
+    @patch(
+        'consulting.v2_views.recover_terminal_state',
+        side_effect=lambda _request_id, **kwargs: kwargs['state'],
+    )
     @patch('consulting.v2_views.Message.objects.create')
     @patch('consulting.v2_views.RedisLifecycleStore')
     @patch('consulting.v2_views.get_owned_session')
@@ -216,6 +234,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
         get_session,
         store_class,
         create_user_message,
+        _recover_terminal,
     ):
         get_session.return_value = SimpleNamespace(id=12, status='in_progress')
         store = store_class.return_value
