@@ -481,6 +481,7 @@ class MappingIntegrationAndIsolationEdges(_Checks):
 
     def test_repeated_and_concurrent_mapping_has_no_shared_mutable_state(self):
         raw = saved_data()
+        raw["financial_assets"].append({"asset_type": "전세보증금"})
         original = deepcopy(raw)
         state = random.getstate()
         expected = map_retirement_profile(raw)
@@ -507,8 +508,9 @@ class MappingIntegrationAndIsolationEdges(_Checks):
         data["financial_assets"][0]["asset_type"] = "PRIVATE_ASSET"
         output, errors = StringIO(), StringIO()
         with redirect_stdout(output), redirect_stderr(errors):
-            error = self.assert_mapping_error(data, "unsupported_value", "financial_assets[0].asset_type")
-            result = map_retirement_profile(compact_saved())
+            result = map_retirement_profile(data)
+            data["financial_assets"][0]["asset_type"] = {"name": "PRIVATE_ASSET"}
+            error = self.assert_mapping_error(data, "invalid_type", "financial_assets[0].asset_type")
         self.assertEqual((output.getvalue(), errors.getvalue()), ("", ""))
         for rendered in (str(error), repr(error), repr(error.__dict__), repr(result), repr(result.notices)):
             self.assertNotIn("PRIVATE", rendered)
@@ -547,6 +549,7 @@ from unittest.mock import patch
 from retirement_simulation import map_retirement_profile, map_simulation_assumptions
 from retirement_simulation.tests.test_input_adapter import saved_data, assumption_data
 data, settings = saved_data(), assumption_data()
+data['financial_assets'].append({'asset_type': '전세보증금'})
 with patch('builtins.open', side_effect=AssertionError('file access')), \\
      patch('socket.socket', side_effect=AssertionError('network access')), \\
      patch('os.getenv', side_effect=AssertionError('environment lookup')), \\

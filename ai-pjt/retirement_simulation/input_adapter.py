@@ -197,16 +197,12 @@ def _financial_totals(rows: _SourceRows) -> tuple[int, int, tuple[InputMappingNo
     notices = []
     for index, row in enumerate(rows):
         path = f"financial_assets[{index}]"
-        kind = _required(row, "asset_type", f"{path}.asset_type")
-        if not isinstance(kind, str):
-            raise InputMappingError("unsupported_value", f"{path}.asset_type")
-        kind = kind.strip()
-        if kind == "기타":
+        kind = _text_field(row, "asset_type", path)
+        if kind not in _MODELED_ASSET_TYPES:
+            # Saved classifications are open text; do not infer a modeled type.
             # As with excluded real estate, unused amounts are not read or imputed.
             notices.append(InputMappingNotice(code="other_financial_asset_not_modeled", field_name=path))
             continue
-        if kind not in _MODELED_ASSET_TYPES:
-            raise InputMappingError("unsupported_value", f"{path}.asset_type")
         assets += _int_field(row, "current_value", path)
         savings += _int_field(row, "monthly_savings", path)
     return assets, savings, tuple(notices)

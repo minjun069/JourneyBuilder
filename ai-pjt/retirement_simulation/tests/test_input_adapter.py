@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
 from decimal import Decimal
+from itertools import product
 from pathlib import Path
 import random
 import sys
@@ -185,19 +186,42 @@ class ProfileMappingTests(unittest.TestCase):
             data["financial_assets"][0]["asset_type"] = f" {kind} "
             self.assertEqual(map_retirement_profile(data), expected)
 
-    def test_unknown_asset_classification_is_not_guessed(self):
-        for kind in (None, "", " ", True, 0, [], {}, "금", "기 타", "기타자산", "기타(직접입력)", "PRIVATE_ASSET"):
+    def test_unmodeled_asset_classification_is_excluded_without_guessing(self):
+        kinds = ("금", "기 타", "기타자산", "기타(직접입력)", "PRIVATE_ASSET", "전세보증금",
+                 "보험 해약환급금", "회원권", "예금적금", "예금/ 적금", "주식형보험", "123")
+        for kind in kinds:
             with self.subTest(kind=kind):
                 data = saved_data()
                 data["financial_assets"][0]["asset_type"] = kind
-                error = self.assert_mapping_error(data, "unsupported_value", "financial_assets[0].asset_type")
+                original = deepcopy(data)
+                result = map_retirement_profile(data)
+                self.assertEqual((result.profile.liquid_assets, result.profile.monthly_savings), (20_000_000, 250_000))
+                self.assertEqual([n for n in result.notices if n.code == "other_financial_asset_not_modeled"], [
+                    InputMappingNotice(code="other_financial_asset_not_modeled", field_name="financial_assets[0]"),
+                ])
+                self.assertEqual(data, original)
+                self.assertNotIn(kind, repr(result.notices))
+
+    def test_blank_asset_classification_is_missing_not_unmodeled(self):
+        for kind in (None, "", " ", "\t\n", "\u3000\u00a0"):
+            with self.subTest(kind=kind):
+                data = saved_data()
+                data["financial_assets"][0]["asset_type"] = kind
+                self.assert_mapping_error(data, "missing_value", "financial_assets[0].asset_type")
+
+    def test_non_string_asset_classification_is_invalid_type_not_unmodeled(self):
+        for kind in (True, False, 0, 1.5, Decimal("1"), [], {}, ["PRIVATE_ASSET"], {"name": "PRIVATE_ASSET"}):
+            with self.subTest(kind=kind):
+                data = saved_data()
+                data["financial_assets"][0]["asset_type"] = kind
+                error = self.assert_mapping_error(data, "invalid_type", "financial_assets[0].asset_type")
                 self.assertNotIn("PRIVATE_ASSET", str(error))
 
     def test_other_assets_are_omitted_with_original_row_notices(self):
         data = saved_data()
         expected = map_retirement_profile(data)
         data["financial_assets"].insert(0, {
-            "id": 91, "asset_type": "기타", "current_value": 900_000_000,
+            "id": 91, "asset_type": "전세보증금", "current_value": 900_000_000,
             "monthly_savings": 99_000_000, "name": "PRIVATE_OTHER_ASSET",
         })
         data["financial_assets"].append({
@@ -216,7 +240,7 @@ class ProfileMappingTests(unittest.TestCase):
         self.assertNotIn("PRIVATE_OTHER_ASSET", repr(result.notices))
 
     def test_other_asset_classification_accepts_outer_whitespace(self):
-        for kind in ("기타", " 기타 ", "\t기타\n"):
+        for kind in ("기타", " 기타 ", "\t기타\n", " 전세보증금 ", "\u3000보험 해약환급금\n", " 예금적금 "):
             with self.subTest(kind=kind):
                 data = saved_data()
                 data["financial_assets"][0]["asset_type"] = kind
@@ -236,10 +260,10 @@ class ProfileMappingTests(unittest.TestCase):
             {"current_value": 0, "monthly_savings": 0},
         )
         expected = map_retirement_profile(saved_data()).profile
-        for unused in unused_values:
-            with self.subTest(unused=unused):
+        for kind, unused in product(("기타", "전세보증금", "예금적금"), unused_values):
+            with self.subTest(kind=kind, unused=unused):
                 data = saved_data()
-                data["financial_assets"].append({"asset_type": "기타", "principal": 9_000_000_000} | unused)
+                data["financial_assets"].append({"asset_type": kind, "principal": 9_000_000_000} | unused)
                 original = deepcopy(data)
                 result = map_retirement_profile(data)
                 self.assertEqual(result.profile, expected)
@@ -247,10 +271,24 @@ class ProfileMappingTests(unittest.TestCase):
                                                 field_name="financial_assets[2]"), result.notices)
                 self.assertEqual(data, original)
 
+    def test_unmodeled_amount_fields_are_not_read(self):
+        class RejectAmountReads(dict):
+            def __getitem__(self, key):
+                if key in ("current_value", "monthly_savings", "principal"):
+                    raise AssertionError("unused amount was accessed")
+                return super().__getitem__(key)
+
+        data = saved_data()
+        expected = map_retirement_profile(data).profile
+        data["financial_assets"].append(RejectAmountReads(
+            asset_type="전세보증금", current_value=None, monthly_savings=None, principal=1,
+        ))
+        self.assertEqual(map_retirement_profile(data).profile, expected)
+
     def test_only_other_assets_are_not_confirmed_empty(self):
         data = saved_data()
-        for row in data["financial_assets"]:
-            row["asset_type"] = "기타"
+        data["financial_assets"][0]["asset_type"] = "기타"
+        data["financial_assets"][1]["asset_type"] = "전세보증금"
         original = deepcopy(data)
         result = map_retirement_profile(data)
         self.assertEqual((result.profile.liquid_assets, result.profile.monthly_savings), (0, 0))
@@ -264,21 +302,24 @@ class ProfileMappingTests(unittest.TestCase):
                                   confirmed_empty_sections=["financial_assets"])
 
     def test_other_assets_still_require_valid_unique_ids(self):
-        for identifier in (None, True, 0, -1, "PRIVATE_ID"):
-            with self.subTest(identifier=identifier):
+        for kind, identifier in product(("기타", "전세보증금"), (None, True, 0, -1, "PRIVATE_ID")):
+            with self.subTest(kind=kind, identifier=identifier):
                 data = saved_data()
-                data["financial_assets"][0].update(asset_type="기타", id=identifier)
+                data["financial_assets"][0].update(asset_type=kind, id=identifier)
                 self.assert_mapping_error(data, "invalid_value", "financial_assets[0].id")
-        for second_kind in ("펀드/ETF", "기타"):
-            with self.subTest(second_kind=second_kind):
+        for first_kind, second_kind in product(("기타", "전세보증금"), ("펀드/ETF", "기타", "회원권")):
+            with self.subTest(first_kind=first_kind, second_kind=second_kind):
                 data = saved_data()
-                data["financial_assets"][0]["asset_type"] = "기타"
+                data["financial_assets"][0]["asset_type"] = first_kind
                 data["financial_assets"][1].update(asset_type=second_kind, id=1)
                 self.assert_mapping_error(data, "duplicate_id", "financial_assets[1].id")
 
     def test_other_assets_do_not_hide_later_invalid_rows(self):
         cases = (
-            ({"asset_type": "PRIVATE_ASSET"}, "unsupported_value", "financial_assets[1].asset_type"),
+            ({}, "missing_field", "financial_assets[1].asset_type"),
+            ({"asset_type": None}, "missing_value", "financial_assets[1].asset_type"),
+            ({"asset_type": " \t"}, "missing_value", "financial_assets[1].asset_type"),
+            ({"asset_type": ["PRIVATE_ASSET"]}, "invalid_type", "financial_assets[1].asset_type"),
             ({"asset_type": "주식", "current_value": None, "monthly_savings": 0},
              "invalid_value", "financial_assets[1].current_value"),
             ({"asset_type": "주식", "current_value": 0}, "missing_field", "financial_assets[1].monthly_savings"),
@@ -287,12 +328,12 @@ class ProfileMappingTests(unittest.TestCase):
         for row, code, path in cases:
             with self.subTest(code=code, path=path):
                 data = saved_data()
-                data["financial_assets"] = [{"asset_type": "기타"}, row]
+                data["financial_assets"] = [{"asset_type": "전세보증금"}, row]
                 self.assert_mapping_error(data, code, path)
 
     def test_other_asset_results_support_read_only_input_without_retaining_rows(self):
         data = saved_data()
-        data["financial_assets"].append({"asset_type": "기타", "name": "PRIVATE_OTHER_ASSET"})
+        data["financial_assets"].append({"asset_type": "PRIVATE_ASSET", "name": "PRIVATE_OTHER_ASSET"})
         expected = map_retirement_profile(data)
         read_only = MappingProxyType(data | {
             "financial_assets": tuple(MappingProxyType(row) for row in data["financial_assets"]),
