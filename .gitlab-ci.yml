@@ -74,6 +74,13 @@ test:backend:
     - docker image rm -f ci-backend:$CI_COMMIT_SHORT_SHA >/dev/null 2>&1 || true
 
 # ── ai (Makefile g1-ai · g1-rag · g1-tools · g1-observability · g1-security): 빌드 컨텍스트는 루트 ──
+# retirement_simulation 668개는 팀 Makefile 에 없어 어느 잡에도 걸리지 않았다(S15P21B109-134).
+# 곧 백엔드 이미지에 설치돼(S15P21B109-135) 계산 API 가 직접 호출할 코드라 회귀가 곧 배포 사고다.
+# 의존성이 되기 전에 게이트를 먼저 건다 → 체인 맨 앞.
+# 외부 env·네트워크·LLM 의존이 0인 유일한 스위트라 여기서 깨지면 뒤 결과를 볼 필요가 없다.
+# -t . 로 top_level_dir 를 /src/ai-pjt 에 고정한다. 없으면 테스트끼리 서로를 import 할 때
+# retirement_simulation.tests.test_x 와 test_x 가 따로 적재된다. -q 는 668줄 통과 로그를 줄이려는 것이고
+# 실패·오류는 그대로 출력된다(다른 스위트가 -v 인 것과 다른 이유는 규모뿐이다).
 test:ai:
   stage: test
   script:
@@ -86,6 +93,7 @@ test:ai:
       -e DATABASE_URL="$CI_DATABASE_URL"
       ci-ai:$CI_COMMIT_SHORT_SHA
       sh -c "
+        python -m unittest discover -s retirement_simulation/tests -t . -q &&
         python -m unittest discover -s tests -v &&
         python -m unittest discover -s rag/tests -v &&
         python -m unittest discover -s tools/tests -v &&
