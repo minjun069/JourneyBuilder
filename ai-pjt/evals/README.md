@@ -9,9 +9,9 @@
 상태다. `build_graph`는 adapter를 필수로 받으며 planner·plan
 검증·binding·task·artifact·dependency·aggregation·Agent/tool producer가 typed
 event를 전송한다. callback용 adapter API는 후속 transport 통합에서 같은 port에
-연결할 수 있다. F11 마스킹 구현이 production 직렬화 경계에 연결되기
-전에는 명시적인 export-blocked sink가 이벤트를 폐기하고 Langfuse·LangSmith
-exporter를 활성화하지 않는다.
+연결할 수 있다. F11-T03의 `MaskedInstrumentationSink`는 production 직렬화 경계에서
+typed event를 trace 정책으로 마스킹한 뒤 structured application log exporter에만
+전달한다. Langfuse·LangSmith exporter는 별도 검토 전까지 활성화하지 않는다.
 
 ## 이벤트와 측정 단위
 
@@ -71,8 +71,9 @@ payload를 넣지 않는다. P11 이벤트와 runtime 이벤트는 같은 `Instr
 python3 -m unittest discover -s evals/tests -v
 ```
 
-F11의 production masker와 exporter 직전 sentinel 검사를 통과시킨 후 실제
-baseline을 측정한다.
+production masker 뒤의 가명화된 structured event로 baseline을 측정한다. downstream
+trace 저장소가 일시적으로 실패하면 해당 export만 폐기하고 raw event로 우회하지
+않으며, 업무 graph 결과에는 실패를 전파하지 않는다.
 
 ## F07-T04·F08-T04 Agent 통합 평가
 

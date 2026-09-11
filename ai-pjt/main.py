@@ -13,9 +13,11 @@ from pydantic import ValidationError
 from core.checkpointer import build_context_state_api, get_checkpointer
 from core.config import settings
 from core.context import ContextScope
+from core.masking import MaskingSink
 from core.monitoring import get_callbacks
-from core.runtime_instrumentation_adapter import (
-    build_export_blocked_instrumentation,
+from core.observability_masking import (
+    StructuredLogInstrumentationExporter,
+    build_masked_runtime_instrumentation,
 )
 from graph.builder import build_graph
 from schemas.chat import ChatRequest, ChatStreamRequest
@@ -46,8 +48,12 @@ async def lifespan(app: FastAPI):
     settings.validate_runtime()
     async with get_checkpointer() as checkpointer:
         tool_runtime = build_production_tool_runtime()
-        instrumentation, instrumentation_sink = (
-            build_export_blocked_instrumentation()
+        instrumentation, instrumentation_sink = build_masked_runtime_instrumentation(
+            pseudonym_key=settings.masking_pseudonym_key_bytes,
+            sink=MaskingSink.TRACE_EXPORT,
+            downstream=StructuredLogInstrumentationExporter(
+                logging.getLogger("retirewise.instrumentation")
+            ),
         )
         app.state.instrumentation = instrumentation
         app.state.instrumentation_sink = instrumentation_sink
