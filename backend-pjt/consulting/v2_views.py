@@ -68,6 +68,20 @@ class V2APIView(APIView):
         return super().handle_exception(exc)
 
 
+class RetiredAICallbackView(V2APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, _request):
+        return error_response(
+            LifecycleError(
+                410,
+                'CONTRACT_VERSION_UNSUPPORTED',
+                'AI v1 callback 경로는 종료되었습니다.',
+            )
+        )
+
+
 class V2MessageCreateView(V2APIView):
     permission_classes = [IsAuthenticated]
 

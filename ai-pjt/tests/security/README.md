@@ -67,3 +67,9 @@ python3 -m unittest tests.security.test_service_tool_security_contract -v
 ```
 
 이 테스트의 통과는 F12 보안 통제 구현 완료를 뜻하지 않는다. T01에서 증명하는 것은 공격 계약이 완전하고 기존 lifecycle 계약과 정렬됐다는 사실까지다. 실제 HTTP·checkpoint·graph·tool handler 호출 결과는 각 `downstream_owner`가 같은 case를 production adapter에 연결해 검증한다.
+
+### F12-T02 production 인증 소비자
+
+`test_f12_service_auth.py`는 `F12-AUTH-001`, `F12-AUTH-003`을 실제 FastAPI `/v2/chat`에 입력한다. bearer가 없으면 request schema 해석과 graph 예약 전 401로 끝나고, 정확한 bearer와 lifecycle fixture 본문은 202로 접수되는지 확인한다. `/chat`, `/chat/stream`은 입력 내용이나 legacy secret과 무관하게 410을 반환하며 graph를 호출하지 않는다.
+
+Backend의 `consulting/test_f12_service_auth.py`는 `F12-AUTH-002`를 실제 DRF callback view에 연결해 잘못된 bearer가 callback schema 검증과 Redis 조회 전에 거부되는지 확인한다. 구형 `/api/ai/callback[/]`도 무조건 410으로 종료되는지를 함께 고정한다.

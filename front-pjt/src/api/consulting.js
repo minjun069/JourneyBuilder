@@ -1,6 +1,6 @@
 import api from '@/api'
 import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
-import { readSSEStream, validateSSEEvents, validateV2SSEEvents } from '@/api/sse'
+import { readSSEStream, validateV2SSEEvents } from '@/api/sse'
 import { mapMonthlyIncome, wrapCurrentListForm } from './consultingMapping.js'
 import { createSecureUuid } from '@/utils/secureUuid'
 import {
@@ -102,43 +102,6 @@ export async function* streamMessagesV2(
     throw new Error('AI 스트림 응답 형식이 올바르지 않습니다.')
   }
   yield* validateV2SSEEvents(readSSEStream(response.body))
-}
-
-// v1 SSE는 장애 전환과 비교 검증을 위한 호환 경로로 유지한다.
-export async function* streamMessages(sid, body, { signal } = {}) {
-  const baseUrl = String(api.defaults.baseURL ?? '').replace(/\/$/, '')
-  const token = localStorage.getItem('access_token')
-  const headers = {
-    Accept: 'text/event-stream',
-    'Content-Type': 'application/json',
-  }
-  if (token) headers.Authorization = `Bearer ${token}`
-
-  const response = await fetch(`${baseUrl}/consultations/${sid}/messages/stream/`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  })
-  if (!response.ok) {
-    let message = 'AI 스트림 요청에 실패했습니다.'
-    try {
-      const payload = await response.json()
-      if (typeof payload?.error === 'string') message = payload.error
-    } catch {
-      // JSON 오류 응답이 아니면 안전한 기본 메시지를 사용한다.
-    }
-    const error = new Error(message)
-    error.status = response.status
-    throw error
-  }
-
-  const contentType = response.headers.get('content-type') ?? ''
-  if (!contentType.includes('text/event-stream')) {
-    throw new Error('AI 스트림 응답 형식이 올바르지 않습니다.')
-  }
-
-  yield* validateSSEEvents(readSSEStream(response.body))
 }
 
 // ── 1:1 Form data ────────────────────────────────────────────

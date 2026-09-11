@@ -490,32 +490,28 @@ async def _process_and_callback(graph, request: ChatRequest):
     await _send_callback(request, payload)
 
 
-@app.post("/chat", status_code=202)
-async def chat(
-    request: ChatRequest,
-    background_tasks: BackgroundTasks,
-    x_internal_secret: str | None = Header(default=None, alias="X-Internal-Secret"),
-):
-    _verify_internal_secret(x_internal_secret)
-
-    background_tasks.add_task(_process_and_callback, app.state.chat_graph, request)
-    return {"request_id": request.request_id, "status": "accepted"}
-
-
-@app.post("/chat/stream")
-async def chat_stream(
-    request: ChatStreamRequest,
-    x_internal_secret: str | None = Header(default=None, alias="X-Internal-Secret"),
-):
-    _verify_internal_secret(x_internal_secret)
-    return StreamingResponse(
-        _stream_chat_events(app.state.chat_graph, request),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
+def _retired_v1_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=410,
+        content={
+            "success": False,
+            "error": {
+                "code": "CONTRACT_VERSION_UNSUPPORTED",
+                "message": "AI v1 서비스 경로는 종료되었습니다.",
+                "retryable": False,
+            },
         },
     )
+
+
+@app.post("/chat", include_in_schema=False)
+async def chat(_request: Request):
+    return _retired_v1_response()
+
+
+@app.post("/chat/stream", include_in_schema=False)
+async def chat_stream(_request: Request):
+    return _retired_v1_response()
 
 
 @app.get("/health")
