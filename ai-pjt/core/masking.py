@@ -49,30 +49,35 @@ class MaskingPolicyError(ValueError):
 class MaskingPolicy:
     """Required key material and explicit model-use exceptions.
 
-    ``allowed_model_paths`` contains exact leaf paths. Direct identifiers,
-    secrets, and operational identifiers cannot be allowed through it.
+    Model and callback exceptions contain exact leaf paths. Direct identifiers,
+    secrets, and operational identifiers cannot be allowed through either list.
     """
 
     pseudonym_key: bytes = field(repr=False)
     allowed_model_paths: frozenset[MaskingPath] = frozenset()
+    allowed_callback_paths: frozenset[MaskingPath] = frozenset()
 
     def __post_init__(self) -> None:
         if not isinstance(self.pseudonym_key, bytes) or len(self.pseudonym_key) < 32:
             raise MaskingPolicyError("pseudonym_key must contain at least 32 bytes")
-        if not isinstance(self.allowed_model_paths, frozenset):
-            raise MaskingPolicyError("allowed_model_paths must be a frozenset")
-        for path in self.allowed_model_paths:
-            if not isinstance(path, tuple) or not path:
-                raise MaskingPolicyError(
-                    "allowed_model_paths must contain non-empty tuple paths"
-                )
-            if any(
-                isinstance(part, bool) or not isinstance(part, (str, int))
-                for part in path
-            ):
-                raise MaskingPolicyError(
-                    "model allowlist paths may contain only string and integer parts"
-                )
+        for field_name, paths in (
+            ("allowed_model_paths", self.allowed_model_paths),
+            ("allowed_callback_paths", self.allowed_callback_paths),
+        ):
+            if not isinstance(paths, frozenset):
+                raise MaskingPolicyError(f"{field_name} must be a frozenset")
+            for path in paths:
+                if not isinstance(path, tuple) or not path:
+                    raise MaskingPolicyError(
+                        f"{field_name} must contain non-empty tuple paths"
+                    )
+                if any(
+                    isinstance(part, bool) or not isinstance(part, (str, int))
+                    for part in path
+                ):
+                    raise MaskingPolicyError(
+                        f"{field_name} may contain only string and integer parts"
+                    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -508,11 +513,11 @@ class _PayloadMasker:
                 return value
             return self._pseudonymize(value, namespace or "operation")
         if data_class is DataClass.QUASI_IDENTIFIER:
-            if self._is_allowed_model_path(path):
+            if self._is_allowed_sink_path(path):
                 return self._copy_allowed_scalar(value)
             return _QUASI_IDENTIFIER_TOKEN
         if data_class is DataClass.PROJECT_HIGH_RISK_FINANCIAL:
-            if self._is_allowed_model_path(path):
+            if self._is_allowed_sink_path(path):
                 return self._copy_allowed_scalar(value)
             return _FINANCIAL_TOKEN
         raise MaskingPolicyError(f"unsupported data class at {path!r}")
@@ -526,14 +531,15 @@ class _PayloadMasker:
             else value
         )
 
-    def _is_allowed_model_path(self, path: MaskingPath) -> bool:
-        return (
-            self._sink in _MODEL_SINKS
-            and path in self._policy.allowed_model_paths
-        )
+    def _is_allowed_sink_path(self, path: MaskingPath) -> bool:
+        if self._sink in _MODEL_SINKS:
+            return path in self._policy.allowed_model_paths
+        if self._sink is MaskingSink.CALLBACK:
+            return path in self._policy.allowed_callback_paths
+        return False
 
     def _should_mask_sensitive_path(self, path: MaskingPath) -> bool:
-        return not self._is_allowed_model_path(path)
+        return not self._is_allowed_sink_path(path)
 
     @classmethod
     def _sensitive_fragments(

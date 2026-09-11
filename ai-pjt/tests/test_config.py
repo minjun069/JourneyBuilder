@@ -17,6 +17,7 @@ BASE_ENV = {
     "GOOGLE_API_KEY": "g1-disposable-provider-key",
     "DATABASE_URL": "postgresql://g1:g1-disposable-db@postgres/g1",
     "AI_SERVICE_BEARER_TOKEN": "g1-disposable-bearer",
+    "AI_MASKING_PSEUDONYM_KEY": "g1-disposable-masking-key-32-bytes!",
 }
 
 
@@ -33,13 +34,32 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.rag_interface_collection, "interface-guides")
         self.assertEqual(settings.embed_dim, 3072)
         self.assertFalse(settings.langfuse_enabled)
+        self.assertEqual(
+            settings.masking_pseudonym_key_bytes,
+            b"g1-disposable-masking-key-32-bytes!",
+        )
 
     def test_required_database_and_bearer_values_fail_closed(self) -> None:
-        for name in ("DATABASE_URL", "AI_SERVICE_BEARER_TOKEN"):
+        for name in (
+            "DATABASE_URL",
+            "AI_SERVICE_BEARER_TOKEN",
+            "AI_MASKING_PSEUDONYM_KEY",
+        ):
             with self.subTest(name=name):
                 environ = {**BASE_ENV, name: ""}
                 with self.assertRaisesRegex(RuntimeConfigurationError, name):
                     Settings(environ).validate_runtime()
+
+    def test_masking_key_is_long_and_separate_from_service_auth(self) -> None:
+        with self.assertRaisesRegex(RuntimeConfigurationError, "at least 32 bytes"):
+            Settings({**BASE_ENV, "AI_MASKING_PSEUDONYM_KEY": "too-short"}).validate_runtime()
+        shared_key = "same-auth-and-masking-key-at-least-32-bytes"
+        with self.assertRaisesRegex(RuntimeConfigurationError, "must differ"):
+            Settings({
+                **BASE_ENV,
+                "AI_SERVICE_BEARER_TOKEN": shared_key,
+                "AI_MASKING_PSEUDONYM_KEY": shared_key,
+            }).validate_runtime()
 
     def test_selected_provider_requires_its_credential(self) -> None:
         with self.assertRaisesRegex(RuntimeConfigurationError, "GOOGLE_API_KEY"):

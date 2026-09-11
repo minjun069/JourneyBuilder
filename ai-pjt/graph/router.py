@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from core.model_boundary import ModelPurpose, secure_invoke, secure_system_prompt
 from core.step_registry import load_agent_descriptions, load_step_candidates
 from graph.state import ChatState
 
@@ -18,7 +19,7 @@ CLASSIFIER_STATUSES = {"matched", "ambiguous", "unsupported"}
 TaskClassifier = Callable[..., Mapping[str, Any]]
 
 
-ROUTER_PROMPT = """\
+ROUTER_PROMPT = secure_system_prompt("""\
 사용자 요청 하나를 분석해 후보 에이전트 중 하나를 선택하세요.
 반드시 JSON object만 반환하세요.
 
@@ -31,7 +32,7 @@ matched이면 agent에 후보 중 하나를 넣고, 그 외에는 null을 넣으
 
 후보 에이전트:
 {candidates}
-"""
+""")
 
 
 def _decision(
@@ -173,10 +174,15 @@ def classify_task_with_model(
         description=task.get("description", ""),
         candidates=candidate_lines,
     ))
-    result = llm.invoke([
-        system,
-        HumanMessage(content=str(task.get("description", ""))),
-    ])
+    result = secure_invoke(
+        llm,
+        [
+            system,
+            HumanMessage(content=str(task.get("description", ""))),
+        ],
+        purpose=ModelPurpose.ROUTER,
+        sensitive_payload={"task": dict(task)},
+    )
     content = result.content if isinstance(result.content, str) else ""
     payload = json.loads(content)
     if not isinstance(payload, dict):

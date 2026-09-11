@@ -1,7 +1,13 @@
 """Narrow deterministic Fallback Agent for pre-execution and all-failed cases."""
 
+from core.model_boundary import secure_system_prompt
 from graph.state import ChatState
 from langgraph.graph import END, START, StateGraph
+
+
+SYSTEM_PROMPT = secure_system_prompt(
+    "Fallback은 모델을 호출하지 않고 승인된 고정 안내만 반환합니다."
+)
 
 MESSAGES = {
     "ambiguous_intent": (

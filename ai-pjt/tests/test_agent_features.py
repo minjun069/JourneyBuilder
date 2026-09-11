@@ -20,6 +20,10 @@ def configure_runtime() -> None:
     os.environ.setdefault("GOOGLE_API_KEY", "agent-feature-test-key")
     os.environ.setdefault("DATABASE_URL", "postgresql://test:test@postgres/test")
     os.environ.setdefault("AI_SERVICE_BEARER_TOKEN", "agent-feature-bearer")
+    os.environ.setdefault(
+        "AI_MASKING_PSEUDONYM_KEY",
+        "agent-feature-masking-key-at-least-32-bytes",
+    )
 
 
 class InputAssistDefaultPolicyTests(unittest.TestCase):
