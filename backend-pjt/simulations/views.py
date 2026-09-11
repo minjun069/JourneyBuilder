@@ -23,6 +23,7 @@ from reports.views import SessionMixin
 
 from .baseline import has_baseline_key_shape, issue_baseline_key
 from .errors import SimulationError, SimulationAPIView, success_response
+from .execution import session_lock, worker_slot
 from .services import (
     SLOW_EXECUTION_MS,
     load_consistent_snapshot,
@@ -81,7 +82,12 @@ class SimulationRunView(SessionMixin, SimulationAPIView):
             self._verify_baseline(body['baseline_key'], key_for)
             scenarios = (build_scenario(body['changes'], prepared.saved_data),)
 
-        payload, elapsed_ms = run_analysis(prepared, assumptions, scenarios=scenarios)
+        # 검증을 모두 통과한 뒤에만 자리를 잡는다. 400/422 요청이 슬롯을 소모하면
+        # 정상 요청이 밀린다.
+        with session_lock(request.user.id, session.id), worker_slot():
+            payload, elapsed_ms = run_analysis(
+                prepared, assumptions, scenarios=scenarios
+            )
 
         if elapsed_ms >= SLOW_EXECUTION_MS:
             # 비식별. 상담 id 와 소요 시간만 남긴다.

@@ -22,7 +22,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 
-@dataclass(frozen=True)
+# frozen=True 를 쓰지 않는다. 예외는 Python 이 __traceback__ 을 대입해야 하는데
+# frozen dataclass 의 __setattr__ 이 그것을 막아 FrozenInstanceError 로 바뀐다
+# (unittest 가 오류를 포매팅할 때 실제로 터졌다). consulting.ai_lifecycle.LifecycleError
+# 는 frozen 이지만 같은 함정을 안고 있다.
+@dataclass
 class SimulationError(Exception):
     status_code: int
     code: str

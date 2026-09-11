@@ -11,7 +11,7 @@ ORM 접근을 load_consistent_snapshot() 한 곳에 가뒀기 때문이다. 그 
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import os
 from pathlib import Path
@@ -59,9 +59,11 @@ def wired(session=_DEFAULT, snapshot=None, digest='a' * 64):
     """세션 조회와 스냅샷 조회만 가짜로 바꾼다. 정책·어댑터·모듈은 진짜를 쓴다."""
     session = fake_session() if session is _DEFAULT else session
     snapshot = valid_snapshot() if snapshot is None else snapshot
+    # 세션 뮤텍스만 무력화한다(CI 에 Redis 가 없다). worker_slot 은 프로세스 로컬이라
+    # 진짜를 그대로 쓴다 — 실제 세마포어가 요청마다 반납되는지도 함께 검증된다.
     with patch.object(SimulationRunView, 'get_session', return_value=session), patch(
         'simulations.views.load_consistent_snapshot', return_value=(snapshot, digest)
-    ):
+    ), patch('simulations.views.session_lock', lambda *_a, **_k: nullcontext()):
         yield
 
 
