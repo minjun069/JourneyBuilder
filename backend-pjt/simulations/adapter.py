@@ -268,6 +268,34 @@ def _contiguous(ages: list[int]) -> list[dict]:
     return ranges
 
 
+def coverage_gaps(horizon_start: int, end_age: int, ranges: list[tuple[int, int]]) -> list[dict]:
+    """은퇴~기대 수명 중 생활비가 비어 있는 구간.
+
+    모듈 RetirementProfile 이 같은 규칙을 검사하지만 실패 시 어느 연도인지 알려주지
+    않는다. What-if 로 은퇴를 앞당길 때도 같은 검사가 필요해 공용으로 뺐다.
+    """
+    if end_age < horizon_start:
+        return []
+    covered: set[int] = set()
+    for start, end in ranges:
+        covered.update(range(start, end + 1))
+    return _contiguous([a for a in range(horizon_start, end_age + 1) if a not in covered])
+
+
+def overlapping_pairs(ranges: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """정렬 후 겹치는 구간 쌍의 (뒤 인덱스, 앞 인덱스). 모듈과 같은 판정이다."""
+    indexed = sorted((start, end, index) for index, (start, end) in enumerate(ranges))
+    found = []
+    for (_, prev_end, prev_index), (start, _, index) in zip(indexed, indexed[1:]):
+        if start <= prev_end:
+            found.append((index, prev_index))
+    return found
+
+
+def describe_gaps(gaps: list[dict]) -> str:
+    return ", ".join(f"{gap['from_age']}~{gap['to_age']}세" for gap in gaps)
+
+
 def _goal_periods(
     snapshot: Mapping,
     out: dict,
@@ -356,20 +384,14 @@ def _goal_periods(
 
     if age is None or retirement_age is None or end_age is None:
         return
-    horizon_start = max(age, retirement_age)
-    if end_age < horizon_start:
-        return
-    covered = set()
-    for start, end, _ in after_ranges:
-        covered.update(range(start, end + 1))
-    missing = [a for a in range(horizon_start, end_age + 1) if a not in covered]
-    if missing:
-        gaps = _contiguous(missing)
-        spans = ", ".join(f"{g['from_age']}~{g['to_age']}세" for g in gaps)
+    gaps = coverage_gaps(
+        max(age, retirement_age), end_age, [(s, e) for s, e, _ in after_ranges]
+    )
+    if gaps:
         c.add(
             "expense_periods_gap",
             "goal_periods",
-            f"{spans} 구간의 은퇴 후 생활비가 비어 있습니다. "
+            f"{describe_gaps(gaps)} 구간의 은퇴 후 생활비가 비어 있습니다. "
             "은퇴부터 기대 수명까지 빠짐없이 채워 주세요.",
             {"missing": gaps},
         )

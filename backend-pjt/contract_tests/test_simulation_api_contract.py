@@ -252,5 +252,196 @@ class RoutingContractTests(unittest.TestCase):
         self.assertEqual(match.url_name, 'simulation-run')
 
 
+def baseline_key_for(digest='a' * 64):
+    with wired(digest=digest):
+        return call().data['data']['baseline_key']
+
+
+def what_if(changes, key=None, digest='a' * 64, **kwargs):
+    body = {
+        'mode': 'what_if',
+        'baseline_key': baseline_key_for(digest) if key is None else key,
+        'changes': changes,
+    }
+    with wired(digest=digest, **kwargs):
+        return call(body)
+
+
+class WhatIfContractTests(unittest.TestCase):
+    """S15P21B109-138. 기준안과 변경안 1개를 같은 시장 경로로 비교한다."""
+
+    def test_comparison_returns_baseline_and_one_scenario(self) -> None:
+        response = what_if({'monthly_savings': 1_500_000})
+        self.assertEqual(response.status_code, 200)
+        analysis = response.data['data']['analysis']
+        self.assertEqual(analysis['mode'], 'what_if')
+        self.assertEqual(len(analysis['scenarios']), 1)
+        scenario = analysis['scenarios'][0]
+        self.assertEqual(scenario['scenario_id'], 'comparison')
+        self.assertIn('success_probability_delta_pp', scenario['delta'])
+        # 기준 결과가 같은 응답에 함께 온다 — 같은 수익률 경로로 계산됐다는 뜻이다.
+        self.assertIn('baseline', analysis)
+
+    def test_saving_more_does_not_lower_success_probability(self) -> None:
+        """같은 시장 경로를 재사용하므로 차이는 조건 변경 때문이어야 한다."""
+        analysis = what_if({'monthly_savings': 5_000_000}).data['data']['analysis']
+        self.assertGreaterEqual(
+            analysis['scenarios'][0]['result']['success_probability'],
+            analysis['baseline']['success_probability'],
+        )
+
+    def test_zero_is_a_real_change_not_an_omission(self) -> None:
+        response = what_if({'monthly_savings': 0})
+        self.assertEqual(response.status_code, 200)
+        changes = response.data['data']['analysis']['scenarios'][0]['changes']
+        self.assertEqual(changes['monthly_savings'], 0)
+
+    def test_baseline_key_is_unchanged_when_the_baseline_is_unchanged(self) -> None:
+        key = baseline_key_for()
+        self.assertEqual(
+            what_if({'monthly_savings': 1}, key=key).data['data']['baseline_key'], key
+        )
+
+    def test_stale_baseline_key_is_409_without_a_replacement(self) -> None:
+        stale = baseline_key_for(digest='a' * 64)
+        response = what_if({'monthly_savings': 1}, key=stale, digest='b' * 64)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['error']['code'], 'BASELINE_STALE')
+        # 새 키를 함께 주면 화면이 조용히 다른 기준으로 비교할 수 있다.
+        self.assertNotIn('baseline_key', json.dumps(response.data))
+
+    def test_malformed_baseline_key_is_400(self) -> None:
+        response = what_if({'monthly_savings': 1}, key='not-a-key')
+        self.assertEqual(response.status_code, 400)
+
+
+class WhatIfRequestValidationTests(unittest.TestCase):
+    def test_missing_changes_or_key_is_400(self) -> None:
+        with wired():
+            self.assertEqual(call({'mode': 'what_if'}).status_code, 400)
+        with wired():
+            body = {'mode': 'what_if', 'changes': {'monthly_savings': 1}}
+            self.assertEqual(call(body).status_code, 400)
+
+    def test_baseline_mode_rejects_change_fields(self) -> None:
+        """조용히 무시하면 사용자는 비교가 된 줄 안다."""
+        with wired():
+            response = call({'mode': 'baseline', 'changes': {'monthly_savings': 1}})
+        self.assertEqual(response.status_code, 400)
+
+    def test_unsupported_change_field_is_400(self) -> None:
+        response = what_if({'annual_return_mean': 0.09})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.data['error']['details']['unsupported_fields'], ['annual_return_mean']
+        )
+
+    def test_empty_changes_is_400(self) -> None:
+        self.assertEqual(what_if({}).status_code, 400)
+
+    def test_empty_expense_list_is_rejected(self) -> None:
+        # 빈 목록은 "생활비 없음" 이 아니다. 유지하려면 생략해야 한다.
+        self.assertEqual(what_if({'retirement_expenses': []}).status_code, 400)
+
+    def test_expense_row_field_and_range_validation(self) -> None:
+        bad_rows = (
+            [{'from_age': 60, 'to_age': 85}],
+            [{'from_age': 60, 'to_age': 85, 'monthly_amount': 1, 'note': 'x'}],
+            [{'from_age': 85, 'to_age': 60, 'monthly_amount': 1}],
+            [{'from_age': 0, 'to_age': 85, 'monthly_amount': 1}],
+            [{'from_age': 60, 'to_age': 85, 'monthly_amount': -1}],
+            [{'from_age': 60, 'to_age': 85, 'monthly_amount': True}],
+        )
+        for rows in bad_rows:
+            with self.subTest(rows=rows):
+                self.assertEqual(what_if({'retirement_expenses': rows}).status_code, 400)
+
+    def test_retirement_age_range_is_enforced(self) -> None:
+        self.assertEqual(what_if({'retirement_age': 17}).status_code, 400)
+        self.assertEqual(what_if({'retirement_age': 101}).status_code, 400)
+
+
+class WhatIfApplicabilityTests(unittest.TestCase):
+    """변경을 적용했을 때 생기는 문제는 422 로, 어느 구간인지까지 알려준다."""
+
+    def test_earlier_retirement_without_new_expense_rows_is_422(self) -> None:
+        # 기준 생활비는 60~85세다. 은퇴를 55세로 당기면 55~59세가 빈다.
+        response = what_if({'retirement_age': 55})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.data['error']['code'], 'CHANGES_NOT_APPLICABLE')
+        issue = response.data['error']['details']['issues'][0]
+        self.assertEqual(issue['code'], 'expense_periods_gap')
+        self.assertEqual(issue['hint'], {'missing': [{'from_age': 55, 'to_age': 59}]})
+
+    def test_earlier_retirement_with_matching_expenses_succeeds(self) -> None:
+        response = what_if({
+            'retirement_age': 55,
+            'retirement_expenses': [
+                {'from_age': 55, 'to_age': 85, 'monthly_amount': 1_800_000}
+            ],
+        })
+        self.assertEqual(response.status_code, 200)
+
+    def test_replacement_schedule_with_a_gap_is_422(self) -> None:
+        response = what_if({
+            'retirement_expenses': [
+                {'from_age': 60, 'to_age': 74, 'monthly_amount': 2_000_000},
+                {'from_age': 80, 'to_age': 85, 'monthly_amount': 1_500_000},
+            ]
+        })
+        self.assertEqual(response.status_code, 422)
+        issue = response.data['error']['details']['issues'][0]
+        self.assertEqual(issue['hint'], {'missing': [{'from_age': 75, 'to_age': 79}]})
+
+    def test_overlapping_replacement_schedule_is_422(self) -> None:
+        response = what_if({
+            'retirement_expenses': [
+                {'from_age': 60, 'to_age': 75, 'monthly_amount': 2_000_000},
+                {'from_age': 75, 'to_age': 85, 'monthly_amount': 1_500_000},
+            ]
+        })
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.data['error']['details']['issues'][0]['code'], 'expense_periods_overlap'
+        )
+
+    def test_retirement_age_before_current_age_is_422(self) -> None:
+        response = what_if({
+            'retirement_age': 30,
+            'retirement_expenses': [
+                {'from_age': 40, 'to_age': 85, 'monthly_amount': 1_000_000}
+            ],
+        })
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.data['error']['details']['issues'][0]['code'],
+            'retirement_age_before_current_age',
+        )
+
+    def test_applicability_check_is_not_wider_than_the_module(self) -> None:
+        """BE 가 통과시킨 변경은 모듈도 받아야 한다. 넓으면 정상 사용자가 막힌다."""
+        accepted = (
+            {'monthly_savings': 0},
+            {'monthly_savings': 9_000_000},
+            {'retirement_age': 65},
+            {'retirement_age': 85},
+            {'retirement_expenses': [{'from_age': 60, 'to_age': 85, 'monthly_amount': 0}]},
+        )
+        for changes in accepted:
+            with self.subTest(changes=changes):
+                self.assertEqual(what_if(changes).status_code, 200)
+
+
+class ModuleContractVersionTests(unittest.TestCase):
+    def test_view_constants_match_the_module_output(self) -> None:
+        """상수가 모듈과 어긋나면 baseline_key 발급·검증이 갈려 항상 409 가 된다."""
+        from simulations.views import CONTRACT_VERSION, MAPPING_VERSION  # noqa: PLC0415
+
+        with wired():
+            analysis = call().data['data']['analysis']
+        self.assertEqual(analysis['contract_version'], CONTRACT_VERSION)
+        self.assertEqual(analysis['mapping_version'], MAPPING_VERSION)
+
+
 if __name__ == '__main__':
     unittest.main()
