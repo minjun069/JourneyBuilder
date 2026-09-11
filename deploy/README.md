@@ -17,7 +17,7 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 
 ## 환경변수 (.env / app.env)
 
-**원칙: 로컬은 팀원 각자 한 번 생성, 서버는 한 파일. 값을 서로 공유·복사하지 않는다. 커밋하지 않는다.**
+**원칙: 로컬은 팀원 각자 한 번 생성하고 서버의 canonical 원문은 한 파일만 둔다. 값을 서로 공유하거나 Git·CI artifact·채팅·명령 출력에 복사하지 않는다.**
 
 | 어디 | 파일 | 만드는 법 | 횟수 |
 |---|---|---|---|
@@ -37,7 +37,7 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 | `GOOGLE_API_KEY` | **GMS 키**를 직접 입력 (개인 Google 계정 키 아님 — 아래 절 참고) | 외부 회전 시만 |
 
 - 스크립트는 파일이 이미 있으면 덮어쓰지 않는다(exit 2).
-- 서버 파일은 백업 1부를 `/srv/s15p21b109/secrets/app.env.bak`(root 600)으로 둔다 — DB 비밀번호를 잃지 않기 위해.
+- 서버 canonical 원문은 `/srv/s15p21b109/secrets/app.env` 하나다. 변경 전 원문은 아래 절의 immutable snapshot으로 보존한다. 과거 `app.env.bak`은 새 절차의 복구 원천으로 사용하지 않는다.
 - 누락 확인: `docker compose --env-file <파일> -f docker-compose.yml -f docker-compose.prod.yml config --quiet`
 - 거부되는 값: `change-me`, `password`, `postgres`, `secret`, `ssafy` 등 (`backend-pjt/config/runtime_env.py`).
 
@@ -51,15 +51,22 @@ MR 체크리스트:
 2. `deploy/make-env.sh` 에 생성 규칙 추가 (무작위 값이면 `openssl rand`)
 3. `.gitlab-ci.yml` 에 `CI_*` 더미 변수 + 해당 test 잡의 `-e` 추가
 4. 이 문서의 변수 표 갱신
-5. **머지 전에 서버 `app.env` 에 줄 추가** (아래)
+5. **머지 전에 immutable snapshot을 만든 뒤 서버 `app.env` 에 줄 추가** (아래)
 
-서버 갱신 — sudo 필요, 값은 사람이 넣는다:
+서버 갱신 — sudo 필요. 먼저 값 없는 식별자만 셸에 넣어 snapshot을 만들고, 값은 편집기에서 사람이 입력한다:
 
 ```bash
-sudo cp -a /srv/s15p21b109/secrets/app.env /srv/s15p21b109/secrets/app.env.bak
-printf 'VAR_NAME=%s\n' "$(openssl rand -hex 32)" | sudo tee -a /srv/s15p21b109/secrets/app.env >/dev/null
-sudo chmod 600 /srv/s15p21b109/secrets/app.env.bak
+snapshot_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
+sudo bash deploy/f14-config-snapshot.sh create \
+  --source /srv/s15p21b109/secrets/app.env \
+  --snapshot-root /srv/s15p21b109/secrets/snapshots \
+  --snapshot-id "$snapshot_id" \
+  --candidate "$(git rev-parse HEAD)" \
+  --recovery-owner root
+sudoedit /srv/s15p21b109/secrets/app.env
 ```
+
+`printf`, `sed -i`, 환경변수 export로 실제 값을 넣지 않는다. 셸 history·프로세스 목록·CI 로그에 평문이 남기 때문이다.
 
 확인은 러너 체크아웃에서. 파일이 `root:gitlab-runner 640` 이라 `ubuntu` 로는 못 읽으니 `sudo` 를 붙인다:
 
@@ -67,7 +74,45 @@ sudo chmod 600 /srv/s15p21b109/secrets/app.env.bak
 sudo docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml config --quiet && echo OK
 ```
 
-실측(2026-09-11): `AI_MASKING_PSEUDONYM_KEY` 가 이 절차 없이 머지돼 파이프라인 #189299 의 `deploy:production` 이 실패했다. 사전 점검이 빌드·기동 전에 멈추므로 운영 컨테이너는 그대로였고, 서버에 줄을 추가한 뒤 잡을 재실행해 복구했다. 같은 실패가 다시 나면 `deploy.sh` 가 누락된 변수 이름을 로그에 찍는다.
+실측(2026-09-11): `AI_MASKING_PSEUDONYM_KEY` 가 사전 갱신 없이 머지돼 파이프라인 #189299 의 `deploy:production` 이 실패했다. 사전 점검이 빌드·기동 전에 멈추므로 운영 컨테이너는 그대로였고, 서버에 줄을 추가한 뒤 잡을 재실행해 복구했다. 같은 실패가 다시 나면 `deploy.sh` 가 누락된 변수 이름만 로그에 찍고 값은 출력하지 않는다.
+
+### 운영 설정 immutable snapshot과 복구
+
+`deploy/f14-config-snapshot.sh`가 설정 원문을 다루는 유일한 백업·복구 진입점이다.
+
+| 대상 | 위치·권한 | 읽는 주체 | 보존 내용 |
+|---|---|---|---|
+| canonical 설정 | `/srv/s15p21b109/secrets/app.env`, `root:gitlab-runner 0640` | root와 배포 runner | 실제 운영 값. Compose `--env-file` 입력 |
+| 변경 전 snapshot | `/srv/s15p21b109/secrets/snapshots/<UTC>-<commit>/`, 디렉터리 `root:root 0500`, `app.env`·`manifest.env` `root:root 0400`, 셋 모두 filesystem immutable `+i` | 복구 owner인 root만 | 당시 원문 1부와 값 없는 SHA-256·소유자·mode·candidate metadata |
+| 리허설 보고서 | `/srv/s15p21b109/state/f14-rehearsals/<id>/report.json`, `root:root 0600` | root | snapshot ID·경로·hash·권한, DB/이미지 rollback 판정만. 설정 이름·값 없음 |
+| Git 커밋·CI artifact | 저장소 | 팀 | 실행 명령, 위 metadata와 PASS/FAIL만. `app.env`·snapshot 원문은 절대 복사하지 않음 |
+
+복구 권한 owner는 OS 계정 `root`, 실제 실행 담당은 이 문서 상단의 배포 담당 고우정이다. `gitlab-runner`는 canonical 파일만 읽을 수 있고 snapshot 디렉터리에는 접근할 수 없다. snapshot 생성은 동일 ID 덮어쓰기를 거부하고 복사 직후 SHA-256을 대조한 다음 `chattr +i`와 `lsattr`을 확인한다. 파일시스템이 immutable flag를 지원하지 않으면 생성 자체가 실패하므로 단순 `chmod` 백업을 성공으로 간주하지 않는다. snapshot은 자동 삭제하거나 교체하지 않는다.
+
+복구할 때도 snapshot 원문을 `cat`, `grep`, diff로 출력하지 않는다. 먼저 현재 canonical 파일을 새 snapshot으로 보존하고, 복구할 ID를 사람이 경로와 manifest metadata로 확인한 뒤 정확히 같은 ID를 confirmation 인자로 준다.
+
+```bash
+rescue_id="$(date -u +%Y%m%dT%H%M%SZ)-pre-restore"
+sudo bash deploy/f14-config-snapshot.sh create \
+  --source /srv/s15p21b109/secrets/app.env \
+  --snapshot-root /srv/s15p21b109/secrets/snapshots \
+  --snapshot-id "$rescue_id" \
+  --candidate "$(git rev-parse HEAD)" \
+  --recovery-owner root
+
+restore_id='<확인한-snapshot-id>'
+sudo bash deploy/f14-config-snapshot.sh restore \
+  --snapshot "/srv/s15p21b109/secrets/snapshots/$restore_id" \
+  --target /srv/s15p21b109/secrets/app.env \
+  --confirm-snapshot-id "$restore_id"
+
+sudo docker compose --project-name s15p21b109 \
+  --env-file /srv/s15p21b109/secrets/app.env \
+  -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+sudo AI_REQUIRED=1 bash deploy/deploy.sh --no-build
+```
+
+복구 성공은 `app.env`를 눈으로 출력하는 것이 아니라 restore가 확인한 SHA-256, `compose config --quiet`, 서비스 health와 HTTP/API probe로 판단한다. snapshot의 `+i`는 읽기·복원을 막지 않으므로 해제하지 않는다.
 
 ## 서버 초기 세팅 (2026-09-07 수행 기록)
 
@@ -78,7 +123,7 @@ sudo docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose
 | Docker | 공식 apt 저장소 → docker-ce 29.8 + compose v5.5. `ubuntu`, `gitlab-runner` 를 docker 그룹에 | 완료 |
 | GitLab Runner | 공식 apt 저장소 → 19.3.1. 프로젝트 러너 등록(shell executor, 태그 `ssafy-ec2`, untagged 금지). 토큰은 `/etc/gitlab-runner/config.toml`(root) | 완료 |
 | 호스트 nginx | apt nginx 1.24. 사이트 설정·HTTPS 는 S15P21B109-123 | 설치만 |
-| secrets | `/srv/s15p21b109/secrets/` root:gitlab-runner 750, `app.env` 640, `app.env.bak` root 600. 러너 그룹 읽기 허용은 S15P21B109-125 에서(deploy 잡이 `--env-file` 로 읽음) | 값 입력 완료(GOOGLE_API_KEY 제외) |
+| secrets | `/srv/s15p21b109/secrets/` root:gitlab-runner 750, canonical `app.env` 640. 변경 전 snapshot은 `snapshots/<id>` root:root 0500/0400와 `+i`; 복구 owner root. 러너 그룹 읽기 허용은 canonical 파일에만 적용 | canonical 값 입력 완료(GOOGLE_API_KEY 제외), snapshot 절차는 F14-T05 |
 | ufw | 22 만 개방 상태. 80/443 은 S15P21B109-123 에서 `sudo ufw allow 80/tcp`, `443/tcp` (SSH 세션 2개 유지) | 대기 |
 
 ### 서버 작업 금지 사항 (SSAFY 공지 — 위반 시 초기화 외 복구 불가)
@@ -128,7 +173,27 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 - 유지 태그 이름은 `ROLLBACK_TAG` 로 바꿀 수 있다(기본 `last-good`). 이미지 이름이 `<프로젝트>-<서비스>` 라서 `deploy.sh` 는 compose 프로젝트 이름을 `s15p21b109` 로 **고정**한다 — 체크아웃 디렉터리 이름에 기대지 않는다
 - 검증 기록(2026-09-07, 로컬) — **이 검증은 prune 이 한 번도 돌지 않은 상태에서 통과했고, 그래서 위 결함을 놓쳤다**: 성공 경로 exit 0 · last_good 4개 기록 / 닫힌 포트를 헬스 URL 로 준 실패 경로 → 롤백 분기 → exit 1, 서비스 유지 / **E2E 롤백**: `s15p21b109-web` 태그를 CMD 없는 alpine 으로 바꿔 배포 → web `restarting` 감지 → 4개 서비스 태그를 직전 ID 로 복원 → `up` → web healthy·8080 200, exit 1
 - 검증 기록(2026-09-10, 운영): 유지 태그 방식으로 배포 3회(#188209 · #188248 · #188256) 성공. 마지막 잡에서 `web backend ai-pjt migrate` 4개 전부 `:last-good` 승격 확인
-- **한계 — 롤백 분기 자체의 회귀 검사는 없다.** "성공 배포 → prune → 다음 배포 실패 → 롤백" 을 자동으로 돌리는 하네스가 없어, 실패 경로는 운영 관측에만 의존한다
+- F14-T05부터 `deploy/f14-rollback-rehearsal.sh`가 동일한 production Compose project에서 의도적 실패와 `:last-good` 복원을 실행한다. 아래 리허설 절차는 실행 전 drift를 거부하고, 실패/중단 trap에서도 태그 복원과 전용 DB schema 정리를 다시 수행한다.
+
+### F14 운영 rollback 리허설
+
+이 명령은 실제 운영 서비스에서 실패 rollback 분기를 밟으므로 배포 담당이 SSH 세션에서 실행한다. 시작 전에 `web`, `backend`, `ai-pjt`, `migrate`의 실행 이미지가 각 `:last-good`과 정확히 같고 web·API가 정상인지 검사하며, 하나라도 다르면 아무것도 바꾸지 않고 중단한다.
+
+```bash
+sudo bash deploy/f14-rollback-rehearsal.sh \
+  --candidate "$(git rev-parse HEAD)" \
+  --timeout 30
+```
+
+실행 순서는 다음과 같다.
+
+1. `app.env`의 owner/group/mode가 `root:gitlab-runner 0640`인지 확인하고 위 immutable snapshot을 먼저 만든다.
+2. 운영 PostgreSQL 안에 `f14_rehearsal_<token>` 전용 schema와 합성 marker 한 건을 만든다. 그 schema만 `pg_dump -Fc`하고 marker 변경·schema 삭제 후 `pg_restore`하여 원래 marker가 정확히 돌아오는지 확인한다. 고객 schema·행은 읽거나 dump하거나 변경하지 않으며, 끝나면 전용 schema를 삭제한다.
+3. 실행 중인 PostgreSQL 이미지 ID를 `s15p21b109-web:latest`에 잠시 태그해 web 기동 실패를 만들고, 닫힌 health URL로 기존 `deploy/deploy.sh --no-build`를 호출한다. `deploy.sh`가 non-zero로 끝나고 네 서비스가 모두 기존 `:last-good` image ID로 돌아왔는지 확인한다.
+4. 정상 태그를 한 번 더 복원하고 web·backend·ai-pjt health, HTTP 200, API non-5xx를 최대 90초 확인한다. canonical 설정 hash가 실행 전과 같은지, immutable snapshot이 그대로인지 재검증한다.
+5. 값 없는 결과만 `/srv/s15p21b109/state/f14-rehearsals/<id>/report.json`에 0600으로 쓴다. 합성 schema dump는 같은 root 전용 디렉터리에 남으며 고객 데이터는 포함하지 않는다.
+
+서비스가 의도적으로 내려가는 구간은 `TIMEOUT + rollback 재기동` 동안 발생할 수 있다. 따라서 트래픽이 가장 적은 시간에 실행하고, 실행 중 다른 deploy 잡이 겹치지 않도록 GitLab `production` resource group이 비어 있는지 먼저 확인한다. 스크립트는 고객 데이터 rollback, volume 삭제, 실제 설정 변경, 외부 LLM 호출을 하지 않는다.
 
 ## deploy 스테이지 — master 자동 배포 (S15P21B109-125)
 
@@ -138,7 +203,7 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 |---|---|
 | 트리거 | `master` 브랜치 파이프라인, test 통과 후 자동. MR 파이프라인에서는 실행하지 않음 |
 | 실행 위치 | 러너 체크아웃 `/home/gitlab-runner/builds/<id>/0/s15-fintech-finance-sub1/S15P21B109` (러너 사용자 `gitlab-runner`, docker 그룹, sudo 없음) |
-| 비밀값 | `/srv/s15p21b109/secrets/app.env` — root:gitlab-runner 640. deploy.sh 가 `--env-file` 로 읽는다. 백업 `app.env.bak` 은 root 600 유지 |
+| 비밀값 | `/srv/s15p21b109/secrets/app.env` — root:gitlab-runner 640. deploy.sh가 `--env-file`로 읽는다. 변경 전 원문은 root 전용 immutable snapshot에만 보존 |
 | 상태 파일 | `/srv/s15p21b109/state/last_good_images` (디렉터리 gitlab-runner 소유) |
 | 동시성 | `resource_group: production` — 배포 잡은 한 번에 하나. `interruptible: false` — 새 커밋이 와도 진행 중 배포는 끊지 않음 |
 | 환경 | GitLab Environment `production`, URL `https://j15b109.p.ssafy.io` (Deployments → Environments 에서 배포 이력 확인) |
@@ -200,11 +265,10 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 ssh ssafy
 sudo nano /srv/s15p21b109/secrets/app.env        # GOOGLE_API_KEY= 에 GMS 키 입력
 sudo grep -q '^GOOGLE_API_KEY=.\+' /srv/s15p21b109/secrets/app.env && echo 설정됨 || echo 비어있음
-sudo cp /srv/s15p21b109/secrets/app.env /srv/s15p21b109/secrets/app.env.bak && sudo chmod 600 /srv/s15p21b109/secrets/app.env.bak
 ```
 
 - 키를 `sed -i` 같은 한 줄 명령으로 넣지 않는다 — 셸 히스토리에 평문이 남는다. 편집기로 입력한다
-- **백업(`app.env.bak`)도 같이 갱신한다.** 옛 값이 남은 백업을 복원하면 되돌아간다
+- 편집 전에 「운영 설정 immutable snapshot과 복구」 절의 create 명령을 실행한다. 과거 `app.env.bak`은 갱신하거나 복구 원천으로 사용하지 않는다
 - 반영: master 파이프라인의 `deploy:production` 을 Retry. ai-pjt 의 환경변수가 바뀌어 compose 가 그 컨테이너를 재생성한다
 
 ### 검증 — healthy 만으로는 부족하다

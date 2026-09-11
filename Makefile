@@ -1,7 +1,7 @@
 PYTHON ?= python3
 NODE_IMAGE ?= node:22-bookworm
 
-.PHONY: g1-check g1-foundation g1-python g1-ai g1-backend g1-rag g1-tools g1-observability g1-security g1-node g1-runtime f14-regression
+.PHONY: g1-check g1-foundation g1-python g1-ai g1-backend g1-rag g1-tools g1-observability g1-security g1-node g1-runtime f14-config-snapshot-test f14-regression
 
 g1-check: g1-foundation g1-python g1-node
 
@@ -35,6 +35,9 @@ g1-node:
 
 g1-runtime:
 	$(PYTHON) g1_runtime.py
+
+f14-config-snapshot-test:
+	bash deploy/tests/test_f14_config_snapshot.sh
 
 f14-regression:
 	bash deploy/f14-regression.sh
