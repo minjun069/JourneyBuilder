@@ -187,8 +187,12 @@ def _financial_assets(snapshot: Mapping, out: dict, c: _Collector) -> None:
                 {"allowed": list(ASSET_TYPES)},
             )
         elif asset_type not in ASSET_TYPES:
-            # 임시 차단. 모듈이 5종 밖 값을 행 단위로 제외하고 notice 를 내도록
-            # 보완되면 이 분기를 삭제한다(asset_type_missing 은 남긴다).
+            # 임시 차단. 모듈 0.1.2 가 5종 밖 값을 '기타' 와 같이 행 단위로 제외하도록
+            # 넓힌다(모듈 담당 회신 2026-09-11, 저장소 반영 대기 — 지금 소스는 0.1.1 이라
+            # 아직 거부한다). 반영되면 모듈 한계가 아니게 되고, 남은 이유는 화면 하나다
+            # — 제외된 자산을 결과 화면이 알려주기 전에 통과시키면
+            # 사용자는 자기 자산이 빠진 줄 모른 채 결과를 본다. 그 안내가 붙으면 이
+            # 분기를 삭제한다(asset_type_missing 은 남긴다).
             c.add(
                 "asset_type_unsupported",
                 f"{path}.asset_type",
