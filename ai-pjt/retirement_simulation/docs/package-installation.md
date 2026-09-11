@@ -5,14 +5,14 @@
 인증 API·FE 연결 방법을 확정하는 문서는 아니다. 후속 사용자 요청으로 보완한
 [BE 전달 자료](be-handoff.md)와 [FE 안내](fe-handoff.md), [확정 정책](simulation-policy.md)을 함께 참고한다.
 
-2026-09-11 갱신: 현재 명령은 `기타` 금융자산 제외 수정이 포함된 `0.1.1`용이다.
-7절의 최초 패키징 기록은 `0.1.0` 당시 결과이며 새 버전의 설치 검증과 구분한다.
+2026-09-11 갱신: 현재 명령은 [비모델링 금융자산 분류 확장](unmodeled-financial-assets.md)이 포함된 `0.1.2`용이다.
+7절의 `0.1.0`·8절의 `0.1.1` 기록은 당시 결과이며 새 버전의 설치 검증과 구분한다.
 
 ## 1. 먼저 구분할 것
 
 | 항목 | 현재 규격 |
 |---|---|
-| 설치용 배포 이름/버전 | `retirewise-retirement-simulation` / `0.1.1` |
+| 설치용 배포 이름/버전 | `retirewise-retirement-simulation` / `0.1.2` |
 | Python import | `retirement_simulation` — 하이픈이 있는 배포 이름을 import하지 않음 |
 | 지원 메타데이터 | Python `>=3.13,<3.14`. 이번 실제 검증은 Linux/WSL의 CPython 3.13.15 |
 | 런타임 의존성 | 없음. AI/BE requirements·API key·DB·서버 기동 불필요 |
@@ -64,8 +64,8 @@ PIP_CONFIG_FILE=/dev/null "$simulation_workdir/build-env/bin/python" -I -B -m pi
 "$simulation_workdir/build-env/bin/python" -I -B -m build --no-isolation \
   --outdir "$simulation_workdir/dist" --report "$simulation_workdir/build-report.json" \
   "$simulation_workdir/source"
-simulation_wheel="$simulation_workdir/dist/retirewise_retirement_simulation-0.1.1-py3-none-any.whl"
-sha256sum "$simulation_wheel" "$simulation_workdir/dist/retirewise_retirement_simulation-0.1.1.tar.gz"
+simulation_wheel="$simulation_workdir/dist/retirewise_retirement_simulation-0.1.2-py3-none-any.whl"
+sha256sum "$simulation_wheel" "$simulation_workdir/dist/retirewise_retirement_simulation-0.1.2.tar.gz"
 ```
 
 `--no-isolation`은 **별도로 준비한 build-env를 쓰는 선택**이다. 의존성 검사는 끄지 않는다.
@@ -74,7 +74,7 @@ sha256sum "$simulation_wheel" "$simulation_workdir/dist/retirewise_retirement_si
 종료 코드 0, 산출물 2개, 이후 설치 검사까지 확인해야 한다.
 
 소스 커밋·Python/도구 버전·`build-report.json`을 같은 빌드 기록으로 보관한다. 압축 시각 등으로
-재빌드 해시는 달라질 수 있다. 같은 `0.1.1` 파일명만으로 같은 산출물이라고 판단하지 않는다.
+재빌드 해시는 달라질 수 있다. 같은 `0.1.2` 파일명만으로 같은 산출물이라고 판단하지 않는다.
 해시를 포함한 보고서를 다시 패키지에 넣는 순환을 피하고, 산출물/venv/보고서는 Git에 커밋하지 않는다.
 
 ## 3. wheel을 먼저 자동 검증하기
@@ -84,19 +84,20 @@ sha256sum "$simulation_wheel" "$simulation_workdir/dist/retirewise_retirement_si
 64자리 SHA-256을 넣는다. 출처 불명 파일에서 계산한 해시를 그대로 기대값으로 써도 배포자 신원을 검증할 수는 없다.
 
 ```bash
-simulation_wheel="/absolute/path/retirewise_retirement_simulation-0.1.1-py3-none-any.whl"
+simulation_wheel="/absolute/path/retirewise_retirement_simulation-0.1.2-py3-none-any.whl"
 simulation_expected_sha256="REPLACE_WITH_BUILD_RECORDED_SHA256"
 python -B ai-pjt/retirement_simulation/tests/run_installation_checks.py \
   --wheel "$simulation_wheel" --sha256 "$simulation_expected_sha256"
 ```
 
 두 자리표시자는 실제 값으로 바꾼다. runner는 정확한 파일 구성·메타데이터·SHA-256/RECORD를
-검사한 뒤 새 venv에 오프라인 일반 설치한다. `successful=true`, `tests_run=17`, `skipped=0`,
+검사한 뒤 새 venv에 오프라인 일반 설치한다. `successful=true`, `tests_run=18`, `skipped=0`,
 설치 전 부재·필수 모듈 누락 거부·복구 성공이 모두 확인되어야 한다.
 이 환경은 종료 시 자동 제거되므로 출력된 `package_root`를 이후 실행 경로로 재사용하지 않는다.
 검사 내용과 실패 조건은 [설치 검증 기록](installation-validation.md)을 따른다.
-기존 14개 검사에 기타 혼합 자산·기타만 있는 입력·기타 뒤 미지원 분류의 검사 3개를 더했다.
-`0.1.0` 파일명이나 내부 버전은 설치 전에 거절하며, 버전 이름만 바꾼 옛 계산 코드도 설치된 동작 검사에서 실패한다.
+기존 17개 검사에 자유 입력·오타 제외와 필수 텍스트 오류를 반영하고 5종·ID 검증 1개를 추가했다.
+`0.1.0`·`0.1.1` 파일명이나 내부 버전은 설치 전에 거절하며, 버전 이름만 바꾼 옛 계산 코드도
+설치된 동작 검사에서 실패한다.
 
 ## 4. 별도 로컬 환경에 설치하고 위치 확인하기
 
@@ -115,7 +116,7 @@ cd "$simulation_demo_dir/working"
 "$simulation_demo_dir/env/bin/python" -I -B -c 'from importlib.metadata import version; from pathlib import Path; import sys; import retirement_simulation as simulation; assert sys.prefix != sys.base_prefix; assert Path(simulation.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()); print(version("retirewise-retirement-simulation")); print(simulation.__file__)'
 ```
 
-버전은 `0.1.1`, import 위치는 방금 만든 `env/.../site-packages/retirement_simulation/__init__.py`여야 한다.
+버전은 `0.1.2`, import 위치는 방금 만든 `env/.../site-packages/retirement_simulation/__init__.py`여야 한다.
 설치 검증은 [일반 설치](https://pip.pypa.io/en/stable/topics/local-project-installs/) 기준이다.
 `pip install -e`, 임의 `PYTHONPATH`, `sys.path.insert()`로 설치 누락을 우회하지 않는다.
 정확한 Python의 `-m pip`를 써서 다른 환경의 pip와 섞이지 않게 한다.
@@ -237,4 +238,19 @@ BE 전달 설명/문서 보완은 사용자가 브랜치 종료 후 다시 요�
 
 이 로컬 보관 경로는 Git/MR에 올라가지 않으며 운영 설치 위치나 공개 다운로드 주소가 아니다.
 BE 전달 시 동일 파일과 신뢰하는 검증 기록을 함께 전달하거나, 합의한 소스 커밋에서 BE가 직접 재빌드한다.
-실제 BE API에서 합산 제외·원본 행 notice 보존까지 확인한 뒤 기타 사전 차단 검사만 제거한다.
+위는 0.1.1 보관 기록이다. 현재 임시 차단 해제는 아래 0.1.2 절의 **화면 안내 확인**까지 필요하다.
+
+## 9. 0.1.2 수정본 확인과 보관
+
+자유 입력·오타를 포함한 5종 밖 문자열 제외와 필수 텍스트 오류 구분이 포함된 버전이다.
+빌드·설치 방식은 위 2~4절을 사용하며 [검증 기록](installation-validation.md)에서 결과와 한계를 확인한다.
+
+- 설치용: `retirewise_retirement_simulation-0.1.2-py3-none-any.whl`.
+- 재빌드용: `retirewise_retirement_simulation-0.1.2.tar.gz`.
+- 로컬 보관: Git 제외 경로 `dist/0.1.2/<source-commit>/artifacts/`와 상위의 빌드/검증 보고서·`SHA256SUMS`.
+- 소스 커밋/트리·버전·해시·설치 결과를 함께 기록하고 이전 버전/커밋 산출물은 덮어쓰지 않는다.
+
+BE는 소스에서 직접 재빌드할 수도 있으므로 wheel을 별도 전달해야 하는지는 BE 설치 흐름에 따른다.
+현재 BE의 버전 비종속 wheel 선택/설치 계약은 유지하며 모듈 담당이 Dockerfile을 수정하지 않는다.
+BE 테스트의 임시 차단 기대값 조정과 실제 API/화면의 notice 확인은 [변경 안내](unmodeled-financial-assets.md)를
+따른다. **패키지 설치만으로 임시 차단을 해제하지 않는다. 사용자에게 제외 사실이 보이는 것이 선행 조건**이다.

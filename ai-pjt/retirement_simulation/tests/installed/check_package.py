@@ -104,7 +104,7 @@ class InstalledPackageTests(unittest.TestCase):
                 self.assertTrue(value.__module__.startswith("retirement_simulation."), name)
 
     def test_metadata_and_no_application_or_build_dependencies(self):
-        self.assertEqual(self.distribution.version, "0.1.1")
+        self.assertEqual(self.distribution.version, "0.1.2")
         self.assertEqual(self.distribution.metadata["Requires-Python"], "<3.14,>=3.13")
         self.assertFalse(self.distribution.requires)
         self.assertFalse(self.distribution.entry_points)

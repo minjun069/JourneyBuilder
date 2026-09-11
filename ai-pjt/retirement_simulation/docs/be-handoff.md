@@ -13,7 +13,7 @@ FE 담당은 [화면 연결 안내](fe-handoff.md), 기술 확인 항목은 [설
 
 ## 먼저 전달할 요약
 
-- 패키지: `retirewise-retirement-simulation==0.1.1`, import `retirement_simulation`.
+- 패키지: `retirewise-retirement-simulation==0.1.2`, import `retirement_simulation`.
 - Python `>=3.13,<3.14`, 런타임 외부 의존성 없음. 로컬 검증 3.13.15, BE 이미지 3.13.14는 별도 검증 필요.
 - `analyze_retirement()`에 저장 snapshot·가정 5개·변경안 최대 1개·실제 없음 확인 근거를 연결한다.
 - 정책: 평균 4% / 변동성 10% / 물가 2% / 1,000경로 / seed 42. 서버가 명시적으로 전달한다.

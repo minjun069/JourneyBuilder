@@ -32,7 +32,10 @@ What-if 시나리오 생성·공통 경로 비교 계산·입력 검증·기본 
 `기타`·직접 입력·오타를 추정/치환하지 않고 자산·월 적립액을 모두 제외하며 기존 notice에 원본 행 위치를
 남긴다. null/공백은 `missing_value`, 비문자열은 `invalid_type`, 키 누락은 `missing_field`다.
 [확정 규칙·BE 테스트 호환성](docs/unmodeled-financial-assets.md)을 참고한다. BE 임시 차단은 화면에서
-제외 안내를 보여줄 수 있을 때까지 유지한다. 이 소스 보완과 0.1.2 빌드/설치 검증은 단계별로 구분한다.
+제외 안내를 보여줄 수 있을 때까지 유지한다. 소스 **685개**와 별도 격리 설치 **18개**를 검증했다.
+sdist→wheel 빌드/파일·해시 검사 결과는 [0.1.2 설치 검증](docs/installation-validation.md)에 기록했다.
+BE 패키지·어댑터 검사에서는 **45개 중 44개 통과, 기존 자유 입력 오류 기대값 1개 실패**가 남아 있다.
+BE/FE 파일·임시 차단을 수정하지 않았으며 전체 CI나 서비스 연결 완료로 해석하지 않는다.
 
 전달 자료는 [담당별 묶음·다음 작업 순서](docs/handoff-next-steps.md)에서 시작한다.
 [BE 설치/호출 안내](docs/be-handoff.md), [FE 화면 연결 안내](docs/fe-handoff.md),
@@ -127,7 +130,7 @@ BE/FE 전달 문서 보완은 사용자 요청에 따라 완료했다. 실제 �
 소스로 실행할 때 추가 설치, API key, Django 설정 또는 PostgreSQL 기동이 필요 없다.
 패키지 빌드 도구는 별도 임시 환경에서만 사용하며 런타임 의존성과 구분한다.
 빌드 설정·재실행 방법·산출물 검증 범위는 [패키징 규격](docs/packaging-contract.md)에 있다.
-현재 패키지 배포 버전은 `0.1.1`, import 이름은 기존 `retirement_simulation`이다.
+현재 패키지 배포 버전은 `0.1.2`, import 이름은 기존 `retirement_simulation`이다.
 별도 설치 검증은 [설치 검증 runner](tests/run_installation_checks.py)가 새 venv를 만들어 수행한다.
 기존 환경에는 설치하지 않으며 빌드한 wheel 경로와 기록된 SHA-256을 명시해야 한다.
 처음 wheel을 빌드/설치하는 경우 [모듈 설치 가이드](docs/package-installation.md)를 따른다.

@@ -5,7 +5,7 @@
 BE/FE·Agent·공용 의존성·Docker/Compose·BE 전달 문서는 수정하지 않았다.
 
 위 설명과 1~3·5절은 최초 `0.1.0` 검증 당시의 기록이다. 2026-09-11부터 4절 재실행 명령은
-`0.1.1` 설치 runner를 사용하며, 기타 금융자산 제외 보완은 후속 버전 검사에 포함한다.
+`0.1.2` 설치 runner를 사용하며, 자유 입력 금융자산 제외 보완은 후속 버전 검사에 포함한다.
 
 ## 1. 소스 테스트와 설치 테스트의 구분
 
@@ -83,11 +83,11 @@ wheel 준비는 [패키징 규격의 빌드 기록](packaging-contract.md)을 �
 
 ```bash
 conda run --no-capture-output -n retirewise-ai python -B ai-pjt/retirement_simulation/tests/run_installation_checks.py \
-  --wheel /absolute/path/retirewise_retirement_simulation-0.1.1-py3-none-any.whl \
+  --wheel /absolute/path/retirewise_retirement_simulation-0.1.2-py3-none-any.whl \
   --sha256 BUILD_RECORDED_SHA256
 ```
 
-현재 `0.1.1`의 성공 JSON에는 `successful=true`, `tests_run=17`, `skipped=0`, 실제 설치 위치·Python 버전·해시,
+현재 `0.1.2`의 성공 JSON에는 `successful=true`, `tests_run=18`, `skipped=0`, 실제 설치 위치·Python 버전·해시,
 설치 전 부재·필수 모듈 누락 거부·복구 성공을 기록한다. 출력의 설치 위치는 이미 제거한 일회성 경로다.
 wheel 설치에 네트워크는 필요 없지만, 앞선 별도 빌드 도구 준비에는 네트워크가 필요할 수 있다.
 
@@ -152,3 +152,59 @@ packaging **26.3**, pyproject_hooks **1.2.0**. 빌드 도구는 공식 PyPI에�
 보관·재실행은 [설치 가이드](package-installation.md)를 따른다. 실제 BE 이미지의 설치/API·
 원본 snapshot·가정·notice 전달 확인은 BE 연결 인수이며, 확인 전까지 BE의 기타 사전 차단을 유지한다.
 패키지·보고서의 공개 게시, 푸시/MR, BE/FE·CI 변경은 이 단계에 포함하지 않는다.
+
+## 7. 0.1.2 비모델링 분류 확장 설치 검증
+
+2026-09-11, `fix/ai-simulation-unmodeled-assets` 3번. 시작 master는 `c4b0327`,
+입력 구현 커밋은 `eb693e1`이다. [변경 규칙](unmodeled-financial-assets.md)과 일치하도록
+정적 버전·runner·설치 검사·현재 설치 명령을 0.1.2로 갱신했다. 과거 버전의 기록/산출물은 보존했다.
+
+### 모듈 검증 결과
+
+| 검사 | 결과 |
+|---|---|
+| 소스 전체 회귀 | **685개 통과**, 일반 실행과 `-S` 실행. AI CI와 같은 `-s retirement_simulation/tests -t .` 발견 방식도 확인 |
+| 패키징 설정·runner 방어 | **25개 통과**. 전체 685개에 포함되며 별도 합산하지 않음 |
+| 빌드 | 저장소 밖 추적 소스 사본에서 sdist 생성 후 해당 sdist로 wheel 빌드 |
+| 파일 구성 | wheel **22개**(런타임 18개+메타데이터 4개), sdist **97개 일반 파일** |
+| 내용·무결성 | 원천/포함 규칙과 파일·byte 내용 일치, 메타데이터/README·안전한 경로·CRC/RECORD·SHA-256/크기 대조 |
+| 별도 설치 인수 | 새 venv에 오프라인 일반 설치, 공개 API/CLI **18개 통과**, skip 0 |
+| 설치 격리 | 설치 전 import 부재, site-packages 출처, 소스 fallback 차단, 필수 모듈 누락 실패/복구 성공 |
+
+설치 검사 18개는 소스 685개와 별개다. 기존 17개의 분류 검사를 확장하고 5종/ID 검증 1개를 추가했다.
+
+- 기타·전세보증금·회원권·오타·자유 문자열을 포함한 혼합/모두 제외 입력에서 자산·적립 제외,
+  원본 행 notice, 없음 확인과의 구분, 원본·RNG 보존을 설치된 공개 함수로 확인했다.
+- 기준/What-if·월 적립 총액 변경, 양수 변동성·고정 seed에서 제외 안내 외의 전체 결과 동일성을 확인했다.
+- 필드 누락·null/빈/공백·숫자/bool/배열/객체와 뒤쪽 지원 행의 금액 오류는 안전한 오류 JSON으로 보존했다.
+- `0.1.0`·`0.1.1` 파일명과 내부 버전은 임시 설치 환경을 만들기 전에 거절하는 방어 검사를 유지했다.
+- 계산 Python 18개는 `eb693e1`과 동일하다. 패키징 때문에 계산·가정·공개 export·JSON을 바꾸지 않았다.
+
+### BE 호환성 결과 — 실패 1건 유지
+
+별도 임시 venv에 0.1.2 wheel을 실제 설치하고 BE의 `test_simulation_package.py`와
+`test_simulation_adapter.py`를 수정 없이 실행했다. **45개 중 44개 통과, 1개 실패, error/skip 0**이다.
+패키지/이미지 계약 10개는 모두 통과하여 버전 비종속 설치 계약이 유지됨을 확인했다.
+실제 Docker 이미지를 빌드하거나 서비스에 설치했다는 뜻은 아니다.
+
+실패는 `test_every_rejected_case_is_also_rejected_by_the_module`의 `free_text_asset_type` 사례다.
+`전세보증금`에 모듈 오류를 기대하지만 0.1.2는 요청대로 제외 안내와 부분 분석을 반환한다.
+소스 직접 대조(어댑터 35개 중 1개 실패)와 실제 설치본 대조 모두 같은 충돌을 보였다.
+BE 담당자가 영구 입력 오류와 화면 안내 전 임시 차단 테스트를 분리해야 한다.
+기존 테스트를 skip하거나 BE 코드를 수정하지 않았으며 **전체 CI 통과/즉시 병합 가능으로 표시하지 않는다**.
+
+### 환경·재빌드·후속 경계
+
+CPython **3.13.15**, 기존 전용 build-env의 pip **26.2.1**, build **1.6.0**,
+setuptools **84.0.0**, packaging **26.3**, pyproject_hooks **1.2.0**을 재사용했다.
+이번 작업은 빌드 도구 다운로드나 공용 Miniforge/BE 환경 변경 없이 진행했고 런타임 의존성도 추가하지 않았다.
+
+커밋 전 추적 작업 파일의 스냅샷으로 사전 검증했다. 문서까지 확정한 최종 커밋은 `git archive`로
+다시 추출해 빌드/파일/설치 검사를 반복하고, 최종 소스 커밋·트리·해시·설치 결과를 압축 파일 바깥의
+`build-report.json`·`verification-report.json`·`be-compatibility.json`·`SHA256SUMS`에 기록한다.
+보관 위치는 [설치 가이드](package-installation.md)의 Git 제외 경로 `dist/0.1.2/<source-commit>/`다.
+사전 검증 파일의 해시를 최종 전달본 해시로 사용하거나 과거 산출물을 덮어쓰지 않는다.
+
+BE/FE·Agent·CI·Docker·공통 정책·requirements는 수정하지 않았다. 실제 HTTP/DB·화면 안내·
+운영 부하·배포는 미검증이다. **사용자가 제외 사실을 확인할 수 있는 화면과 묶어서 BE 임시 차단을 해제**하며,
+모듈 설치 검증만으로 차단을 해제하지 않는다. 푸시/MR·병합·외부 전달은 별도 요청 범위다.
