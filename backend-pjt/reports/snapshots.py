@@ -65,12 +65,22 @@ def build_calculation_input_snapshot(session) -> dict:
     return snapshot
 
 
-def calculation_input_digest(session) -> str:
+def digest_snapshot(snapshot: dict) -> str:
+    """이미 확보한 스냅샷의 digest.
+
+    calculation_input_digest(session) 는 DB 를 다시 읽는다. 계산과 기준 검증에
+    같은 시점을 써야 하는 호출부는 스냅샷을 한 번만 뜬 뒤 이 함수로 해시한다
+    (S15P21B109-136). 해시 구현은 여기 한 곳에만 둔다.
+    """
     encoded = json.dumps(
-        build_calculation_input_snapshot(session),
+        snapshot,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
         cls=DjangoJSONEncoder,
     ).encode("utf-8")
     return sha256(encoded).hexdigest()
+
+
+def calculation_input_digest(session) -> str:
+    return digest_snapshot(build_calculation_input_snapshot(session))
