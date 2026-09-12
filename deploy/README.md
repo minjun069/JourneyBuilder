@@ -195,6 +195,18 @@ sudo bash deploy/f14-rollback-rehearsal.sh \
 
 서비스가 의도적으로 내려가는 구간은 `TIMEOUT + rollback 재기동` 동안 발생할 수 있다. 따라서 트래픽이 가장 적은 시간에 실행하고, 실행 중 다른 deploy 잡이 겹치지 않도록 GitLab `production` resource group이 비어 있는지 먼저 확인한다. 스크립트는 고객 데이터 rollback, volume 삭제, 실제 설정 변경, 외부 LLM 호출을 하지 않는다.
 
+검증 기록(2026-09-12, 운영 서버): candidate `da363e6`의 하네스를 배포 checkout
+`2cc81da`에서 실행했다. 변경 전 snapshot
+`20260912T025811Z-da363e6b9d0d`은 `/srv/s15p21b109/secrets/snapshots/`에
+`root:root` 0500/0400과 디렉터리·두 파일의 `+i`로 보존됐고, 원본 설정 SHA-256은
+리허설 전후가 같았다. 전용 합성 schema의 dump→변경→restore가 exact match로
+통과하고 잔존 schema는 0개였다. 의도적 web 실패 뒤 web·backend·ai-pjt·migrate가
+모두 기존 `:last-good` image ID로 복구됐으며 최종 web 200, API 401, 세 애플리케이션
+health가 `healthy`였다. UFW 22/80/443 규칙도 바뀌지 않았다. 운영 checkout과 후보의
+calculation policy는 모두 `2026-09-07.v1`, SHA-256
+`b50f9e854185c5a6555ebac153e2fec2a309ddbbc86cb946080d3a0df3a70df4`였다. 설정값 없는
+Git 증거는 `ai-pjt/evals/artifacts/f14-rollback-rehearsal.json`이 소유한다.
+
 ## deploy 스테이지 — master 자동 배포 (S15P21B109-125)
 
 `.gitlab-ci.yml` 의 `deploy:production` 잡. master 파이프라인에서 test 스테이지가 통과하면 러너 체크아웃에서 `bash deploy/deploy.sh` 를 실행한다. 러너가 곧 배포 서버라서 SSH 키·이미지 레지스트리·CI Variables 가 없다.

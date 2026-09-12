@@ -65,3 +65,4 @@ docker run --rm \
   sh -c "npm ci --no-audit --no-fund && npm test"
 
 python3 "$f14_root/ai-pjt/evals/security/f14_full_regression.py"
+python3 "$f14_root/ai-pjt/evals/security/f14_rollback_evidence.py"
