@@ -34,6 +34,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.rag_interface_collection, "interface-guides")
         self.assertEqual(settings.embed_dim, 3072)
         self.assertFalse(settings.langfuse_enabled)
+        self.assertEqual(settings.langfuse_base_url, "")
         self.assertEqual(
             settings.masking_pseudonym_key_bytes,
             b"g1-disposable-masking-key-32-bytes!",
@@ -89,6 +90,34 @@ class SettingsTests(unittest.TestCase):
             Settings({**BASE_ENV, "RAG_TOP_K": "5", "RAG_FETCH_K": "4"})
         with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_MIN_DENSE_SCORE"):
             Settings({**BASE_ENV, "RAG_MIN_DENSE_SCORE": "1.1"})
+
+    def test_langfuse_requires_complete_safe_configuration_when_enabled(self) -> None:
+        enabled = {
+            **BASE_ENV,
+            "LANGFUSE_ENABLED": "true",
+            "LANGFUSE_PUBLIC_KEY": "pk-lf-test",
+            "LANGFUSE_SECRET_KEY": "sk-lf-test",
+            "LANGFUSE_BASE_URL": "https://langfuse.example.com",
+        }
+        Settings(enabled).validate_runtime()
+
+        for name in (
+            "LANGFUSE_PUBLIC_KEY",
+            "LANGFUSE_SECRET_KEY",
+            "LANGFUSE_BASE_URL",
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(RuntimeConfigurationError, name):
+                    Settings({**enabled, name: ""}).validate_runtime()
+
+        for url in (
+            "langfuse.example.com",
+            "ftp://langfuse.example.com",
+            "https://user:password@langfuse.example.com",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(RuntimeConfigurationError, "http"):
+                    Settings({**enabled, "LANGFUSE_BASE_URL": url}).validate_runtime()
 
 
 if __name__ == "__main__":

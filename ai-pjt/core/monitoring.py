@@ -444,11 +444,10 @@ class TraceExportBlockedError(RuntimeError):
     """Raised when external tracing is requested before F11 integration."""
 
 
-def _external_tracing_requested() -> bool:
+def _raw_model_tracing_requested() -> bool:
     return any(
         os.environ.get(name, "").lower() in _TRUTHY
         for name in (
-            "LANGFUSE_ENABLED",
             "LANGCHAIN_TRACING_V2",
             "LANGSMITH_TRACING",
         )
@@ -464,7 +463,7 @@ def get_callbacks() -> list[object]:
     fail-closed if process environment is mutated later.
     """
 
-    if _external_tracing_requested():
+    if _raw_model_tracing_requested():
         raise TraceExportBlockedError(
             "raw external tracing bypasses the masked instrumentation exporter"
         )
