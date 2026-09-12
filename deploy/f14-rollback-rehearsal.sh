@@ -46,8 +46,8 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 snapshot_tool="$repo_root/deploy/f14-config-snapshot.sh"
 deploy_tool="$repo_root/deploy/deploy.sh"
-[ -x "$snapshot_tool" ] || die "실행 가능한 snapshot 도구가 없습니다: $snapshot_tool"
-[ -x "$deploy_tool" ] || die "실행 가능한 deploy 도구가 없습니다: $deploy_tool"
+[ -f "$snapshot_tool" ] && [ ! -L "$snapshot_tool" ] || die "snapshot 도구가 없거나 symlink입니다: $snapshot_tool"
+[ -f "$deploy_tool" ] && [ ! -L "$deploy_tool" ] || die "deploy 도구가 없거나 symlink입니다: $deploy_tool"
 [ -f "$ENV_FILE" ] && [ ! -L "$ENV_FILE" ] || die "운영 env 파일이 없거나 symlink입니다: $ENV_FILE"
 
 compose_files=(-f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.prod.yml")
