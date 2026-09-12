@@ -176,6 +176,12 @@ def _agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
             "fallback_category": task.get("route", {}).get("reason_code"),
         }
         result = await agent_graph.ainvoke(agent_state)
+        if (
+            agent_name == "input_assist"
+            and isinstance(result, Mapping)
+            and result.get("reason_code") == "reference_target_not_allowed"
+        ):
+            return failed_task_result(task_id, "reference_target_not_allowed")
         raw_output = result.get("output") if isinstance(result, Mapping) else None
         validation = validate_form_update_contract({
             **agent_state,

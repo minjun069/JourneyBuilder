@@ -7,7 +7,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
-from agents.input_assist_defaults import build_default_proposals
+from agents.input_assist_defaults import (
+    ReferenceTargetNotAllowed,
+    build_bound_reference_proposals,
+    build_default_proposals,
+)
 from core.llm import llm
 from core.model_boundary import (
     ModelPurpose,
@@ -51,6 +55,7 @@ class InputAssistState(TypedDict):
     partial_results: list[dict]  # 성공·실패한 canonical field 처리 결과
     # 최종 출력 — ChatState 의 output 필드로 전파
     output: dict                 # 자연어 응답과 FormChangeAction
+    reason_code: NotRequired[str]
 # ---------------------------------------------------------------------------
 # 구조화 출력 스키마
 # ---------------------------------------------------------------------------
@@ -191,6 +196,7 @@ def _init(_: InputAssistState) -> dict:
         "validation_reason": "",
         "partial_results": [],
         "output": {},
+        "reason_code": "",
     }
 
 
@@ -218,12 +224,30 @@ async def _identify(state: InputAssistState) -> dict:
     guideline = json.dumps(writable_registry, ensure_ascii=False, indent=2)
     current_form = state.get("customer_info", {}).get("current_form", {})
     if state["classification"] == "fill_avg":
-        proposals = build_default_proposals(
-            step_id=state["step_id"],
-            message=state["message"],
-            current_form=current_form if isinstance(current_form, dict) else {},
-            saved_data=state.get("customer_info", {}).get("saved_data", {}),
-        )
+        try:
+            if "reference_id" in state.get("bound_inputs", {}):
+                proposals = build_bound_reference_proposals(
+                    step_id=state["step_id"],
+                    message=state["message"],
+                    current_form=current_form if isinstance(current_form, dict) else {},
+                    bound_inputs=state["bound_inputs"],
+                    user_requested_change=state["user_requested_change"],
+                )
+            else:
+                proposals = build_default_proposals(
+                    step_id=state["step_id"],
+                    message=state["message"],
+                    current_form=current_form if isinstance(current_form, dict) else {},
+                    saved_data=state.get("customer_info", {}).get("saved_data", {}),
+                )
+        except ReferenceTargetNotAllowed:
+            return {
+                "guideline": guideline,
+                "identification": [],
+                "resolution_confidence": 0,
+                "cur_index": 0,
+                "reason_code": "reference_target_not_allowed",
+            }
         return {
             "guideline": guideline,
             "identification": proposals,
@@ -398,6 +422,7 @@ async def _error_check_2(state: InputAssistState) -> dict:
                 "reason": reason,
                 "confidence": 1.0,
                 "bound_unit": bound_inputs.get("unit"),
+                "policy_metadata": item.get("policy_metadata"),
             }],
             "cur_index": state["cur_index"] + 1,
             "resolution_retries": 0,
@@ -518,6 +543,14 @@ def _route_after_error_check_2(state: InputAssistState) -> str:
 
 
 async def _merge(state: InputAssistState) -> dict:
+    if state.get("reason_code") == "reference_target_not_allowed":
+        return {
+            "output": {
+                "response": "조회 기준값을 현재 폼의 승인된 기존 항목에 안전하게 연결할 수 없어 변경안을 만들지 않았습니다.",
+                "step_id": state["step_id"],
+                "action": None,
+            }
+        }
     if state["classification"] == "fill_avg" and not state["partial_results"]:
         return {
             "output": {
@@ -560,6 +593,21 @@ async def _merge(state: InputAssistState) -> dict:
             confidences.append(item.get("confidence", 0))
         else:
             parts.append(f"[{field_name}] 입력 실패 — {item['reason']}")
+
+    if changes and all(isinstance(change.get("reference"), dict) for change in changes):
+        return {
+            "output": {
+                "response": "승인된 가구 기준값으로 기존 빈 항목의 변경안을 만들었습니다. 항목별 승인 후 폼을 저장해 주세요.",
+                "step_id": state["step_id"],
+                "action": {
+                    "type": "form_change",
+                    "target": "draft_form",
+                    "user_requested": state["user_requested_change"],
+                    "confidence": min(confidences),
+                    "changes": changes,
+                },
+            }
+        }
 
     result = await secure_ainvoke(
         llm,

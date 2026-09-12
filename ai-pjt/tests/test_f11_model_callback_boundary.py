@@ -222,6 +222,43 @@ class CallbackBoundaryTests(unittest.TestCase):
         self.assertNotIn("010-9876-5432", masked["output"]["response"])
         self.assertEqual(masked["output"]["action"], None)
 
+    def test_callback_preserves_only_form_target_identities_needed_by_backend(self) -> None:
+        raw = CompletedCallback(
+            request_id="request-test",
+            session_id=731,
+            thread_id="thread-test",
+            completed_at=datetime(2026, 9, 11, tzinfo=timezone.utc),
+            output={
+                "response": "기존 항목 변경안을 만들었습니다.",
+                "step_id": "financial-goals",
+                "action": {
+                    "type": "form_change",
+                    "target": "draft_form",
+                    "user_requested": True,
+                    "confidence": 1.0,
+                    "changes": [{
+                        "section": "goal_periods",
+                        "path": "items[].amount",
+                        "operation": "update",
+                        "parent_item_id": 51,
+                        "item_id": 501,
+                        "value": 361_000,
+                        "unit": "KRW",
+                        "reason": "승인 기준값",
+                    }],
+                },
+            },
+        ).model_dump(mode="json")
+
+        masker = CallbackPayloadMasker(pseudonym_key=TEST_MASKING_KEY)
+        first = masker.mask(raw)
+        replay = masker.mask(first)
+
+        change = first["output"]["action"]["changes"][0]
+        self.assertEqual(change["parent_item_id"], 51)
+        self.assertEqual(change["item_id"], 501)
+        self.assertEqual(first, replay)
+
 
 class ProductionModelCallAuditTests(unittest.TestCase):
     TARGETS = (

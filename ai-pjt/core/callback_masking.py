@@ -57,13 +57,29 @@ def _callback_business_value_paths(payload: Mapping[str, Any]) -> set[MaskingPat
         if not isinstance(changes, list):
             continue
         for index, change in enumerate(changes):
-            if isinstance(change, Mapping) and "value" in change:
+            if not isinstance(change, Mapping):
+                continue
+            if "value" in change:
                 paths.update(
                     _leaf_paths(
                         change["value"],
                         ("output", action_name, "changes", index, "value"),
                     )
                 )
+            for identity_field in (
+                "item_id",
+                "client_item_id",
+                "parent_item_id",
+                "parent_client_item_id",
+            ):
+                if identity_field in change:
+                    paths.add((
+                        "output",
+                        action_name,
+                        "changes",
+                        index,
+                        identity_field,
+                    ))
     review = output.get("review")
     items = review.get("items") if isinstance(review, Mapping) else None
     if isinstance(items, list):

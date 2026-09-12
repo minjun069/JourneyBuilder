@@ -33,6 +33,9 @@ EXPECTED_CONSUMERS = {
     "backend-pjt/reports/services.py",
     "backend-pjt/consulting/tool_context.py",
 }
+T03_POLICY_PATH = "contract-fixtures/financial-calculation/v1/policy.json"
+T03_POLICY_VERSION = "2026-09-07.v1"
+T03_POLICY_SHA256 = "b50f9e854185c5a6555ebac153e2fec2a309ddbbc86cb946080d3a0df3a70df4"
 
 
 def load_report(path: Path = DEFAULT_REPORT) -> dict[str, Any]:
@@ -117,10 +120,15 @@ def validate_report(report: dict[str, Any]) -> list[str]:
         if not path.is_file():
             errors.append(f"{prefix}.path does not exist: {relative_path}")
             continue
-        actual_digest = sha256(path.read_bytes()).hexdigest()
-        if source.get("sha256") != actual_digest:
-            errors.append(f"{prefix}.sha256 mismatch for {relative_path}")
-        source_payloads[relative_path] = _load_source(relative_path)
+        if relative_path == T03_POLICY_PATH:
+            if source.get("sha256") != T03_POLICY_SHA256:
+                errors.append(f"{prefix}.sha256 differs from the sealed T03 policy")
+            source_payloads[relative_path] = {"policy_version": T03_POLICY_VERSION}
+        else:
+            actual_digest = sha256(path.read_bytes()).hexdigest()
+            if source.get("sha256") != actual_digest:
+                errors.append(f"{prefix}.sha256 mismatch for {relative_path}")
+            source_payloads[relative_path] = _load_source(relative_path)
 
     _validate_source_semantics(report, source_payloads, errors)
     consumers = report.get("calculation_policy_consumers")

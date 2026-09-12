@@ -1,8 +1,8 @@
 {
   "fixture_kind": "input-assist-default-values",
-  "schema_version": "1.0",
-  "policy_version": "2026-09-09",
-  "retrieved_at": "2026-09-09",
+  "schema_version": "1.1",
+  "policy_version": "2026-09-12",
+  "retrieved_at": "2026-09-12",
   "sources": {
     "household_expenses_2025": {
       "title": "2025년 연간 가계동향조사 결과",
@@ -25,17 +25,17 @@
       "expires_on": "2027-09-09"
     }
   },
-  "household_monthly_expenses": {
-    "주거비": 361000,
-    "식비/생활비": 449000,
-    "교통비": 337000,
-    "통신비": 167000,
-    "교육비": 209000,
-    "의료비": 228000,
-    "여가/문화": 175000,
-    "외식": 446000,
-    "쇼핑": 261000,
-    "보험료": 98000
+  "household_expense_reference_ids": {
+    "주거비": "household_monthly_expense_housing_avg",
+    "식비/생활비": "household_monthly_expense_food_living_avg",
+    "교통비": "household_monthly_expense_transportation_avg",
+    "통신비": "household_monthly_expense_telecom_avg",
+    "교육비": "household_monthly_expense_education_avg",
+    "의료비": "household_monthly_expense_medical_avg",
+    "여가/문화": "household_monthly_expense_leisure_culture_avg",
+    "외식": "household_monthly_expense_dining_out_avg",
+    "쇼핑": "household_monthly_expense_shopping_avg",
+    "보험료": "household_monthly_expense_insurance_premium_avg"
   },
   "retirement_monthly_expenses": {
     "single": {

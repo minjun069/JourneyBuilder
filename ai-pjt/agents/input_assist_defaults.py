@@ -9,6 +9,12 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Mapping
 
+from tools.financial_policy import (
+    ApprovedFinancialPolicyError,
+    ApprovedReferenceValueNotFound,
+    lookup_approved_reference_value,
+)
+
 
 FIXTURE_RELATIVE_PATH = Path(
     "contract-fixtures/ai-lifecycle/v2/input-assist-default-values.json"
@@ -18,6 +24,25 @@ POLICY_RELATIVE_PATH = Path("contract-fixtures/financial-calculation/v1/policy.j
 
 class InputAssistDefaultPolicyError(ValueError):
     pass
+
+
+class ReferenceTargetNotAllowed(ValueError):
+    """A sealed reference artifact cannot target the approved existing row."""
+
+
+REFERENCE_BINDING_FIELDS = frozenset({
+    "reference_id",
+    "age",
+    "value",
+    "unit",
+    "period",
+    "population",
+    "comparator",
+    "source_id",
+    "source_version",
+    "as_of",
+    "calculation_policy_version",
+})
 
 
 def _repo_file(relative_path: Path) -> Path:
@@ -40,7 +65,7 @@ def load_default_policy(path: Path | None = None) -> dict[str, Any]:
         raise InputAssistDefaultPolicyError("default policy could not be loaded") from exc
     if payload.get("fixture_kind") != "input-assist-default-values":
         raise InputAssistDefaultPolicyError("unsupported default policy")
-    if payload.get("schema_version") != "1.0":
+    if payload.get("schema_version") != "1.1":
         raise InputAssistDefaultPolicyError("unsupported default policy schema")
     return payload
 
@@ -167,6 +192,136 @@ def _proposal(
     return result
 
 
+def _reference_metadata(
+    reference: Mapping[str, Any],
+    *,
+    title: str,
+) -> dict[str, Any]:
+    return {
+        "policy_version": reference["calculation_policy_version"],
+        "source": {
+            "source_id": reference["source_id"],
+            "title": title,
+            "reference_period": reference["period"],
+        },
+        "retrieved_at": reference["as_of"],
+        "transform": "승인 기준값을 원 단위 월 금액으로 직접 매핑",
+        "assumption_level": "household_benchmark",
+        "reference": {
+            field: reference[field]
+            for field in REFERENCE_BINDING_FIELDS
+            if field != "value"
+        },
+    }
+
+
+def _household_references(
+    policy: Mapping[str, Any],
+    *,
+    effective_on: date,
+) -> dict[str, dict[str, Any]]:
+    mapping = policy.get("household_expense_reference_ids")
+    if not isinstance(mapping, Mapping):
+        raise InputAssistDefaultPolicyError("household reference mapping unavailable")
+    references: dict[str, dict[str, Any]] = {}
+    try:
+        for name, reference_id in mapping.items():
+            if not isinstance(name, str) or not isinstance(reference_id, str):
+                raise InputAssistDefaultPolicyError("household reference mapping invalid")
+            references[name] = lookup_approved_reference_value(
+                reference_id=reference_id,
+                age=0,
+                period="monthly",
+                population="kr_general_households_1plus",
+                effective_on=effective_on,
+            )
+    except (ApprovedFinancialPolicyError, ApprovedReferenceValueNotFound) as exc:
+        raise InputAssistDefaultPolicyError("household reference policy unavailable") from exc
+    return references
+
+
+def build_bound_reference_proposals(
+    *,
+    step_id: str,
+    message: str,
+    current_form: Mapping[str, Any],
+    bound_inputs: Mapping[str, Any],
+    user_requested_change: bool,
+    today: date | None = None,
+    policy: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Map one sealed household reference only to its approved existing target."""
+
+    if step_id != "financial-goals" or not user_requested_change:
+        raise ReferenceTargetNotAllowed("reference_target_not_allowed")
+    if not REFERENCE_BINDING_FIELDS.issubset(bound_inputs):
+        raise ReferenceTargetNotAllowed("reference_target_not_allowed")
+
+    active_policy = dict(policy or load_default_policy())
+    mapping = active_policy.get("household_expense_reference_ids")
+    reference_id = bound_inputs.get("reference_id")
+    if not isinstance(mapping, Mapping) or reference_id not in mapping.values():
+        raise ReferenceTargetNotAllowed("reference_target_not_allowed")
+    expected_name = next(
+        name for name, mapped_id in mapping.items() if mapped_id == reference_id
+    )
+
+    try:
+        approved = lookup_approved_reference_value(
+            reference_id=str(reference_id),
+            age=bound_inputs["age"],
+            period=bound_inputs["period"],
+            population=bound_inputs["population"],
+            effective_on=today or date.today(),
+        )
+    except (ApprovedFinancialPolicyError, ApprovedReferenceValueNotFound, TypeError):
+        raise ReferenceTargetNotAllowed("reference_target_not_allowed") from None
+    if any(bound_inputs.get(field) != approved.get(field) for field in REFERENCE_BINDING_FIELDS):
+        raise ReferenceTargetNotAllowed("reference_target_not_allowed")
+    if (
+        approved["unit"] != "KRW"
+        or approved["period"] != "monthly"
+        or approved["population"] != "kr_general_households_1plus"
+        or approved["comparator"] != "eq"
+    ):
+        raise ReferenceTargetNotAllowed("reference_target_not_allowed")
+
+    candidates: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
+    periods = current_form.get("goal_periods")
+    for period in periods if isinstance(periods, list) else []:
+        if (
+            not isinstance(period, Mapping)
+            or not _has_identity(period)
+            or period.get("phase") != "before"
+        ):
+            continue
+        items = period.get("items")
+        for item in items if isinstance(items, list) else []:
+            if (
+                isinstance(item, Mapping)
+                and _has_identity(item)
+                and item.get("name") == expected_name
+                and not _present(item.get("amount"))
+            ):
+                candidates.append((period, item))
+    if len(candidates) != 1:
+        raise ReferenceTargetNotAllowed("reference_target_not_allowed")
+
+    period, item = candidates[0]
+    source = active_policy.get("sources", {}).get("household_expenses_2025", {})
+    title = source.get("title") if isinstance(source, Mapping) else None
+    if not isinstance(title, str) or not title:
+        raise ReferenceTargetNotAllowed("reference_target_not_allowed")
+    return [_proposal(
+        section="goal_periods",
+        path="items[].amount",
+        value=approved["value"],
+        item=item,
+        parent=period,
+        metadata=_reference_metadata(approved, title=title),
+    )]
+
+
 def build_default_proposals(
     *,
     step_id: str,
@@ -257,30 +412,39 @@ def build_default_proposals(
         return proposals
 
     if step_id == "expenses" and _explicit_household_benchmark(message):
-        metadata = _metadata(
+        fallback_metadata = _metadata(
             active_policy,
             source_id="household_expenses_2025",
             assumption_level="household_benchmark",
             transform="전국 가구 월평균 원 단위 직접 매핑",
             today=current_date,
         )
-        if not metadata:
+        if not fallback_metadata:
             return []
-        benchmarks = active_policy["household_monthly_expenses"]
+        try:
+            references = _household_references(active_policy, effective_on=current_date)
+        except InputAssistDefaultPolicyError:
+            return []
         rows = current_form.get("assets", [])
         for row in rows if isinstance(rows, list) else []:
-            if not isinstance(row, Mapping) or not _has_identity(row) or row.get("name") not in benchmarks:
+            if not isinstance(row, Mapping) or not _has_identity(row) or row.get("name") not in references:
                 continue
+            reference = references[row["name"]]
+            source = active_policy["sources"]["household_expenses_2025"]
+            metadata = _reference_metadata(reference, title=source["title"])
             if not _present(row.get("amount")):
                 proposals.append(_proposal(
-                    section="expenses", path="amount", value=benchmarks[row["name"]],
+                    section="expenses", path="amount", value=reference["value"],
                     item=row, metadata=metadata,
                 ))
             if not _present(row.get("frequency")):
                 proposals.append(_proposal(
                     section="expenses", path="frequency",
                     value={"none": False, "unit": "월", "count": 1},
-                    item=row, metadata={**metadata, "transform": "월평균을 월 1회로 정규화"},
+                    item=row, metadata={
+                        **fallback_metadata,
+                        "transform": "월평균을 월 1회로 정규화",
+                    },
                 ))
         return proposals
 
@@ -308,13 +472,29 @@ def build_default_proposals(
     periods = current_form.get("goal_periods")
     if not isinstance(periods, list):
         periods = []
-    household_meta = _metadata(
+    retirement_meta = _metadata(
         active_policy,
-        source_id=("retirement_living_cost_2024" if household else "household_expenses_2025"),
-        assumption_level=("planning_assumption" if household else "household_benchmark"),
+        source_id="retirement_living_cost_2024",
+        assumption_level="planning_assumption",
         transform="기존 목표 항목명에 월 생활비 배분액 직접 매핑",
         today=current_date,
-    ) if household or _explicit_household_benchmark(message) else None
+    ) if household else None
+    household_meta = _metadata(
+        active_policy,
+        source_id="household_expenses_2025",
+        assumption_level="household_benchmark",
+        transform="기존 목표 항목명에 월 생활비 배분액 직접 매핑",
+        today=current_date,
+    ) if _explicit_household_benchmark(message) else None
+    household_references: dict[str, dict[str, Any]] = {}
+    if household_meta:
+        try:
+            household_references = _household_references(
+                active_policy,
+                effective_on=current_date,
+            )
+        except InputAssistDefaultPolicyError:
+            household_meta = None
     for period in periods:
         if not isinstance(period, Mapping) or not _has_identity(period) or period.get("phase") not in range_values:
             continue
@@ -338,20 +518,26 @@ def build_default_proposals(
                     section="goal_periods", path="to_age", value=end,
                     item=period, metadata=range_meta,
                 ))
-        if not household_meta:
-            continue
         benchmark = (
             active_policy["retirement_monthly_expenses"][household]
-            if phase == "after" and household
-            else active_policy["household_monthly_expenses"]
-            if phase == "before" and _explicit_household_benchmark(message)
+            if phase == "after" and household and retirement_meta
+            else household_references
+            if phase == "before" and household_meta
             else {}
         )
         for item in period.get("items", []) if isinstance(period.get("items"), list) else []:
             if not isinstance(item, Mapping) or not _has_identity(item) or item.get("name") not in benchmark or _present(item.get("amount")):
                 continue
+            if phase == "before":
+                reference = benchmark[item["name"]]
+                source = active_policy["sources"]["household_expenses_2025"]
+                value = reference["value"]
+                metadata = _reference_metadata(reference, title=source["title"])
+            else:
+                value = benchmark[item["name"]]
+                metadata = retirement_meta
             proposals.append(_proposal(
-                section="goal_periods", path="items[].amount", value=benchmark[item["name"]],
-                item=item, parent=period, metadata=household_meta,
+                section="goal_periods", path="items[].amount", value=value,
+                item=item, parent=period, metadata=metadata,
             ))
     return proposals

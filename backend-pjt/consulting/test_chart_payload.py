@@ -39,7 +39,7 @@ def ready_report():
         content={
             'input_snapshot_digest': 'current-digest',
             'assumptions': {
-                'calculation_policy_version': '2026-09-07.v1',
+                'calculation_policy_version': '2026-09-12.v1',
                 'inflation_rate': 0.03,
                 'investment_rate': 0.04,
                 'wage_growth_rate': 0.03,
@@ -110,7 +110,7 @@ def fixture_backed_report():
             'input_snapshot_digest': 'current-digest',
             'assumptions': {
                 **payload['assumptions'],
-                'calculation_policy_version': '2026-09-07.v1',
+                'calculation_policy_version': '2026-09-12.v1',
             },
             'depletion_point': payload['summary']['depletion_point'],
             'final_status': payload['summary']['final_status'],

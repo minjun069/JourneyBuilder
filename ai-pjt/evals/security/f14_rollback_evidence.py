@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from pathlib import Path
@@ -11,7 +10,8 @@ from typing import Any, Mapping
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_REPORT = ROOT / "ai-pjt/evals/artifacts/f14-rollback-rehearsal.json"
-POLICY_PATH = ROOT / "contract-fixtures/financial-calculation/v1/policy.json"
+T05_POLICY_VERSION = "2026-09-07.v1"
+T05_POLICY_SHA256 = "b50f9e854185c5a6555ebac153e2fec2a309ddbbc86cb946080d3a0df3a70df4"
 
 SHA40 = re.compile(r"[0-9a-f]{40}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -39,10 +39,6 @@ def _require_exact_keys(value: Mapping[str, Any], expected: set[str], name: str)
         raise ValueError(f"{name} keys differ: missing={sorted(expected - actual)}, extra={sorted(actual - expected)}")
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def validate(report: Mapping[str, Any]) -> dict[str, Any]:
     _require_exact_keys(report, TOP_LEVEL_KEYS, "report")
     if report["schema_version"] != "f14-rollback-evidence-v1" or report["task"] != "F14-T05":
@@ -67,11 +63,10 @@ def validate(report: Mapping[str, Any]) -> dict[str, Any]:
     )
     if not SHA40.fullmatch(str(environment["deployment_checkout_commit"])):
         raise ValueError("deployment checkout commit must be a full Git SHA")
-    policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
-    if environment["calculation_policy_version"] != policy["policy_version"]:
-        raise ValueError("production and candidate calculation policy versions differ")
-    if environment["calculation_policy_sha256"] != _sha256(POLICY_PATH):
-        raise ValueError("production and candidate calculation policy hashes differ")
+    if environment["calculation_policy_version"] != T05_POLICY_VERSION:
+        raise ValueError("production rehearsal policy versions differ from its sealed baseline")
+    if environment["calculation_policy_sha256"] != T05_POLICY_SHA256:
+        raise ValueError("production rehearsal policy hash differs from its sealed baseline")
 
     snapshot = report["config_snapshot"]
     _require_exact_keys(

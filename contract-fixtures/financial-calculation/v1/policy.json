@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
-  "policy_version": "2026-09-07.v1",
+  "policy_version": "2026-09-12.v1",
   "status": "approved",
-  "approved_at": "2026-09-07",
-  "valid_from": "2026-09-07",
+  "approved_at": "2026-09-12",
+  "valid_from": "2026-09-12",
   "valid_until": null,
   "country": "KR",
   "sources": [
@@ -26,6 +26,13 @@
       "publisher": "국민연금공단",
       "source_version": "2.0.0",
       "as_of": "2026-09-07",
+      "license": "facts only"
+    },
+    {
+      "source_id": "kostat-household-expenses-2025",
+      "publisher": "통계청",
+      "source_version": "2025",
+      "as_of": "2025-12-31",
       "license": "facts only"
     }
   ],
@@ -135,6 +142,16 @@
     {"reference_id": "retirement_savings_share_min", "age_min": 20, "age_max": null, "value": 50, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
     {"reference_id": "financial_asset_ratio_min", "age_min": 20, "age_max": null, "value": 40, "unit": "percent", "period": "current", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
     {"reference_id": "insurance_preparation_range_min", "age_min": 20, "age_max": null, "value": 8, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "gte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
-    {"reference_id": "insurance_preparation_range_max", "age_min": 20, "age_max": null, "value": 10, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "lte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"}
+    {"reference_id": "insurance_preparation_range_max", "age_min": 20, "age_max": null, "value": 10, "unit": "percent", "period": "monthly", "population": "retirewise_kr_households", "comparator": "lte", "source_id": "retirewise-household-financial-indicator-policy", "as_of": "2026-09-07"},
+    {"reference_id": "household_monthly_expense_housing_avg", "age_min": 0, "age_max": null, "value": 361000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_food_living_avg", "age_min": 0, "age_max": null, "value": 449000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_transportation_avg", "age_min": 0, "age_max": null, "value": 337000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_telecom_avg", "age_min": 0, "age_max": null, "value": 167000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_education_avg", "age_min": 0, "age_max": null, "value": 209000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_medical_avg", "age_min": 0, "age_max": null, "value": 228000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_leisure_culture_avg", "age_min": 0, "age_max": null, "value": 175000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_dining_out_avg", "age_min": 0, "age_max": null, "value": 446000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_shopping_avg", "age_min": 0, "age_max": null, "value": 261000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"},
+    {"reference_id": "household_monthly_expense_insurance_premium_avg", "age_min": 0, "age_max": null, "value": 98000, "unit": "KRW", "period": "monthly", "population": "kr_general_households_1plus", "comparator": "eq", "source_id": "kostat-household-expenses-2025", "as_of": "2025-12-31"}
   ]
 }

@@ -364,6 +364,13 @@ def _validate_change(
             f"{base_path}.source_turn_ids",
             "Elicit source turn 식별자가 올바르지 않습니다.",
         ))
+    reference = change.get("reference")
+    if reference is not None:
+        issues.extend(_validate_change_reference(
+            reference,
+            change=change,
+            base_path=f"{base_path}.reference",
+        ))
 
     cardinality = spec.get("cardinality")
     if operation != "remove" and "value" not in change:
@@ -399,6 +406,82 @@ def _validate_change(
                 base_path,
                 "중첩 항목 add에는 부모 ID가 필요합니다.",
             ))
+    return issues
+
+
+def _validate_change_reference(
+    reference: Any,
+    *,
+    change: Mapping[str, Any],
+    base_path: str,
+) -> list[ValidationIssue]:
+    fields = {
+        "reference_id",
+        "age",
+        "unit",
+        "period",
+        "population",
+        "comparator",
+        "source_id",
+        "source_version",
+        "as_of",
+        "calculation_policy_version",
+    }
+    if not isinstance(reference, dict) or set(reference) != fields:
+        return [_issue(
+            "INVALID_CHANGE_REFERENCE",
+            base_path,
+            "기준값 provenance 필드가 완전하지 않습니다.",
+        )]
+    issues: list[ValidationIssue] = []
+    string_fields = fields - {"age"}
+    if any(
+        not isinstance(reference.get(field), str) or not reference[field].strip()
+        for field in string_fields
+    ):
+        issues.append(_issue(
+            "INVALID_CHANGE_REFERENCE",
+            base_path,
+            "기준값 provenance 문자열이 올바르지 않습니다.",
+        ))
+    age = reference.get("age")
+    if isinstance(age, bool) or not isinstance(age, int) or not 0 <= age <= 120:
+        issues.append(_issue(
+            "INVALID_CHANGE_REFERENCE",
+            f"{base_path}.age",
+            "기준값 조회 연령이 올바르지 않습니다.",
+        ))
+    if not isinstance(reference.get("as_of"), str) or not _is_iso_date(reference["as_of"]):
+        issues.append(_issue(
+            "INVALID_CHANGE_REFERENCE",
+            f"{base_path}.as_of",
+            "기준값 기준일이 올바르지 않습니다.",
+        ))
+    if reference.get("unit") != change.get("unit"):
+        issues.append(_issue(
+            "REFERENCE_UNIT_MISMATCH",
+            f"{base_path}.unit",
+            "기준값과 변경안 단위가 일치하지 않습니다.",
+        ))
+    if reference.get("calculation_policy_version") != change.get("policy_version"):
+        issues.append(_issue(
+            "REFERENCE_POLICY_MISMATCH",
+            f"{base_path}.calculation_policy_version",
+            "기준값과 변경안 정책 버전이 일치하지 않습니다.",
+        ))
+    source = change.get("source")
+    if not isinstance(source, dict) or source.get("source_id") != reference.get("source_id"):
+        issues.append(_issue(
+            "REFERENCE_SOURCE_MISMATCH",
+            f"{base_path}.source_id",
+            "기준값과 변경안 출처가 일치하지 않습니다.",
+        ))
+    if change.get("retrieved_at") != reference.get("as_of"):
+        issues.append(_issue(
+            "REFERENCE_DATE_MISMATCH",
+            f"{base_path}.as_of",
+            "기준값과 변경안 기준일이 일치하지 않습니다.",
+        ))
     return issues
 
 

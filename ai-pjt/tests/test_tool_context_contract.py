@@ -43,7 +43,7 @@ class ToolContextConsumerContractTests(unittest.TestCase):
         self.assertEqual(metric.value, 375_000_000)
         self.assertEqual(metric.report_id, 42)
         self.assertEqual(metric.report_version, 3)
-        self.assertEqual(metric.calculation_policy_version, "2026-09-07.v1")
+        self.assertEqual(metric.calculation_policy_version, "2026-09-12.v1")
 
     def test_tool_context_remains_optional_for_v2_compatibility(self):
         payload = request_payload(None)

@@ -61,6 +61,54 @@ class FakeClassifier:
 
 
 class RoutePlanValidationTests(unittest.TestCase):
+    def test_writable_household_reference_requires_complete_single_source_binding(self) -> None:
+        lookup = task(
+            "lookup",
+            "lookup_reference_value",
+            "가구 주거비 평균 조회",
+            arguments={
+                "reference_id": "household_monthly_expense_housing_avg",
+                "age": 45,
+                "period": "monthly",
+                "population": "kr_general_households_1plus",
+            },
+        )
+        incomplete = validate_route_plan({"tasks": [
+            lookup,
+            task(
+                "fill",
+                "propose_form_change",
+                "기존 빈 주거비 변경안 제안",
+                depends_on=["lookup"],
+                bindings={"value": {"task_id": "lookup", "path": "value"}},
+            ),
+        ]}, step_id="financial-goals")
+        self.assertFalse(incomplete.valid)
+        self.assertIn(
+            "INCOMPLETE_REFERENCE_BINDING",
+            {issue.code for issue in incomplete.issues},
+        )
+
+        fields = (
+            "reference_id", "age", "value", "unit", "period", "population",
+            "comparator", "source_id", "source_version", "as_of",
+            "calculation_policy_version",
+        )
+        complete = validate_route_plan({"tasks": [
+            lookup,
+            task(
+                "fill",
+                "propose_form_change",
+                "기존 빈 주거비 변경안 제안",
+                depends_on=["lookup"],
+                bindings={
+                    field: {"task_id": "lookup", "path": field}
+                    for field in fields
+                },
+            ),
+        ]}, step_id="financial-goals")
+        self.assertTrue(complete.valid, [issue.to_dict() for issue in complete.issues])
+
     def test_retirement_gap_arguments_are_runtime_fixed(self) -> None:
         raw_task = task(
             "gap",
