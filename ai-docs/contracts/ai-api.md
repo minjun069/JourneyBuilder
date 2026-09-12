@@ -4,9 +4,9 @@
 
 이 문서는 Django→AI 작업 요청, AI→Django callback, 서비스 인증·상태·오류·호환성과 step별 Agent allowlist를 소유한다. Browser↔Django 계약은 [Django HTTP API](http-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
-일반 AI 상담의 `POST /v2/chat/stream` 요청과 이벤트는
+일반 상담, Elicit과 Error Review의 `POST /v2/chat/stream` 요청과 이벤트는
 [AI 상담 SSE v2 계약](sse-v2.md)을 따른다. 기존 `POST /v2/chat`과 callback은
-초기 장애 전환 경로로 유지한다.
+호환·운영 회귀를 위해 유지하지만 현재 Frontend 제품 흐름은 소비하지 않는다.
 
 ## 호출 주체와 책임
 
@@ -16,7 +16,7 @@ AI 서비스는 Django가 전달한 snapshot을 바탕으로 6-Agent를 실행�
 
 | 주체 | 책임 |
 |---|---|
-| Frontend | 메시지·단계·현재 폼 전달, polling 상태 표시, 승인된 단일 change의 draft 적용 |
+| Frontend | 메시지·단계·현재 폼과 Error Review trigger 전달, 모든 대화형 응답의 SSE terminal 표시, 승인된 단일 change 또는 검토 후보의 draft 적용 |
 | Django | 사용자·세션 소유권, request/thread/session 결합, 작업·action 상태, callback과 form change 재검증 |
 | AI | 문맥 복원, Agent 라우팅·실행, RAG·Function Calling·MCP 실행, 도구 입출력·구조화 출력·보안 검사, 성공·실패 callback |
 | MCP | 허용 도구 실행, 스키마·권한·timeout·감사 결과 반환 |
@@ -254,7 +254,7 @@ step registry, lifecycle, form action, chart payload 네 파일은 `ai-contract-
 - 선택 필드 추가만 같은 major에서 허용한다. 필수값, 이름, 자료형, 상태 의미, 인증·idempotency 규칙 변경은 다음 major다.
 - 다음 major도 모든 producer·consumer와 fixture를 준비한 뒤 조정 배포한다.
 - rollback은 세 서비스를 이전 release로 함께 되돌린다. v2 consumer와 이전 provider를 섞어 운영하지 않는다.
-- 구현 인수는 provider test, consumer test와 Front→Django→AI→callback→polling→개별 승인·거절 E2E 증거가 있어야 완료된다.
+- 구현 인수는 provider test, consumer test와 Front→Django→AI SSE→개별 승인·거절 E2E 증거가 있어야 완료된다. 호환 callback은 별도 production 회귀로 유지한다.
 
 ## 후속 출력 계약
 

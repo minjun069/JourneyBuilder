@@ -25,6 +25,13 @@ class AISSEV2ConsumerContractTests(unittest.TestCase):
         self.assertIn("Authorization", self.contract["required_service_headers"])
         self.assertEqual(self.contract["ai_endpoint"], "/v2/chat/stream")
 
+    def test_all_frontend_conversation_flows_use_sse(self) -> None:
+        policy = self.contract["channel_policy"]
+        self.assertEqual(policy["general_chat"], "sse")
+        self.assertEqual(set(policy["elicit"].values()), {"sse"})
+        self.assertEqual(set(policy["error_review"].values()), {"sse"})
+        self.assertEqual(policy["frontend_polling_flows"], [])
+
     def test_done_and_error_are_callback_compatible_terminal_payloads(self) -> None:
         done = self.contract["ai_events"][-1]
         error = self.contract["error_event"]

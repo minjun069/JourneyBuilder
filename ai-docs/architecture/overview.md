@@ -27,9 +27,9 @@ Browser
           → 승인된 LLM·Embedding provider
           → RAG index: 승인 금융 지식·인터페이스 가이드
           → MCP server: 검색·검증·결정론적 계산
-      ← v2 SSE: 일반 채팅·Elicit 답변·인용·변경 제안 또는 실패
-      ← AI callback: Error Review·명시적 fallback의 종결 결과
-  ← 일반 채팅·Elicit SSE 또는 Error Review·fallback polling
+      ← v2 SSE: 일반 채팅·Elicit·Error Review의 답변·인용·변경 제안 또는 실패
+      ← AI callback: 호환 비동기 경로의 종결 결과
+  ← 모든 대화형 AI 응답은 v2 SSE
 ```
 
 Browser는 AI·MCP를 직접 호출하지 않는다. AI는 Django 업무 DB를 직접 수정하지 않으며 사용자 승인 전 변경은 제안 상태로 유지한다.
@@ -66,7 +66,7 @@ Frontend 개발 서버의 Compose 포함 여부와 개발용 host port override�
 ## 6. 비기능 설계
 
 - 보안·개인정보·Zero Trust 핵심 통제는 [`AI 보안 정책 v0.1`](../security/ai-security-policy.md)을 따른다.
-- Django·AI·MCP·LLM 장애를 분리하고 실패 callback·timeout·제한 재시도로 복구한다.
+- Django·AI·MCP·LLM 장애를 분리하고 SSE terminal error·timeout·제한 재시도로 복구한다.
 - request·thread·trace ID를 가명화해 경계 간 요청을 연결하고 토큰·비용·지연·도구·검색·승인을 관측한다.
 - 모델·프롬프트·인덱스·도구 버전을 독립적으로 rollback할 수 있어야 한다.
 - 목표 SLO는 1차 baseline 뒤 문서와 검증 게이트에 확정한다.

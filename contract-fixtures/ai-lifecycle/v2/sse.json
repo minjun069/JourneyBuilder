@@ -12,7 +12,11 @@
       "resume": "sse",
       "continuation": "sse"
     },
-    "callback_polling_allowed_flows": ["error_review", "explicit_fallback"]
+    "error_review": {
+      "save": "sse",
+      "user_request": "sse"
+    },
+    "frontend_polling_flows": []
   },
   "terminal_events": ["done", "error"],
   "allowed_events": ["start", "delta", "done", "error"],
@@ -127,7 +131,7 @@
   },
   "timeouts_seconds": {
     "service_connect": 5,
-    "stream_read_idle": 60,
+    "stream_read_idle": 120,
     "gateway_proxy": 130,
     "host_proxy": 140
   }

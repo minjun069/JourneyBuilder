@@ -1,11 +1,11 @@
 # AI 상담 SSE v2 계약
 
-상태: **ADR-0002·ADR-0003에 따라 Browser↔Django↔AI 스트리밍 계약 동결**
+상태: **ADR-0002~ADR-0004에 따라 Browser↔Django↔AI 스트리밍 계약 동결**
 
-이 문서는 일반 AI 상담의 v2 SSE endpoint, 이벤트 상태 머신, 인증, 멱등성,
-오류와 저장 시점을 소유한다. Elicit의 `start`·`resume`·활성 continuation도 일반
-상담과 같은 SSE 경로를 사용한다. callback + polling 계약은 Error Review와 명시적
-장애 전환 경로로 유지하며 장기 작업은 RabbitMQ 작업 계약에서 별도로 다룬다.
+이 문서는 대화형 AI 상담의 v2 SSE endpoint, 이벤트 상태 머신, 인증, 멱등성,
+오류와 저장 시점을 소유한다. 일반 상담, Elicit의 `start`·`resume`·활성
+continuation, Error Review의 저장·명시 요청은 같은 SSE 경로를 사용한다. 장기 작업은
+RabbitMQ 작업 계약에서 별도로 다룬다.
 
 기계 판독 가능한 단일 예시는
 `contract-fixtures/ai-lifecycle/v2/sse.json`이다.
@@ -36,6 +36,10 @@ Elicit 시작과 재개도 같은 endpoint를 사용한다. 시작은
 `elicit_action=resume`을 보낸다. 활성 Elicit 질문의 일반 답변은
 `elicit_action`을 생략하며 checkpoint 상태가 continuation으로 라우팅한다.
 Frontend는 세 경우 모두 callback + polling endpoint를 호출하지 않는다.
+
+Error Review는 `request_mode=error_review`와 `review_trigger=save|user_request`를
+같은 endpoint에 보낸다. Frontend는 부분 `delta`를 검토 결과로 표시하지 않고 검증된
+`done.message`의 구조화 review만 현재 draft 검토 UI에 전달한다.
 
 Django는 응답 header를 보내기 전에 사용자 JWT, 상담 세션 소유권, 종료 상태,
 body, contract version과 idempotency key를 검증한다. 실패하면 기존 v2 JSON 오류
@@ -149,11 +153,13 @@ endpoint를 그대로 사용한다.
 - Browser 연결이 닫히면 Django upstream client를 닫고 FastAPI async generator에
   취소를 전파한다.
 - 자동 재연결과 `Last-Event-ID` replay는 이번 계약 범위가 아니다.
+- 저장 trigger의 Error Review가 `error`, terminal 없는 EOF 또는 취소로 끝나면 기존
+  비차단 정책에 따라 검토 없이 폼 저장을 계속한다.
 
 ## timeout
 
 - Django→AI connect/write/pool timeout: 5초
-- stream read idle timeout: 60초
+- stream read idle timeout: 120초
 - Gateway Nginx read/send timeout: 130초
 - Host Nginx read/send timeout: 140초
 
@@ -161,7 +167,8 @@ endpoint를 그대로 사용한다.
 
 ## 전환
 
-일반 채팅과 Elicit `start`·`resume`·continuation은 Frontend 기본 SSE 경로를
-사용한다. 기존 v2 callback + polling은 Error Review와 명시적 fallback에만
-유지하며 Elicit 요청에는 사용하지 않는다. v1 SSE는 제거 대상으로 표시하며 신규
-기능을 추가하지 않는다.
+일반 채팅, Elicit `start`·`resume`·continuation과 Error Review 두 trigger는
+Frontend의 단일 SSE 경로를 사용한다. Frontend callback polling helper와 자동
+fallback은 제거한다. 기존 v2 callback + polling API는 호환·운영 회귀를 위해 남아
+있지만 현재 Frontend 제품 흐름은 호출하지 않는다. v1 SSE는 제거 대상으로 표시하며
+신규 기능을 추가하지 않는다.

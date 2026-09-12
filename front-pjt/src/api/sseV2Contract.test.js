@@ -15,12 +15,21 @@ const aiStoreSource = readFileSync(
   new URL('../stores/ai.js', import.meta.url),
   'utf8',
 )
+const consultingApiSource = readFileSync(
+  new URL('./consulting.js', import.meta.url),
+  'utf8',
+)
+const lifecycleSource = readFileSync(
+  new URL('./aiLifecycle.js', import.meta.url),
+  'utf8',
+)
 
 test('Frontend는 인증과 멱등 키가 필요한 v2 SSE endpoint를 사용한다', () => {
   assert.match(contract.browser_endpoint, /^\/api\/v2\//)
   assert.equal(contract.content_type, 'text/event-stream')
   assert.ok(contract.required_browser_headers.includes('Authorization'))
   assert.ok(contract.required_browser_headers.includes('Idempotency-Key'))
+  assert.equal(contract.timeouts_seconds.stream_read_idle, 120)
 })
 
 test('Frontend 정상 이벤트는 start, delta, done 순서다', () => {
@@ -58,10 +67,29 @@ test('Elicit start, resume, continuation은 모두 v2 SSE를 사용한다', () =
   )
   assert.match(elicitAction, /streamAssistantMessage\(text/)
   assert.doesNotMatch(elicitAction, /aiStore\.sendMessage/)
+})
 
-  const pollingFallback = aiStoreSource.slice(
-    aiStoreSource.indexOf('async function sendMessage'),
-    aiStoreSource.indexOf('async function* streamMessageV2'),
+test('Error Review 저장·명시 요청은 구조화된 done을 v2 SSE로 받는다', () => {
+  assert.deepEqual(contract.channel_policy.error_review, {
+    save: 'sse',
+    user_request: 'sse',
+  })
+
+  const reviewForm = aiStoreSource.slice(
+    aiStoreSource.indexOf('async function reviewForm'),
+    aiStoreSource.indexOf('function cancelActiveStream'),
   )
-  assert.doesNotMatch(pollingFallback, /elicitAction|elicit_action/)
+  assert.match(reviewForm, /streamMessageV2/)
+  assert.match(reviewForm, /requestMode: 'error_review'/)
+  assert.match(reviewForm, /reviewTrigger: trigger/)
+  assert.match(reviewForm, /event === 'done'/)
+  assert.doesNotMatch(reviewForm, /poll|sendMessage/)
+})
+
+test('Frontend 제품 경로에는 callback polling helper가 남지 않는다', () => {
+  assert.deepEqual(contract.channel_policy.frontend_polling_flows, [])
+  assert.doesNotMatch(aiStoreSource, /pollUntilTerminal|postAsyncMessage|getAsyncMessage/)
+  assert.doesNotMatch(consultingApiSource, /postAsyncMessage|getAsyncMessage|\bpostMessage\b|\bgetMessage\b/)
+  assert.doesNotMatch(consultingApiSource, /\/ai-responses\//)
+  assert.doesNotMatch(lifecycleSource, /pollUntilTerminal|validatePollingEnvelope/)
 })

@@ -175,10 +175,10 @@ class V2MessageStreamViewTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
-    def request(self):
+    def request(self, body=None):
         request = self.factory.post(
             '/api/v2/consultations/12/messages/stream/',
-            browser_body(),
+            body or browser_body(),
             format='json',
             HTTP_ACCEPT='text/event-stream',
             HTTP_IDEMPOTENCY_KEY='idem-test',
@@ -221,6 +221,43 @@ class V2MessageStreamViewTests(SimpleTestCase):
         create_user_message.assert_called_once()
         store.save_active.assert_called_once_with(processing_state())
         store.save_idempotency.assert_called_once()
+
+    @patch('consulting.v2_views.proxy_v2_ai_stream')
+    @patch('consulting.v2_views.make_processing_state', return_value=processing_state())
+    @patch('consulting.v2_views.build_v2_ai_payload', return_value=ai_payload())
+    @patch('consulting.v2_views.new_request_id', return_value='ai_req_v2_stream')
+    @patch('consulting.v2_views.Message.objects.create')
+    @patch('consulting.v2_views.RedisLifecycleStore')
+    @patch('consulting.v2_views.get_owned_session')
+    def test_error_review_uses_the_same_sse_endpoint_and_forwards_trigger(
+        self,
+        get_session,
+        store_class,
+        create_user_message,
+        _new_request_id,
+        build_payload,
+        _make_state,
+        proxy_stream,
+    ):
+        get_session.return_value = SimpleNamespace(id=12, status='in_progress')
+        create_user_message.return_value = SimpleNamespace(id=41, content='현재 입력값을 검토해 주세요.')
+        store_class.return_value.get_idempotency.return_value = None
+        proxy_stream.return_value = async_items([
+            'event: start\ndata: {"contract_version":"2.0","request_id":"ai_req_v2_stream"}\n\n'
+        ])
+        body = {
+            **browser_body(),
+            'content': '현재 입력값을 검토해 주세요.',
+            'request_mode': 'error_review',
+            'review_trigger': 'save',
+        }
+
+        response = V2MessageStreamView.as_view()(self.request(body), session_id=12)
+        b''.join(asyncio.run(collect_async(response.streaming_content)))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(build_payload.call_args.kwargs['request_mode'], 'error_review')
+        self.assertEqual(build_payload.call_args.kwargs['review_trigger'], 'save')
 
     @patch(
         'consulting.v2_views.recover_terminal_state',
