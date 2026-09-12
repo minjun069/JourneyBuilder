@@ -27,8 +27,9 @@ Browser
           → 승인된 LLM·Embedding provider
           → RAG index: 승인 금융 지식·인터페이스 가이드
           → MCP server: 검색·검증·결정론적 계산
-      ← AI callback: 답변·인용·변경 제안·실패
-  ← polling 또는 향후 합의된 event channel
+      ← v2 SSE: 일반 채팅·Elicit 답변·인용·변경 제안 또는 실패
+      ← AI callback: Error Review·명시적 fallback의 종결 결과
+  ← 일반 채팅·Elicit SSE 또는 Error Review·fallback polling
 ```
 
 Browser는 AI·MCP를 직접 호출하지 않는다. AI는 Django 업무 DB를 직접 수정하지 않으며 사용자 승인 전 변경은 제안 상태로 유지한다.

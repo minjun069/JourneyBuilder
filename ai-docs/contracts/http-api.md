@@ -4,9 +4,10 @@
 
 이 문서는 Browser↔Django 메시지 접수·polling·change별 결정의 endpoint, envelope, 상태·오류와 호환성을 소유한다. Django↔AI 서비스 경계는 [AI 서비스 API](ai-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
-일반 AI 상담의 기본 응답 채널은 ADR-0002에 따라 v2 SSE로 확장한다. 스트리밍
-endpoint와 이벤트·멱등성 계약은 [AI 상담 SSE v2 계약](sse-v2.md)이 소유하며,
-이 문서의 callback + polling 계약은 장애 전환 경로로 유지한다.
+일반 AI 상담과 Elicit 전체 대화의 기본 응답 채널은 ADR-0002·ADR-0003에 따라 v2
+SSE로 통일한다. 스트리밍 endpoint와 이벤트·멱등성 계약은
+[AI 상담 SSE v2 계약](sse-v2.md)이 소유하며, 이 문서의 callback + polling 계약은
+Error Review와 명시적 장애 전환 경로로 유지한다.
 
 ## 공통 규칙
 
@@ -55,7 +56,11 @@ Idempotency-Key: <client-generated-uuid>
 - `form_data`: 현재 화면의 미저장 폼. 단계별 canonical adapter가 생성한다.
 - `form` 별칭은 v2에서 지원하지 않는다.
 
-접수 성공은 `202 Accepted`다.
+Elicit의 UI 동의 `start`, QA 뒤 `resume`, 활성 질문 continuation은 위 endpoint가
+아니라 v2 SSE endpoint를 사용한다. `start`·`resume`은 같은 SSE 요청 body에
+`elicit_action`을 포함하고 continuation은 checkpoint 상태로 라우팅한다.
+
+callback + polling 접수 성공은 `202 Accepted`다.
 
 ```json
 {
@@ -76,7 +81,10 @@ Idempotency-Key: <client-generated-uuid>
 
 `GET /api/v2/consultations/{session_id}/ai-responses/{request_id}/`
 
-Frontend는 3초 간격으로 최대 90초 동안 polling한다. 알려진 작업의 `processing`, `completed`, `failed`, `expired`는 모두 `200`이며 transport·인증·소유권·상태 저장소 오류만 non-2xx다.
+Error Review와 명시적 장애 전환 Frontend는 3초 간격으로 최대 90초 동안
+polling한다. 알려진 작업의 `processing`, `completed`, `failed`, `expired`는 모두
+`200`이며 transport·인증·소유권·상태 저장소 오류만 non-2xx다. Elicit은 이
+endpoint를 호출하지 않는다.
 
 | 상태 | 응답 데이터와 의미 |
 |---|---|
@@ -155,4 +163,6 @@ POST /api/v2/consultations/{session_id}/ai-actions/{action_id}/changes/{change_i
 
 ## 남은 범위
 
-전체 제품 API의 날짜·timezone 정책 적용 결과와 AI 상담 외 endpoint의 v2 전환은 별도 확인이 필요하다. 일반 상담은 별도 v2 SSE endpoint를 사용하며 callback + polling은 초기 장애 전환 경로로 유지한다.
+전체 제품 API의 날짜·timezone 정책 적용 결과와 AI 상담 외 endpoint의 v2 전환은
+별도 확인이 필요하다. 일반 상담과 Elicit 전체 대화는 별도 v2 SSE endpoint를
+사용하며 callback + polling은 Error Review와 명시적 장애 전환 경로로 유지한다.

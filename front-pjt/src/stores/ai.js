@@ -77,13 +77,13 @@ export const useAiStore = defineStore('ai', () => {
     chatMessages.value = res.data
   }
 
-  // frozen v2 기본 경로: 접수 후 3초 간격으로 최대 90초 polling
+  // v2 callback+polling fallback: Error Review 등 완성 결과 기반 요청에만 사용한다.
+  // 일반 상담과 Elicit start/resume/continuation은 streamMessageV2를 사용한다.
   async function sendMessage(content, {
     stepId,
     form = null,
     requestMode = 'chat',
     reviewTrigger = null,
-    elicitAction = null,
   } = {}) {
     if (!sessionId.value) return null
     cancelActiveStream()
@@ -99,7 +99,6 @@ export const useAiStore = defineStore('ai', () => {
           form_data: mapCurrentForm(stepId, form ?? {}),
           request_mode: requestMode,
           ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
-          ...(elicitAction ? { elicit_action: elicitAction } : {}),
         },
         {
           idempotencyKey: createIdempotencyKey(),

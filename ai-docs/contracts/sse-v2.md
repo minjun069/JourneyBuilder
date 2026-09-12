@@ -1,10 +1,11 @@
 # AI 상담 SSE v2 계약
 
-상태: **ADR-0002에 따라 Browser↔Django↔AI 스트리밍 계약 동결**
+상태: **ADR-0002·ADR-0003에 따라 Browser↔Django↔AI 스트리밍 계약 동결**
 
 이 문서는 일반 AI 상담의 v2 SSE endpoint, 이벤트 상태 머신, 인증, 멱등성,
-오류와 저장 시점을 소유한다. callback + polling 계약은 장애 전환 경로로 유지하며
-장기 작업은 RabbitMQ 작업 계약에서 별도로 다룬다.
+오류와 저장 시점을 소유한다. Elicit의 `start`·`resume`·활성 continuation도 일반
+상담과 같은 SSE 경로를 사용한다. callback + polling 계약은 Error Review와 명시적
+장애 전환 경로로 유지하며 장기 작업은 RabbitMQ 작업 계약에서 별도로 다룬다.
 
 기계 판독 가능한 단일 예시는
 `contract-fixtures/ai-lifecycle/v2/sse.json`이다.
@@ -29,6 +30,12 @@ Content-Type: application/json
   "form_data": {}
 }
 ```
+
+Elicit 시작과 재개도 같은 endpoint를 사용한다. 시작은
+`step_id=financial-mindset`, `request_mode=chat`, `elicit_action=start`, 재개는
+`elicit_action=resume`을 보낸다. 활성 Elicit 질문의 일반 답변은
+`elicit_action`을 생략하며 checkpoint 상태가 continuation으로 라우팅한다.
+Frontend는 세 경우 모두 callback + polling endpoint를 호출하지 않는다.
 
 Django는 응답 header를 보내기 전에 사용자 JWT, 상담 세션 소유권, 종료 상태,
 body, contract version과 idempotency key를 검증한다. 실패하면 기존 v2 JSON 오류
@@ -154,6 +161,7 @@ endpoint를 그대로 사용한다.
 
 ## 전환
 
-v2 SSE provider와 세 consumer의 계약 테스트, Nginx 경유 E2E가 통과한 뒤 Frontend
-기본 호출을 SSE로 바꾼다. 기존 v2 callback + polling은 초기 fallback으로 유지한다.
-v1 SSE는 v2 SSE 인수 후 제거 대상으로 표시하며 신규 기능을 추가하지 않는다.
+일반 채팅과 Elicit `start`·`resume`·continuation은 Frontend 기본 SSE 경로를
+사용한다. 기존 v2 callback + polling은 Error Review와 명시적 fallback에만
+유지하며 Elicit 요청에는 사용하지 않는다. v1 SSE는 제거 대상으로 표시하며 신규
+기능을 추가하지 않는다.

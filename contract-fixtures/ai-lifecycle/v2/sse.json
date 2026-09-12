@@ -5,6 +5,15 @@
   "required_browser_headers": ["Authorization", "Idempotency-Key", "Accept"],
   "required_service_headers": ["Authorization", "Accept"],
   "content_type": "text/event-stream",
+  "channel_policy": {
+    "general_chat": "sse",
+    "elicit": {
+      "start": "sse",
+      "resume": "sse",
+      "continuation": "sse"
+    },
+    "callback_polling_allowed_flows": ["error_review", "explicit_fallback"]
+  },
   "terminal_events": ["done", "error"],
   "allowed_events": ["start", "delta", "done", "error"],
   "browser_request": {

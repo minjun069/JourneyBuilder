@@ -7,6 +7,14 @@ const contract = JSON.parse(readFileSync(
   new URL('../../../contract-fixtures/ai-lifecycle/v2/sse.json', import.meta.url),
   'utf8',
 ))
+const aiChatViewSource = readFileSync(
+  new URL('../views/ai/AiChatView.vue', import.meta.url),
+  'utf8',
+)
+const aiStoreSource = readFileSync(
+  new URL('../stores/ai.js', import.meta.url),
+  'utf8',
+)
 
 test('Frontend는 인증과 멱등 키가 필요한 v2 SSE endpoint를 사용한다', () => {
   assert.match(contract.browser_endpoint, /^\/api\/v2\//)
@@ -35,4 +43,25 @@ test('처리 중 중복은 새 요청을 만들지 않고 완료 결과만 재�
     contract.idempotency.same_key_completed.replay_events,
     ['start', 'done'],
   )
+})
+
+test('Elicit start, resume, continuation은 모두 v2 SSE를 사용한다', () => {
+  assert.deepEqual(contract.channel_policy.elicit, {
+    start: 'sse',
+    resume: 'sse',
+    continuation: 'sse',
+  })
+
+  const elicitAction = aiChatViewSource.slice(
+    aiChatViewSource.indexOf('async function runElicitAction'),
+    aiChatViewSource.indexOf('function dismissAction'),
+  )
+  assert.match(elicitAction, /streamAssistantMessage\(text/)
+  assert.doesNotMatch(elicitAction, /aiStore\.sendMessage/)
+
+  const pollingFallback = aiStoreSource.slice(
+    aiStoreSource.indexOf('async function sendMessage'),
+    aiStoreSource.indexOf('async function* streamMessageV2'),
+  )
+  assert.doesNotMatch(pollingFallback, /elicitAction|elicit_action/)
 })
