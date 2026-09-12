@@ -66,3 +66,4 @@ docker run --rm \
 
 python3 "$f14_root/ai-pjt/evals/security/f14_full_regression.py"
 python3 "$f14_root/ai-pjt/evals/security/f14_rollback_evidence.py"
+python3 "$f14_root/ai-pjt/evals/security/f14_final_e2e.py"

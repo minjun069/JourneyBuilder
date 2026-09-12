@@ -1,0 +1,223 @@
+{
+  "schema_version": "f14-final-e2e-v1",
+  "suite_id": "AI-F14-T06",
+  "gate": "G7",
+  "candidate": "c61be26f0356ec16d358f1fe3dd442100693fcf0",
+  "calculation_policy": {
+    "path": "contract-fixtures/financial-calculation/v1/policy.json",
+    "version": "2026-09-12.v1",
+    "sha256": "972ffb38464183cad16f714cc200b962e7c8bf73d3151e0550bb3b7cb49fb7a7"
+  },
+  "summary": {
+    "suites": 10,
+    "tests": 1521,
+    "passed": 1515,
+    "skipped": 6,
+    "failed": 0
+  },
+  "executions": [
+    {
+      "id": "retirement_simulation",
+      "command": "python -m unittest discover -s retirement_simulation/tests -t . -q",
+      "tests": 685,
+      "passed": 685,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "ai_runtime",
+      "command": "python -m unittest discover -s tests -q",
+      "tests": 242,
+      "passed": 239,
+      "skipped": 3,
+      "failed": 0
+    },
+    {
+      "id": "rag",
+      "command": "python -m unittest discover -s rag/tests -q",
+      "tests": 27,
+      "passed": 24,
+      "skipped": 3,
+      "failed": 0
+    },
+    {
+      "id": "tools",
+      "command": "python -m unittest discover -s tools/tests -q",
+      "tests": 43,
+      "passed": 43,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "evaluations",
+      "command": "python -m unittest discover -s evals/tests -q",
+      "tests": 38,
+      "passed": 38,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "security",
+      "command": "cd evals/security && python -m unittest discover -p 'test_*.py' -q",
+      "tests": 34,
+      "passed": 34,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "backend_unit",
+      "command": "python -m unittest discover -s tests -q",
+      "tests": 85,
+      "passed": 85,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "backend_contract",
+      "command": "python -m unittest discover -s contract_tests -q",
+      "tests": 64,
+      "passed": 64,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "backend_django",
+      "command": "python manage.py test --verbosity 1",
+      "tests": 264,
+      "passed": 264,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "frontend_contract",
+      "command": "npm ci --no-audit --no-fund && npm test",
+      "tests": 39,
+      "passed": 39,
+      "skipped": 0,
+      "failed": 0
+    }
+  ],
+  "source_artifacts": [
+    {
+      "path": "ai-pjt/evals/artifacts/f14-full-regression.json",
+      "sha256": "934e12d234eca11ee1bba15295abeed9ba5bc56d5448f703e5cb04adda427cdc"
+    },
+    {
+      "path": "ai-pjt/evals/artifacts/f14-rollback-rehearsal.json",
+      "sha256": "be04e4d1cc2c7b3d1f4c38244304d8ca4b6e3566dcefcd4d2cd2288ff9c8504b"
+    },
+    {
+      "path": "ai-pjt/rag/artifacts/official__official-catalog-2-1-0.tar.gz",
+      "sha256": "4e8f80a985aed40966f3a00516acb25470a6b3a8c18388202f16969d21cc3ed7"
+    },
+    {
+      "path": "contract-fixtures/financial-calculation/v1/policy.json",
+      "sha256": "972ffb38464183cad16f714cc200b962e7c8bf73d3151e0550bb3b7cb49fb7a7"
+    }
+  ],
+  "dashboard_metric_e2e": {
+    "metric_id": "retirement_gap",
+    "backend_source": "latest_ready_required_savings_report",
+    "bound_fields": [
+      "metric_id",
+      "value",
+      "unit",
+      "report_id",
+      "report_version",
+      "calculation_policy_version",
+      "generated_at"
+    ],
+    "exact_match": true,
+    "unavailable_reasons": [
+      "report_not_found",
+      "report_processing",
+      "report_failed",
+      "report_stale",
+      "policy_version_mismatch",
+      "report_schema_invalid"
+    ],
+    "older_ready_fallback": false,
+    "ai_recalculation": false
+  },
+  "reference_value_e2e": {
+    "reference_family": "household_monthly_expense_*_avg",
+    "approved_reference_count": 10,
+    "read_only_reference_count": 8,
+    "target": {
+      "step_id": "financial-goals",
+      "section": "goal_periods",
+      "path": "items[].amount",
+      "phase": "before",
+      "requires_parent_stable_id": true,
+      "requires_item_stable_id": true,
+      "requires_exact_item_name": true,
+      "requires_empty_amount": true,
+      "zero_is_empty": false
+    },
+    "binding_fields": [
+      "reference_id",
+      "age",
+      "value",
+      "unit",
+      "period",
+      "population",
+      "comparator",
+      "source_id",
+      "source_version",
+      "as_of",
+      "calculation_policy_version"
+    ],
+    "success": {
+      "reference_id": "household_monthly_expense_housing_avg",
+      "value": 361000,
+      "unit": "KRW",
+      "period": "monthly",
+      "population": "kr_general_households_1plus",
+      "comparator": "eq",
+      "proposal_mode": "proposal",
+      "proposal_status": "pending",
+      "database_value_before_approval": null,
+      "database_value_after_approval": null,
+      "database_value_after_form_save": 361000,
+      "callback_replay_equal": true,
+      "graph_execution_count": 1
+    },
+    "fail_closed": {
+      "request_result_mismatch": "reference_contract_mismatch",
+      "target_or_metadata_mismatch": "reference_target_not_allowed",
+      "dependent_task_status": "blocked",
+      "action_count": 0,
+      "approval_count": 0,
+      "save_count": 0
+    }
+  },
+  "rollback": {
+    "artifact": "ai-pjt/evals/artifacts/f14-rollback-rehearsal.json",
+    "task": "F14-T05",
+    "result": "PASS",
+    "baseline_policy_version": "2026-09-07.v1",
+    "configuration_source_embedded": false,
+    "secret_values_in_artifact": false,
+    "customer_data_access": false,
+    "synthetic_dump_restore_exact": true,
+    "services_restored_to_last_good": 4,
+    "firewall_unchanged_ports": [22, 80, 443]
+  },
+  "rag_reuse": {
+    "action": "reuse_without_reindex_or_promotion",
+    "artifact": "ai-pjt/rag/artifacts/official__official-catalog-2-1-0.tar.gz",
+    "sha256": "4e8f80a985aed40966f3a00516acb25470a6b3a8c18388202f16969d21cc3ed7",
+    "physical_index_ids": [
+      "financial-knowledge__official-catalog-2-1-0",
+      "interface-guides__official-catalog-2-1-0"
+    ],
+    "external_provider_calls": 0,
+    "index_writes": 0,
+    "pointer_changes": 0
+  },
+  "known_limits": [
+    "F06 공식 RAG artifact는 2026-09-07.v1 정책에서 qualification됐다. T06은 corpus·retriever를 바꾸지 않고 구조화 reference 10종만 calculation policy에 추가했으므로 재색인·58문항 재평가·pointer 승격 없이 기존 artifact를 재사용했다.",
+    "T05 운영 rollback 리허설은 T06 정책 확장 전 2026-09-07.v1 배포에서 수행됐다. T06은 배포·DB·설정 스크립트를 바꾸지 않았고 현재 후보 자체를 운영에 배포하지는 않았다.",
+    "AI runtime과 RAG의 외부 provider·DB 의존 integration test 6개는 고정 이미지에서 조건부 skip됐고 같은 경계의 deterministic 계약·실제 PostgreSQL 회귀는 통과했다."
+  ]
+}
