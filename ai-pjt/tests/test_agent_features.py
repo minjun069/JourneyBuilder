@@ -39,7 +39,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
                 {"client_item_id": "fill", "name": "식비/생활비", "amount": None},
                 {"client_item_id": "unmapped", "name": "기타", "amount": None},
             ]},
-            today=date(2026, 9, 10),
+            today=date(2026, 9, 12),
         )
 
         amount_proposals = [item for item in proposals if item["path"] == "amount"]
@@ -88,6 +88,111 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
             {item["path"] for item in confirmed},
             {"receive_method", "pension_period", "pension_start_age"},
         )
+
+    def test_all_household_references_target_only_the_matching_existing_before_row(self) -> None:
+        configure_runtime()
+        from agents.input_assist_defaults import (
+            build_bound_reference_proposals,
+            load_default_policy,
+        )
+        from tools.financial_policy import lookup_approved_reference_value
+
+        mapping = load_default_policy()["household_expense_reference_ids"]
+        for name, reference_id in mapping.items():
+            with self.subTest(reference_id=reference_id):
+                reference = lookup_approved_reference_value(
+                    reference_id=reference_id,
+                    age=45,
+                    period="monthly",
+                    population="kr_general_households_1plus",
+                    effective_on=date(2026, 9, 12),
+                )
+                proposals = build_bound_reference_proposals(
+                    step_id="financial-goals",
+                    message="전국 가구 평균으로 이 기존 항목을 채워줘",
+                    current_form={"goal_periods": [{
+                        "id": 51,
+                        "phase": "before",
+                        "items": [{"id": 501, "name": name, "amount": None}],
+                    }]},
+                    bound_inputs=reference,
+                    user_requested_change=True,
+                    today=date(2026, 9, 12),
+                )
+
+                self.assertEqual(len(proposals), 1)
+                proposal = proposals[0]
+                self.assertEqual(proposal["section"], "goal_periods")
+                self.assertEqual(proposal["path"], "items[].amount")
+                self.assertEqual(proposal["operation"], "update")
+                self.assertEqual(proposal["parent_item_id"], 51)
+                self.assertEqual(proposal["item_id"], 501)
+                self.assertEqual(proposal["policy_value"], reference["value"])
+                self.assertEqual(
+                    proposal["policy_metadata"]["reference"]["reference_id"],
+                    reference_id,
+                )
+
+    def test_bound_reference_target_mismatches_fail_closed(self) -> None:
+        configure_runtime()
+        from agents.input_assist_defaults import (
+            ReferenceTargetNotAllowed,
+            build_bound_reference_proposals,
+        )
+        from tools.financial_policy import lookup_approved_reference_value
+
+        reference = lookup_approved_reference_value(
+            reference_id="household_monthly_expense_housing_avg",
+            age=45,
+            period="monthly",
+            population="kr_general_households_1plus",
+            effective_on=date(2026, 9, 12),
+        )
+
+        def form(*, phase="before", parent_id=51, item_id=501, name="주거비", amount=None):
+            period = {"phase": phase, "items": [{"name": name, "amount": amount}]}
+            if parent_id is not None:
+                period["id"] = parent_id
+            if item_id is not None:
+                period["items"][0]["id"] = item_id
+            return {"goal_periods": [period]}
+
+        cases = (
+            {"step_id": "expenses"},
+            {"user_requested_change": False},
+            {"current_form": form(phase="after")},
+            {"current_form": form(parent_id=None)},
+            {"current_form": form(item_id=None)},
+            {"current_form": form(name="식비/생활비")},
+            {"current_form": form(amount=0)},
+            {"current_form": form(amount=1)},
+            {"current_form": {"goal_periods": []}},
+            {"current_form": {"goal_periods": form()["goal_periods"] * 2}},
+            {"bound_inputs": {**reference, "unit": "USD"}},
+        )
+        defaults = {
+            "step_id": "financial-goals",
+            "message": "전국 가구 평균으로 이 기존 항목을 채워줘",
+            "current_form": form(),
+            "bound_inputs": reference,
+            "user_requested_change": True,
+            "today": date(2026, 9, 12),
+        }
+        for overrides in cases:
+            with self.subTest(overrides=overrides), self.assertRaises(
+                ReferenceTargetNotAllowed
+            ):
+                build_bound_reference_proposals(**{**defaults, **overrides})
+
+        old_reference = lookup_approved_reference_value(
+            reference_id="debt_service_ratio_max",
+            age=45,
+            period="annual",
+            population="retirewise_kr_households",
+            effective_on=date(2026, 9, 12),
+        )
+        with self.assertRaises(ReferenceTargetNotAllowed):
+            build_bound_reference_proposals(**{**defaults, "bound_inputs": old_reference})
 
     def test_expired_benchmark_and_inconsistent_age_range_fail_closed(self) -> None:
         configure_runtime()

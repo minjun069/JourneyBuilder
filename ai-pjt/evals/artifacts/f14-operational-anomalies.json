@@ -1,0 +1,140 @@
+{
+  "schema_version": "f14-operational-anomalies-v1",
+  "suite_id": "AI-F14-T04",
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0
+  },
+  "results": [
+    {
+      "case_id": "F14-OPS-001",
+      "title": "실패 dependency 차단과 독립 task 지속",
+      "passed": true,
+      "expected": {
+        "dependent_calls": 0,
+        "independent_calls": 1,
+        "dependent_status": "blocked",
+        "independent_status": "completed",
+        "action": null
+      },
+      "actual": {
+        "dependent_calls": 0,
+        "independent_calls": 1,
+        "dependent_status": "blocked",
+        "independent_status": "completed",
+        "action": null
+      },
+      "mismatches": []
+    },
+    {
+      "case_id": "F14-OPS-002",
+      "title": "공용 request deadline 초과",
+      "passed": true,
+      "expected": {
+        "processor_started": true,
+        "processor_cancelled": true,
+        "callback_calls": 1,
+        "terminal_status": "failed",
+        "error_code": "LLM_TIMEOUT",
+        "retryable": true
+      },
+      "actual": {
+        "processor_started": true,
+        "processor_cancelled": true,
+        "callback_calls": 1,
+        "terminal_status": "failed",
+        "error_code": "LLM_TIMEOUT",
+        "retryable": true
+      },
+      "mismatches": []
+    },
+    {
+      "case_id": "F14-OPS-003",
+      "title": "retryable callback 응답 뒤 동일 payload 재전송",
+      "passed": true,
+      "expected": {
+        "attempts": 3,
+        "statuses": [
+          503,
+          503,
+          200
+        ],
+        "identical_payloads": true,
+        "backoffs": [
+          1,
+          2
+        ],
+        "attempt_events": [
+          "failed",
+          "failed",
+          "succeeded"
+        ]
+      },
+      "actual": {
+        "attempts": 3,
+        "statuses": [
+          503,
+          503,
+          200
+        ],
+        "identical_payloads": true,
+        "backoffs": [
+          1,
+          2
+        ],
+        "attempt_events": [
+          "failed",
+          "failed",
+          "succeeded"
+        ]
+      },
+      "mismatches": []
+    },
+    {
+      "case_id": "F14-OPS-004",
+      "title": "동시 동일 request 접수",
+      "passed": true,
+      "expected": {
+        "accepts": 20,
+        "scheduled_runs": 1,
+        "unique_request_ids": 1,
+        "checkpoint_status": "accepted"
+      },
+      "actual": {
+        "accepts": 20,
+        "scheduled_runs": 1,
+        "unique_request_ids": 1,
+        "checkpoint_status": "accepted"
+      },
+      "mismatches": []
+    },
+    {
+      "case_id": "F14-OPS-005",
+      "title": "검증 뒤 artifact 위조 차단",
+      "passed": true,
+      "expected": {
+        "decision": "block",
+        "reason_code": "ARTIFACT_INTEGRITY_MISMATCH",
+        "effects": [
+          "block_consumer_task",
+          "audit_artifact_denial"
+        ]
+      },
+      "actual": {
+        "decision": "block",
+        "reason_code": "ARTIFACT_INTEGRITY_MISMATCH",
+        "effects": [
+          "block_consumer_task",
+          "audit_artifact_denial"
+        ]
+      },
+      "mismatches": []
+    }
+  ],
+  "backend_concurrency_check": {
+    "command": "python manage.py test consulting.test_f12_callback_security.F12CallbackSecurityTests.test_simultaneous_identical_callbacks_share_one_receipt_and_message",
+    "expected": "두 동시 callback 중 하나만 최초 처리되고 receipt와 assistant message가 각각 1개",
+    "passed": true
+  }
+}

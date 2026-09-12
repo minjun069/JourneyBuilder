@@ -34,6 +34,7 @@ Redis healthy ──────────────────────
 - PostgreSQL과 Redis 데이터는 Compose project별 named volume에 저장된다.
 - PostgreSQL 초기화 SQL은 새 `postgres_data` volume을 만들 때만 실행된다.
 - secret에는 동작 가능한 기본값이 없다. 실제 값은 커밋하지 않은 루트 `.env` 또는 실행 환경에서 주입한다.
+- 운영 설정 원문과 변경 전 snapshot은 서버 `/srv/s15p21b109/secrets/` 밖으로 내보내지 않는다. snapshot은 root 전용 0500/0400 및 filesystem immutable로 보존하고, Git·CI artifact에는 값 없는 ID·SHA-256·권한·PASS/FAIL만 기록한다. 생성·복구와 실제 rollback 리허설은 [배포 운영 안내](deploy/README.md#운영-설정-immutable-snapshot과-복구)를 따른다.
 
 필수 환경변수:
 

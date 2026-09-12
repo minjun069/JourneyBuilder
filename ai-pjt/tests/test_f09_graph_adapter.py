@@ -4,6 +4,8 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from graph.builder import build_graph
 from tests.instrumentation import fake_instrumentation
@@ -133,7 +135,7 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(artifact["unit"], "KRW")
         self.assertEqual(artifact["report_id"], 42)
         self.assertEqual(artifact["report_version"], 3)
-        self.assertEqual(artifact["calculation_policy_version"], "2026-09-07.v1")
+        self.assertEqual(artifact["calculation_policy_version"], "2026-09-12.v1")
         self.assertEqual(artifact["generated_at"], "2026-09-09T02:30:00Z")
         self.assertEqual(
             agents["qa"].calls[0]["bound_inputs"],
@@ -143,7 +145,7 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
                 "unit": "KRW",
                 "report_id": 42,
                 "report_version": 3,
-                "calculation_policy_version": "2026-09-07.v1",
+                "calculation_policy_version": "2026-09-12.v1",
                 "generated_at": "2026-09-09T02:30:00Z",
             },
         )
@@ -202,13 +204,13 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         artifact = result["task_results"]["task-1"]["artifact"]
         self.assertEqual(artifact["value"], 25)
         self.assertEqual(artifact["source_version"], "1.1.0")
-        self.assertEqual(artifact["calculation_policy_version"], "2026-09-07.v1")
+        self.assertEqual(artifact["calculation_policy_version"], "2026-09-12.v1")
         bound = agents["qa"].calls[0]["bound_inputs"]
         self.assertEqual(bound["value"], 25)
         self.assertEqual(bound["unit"], "percent")
         self.assertEqual(bound["source_id"], "retirewise-household-financial-indicator-policy")
         self.assertEqual(bound["as_of"], "2026-09-07")
-        self.assertEqual(bound["calculation_policy_version"], "2026-09-07.v1")
+        self.assertEqual(bound["calculation_policy_version"], "2026-09-12.v1")
 
     async def test_missing_approved_reference_blocks_dependent_task(self):
         agents = all_agent_graphs()
@@ -229,6 +231,43 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["task_results"]["task-2"]["status"], "blocked")
         self.assertEqual(agents["qa"].calls, [])
+
+    async def test_reference_provider_cannot_substitute_a_different_requested_id(self):
+        runtime = SimpleNamespace(invoke=AsyncMock(return_value=SimpleNamespace(
+            ok=True,
+            data={"reference": {
+                "reference_id": "household_monthly_expense_food_living_avg",
+                "age": 45,
+                "value": 449_000,
+                "unit": "KRW",
+                "period": "monthly",
+                "population": "kr_general_households_1plus",
+                "comparator": "eq",
+                "source_id": "kostat-household-expenses-2025",
+                "source_version": "2025",
+                "as_of": "2025-12-31",
+                "calculation_policy_version": "2026-09-12.v1",
+            }},
+        )))
+        executor = build_graph_tool_executors(runtime)["lookup_reference_value"]
+        result = await executor({
+            "task": {
+                "id": "task-1",
+                "type": "lookup_reference_value",
+                "tool_name": "get_approved_reference_value",
+                "authorized_agent": "qa",
+                "arguments": {
+                    "reference_id": "household_monthly_expense_housing_avg",
+                    "age": 45,
+                    "period": "monthly",
+                    "population": "kr_general_households_1plus",
+                },
+            },
+        })
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["reason_code"], "reference_contract_mismatch")
+        self.assertNotIn("artifact", result)
 
 
 if __name__ == "__main__":

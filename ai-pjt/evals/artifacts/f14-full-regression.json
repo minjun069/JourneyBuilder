@@ -1,0 +1,147 @@
+{
+  "schema_version": "f14-full-regression-v1",
+  "suite_id": "AI-F14-T03",
+  "gate": "G6",
+  "candidate": "80d63b07c1a346e1b7913e3b23c5ad4b0afdc1ce",
+  "calculation_policy_version": "2026-09-07.v1",
+  "summary": {
+    "suites": 10,
+    "tests": 1505,
+    "passed": 1499,
+    "skipped": 6,
+    "failed": 0
+  },
+  "executions": [
+    {
+      "id": "retirement_simulation",
+      "environment": "python:3.13.14-slim-bookworm + ai-pjt/requirements.lock",
+      "command": "python -m unittest discover -s retirement_simulation/tests -t . -q",
+      "tests": 685,
+      "passed": 685,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "ai_runtime",
+      "environment": "python:3.13.14-slim-bookworm + ai-pjt/requirements.lock",
+      "command": "python -m unittest discover -s tests -q",
+      "tests": 236,
+      "passed": 233,
+      "skipped": 3,
+      "failed": 0
+    },
+    {
+      "id": "rag",
+      "environment": "python:3.13.14-slim-bookworm + ai-pjt/requirements.lock",
+      "command": "python -m unittest discover -s rag/tests -q",
+      "tests": 27,
+      "passed": 24,
+      "skipped": 3,
+      "failed": 0
+    },
+    {
+      "id": "tools",
+      "environment": "python:3.13.14-slim-bookworm + ai-pjt/requirements.lock",
+      "command": "python -m unittest discover -s tools/tests -q",
+      "tests": 42,
+      "passed": 42,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "evaluations",
+      "environment": "python:3.13.14-slim-bookworm + ai-pjt/requirements.lock",
+      "command": "python -m unittest discover -s evals/tests -q",
+      "tests": 38,
+      "passed": 38,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "security",
+      "environment": "python:3.13.14-slim-bookworm + ai-pjt/requirements.lock",
+      "command": "cd evals/security && python -m unittest discover -p 'test_*.py' -q",
+      "tests": 26,
+      "passed": 26,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "backend_unit",
+      "environment": "python:3.13.14-slim-bookworm + backend-pjt/requirements.lock",
+      "command": "python -m unittest discover -s tests -q",
+      "tests": 85,
+      "passed": 85,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "backend_contract",
+      "environment": "python:3.13.14-slim-bookworm + backend-pjt/requirements.lock",
+      "command": "python -m unittest discover -s contract_tests -q",
+      "tests": 64,
+      "passed": 64,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "backend_django",
+      "environment": "backend image + isolated PostgreSQL 16 + Redis 7.4",
+      "command": "python manage.py test --verbosity 1",
+      "tests": 263,
+      "passed": 263,
+      "skipped": 0,
+      "failed": 0
+    },
+    {
+      "id": "frontend_contract",
+      "environment": "node:22-bookworm",
+      "command": "npm ci --no-audit --no-fund && npm test",
+      "tests": 39,
+      "passed": 39,
+      "skipped": 0,
+      "failed": 0
+    }
+  ],
+  "source_artifacts": [
+    {
+      "path": "ai-pjt/evals/artifacts/f14-integrated-mock-attack.json",
+      "sha256": "77e47fb963632b3b763ffe0155876312cf70b342a859bc4fecd1c5c1b009a013"
+    },
+    {
+      "path": "ai-pjt/evals/artifacts/f14-finding-triage.json",
+      "sha256": "fb8bff929593e89f4739046684a1ad8ddb821486c67e619358d176ea060f239a"
+    },
+    {
+      "path": "ai-pjt/evals/artifacts/f14-operational-anomalies.json",
+      "sha256": "1239473d35c54fe2e4a669de7296a962d24c73f266cb4c4b1e98e53bbade2122"
+    },
+    {
+      "path": "ai-pjt/evals/artifacts/f13-production-security-regression.json",
+      "sha256": "e7377387d286c17d9356d5a73c5309c164c960c201ad6cc77046b0b5a021ad66"
+    },
+    {
+      "path": "contract-fixtures/financial-calculation/v1/policy.json",
+      "sha256": "b50f9e854185c5a6555ebac153e2fec2a309ddbbc86cb946080d3a0df3a70df4"
+    }
+  ],
+  "calculation_policy_consumers": [
+    "ai-pjt/tools/financial_policy.py",
+    "ai-pjt/tools/catalog.py",
+    "backend-pjt/reports/policy.py",
+    "backend-pjt/reports/services.py",
+    "backend-pjt/consulting/tool_context.py"
+  ],
+  "assertions": {
+    "t01_findings": 0,
+    "t02_decision": "no_findings",
+    "dynamic_remediation_tasks": 0,
+    "t04_failures": 0,
+    "backend_concurrency_passed": true,
+    "policy_version_shared": true
+  },
+  "known_limits": [
+    "실제 LLM·embedding 호출은 F07/F08 baseline과 F06 공식 qualification artifact를 재사용하며 T03에서 반복하지 않았다.",
+    "AI runtime과 RAG의 조건부 integration test 6개는 외부 provider·DB가 없는 고정 이미지에서 skip됐고 deterministic 계약 회귀는 통과했다."
+  ]
+}

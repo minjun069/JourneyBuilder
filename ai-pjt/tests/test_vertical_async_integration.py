@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import AIMessage
 
 from core.context import ContextScope, ContextStateAPI
 from graph.builder import build_graph
@@ -58,7 +59,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         else:
             app.state.context_api = self.previous_context_api
 
-    def install_graph(self, *, planner, tool_executors=None):
+    def install_graph(self, *, planner, tool_executors=None, agent_graphs=None):
         checkpointer = MemorySaver()
         context_api = ContextStateAPI(checkpointer)
         app.state.chat_graph = build_graph(
@@ -66,7 +67,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             instrumentation=fake_instrumentation()[0],
             planner=planner,
             classifier=FakeClassifier(),
-            agent_graphs=all_agent_graphs(),
+            agent_graphs=agent_graphs or all_agent_graphs(),
             tool_executors=tool_executors,
         )
         app.state.context_api = context_api
@@ -230,3 +231,126 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         self.assertEqual(values["task_results"]["task-2"]["blocked_by"], ["task-1"])
         self.assertEqual(values["task_results"]["task-3"]["status"], "completed")
         self.assertEqual(values["execution_budget"]["tasks_used"], 2)
+
+    async def test_household_reference_lookup_binds_exact_existing_row_and_replays(self):
+        from agents import input_assist
+        from tools.catalog import build_default_registry
+        from tools.graph_adapter import build_graph_tool_executors
+        from tools.runtime import FunctionToolRuntime
+
+        binding_fields = (
+            "reference_id",
+            "age",
+            "value",
+            "unit",
+            "period",
+            "population",
+            "comparator",
+            "source_id",
+            "source_version",
+            "as_of",
+            "calculation_policy_version",
+        )
+        planner = FakePlanner({
+            "tasks": [
+                {
+                    "id": "lookup",
+                    "type": "lookup_reference_value",
+                    "description": "45세 전국 일반가구 주거비 월평균 승인 기준 조회",
+                    "depends_on": [],
+                    "bindings": {},
+                    "arguments": {
+                        "reference_id": "household_monthly_expense_housing_avg",
+                        "age": 45,
+                        "period": "monthly",
+                        "population": "kr_general_households_1plus",
+                    },
+                },
+                {
+                    "id": "fill",
+                    "type": "propose_form_change",
+                    "description": "사용자가 요청한 전국 가구 평균으로 기존 빈 주거비 항목을 채워줘",
+                    "depends_on": ["lookup"],
+                    "bindings": {
+                        field: {"task_id": "lookup", "path": field}
+                        for field in binding_fields
+                    },
+                },
+            ],
+        })
+        agents = all_agent_graphs()
+        agents["input_assist"] = input_assist.graph
+        runtime = FunctionToolRuntime(build_default_registry())
+        context_api = self.install_graph(
+            planner=planner,
+            tool_executors=build_graph_tool_executors(runtime),
+            agent_graphs=agents,
+        )
+        request_payload = make_request("ai_req_f14_household_success").model_dump(
+            mode="python"
+        )
+        request_payload["customer_info"] = {
+            "saved_data": {},
+            "current_form": {"goal_periods": [{
+                "id": 51,
+                "phase": "before",
+                "from_age": 45,
+                "to_age": 65,
+                "items": [{
+                    "id": 501,
+                    "name": "주거비",
+                    "amount": None,
+                    "is_fixed": True,
+                }],
+            }]},
+        }
+        request_payload["field_registry"] = [{
+            "step_id": "financial-goals",
+            "section": "goal_periods",
+            "path": "items[].amount",
+            "value_type": "integer",
+            "unit": "KRW",
+            "constraints": {"min": 0, "period": "month"},
+            "cardinality": "nested_list",
+            "writable_by_ai": True,
+            "nullable": True,
+            "operations": ["set", "add", "update", "remove"],
+        }]
+        request = ChatV2Request.model_validate(request_payload)
+
+        classify = SimpleNamespace(ainvoke=AsyncMock(return_value=input_assist.ClassifyResult(
+            intent="fill_avg",
+            user_requested_change=True,
+        )))
+        merge_model = SimpleNamespace(ainvoke=AsyncMock(return_value=AIMessage(
+            content="승인된 주거비 기준으로 기존 빈 항목 변경안을 만들었습니다.",
+        )))
+        with patch.object(input_assist, "_classify_chain", classify), patch.object(
+            input_assist, "llm", merge_model
+        ):
+            transport, processor, _, first = await self.run_transport(request)
+            replay = await transport.run(request)
+
+        self.assertEqual(first, replay)
+        self.assertEqual(first["status"], "completed")
+        change = first["output"]["action"]["changes"][0]
+        self.assertEqual(change["section"], "goal_periods")
+        self.assertEqual(change["path"], "items[].amount")
+        self.assertEqual(change["parent_item_id"], 51)
+        self.assertEqual(change["item_id"], 501)
+        self.assertEqual(change["value"], 361_000)
+        self.assertEqual(change["unit"], "KRW")
+        self.assertEqual(
+            change["reference"]["reference_id"],
+            "household_monthly_expense_housing_avg",
+        )
+        self.assertEqual(
+            change["reference"]["calculation_policy_version"],
+            "2026-09-12.v1",
+        )
+        processor.assert_awaited_once()
+
+        scope = ContextScope(request.session_id, request.thread_id)
+        values = await context_api.read_values(scope)
+        self.assertEqual(values["task_results"]["task-1"]["status"], "completed")
+        self.assertEqual(values["task_results"]["task-2"]["status"], "completed")

@@ -243,7 +243,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.data["reference"]["comparator"], "lt")
         self.assertEqual(
             result.data["reference"]["calculation_policy_version"],
-            "2026-09-07.v1",
+            "2026-09-12.v1",
         )
 
     async def test_approved_reference_value_does_not_estimate_a_missing_match(self):

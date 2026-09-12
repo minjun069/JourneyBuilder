@@ -1,0 +1,27 @@
+{
+  "schema_version": "f14-finding-triage-v1",
+  "suite_id": "AI-F14-T02",
+  "source": {
+    "artifact": "ai-pjt/evals/artifacts/f14-integrated-mock-attack.json",
+    "sha256": "77e47fb963632b3b763ffe0155876312cf70b342a859bc4fecd1c5c1b009a013",
+    "summary": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "findings": 0
+    }
+  },
+  "deduplication": {
+    "key_fields": [
+      "category",
+      "actual",
+      "impact_boundary",
+      "owner_paths"
+    ],
+    "input_findings": 0,
+    "unique_findings": 0
+  },
+  "decision": "no_findings",
+  "triage": [],
+  "dynamic_tasks": []
+}

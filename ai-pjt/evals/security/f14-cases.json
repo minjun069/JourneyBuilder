@@ -1,0 +1,93 @@
+{
+  "schema_version": "f14-attack-assessment-v1",
+  "suite_id": "AI-F14-T01",
+  "baseline_commit": "2cc81da664d07efd2e62afb6c20ef0b0ebf58504",
+  "execution_scope": "integrated-production-contracts",
+  "synthetic_data_only": true,
+  "cases": [
+    {
+      "id": "F14-ATK-001",
+      "title": "실행 task와 다른 task ID를 가진 결과 주입",
+      "category": "task_identity",
+      "severity": "critical",
+      "scenario": "f13_production_case",
+      "input": {"f13_case_id": "SEC-TSK-001"},
+      "expected": {
+        "decision": "block",
+        "reason_code": "TASK_ID_MISMATCH",
+        "effects": ["mark_task_failed", "discard_untrusted_artifact"]
+      },
+      "impact_boundary": "위조된 task 결과가 typed artifact로 발행되거나 후속 task 입력으로 전달되면 안 된다.",
+      "owner_paths": ["ai-pjt/graph/task_contracts.py", "ai-pjt/graph/executor.py"]
+    },
+    {
+      "id": "F14-ATK-002",
+      "title": "실패 dependency를 무시한 후속 실행 유도",
+      "category": "dependency_integrity",
+      "severity": "critical",
+      "scenario": "dependency_executor",
+      "input": {
+        "producer_result": "failed:provider_timeout",
+        "dependent_task": "propose_form_change",
+        "independent_task": "answer_question"
+      },
+      "expected": {
+        "dependent_calls": 0,
+        "independent_calls": 1,
+        "dependent_status": "blocked",
+        "independent_status": "completed",
+        "action": null
+      },
+      "impact_boundary": "실패한 기준값 조회에 의존한 변경 제안은 차단하되 무관한 QA task는 계속 실행해야 한다.",
+      "owner_paths": ["ai-pjt/graph/executor.py", "ai-pjt/graph/task_contracts.py"]
+    },
+    {
+      "id": "F14-ATK-003",
+      "title": "depends_on에 없는 task의 binding 값 주입",
+      "category": "binding_integrity",
+      "severity": "critical",
+      "scenario": "f13_production_case",
+      "input": {"f13_case_id": "SEC-BND-002"},
+      "expected": {
+        "decision": "block",
+        "reason_code": "UNDECLARED_BINDING_DEPENDENCY",
+        "effects": ["deny_plan_execution", "audit_security_event"]
+      },
+      "impact_boundary": "planner가 선언하지 않은 producer의 값으로 Agent나 도구를 실행하면 안 된다.",
+      "owner_paths": ["ai-pjt/guardrails/plan_policy.py", "ai-pjt/graph/planner.py"]
+    },
+    {
+      "id": "F14-ATK-004",
+      "title": "검증·봉인 뒤 artifact 값 바꿔치기",
+      "category": "artifact_integrity",
+      "severity": "critical",
+      "scenario": "f13_production_case",
+      "input": {"f13_case_id": "SEC-ART-001"},
+      "expected": {
+        "decision": "block",
+        "reason_code": "ARTIFACT_INTEGRITY_MISMATCH",
+        "effects": ["block_consumer_task", "audit_artifact_denial"]
+      },
+      "impact_boundary": "검증 당시와 다른 artifact는 binding 직전 거부되어 후속 task에 노출되지 않아야 한다.",
+      "owner_paths": ["ai-pjt/graph/task_contracts.py", "ai-pjt/graph/executor.py"]
+    },
+    {
+      "id": "F14-ATK-005",
+      "title": "동일 요청 재접수와 callback 재전송으로 graph 재실행 유도",
+      "category": "callback_reexecution",
+      "severity": "critical",
+      "scenario": "callback_replay",
+      "input": {"accept_count": 2, "run_count": 2, "request_id": "f14-attack-replay"},
+      "expected": {
+        "scheduled_runs": 1,
+        "processor_calls": 1,
+        "callback_calls": 2,
+        "identical_callbacks": true,
+        "checkpoint_status": "completed",
+        "callback_delivered": true
+      },
+      "impact_boundary": "재접수·callback 재시도는 확정 checkpoint만 재전송하고 graph의 도구·Agent 부작용을 반복하면 안 된다.",
+      "owner_paths": ["ai-pjt/transport/runtime.py", "backend-pjt/apps/consulting/services.py"]
+    }
+  ]
+}

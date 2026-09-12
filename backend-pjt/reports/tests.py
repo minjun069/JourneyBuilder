@@ -74,7 +74,7 @@ class FinancialPolicyContractTests(SimpleTestCase):
     def test_approved_policy_is_the_calculator_source(self):
         policy = load_financial_policy()
 
-        self.assertEqual(active_policy_version(), "2026-09-07.v1")
+        self.assertEqual(active_policy_version(), "2026-09-12.v1")
         self.assertEqual(DEFAULT_ASSUMPTIONS, policy["assumptions"])
         self.assertEqual(DEFAULT_ASSUMPTIONS["conservative_inflation_rate"], 0.03)
         self.assertEqual(DEFAULT_ASSUMPTIONS["real_estate_appreciation_rate"], 0.02)

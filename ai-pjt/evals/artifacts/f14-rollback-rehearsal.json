@@ -1,0 +1,60 @@
+{
+  "schema_version": "f14-rollback-evidence-v1",
+  "task": "F14-T05",
+  "candidate": "da363e6b9d0d98295e4b5adbed555276c4be113a",
+  "executed_at_utc": "2026-09-12T02:59:12Z",
+  "production_environment": {
+    "server_host": "ip-172-26-12-255",
+    "deployment_checkout_commit": "2cc81da664d07efd2e62afb6c20ef0b0ebf58504",
+    "calculation_policy_version": "2026-09-07.v1",
+    "calculation_policy_sha256": "b50f9e854185c5a6555ebac153e2fec2a309ddbbc86cb946080d3a0df3a70df4"
+  },
+  "config_snapshot": {
+    "snapshot_id": "20260912T025811Z-da363e6b9d0d",
+    "path": "/srv/s15p21b109/secrets/snapshots/20260912T025811Z-da363e6b9d0d",
+    "sha256": "a8d2cfc82c81793fe17530993a7aefe26919bfaa6f534b6a66bbece3d81cc0fc",
+    "owner": "root:root",
+    "directory_mode": "0500",
+    "file_mode": "0400",
+    "filesystem_immutable": true,
+    "recovery_owner": "root",
+    "source_unchanged": true,
+    "values_recorded": false
+  },
+  "database": {
+    "scope": "dedicated_synthetic_schema",
+    "customer_data_access": false,
+    "dump_restore_exact": true,
+    "dump_sha256": "5134f70d15af88252e8da0ebc5d3066b916a5878ca4b0bfb47837ba555add097",
+    "residual_schema_count": 0
+  },
+  "deployment": {
+    "failure_injected": true,
+    "expected_exit_nonzero": true,
+    "services_restored_to_last_good": [
+      "web",
+      "backend",
+      "ai-pjt",
+      "migrate"
+    ],
+    "web_health": "healthy",
+    "backend_health": "healthy",
+    "ai_health": "healthy",
+    "http_status": 200,
+    "api_status": 401
+  },
+  "independent_verification": {
+    "snapshot_hash_permissions_and_immutable_flag": "PASS",
+    "running_images_equal_last_good": "PASS",
+    "database_cleanup": "PASS",
+    "final_health": "PASS",
+    "firewall_unchanged_ports": [
+      22,
+      80,
+      443
+    ]
+  },
+  "configuration_source_embedded": false,
+  "secret_values_in_artifact": false,
+  "result": "PASS"
+}

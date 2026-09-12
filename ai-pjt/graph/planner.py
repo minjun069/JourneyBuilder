@@ -19,6 +19,7 @@ from tools.registry import validate_json_schema
 
 MAX_PLAN_TASKS = 3
 PLAN_SCHEMA_VERSION = "1.0"
+HOUSEHOLD_WRITABLE_REFERENCE_PREFIX = "household_monthly_expense_"
 
 TaskPlanner = Callable[..., Mapping[str, Any]]
 
@@ -69,6 +70,16 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
         "executor_kind": "agent",
         "produces": "form_change",
         "binding_expectations": {
+            "reference_id": {
+                "artifact_type": "reference_value",
+                "path": "reference_id",
+                "value_type": "string",
+            },
+            "age": {
+                "artifact_type": "reference_value",
+                "path": "age",
+                "value_type": "number",
+            },
             "value": {
                 "artifact_type": "reference_value",
                 "path": "value",
@@ -79,9 +90,29 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
                 "path": "unit",
                 "value_type": "string",
             },
+            "period": {
+                "artifact_type": "reference_value",
+                "path": "period",
+                "value_type": "string",
+            },
+            "population": {
+                "artifact_type": "reference_value",
+                "path": "population",
+                "value_type": "string",
+            },
+            "comparator": {
+                "artifact_type": "reference_value",
+                "path": "comparator",
+                "value_type": "string",
+            },
             "source_id": {
                 "artifact_type": "reference_value",
                 "path": "source_id",
+                "value_type": "string",
+            },
+            "source_version": {
+                "artifact_type": "reference_value",
+                "path": "source_version",
                 "value_type": "string",
             },
             "as_of": {
@@ -213,7 +244,7 @@ PLANNER_PROMPT = secure_system_prompt("""\
 의존 요청 예시:
 {{"tasks": [
   {{"id": "lookup", "type": "lookup_reference_value", "description": "승인된 기준값 조회", "depends_on": [], "bindings": {{}}, "arguments": {{"reference_id": "debt_service_ratio_max", "age": 40, "period": "annual", "population": "retirewise_kr_households"}}}},
-  {{"id": "fill", "type": "propose_form_change", "description": "조회 값으로 변경안 제안", "depends_on": ["lookup"], "bindings": {{"value": {{"task_id": "lookup", "path": "value"}}}}}}
+  {{"id": "fill", "type": "propose_form_change", "description": "사용자가 요청한 조회 값으로 기존 빈 항목 변경안 제안", "depends_on": ["lookup"], "bindings": {{"reference_id": {{"task_id": "lookup", "path": "reference_id"}}, "age": {{"task_id": "lookup", "path": "age"}}, "value": {{"task_id": "lookup", "path": "value"}}, "unit": {{"task_id": "lookup", "path": "unit"}}, "period": {{"task_id": "lookup", "path": "period"}}, "population": {{"task_id": "lookup", "path": "population"}}, "comparator": {{"task_id": "lookup", "path": "comparator"}}, "source_id": {{"task_id": "lookup", "path": "source_id"}}, "source_version": {{"task_id": "lookup", "path": "source_version"}}, "as_of": {{"task_id": "lookup", "path": "as_of"}}, "calculation_policy_version": {{"task_id": "lookup", "path": "calculation_policy_version"}}}}}}
 ]}}
 
 현재 단계: {step_id}
@@ -506,6 +537,31 @@ def validate_route_plan(
                 "path": str(source_path),
             }
 
+        if task_type == "propose_form_change":
+            household_sources = [
+                dependency
+                for dependency in raw_dependencies
+                if dependency in earlier_aliases
+                and _raw_reference_id(
+                    raw_tasks[aliases.index(dependency)]
+                ).startswith(HOUSEHOLD_WRITABLE_REFERENCE_PREFIX)
+            ]
+            complete = set(normalized_bindings) == set(expectations)
+            same_source = (
+                len(household_sources) == 1
+                and all(
+                    isinstance(raw_bindings.get(field), Mapping)
+                    and raw_bindings[field].get("task_id") == household_sources[0]
+                    for field in expectations
+                )
+            )
+            if household_sources and (not complete or not same_source):
+                issues.append(_issue(
+                    "INCOMPLETE_REFERENCE_BINDING",
+                    f"{path}.bindings",
+                    "쓰기 가능한 가구 기준값은 봉인 artifact의 전체 provenance를 같은 dependency에서 binding해야 합니다.",
+                ))
+
         normalized = {
             "id": f"task-{index + 1}",
             "type": task_type,
@@ -534,6 +590,16 @@ def validate_route_plan(
         plan={"schema_version": PLAN_SCHEMA_VERSION, "tasks": normalized_tasks},
         issues=(),
     )
+
+
+def _raw_reference_id(task: Any) -> str:
+    if not isinstance(task, Mapping) or task.get("type") != "lookup_reference_value":
+        return ""
+    arguments = task.get("arguments")
+    if not isinstance(arguments, Mapping):
+        return ""
+    value = arguments.get("reference_id")
+    return value if isinstance(value, str) else ""
 
 
 def create_route_plan(

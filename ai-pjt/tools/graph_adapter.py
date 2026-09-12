@@ -48,6 +48,11 @@ def _reference_executor(runtime: FunctionToolRuntime) -> RuntimeExecutor:
         reference = result.data.get("reference") if result.data else None
         if not isinstance(reference, Mapping):
             return failed_task_result(task_id, "invalid_tool_result")
+        if any(
+            reference.get(field) != arguments.get(field)
+            for field in ("reference_id", "age", "period", "population")
+        ):
+            return failed_task_result(task_id, "reference_contract_mismatch")
         return {
             "task_id": task_id,
             "status": "completed",

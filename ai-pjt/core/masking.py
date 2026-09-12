@@ -508,7 +508,10 @@ class _PayloadMasker:
         if data_class is DataClass.OPERATIONAL_INFORMATION:
             if (
                 self._sink is MaskingSink.CALLBACK
-                and path in _CALLBACK_ROOT_CORRELATION_PATHS
+                and (
+                    path in _CALLBACK_ROOT_CORRELATION_PATHS
+                    or self._is_allowed_sink_path(path)
+                )
             ):
                 return value
             return self._pseudonymize(value, namespace or "operation")

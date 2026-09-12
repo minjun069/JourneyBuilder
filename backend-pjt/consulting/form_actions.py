@@ -52,6 +52,7 @@ def normalize_form_action(output, step_id):
         for metadata_field in (
             'policy_version', 'source', 'retrieved_at', 'transform', 'assumption_level',
             'source_turn_ids',
+            'reference',
         ):
             if raw.get(metadata_field) is not None:
                 change[metadata_field] = raw[metadata_field]

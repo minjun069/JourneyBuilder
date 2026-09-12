@@ -704,6 +704,12 @@ def _failure_message(reason_code: str) -> str:
         "binding_not_consumed": (
             "조회 결과와 입력 변경안의 값이 일치하지 않아 변경 제안을 제외했습니다."
         ),
+        "reference_target_not_allowed": (
+            "조회 기준값을 현재 폼의 승인된 기존 항목에 안전하게 연결할 수 없어 변경 제안을 제외했습니다."
+        ),
+        "reference_contract_mismatch": (
+            "요청한 기준값과 조회 결과의 식별 조건이 일치하지 않아 결과를 폐기했습니다."
+        ),
         "output_schema_invalid": (
             "작업 결과가 안전성 검증을 통과하지 못해 응답에서 제외했습니다."
         ),
