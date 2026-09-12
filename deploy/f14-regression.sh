@@ -12,6 +12,8 @@ esac
 
 f14_ai_image="${f14_project}-ai:test"
 f14_node_volume="${f14_project}-node-modules"
+f14_node_mount="$f14_root/front-pjt/node_modules"
+f14_node_mount_created=0
 export POSTGRES_PASSWORD="${CI_POSTGRES_PASSWORD:-f14-regression-postgres}"
 export DJANGO_SECRET_KEY="${CI_DJANGO_SECRET_KEY:-f14-regression-django-secret-at-least-32-bytes}"
 export AI_SERVICE_BEARER_TOKEN="${CI_AI_SERVICE_BEARER_TOKEN:-f14-regression-service-token}"
@@ -23,6 +25,9 @@ f14_cleanup() {
   docker compose -p "$f14_project" -f "$f14_root/docker-compose.yml" down \
     --volumes --remove-orphans >/dev/null 2>&1 || true
   docker volume rm "$f14_node_volume" >/dev/null 2>&1 || true
+  if [[ "$f14_node_mount_created" == "1" ]]; then
+    rmdir "$f14_node_mount" >/dev/null 2>&1 || true
+  fi
   docker image rm -f "$f14_ai_image" \
     "${f14_project}-backend:latest" "${f14_project}-migrate:latest" \
     >/dev/null 2>&1 || true
@@ -56,6 +61,17 @@ docker compose -p "$f14_project" -f "$f14_root/docker-compose.yml" run \
     python manage.py test --verbosity 1
   "
 
+# Docker must see the nested volume target before it applies the read-only parent
+# bind mount. A clean CI checkout has no ignored node_modules directory, so create
+# an empty runner-owned mountpoint and remove it during cleanup.
+if [[ -e "$f14_node_mount" && ! -d "$f14_node_mount" ]]; then
+  echo "F14 node_modules mountpoint exists but is not a directory: $f14_node_mount" >&2
+  exit 2
+fi
+if [[ ! -d "$f14_node_mount" ]]; then
+  mkdir "$f14_node_mount"
+  f14_node_mount_created=1
+fi
 docker volume create "$f14_node_volume" >/dev/null
 docker run --rm \
   -e npm_config_cache=/tmp/.npm \
