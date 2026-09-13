@@ -57,14 +57,15 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, ScatterChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
-import { getSegments } from '@/api/admin'
 import { usePolling } from '@/composables/usePolling'
+import { useAdminStore } from '@/stores/admin'
 import { formatEok } from '@/utils/money'
 import { AXIS_LABELS, AXIS_QUERY_PARAM, bucketLabel } from './pbLabels'
 import { AXIS_TEXT, CHART_COLORS, GRADE_COLORS, SPLIT_LINE } from './pbTheme'
@@ -77,14 +78,26 @@ const NEED_COLORS = {
 }
 
 const router = useRouter()
+const adminStore = useAdminStore()
+const {
+  segments,
+  segmentsMeta,
+  segmentsLoading: loading,
+  segmentsError,
+} = storeToRefs(adminStore)
 
-const axes = ref(null)
-const indicatorRisk = ref([])
-const scatter = ref([])
-const generatedAt = ref(null)
-const loading = ref(false)
-const error = ref('')
 const activeAxis = ref('age_band')
+
+const axes = computed(() => segments.value?.axes ?? null)
+const indicatorRisk = computed(() => segments.value?.indicator_risk ?? [])
+const scatter = computed(() => segments.value?.scatter ?? [])
+const generatedAt = computed(() => segmentsMeta.value.generated_at)
+const error = computed(() => {
+  if (!segmentsError.value) return ''
+  return segmentsError.value.response?.status === 403
+    ? 'PB 권한이 필요한 화면입니다.'
+    : '세그먼트 데이터를 불러오지 못했습니다.'
+})
 
 const refreshedLabel = computed(() =>
   generatedAt.value ? new Date(generatedAt.value).toLocaleTimeString('ko-KR') : '')
@@ -194,21 +207,7 @@ function onScatterClick(params) {
 }
 
 async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const body = await getSegments()
-    axes.value = body.data.axes
-    indicatorRisk.value = body.data.indicator_risk
-    scatter.value = body.data.scatter
-    generatedAt.value = body.meta.generated_at
-  } catch (err) {
-    error.value = err.response?.status === 403
-      ? 'PB 권한이 필요한 화면입니다.'
-      : '세그먼트 데이터를 불러오지 못했습니다.'
-  } finally {
-    loading.value = false
-  }
+  await adminStore.loadSegments()
 }
 
 load()

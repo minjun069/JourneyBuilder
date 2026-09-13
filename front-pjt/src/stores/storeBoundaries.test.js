@@ -16,12 +16,15 @@ function readVueDirectory(path) {
 
 const consultationStoreSource = readSource('./consultation.js')
 const reportStoreSource = readSource('./report.js')
+const adminStoreSource = readSource('./admin.js')
+const authStoreSource = readSource('./auth.js')
 const aiChatViewSource = readSource('../views/ai/AiChatView.vue')
 const dashboardSource = [
   readVueDirectory('../views/dashboard/'),
   readVueDirectory('../components/dashboard/'),
 ].join('\n')
 const presentationSource = readVueDirectory('../components/presentation/')
+const pbSource = readVueDirectory('../views/pb/')
 
 test('상담과 보고서는 두 개의 전용 Store만 사용한다', () => {
   assert.equal(existsSync(new URL('./ai.js', import.meta.url)), false)
@@ -60,4 +63,31 @@ test('AI 화면만 두 Store를 조합하고 보고서 컴포넌트는 Report St
   assert.match(aiChatViewSource, /@\/stores\/report/)
   assert.match(presentationSource, /@\/stores\/report/)
   assert.doesNotMatch(presentationSource, /@\/stores\/(?:ai|consultation|dashboard)/)
+})
+
+test('Admin Store가 PB 조회 데이터와 요청 상태를 소유한다', () => {
+  assert.match(adminStoreSource, /defineStore\('admin'/)
+  assert.match(adminStoreSource, /from '@\/api\/admin'/)
+  assert.match(adminStoreSource, /loadingRequestKeys/)
+  assert.match(adminStoreSource, /requestErrors/)
+  assert.match(adminStoreSource, /activeRequestKeys/)
+  assert.match(adminStoreSource, /const inFlight = new Map\(\)/)
+  assert.match(adminStoreSource, /function loadCustomers/)
+  assert.match(adminStoreSource, /function loadCustomer/)
+  assert.match(adminStoreSource, /function loadSummary/)
+  assert.match(adminStoreSource, /function loadSegments/)
+  assert.match(adminStoreSource, /function clearAdmin/)
+})
+
+test('PB 화면은 Admin Store만 소비하고 화면 전용 상태는 로컬에 둔다', () => {
+  assert.match(pbSource, /@\/stores\/admin/)
+  assert.doesNotMatch(pbSource, /@\/api\/admin/)
+  assert.match(pbSource, /const activeAxis = ref/)
+  assert.match(pbSource, /const activeTab = ref/)
+  assert.match(pbSource, /const statusFilter = ref/)
+})
+
+test('로그아웃하면 Admin Store의 고객 데이터도 폐기한다', () => {
+  assert.match(authStoreSource, /import\('@\/stores\/admin'\)/)
+  assert.match(authStoreSource, /useAdminStore\(\)\.clearAdmin\(\)/)
 })

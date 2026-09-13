@@ -199,6 +199,21 @@
 
 ---
 
+## PB 관리자
+
+| 호출 위치 | 함수 | 메서드 | 엔드포인트 |
+|---|---|---|---|
+| `stores/admin.js` `loadCustomers` | `getCustomers` | GET | `/admin/customers/` |
+| `stores/admin.js` `loadCustomer` | `getCustomer` | GET | `/admin/customers/{userId}/` |
+| `stores/admin.js` `loadSummary` | `getSummary` | GET | `/admin/analytics/summary/` |
+| `stores/admin.js` `loadSegments` | `getSegments` | GET | `/admin/analytics/segments/` |
+
+PB 화면은 API Client를 직접 호출하지 않고 `Admin Store`를 통해 조회한다. Store는 고객
+목록·상세·요약·세그먼트 데이터와 리소스별 loading/error를 소유하며, URL 필터·정렬·
+페이지·차트 축·상세 탭은 각 화면이 소유한다.
+
+---
+
 ## 커뮤니티
 
 | 호출 위치 | 함수 | 메서드 | 엔드포인트 | 요청 body |
