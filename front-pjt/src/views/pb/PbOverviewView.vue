@@ -111,15 +111,16 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, PieChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
-import { getSegments, getSummary } from '@/api/admin'
 import { usePolling } from '@/composables/usePolling'
+import { useAdminStore } from '@/stores/admin'
 import { formatEok } from '@/utils/money'
 import { bucketLabel } from './pbLabels'
 import { AXIS_TEXT, CHART_COLORS, GRADE_COLORS, SPLIT_LINE, avatarStyle, initialOf } from './pbTheme'
@@ -132,14 +133,30 @@ const STATUS_LABELS = {
 }
 
 const router = useRouter()
+const adminStore = useAdminStore()
+const {
+  summary,
+  summaryMeta,
+  segments,
+  summaryLoading,
+  segmentsLoading,
+  summaryError,
+  segmentsError,
+} = storeToRefs(adminStore)
 
-const kpi = ref(null)
-const activities = ref([])
-const needBuckets = ref([])
-const indicatorRisk = ref([])
-const generatedAt = ref(null)
-const loading = ref(false)
-const error = ref('')
+const kpi = computed(() => summary.value?.kpi ?? null)
+const activities = computed(() => summary.value?.recent_activities ?? [])
+const needBuckets = computed(() => segments.value?.axes?.need ?? [])
+const indicatorRisk = computed(() => segments.value?.indicator_risk ?? [])
+const generatedAt = computed(() => summaryMeta.value.generated_at)
+const loading = computed(() => summaryLoading.value || segmentsLoading.value)
+const error = computed(() => {
+  const requestError = summaryError.value ?? segmentsError.value
+  if (!requestError) return ''
+  return requestError.response?.status === 403
+    ? 'PB 권한이 필요한 화면입니다.'
+    : '개요 데이터를 불러오지 못했습니다.'
+})
 
 const refreshedLabel = computed(() =>
   generatedAt.value ? new Date(generatedAt.value).toLocaleTimeString('ko-KR') : '')
@@ -205,22 +222,7 @@ function formatDateTime(value) {
 }
 
 async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const [summaryBody, segmentsBody] = await Promise.all([getSummary(), getSegments()])
-    kpi.value = summaryBody.data.kpi
-    activities.value = summaryBody.data.recent_activities
-    needBuckets.value = segmentsBody.data.axes.need
-    indicatorRisk.value = segmentsBody.data.indicator_risk
-    generatedAt.value = summaryBody.meta.generated_at
-  } catch (err) {
-    error.value = err.response?.status === 403
-      ? 'PB 권한이 필요한 화면입니다.'
-      : '개요 데이터를 불러오지 못했습니다.'
-  } finally {
-    loading.value = false
-  }
+  await adminStore.loadOverview()
 }
 
 load()

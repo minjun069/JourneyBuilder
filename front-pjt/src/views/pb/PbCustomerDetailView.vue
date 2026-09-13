@@ -195,13 +195,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import StatCard from '@/components/dashboard/StatCard.vue'
 import AssetPieEcharts from '@/components/charts/AssetPieEcharts.vue'
 import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue'
 import { makeIndicator } from '@/components/charts/financialIndicatorSchema'
-import { getCustomer } from '@/api/admin'
+import { useAdminStore } from '@/stores/admin'
 import { formatEok } from '@/utils/money'
 import { avatarStyle, initialOf } from './pbTheme'
 
@@ -267,11 +268,20 @@ const SATISFACTION_FIELDS = [
 
 const route = useRoute()
 const router = useRouter()
+const adminStore = useAdminStore()
+const {
+  customerDetail: detail,
+  customerDetailLoading: loading,
+  customerDetailError,
+} = storeToRefs(adminStore)
 
-const detail = ref(null)
-const loading = ref(true)
-const error = ref('')
 const activeTab = ref('assets')
+const error = computed(() => {
+  if (!customerDetailError.value) return ''
+  return customerDetailError.value.response?.status === 404
+    ? '고객을 찾을 수 없습니다.'
+    : '고객 정보를 불러오지 못했습니다.'
+})
 
 // 자산·현금흐름 미입력이면 파생부를 숨긴다 (NFR-04)
 const derived = computed(() =>
@@ -330,18 +340,7 @@ function formatDateTime(value) {
   })
 }
 
-onMounted(async () => {
-  try {
-    const body = await getCustomer(route.params.id)
-    detail.value = body.data
-  } catch (err) {
-    error.value = err.response?.status === 404
-      ? '고객을 찾을 수 없습니다.'
-      : '고객 정보를 불러오지 못했습니다.'
-  } finally {
-    loading.value = false
-  }
-})
+watch(() => route.params.id, userId => adminStore.loadCustomer(userId), { immediate: true })
 </script>
 
 <style scoped>

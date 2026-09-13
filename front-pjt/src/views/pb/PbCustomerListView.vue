@@ -148,9 +148,10 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
-import { getCustomers } from '@/api/admin'
 import { usePolling } from '@/composables/usePolling'
+import { useAdminStore } from '@/stores/admin'
 import { formatEok } from '@/utils/money'
 import { avatarStyle, initialOf } from './pbTheme'
 
@@ -208,6 +209,13 @@ const COLUMNS = [
 
 const route = useRoute()
 const router = useRouter()
+const adminStore = useAdminStore()
+const {
+  customers: rows,
+  customerListMeta: meta,
+  customerListLoading: loading,
+  customerListError,
+} = storeToRefs(adminStore)
 
 // FR-07 크로스 필터: /pb/customers?need=은퇴 같은 쿼리를 초기 필터로 반영
 const search = ref(route.query.search ?? '')
@@ -220,15 +228,17 @@ const healthFilter = ref(route.query.health ?? '')
 const ordering = ref(route.query.ordering ?? '-last_activity')
 const page = ref(Number(route.query.page) || 1)
 
-const rows = ref([])
-const meta = ref({ total: 0, page: 1, page_size: 20, total_pages: 1 })
-const generatedAt = ref(null)
-const loading = ref(false)
-const error = ref('')
 const appliedSearch = ref(search.value)
 
+const generatedAt = computed(() => meta.value.generated_at)
 const refreshedLabel = computed(() =>
   generatedAt.value ? new Date(generatedAt.value).toLocaleTimeString('ko-KR') : '')
+const error = computed(() => {
+  if (!customerListError.value) return ''
+  return customerListError.value.response?.status === 403
+    ? 'PB 권한이 필요한 화면입니다.'
+    : '고객 리스트를 불러오지 못했습니다.'
+})
 
 function statusMeta(status) {
   return STATUS_META[status] ?? { label: status ?? '—', cls: 'none' }
@@ -264,30 +274,17 @@ function goDetail(row) {
 }
 
 async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const body = await getCustomers({
-      search: appliedSearch.value || undefined,
-      status: statusFilter.value || undefined,
-      need: needFilter.value || undefined,
-      age_band: ageBandFilter.value || undefined,
-      net_worth_band: netWorthBandFilter.value || undefined,
-      tendency: tendencyFilter.value || undefined,
-      health: healthFilter.value || undefined,
-      ordering: ordering.value || undefined,
-      page: page.value,
-    })
-    rows.value = body.data
-    meta.value = body.meta
-    generatedAt.value = body.meta.generated_at
-  } catch (err) {
-    error.value = err.response?.status === 403
-      ? 'PB 권한이 필요한 화면입니다.'
-      : '고객 리스트를 불러오지 못했습니다.'
-  } finally {
-    loading.value = false
-  }
+  await adminStore.loadCustomers({
+    search: appliedSearch.value || undefined,
+    status: statusFilter.value || undefined,
+    need: needFilter.value || undefined,
+    age_band: ageBandFilter.value || undefined,
+    net_worth_band: netWorthBandFilter.value || undefined,
+    tendency: tendencyFilter.value || undefined,
+    health: healthFilter.value || undefined,
+    ordering: ordering.value || undefined,
+    page: page.value,
+  })
 }
 
 watch(
