@@ -1,4 +1,3 @@
-from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -6,7 +5,7 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -26,11 +25,9 @@ from consulting.ai_lifecycle import (  # noqa: E402
     LifecycleError,
     bind_terminal_result,
     build_v2_ai_payload,
-    decide_change,
     require_idempotency_key,
     validate_browser_message,
     validate_terminal_payload,
-    v2_success,
 )
 
 
@@ -118,33 +115,6 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
             bind_terminal_result(state, mismatch['terminal_payload'])
         self.assertEqual(captured.exception.status_code, mismatch['expected_error']['status'])
         self.assertEqual(captured.exception.code, mismatch['expected_error']['code'])
-
-    def test_individual_decisions_match_both_frozen_responses(self):
-        action = deepcopy(
-            FIXTURE['cases']['terminal_completed_proposal']['browser_event']['data']
-            ['message']['extracted_data']['action']
-        )
-        message = SimpleNamespace(extracted_data={'action': action}, save=Mock())
-
-        approved = decide_change(
-            message,
-            change_id='chg_fixture_income',
-            decision='approved',
-        )
-        rejected = decide_change(
-            message,
-            change_id='chg_fixture_job',
-            decision='rejected',
-        )
-
-        self.assertEqual(
-            v2_success(approved),
-            FIXTURE['cases']['change_approve_first']['response']['body'],
-        )
-        self.assertEqual(
-            v2_success(rejected),
-            FIXTURE['cases']['change_reject_second']['response']['body'],
-        )
 
     def test_backend_timing_constants_match_the_shared_fixture(self):
         timing = FIXTURE['timing']

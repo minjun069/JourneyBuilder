@@ -36,7 +36,7 @@ class FormActionPolicyContractTests(unittest.TestCase):
                     'proposal',
                 )
 
-    def test_every_fixture_change_starts_pending_and_has_a_decision(self):
+    def test_every_fixture_change_starts_pending_and_has_a_frontend_decision(self):
         fixture_path = (
             REPOSITORY_ROOT
             / 'contract-fixtures/ai-lifecycle/v2/form-actions.json'
@@ -54,7 +54,7 @@ class FormActionPolicyContractTests(unittest.TestCase):
                 ))
                 self.assertEqual(
                     {change['change_id'] for change in action['changes']},
-                    {decision['change_id'] for decision in case['decisions']},
+                    {decision['change_id'] for decision in case['frontend_decisions']},
                 )
 
     def test_backend_normalizer_matches_each_fixture_before_server_ids_are_added(self):

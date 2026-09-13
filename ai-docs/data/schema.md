@@ -1,8 +1,8 @@
 # 데이터 스키마와 소유권
 
-상태: **D1 기준 데이터 소유권·canonical AI 필드·change별 결정 v2 단일 원천 동결 — 전체 물리 스키마 미정**
+상태: **데이터 소유권·canonical AI 필드·Frontend 로컬 change 결정 동결 — 전체 물리 스키마 미정**
 
-이 문서는 데이터 소유권, canonical 필드의 의미·단위·제약, 안정 ID와 change별 결정의 데이터 의미를 소유한다. Browser↔Django payload는 [Django HTTP API](../contracts/http-api.md), Django↔AI payload는 [AI 서비스 API](../contracts/ai-api.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](../contracts/current-state.md)를 따른다. 전체 필드 목록의 기계 원천은 아래 canonical 필드 레지스트리 절에서 지정한다.
+이 문서는 데이터 소유권, canonical 필드의 의미·단위·제약, 안정 ID와 Frontend 로컬 change 결정의 데이터 의미를 소유한다. Browser↔Django payload는 [Django HTTP API](../contracts/http-api.md), Django↔AI payload는 [AI 서비스 API](../contracts/ai-api.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](../contracts/current-state.md)를 따른다. 전체 필드 목록의 기계 원천은 아래 canonical 필드 레지스트리 절에서 지정한다.
 
 ## 데이터 소유권
 
@@ -10,7 +10,7 @@
 |---|---|---|---|
 | 상담 세션·사용자 메시지 | Django | Django | 인증·소유권 검증된 snapshot만 요청으로 수신 |
 | 확정 재무 정보 | Django | Django serializer·transaction | Agent별 allowlist로 읽기 |
-| 미저장 현재 폼 | Frontend, 요청 시점 snapshot | 사용자 직접 입력·개별 승인된 AI proposal change | Django가 검증·정규화해 AI에 전달 |
+| 미저장 현재 폼 | Frontend, 요청 시점 snapshot | 사용자 직접 입력·FE에서 승인한 AI proposal change | Django가 검증·정규화해 AI에 전달 |
 | AI 대화 checkpoint | AI 서비스 | LangGraph checkpointer | 같은 `thread_id`에서만 읽기·쓰기 |
 | RAG 문서·인덱스 | AI 지식 파이프라인 | 승인된 적재 작업 | 검색 도구를 통해 읽기 |
 | AI terminal receipt | Django | Django SSE terminal 처리 | request 종결 상태와 메시지 참조만 저장 |
@@ -24,8 +24,8 @@ AI와 MCP·Function Calling 도구는 Django 업무 테이블에 직접 쓰지 �
 - `thread_id`는 사용자와 상담 세션을 함께 식별하며 다른 조합에서 재사용하지 않는다.
 - `request_id`는 하나의 AI SSE 실행을 식별하고 terminal idempotency에 사용한다.
 - `action_id`는 한 assistant message의 form change 묶음을 식별한다.
-- `change_id`는 action 안의 한 change를 식별하며 승인·거절의 최소 단위다.
-- request, thread, session, user 소유권이 일치해야 SSE terminal·승인을 처리한다.
+- `change_id`는 action 안의 한 change와 그 Frontend control을 식별한다.
+- request, thread, session, user 소유권이 일치해야 SSE terminal을 처리한다.
 
 ### Canonical 필드 레지스트리
 
@@ -150,11 +150,11 @@ AI terminal에는 `action_id`, `change_id`, `mode`, 결정 상태가 없다. Dja
 
 ### proposal과 사용자 결정
 
-AI가 생성한 form action은 사용자가 변경을 요청했는지, confidence가 얼마인지와 무관하게 모두 `proposal`이다. `user_requested`와 confidence는 설명·감사 메타데이터이며 사용자 승인으로 간주하지 않는다. 별도의 change 승인 응답을 받기 전에는 Frontend draft를 바꾸지 않는다.
+AI가 생성한 form action은 사용자가 변경을 요청했는지, confidence가 얼마인지와 무관하게 모두 `proposal`이다. `user_requested`와 confidence는 설명 메타데이터이며 사용자 승인으로 간주하지 않는다. 사용자가 Frontend control에서 승인하기 전에는 draft를 바꾸지 않는다.
 
-각 change는 `pending → approved | rejected`로 독립 전이한다. action 전체 상태는 `pending`, `partially_resolved`, `resolved` 중 하나이며 전체 승인·전체 거절 endpoint는 없다. 같은 결정의 재전송은 같은 결과를 반환하고 반대 결정은 conflict다.
+각 change의 `pending → approved | rejected`와 action의 `pending | partially_resolved | resolved` 전이는 Frontend 메모리에서만 일어난다. 승인·거절 endpoint, 결정용 멱등성 처리, 서버 상태·감사 이력은 없다.
 
-개별 승인 당시에는 그 change의 식별자·operation·대상만 다시 검증하고, 승인 응답의 단일 change만 draft에 적용한다. 여러 change 사이의 최종 상호 필드 제약은 사용자가 폼 저장을 실행할 때 serializer가 현재 draft 전체에 강제한다.
+개별 승인 시 SSE 완료 메시지에 포함된 change를 Frontend 공통 resolver가 현재 draft에 직접 적용한다. 거절은 draft를 유지한다. 여러 change 사이의 최종 상호 필드 제약은 사용자가 폼 저장을 실행할 때 serializer가 현재 draft 전체에 강제한다.
 
 ### 대표 데이터 형태와 구현 순서
 
@@ -179,7 +179,7 @@ AI checkpoint, RAG vector table, 작업 상태 저장소의 schema·인덱스·�
 ## 마이그레이션과 트랜잭션
 
 - Django 업무 데이터 변경은 Django migration과 transaction을 사용한다.
-- AI proposal의 change별 결정 기록은 idempotent하게 갱신한다. 이 결정 transaction은 업무 재무정보를 직접 변경하지 않는다.
+- AI proposal의 승인·거절은 Frontend 로컬 UI 상태이므로 DB migration이나 transaction 대상이 아니다.
 - 필드명·자료형·단위 변경은 Frontend adapter, Django serializer·model, AI field registry, RAG guide, fixture를 함께 migration한다.
 - 반복·중첩 구조 migration은 기존 제안·메시지의 호환성과 rollback 절차를 포함한다.
 - RAG 인덱스 재구축은 업무 DB migration과 분리하고 활성 인덱스 버전을 전환할 수 있어야 한다.

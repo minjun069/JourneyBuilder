@@ -1,7 +1,5 @@
 import uuid
 
-from django.db import transaction
-
 from .models import (
     BasicInfo,
     FinancialMindset,
@@ -9,7 +7,6 @@ from .models import (
     Message,
 )
 from .serializers import (
-    BasicInfoWriteSerializer,
     BasicInfoSerializer,
     ExpenseSerializer,
     FinancialAssetSerializer,
@@ -26,28 +23,16 @@ from .form_actions import normalize_form_action
 
 
 ONE_TO_ONE_SECTIONS = {
-    'basic_info': (BasicInfo, BasicInfoWriteSerializer),
-    'financial_mindset': (FinancialMindset, FinancialMindsetSerializer),
-    'financial_satisfaction': (FinancialSatisfaction, FinancialSatisfactionSerializer),
+    'basic_info': BasicInfo,
+    'financial_mindset': FinancialMindset,
+    'financial_satisfaction': FinancialSatisfaction,
 }
 
 FIELD_SECTION_MAP = {}
-for section_name, (model_class, _) in ONE_TO_ONE_SECTIONS.items():
+for section_name, model_class in ONE_TO_ONE_SECTIONS.items():
     for field in model_class._meta.fields:
         if field.name not in ('id', 'session', 'updated_at'):
             FIELD_SECTION_MAP[field.name] = section_name
-
-
-def normalize_change_value(section, field, value):
-    if section == 'basic_info' and field == 'monthly_income' and value is not None:
-        try:
-            amount = int(value)
-        except (TypeError, ValueError):
-            return value
-        if 0 < amount < 10000:
-            return amount * 10000
-        return amount
-    return value
 
 
 # 백엔드가 AI 서버에게 답변 만들어달라는 작업 각각의 고유 번호
@@ -122,48 +107,6 @@ def normalize_pending_changes(update, default_section=None):
             'label': change.get('label') or field,
         })
     return normalized
-
-
-def mark_message_action(message, action):
-    extracted_data = message.extracted_data or {}
-    extracted_data['action_status'] = action
-    message.extracted_data = extracted_data
-    message.save(update_fields=['extracted_data'])
-
-
-def apply_pending_changes(session, message):
-    extracted_data = message.extracted_data or {}
-    pending_changes = extracted_data.get('pending_changes') or []
-    applied = []
-
-    with transaction.atomic():
-        for change in pending_changes:
-            section = change.get('section')
-            field = change.get('field')
-            value = change.get('value')
-
-            if section not in ONE_TO_ONE_SECTIONS:
-                raise ValueError(f'지원하지 않는 section입니다: {section}')
-
-            model_class, serializer_class = ONE_TO_ONE_SECTIONS[section]
-            allowed_fields = {
-                f.name for f in model_class._meta.fields
-                if f.name not in ('id', 'session', 'updated_at')
-            }
-            if field not in allowed_fields:
-                raise ValueError(f'{section}.{field} 필드는 수정할 수 없습니다.')
-
-            obj, _ = model_class.objects.get_or_create(session=session)
-            value = normalize_change_value(section, field, value)
-            serializer = serializer_class(obj, data={field: value}, partial=True)
-            serializer.is_valid(raise_exception=True)
-            serializer.save()
-            applied.append({**change, 'value': value})
-
-        mark_message_action(message, 'approved')
-        session.refresh_completion_status()
-
-    return applied
 
 
 def create_assistant_message_from_terminal(session, payload, step_id):

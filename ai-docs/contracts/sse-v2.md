@@ -130,8 +130,9 @@ data: {"contract_version":"2.0","request_id":"ai_req_...","status":"completed","
 ```
 
 `message.extracted_data.action`이 존재하면 Django가 발급한 `action_id`, 각
-`change_id`, `pending` 결정 상태를 포함한다. Browser는 기존 v2 change별 승인·거절
-endpoint를 그대로 사용한다.
+`change_id`, 초기 `pending` 표시 상태를 포함한다. Browser는 승인 시 완료 메시지의
+change를 현재 draft에 직접 적용하고 거절 시 control만 종료한다. 두 동작은 Change
+Decision endpoint나 별도 네트워크 요청을 만들지 않는다.
 
 ## 멱등성
 

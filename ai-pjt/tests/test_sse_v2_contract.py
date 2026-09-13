@@ -30,6 +30,11 @@ class AISSEV2ConsumerContractTests(unittest.TestCase):
         self.assertEqual(policy["general_chat"], "sse")
         self.assertEqual(set(policy["elicit"].values()), {"sse"})
         self.assertEqual(set(policy["error_review"].values()), {"sse"})
+        self.assertEqual(policy["change_decision"], {
+            "owner": "frontend",
+            "transport": "none",
+            "persists_on_server": False,
+        })
         self.assertEqual(policy["frontend_polling_flows"], [])
 
     def test_done_and_error_are_terminal_payloads(self) -> None:

@@ -40,7 +40,7 @@
 - token 하나가 양방향 권한을 가지므로 유출 시 두 서비스를 함께 차단·회전하고, 회전 전에는 신규 접수를 중지한 뒤 기존 processing 작업을 drain한다.
 - `request_id`는 추측하기 어렵고 SSE terminal의 idempotency 키로 사용한다.
 - terminal receipt는 request·session·thread의 결합을 확인하고 완료된 요청의 중복 부작용을 막는다.
-- proposal 승인·거절은 action 안의 change별로 기록하고 같은 결정의 재전송만 idempotent하게 허용한다.
+- proposal 승인·거절은 Frontend 메모리에서만 change별로 처리하며 서버에 상태·감사 이력을 기록하거나 결정용 idempotency key를 만들지 않는다.
 - 사용자 JWT를 AI payload나 모델이 생성하는 Function tool 인자에 전달하지 않는다.
 - AI·MCP·DB 계정은 분리하고 필요한 테이블·도구 권한만 부여하며, tool adapter에는 현재 request에 필요한 snapshot과 기능만 제공한다.
 - timeout, 요청·응답 크기, 동시 실행, 재시도 횟수에 상한을 둔다.

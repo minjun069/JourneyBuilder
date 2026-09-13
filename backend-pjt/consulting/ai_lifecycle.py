@@ -466,55 +466,5 @@ def create_v2_assistant_message(session, payload, step_id):
     return message
 
 
-def find_action_message(session, action_id, *, for_update=False):
-    queryset = session.messages.filter(role='assistant').order_by('-id')
-    if for_update:
-        queryset = queryset.select_for_update()
-    for message in queryset:
-        action = (message.extracted_data or {}).get('action')
-        if isinstance(action, dict) and action.get('action_id') == action_id:
-            return message
-    return None
-
-
-def decide_change(message, *, change_id, decision):
-    extracted = message.extracted_data or {}
-    action = extracted.get('action')
-    if not isinstance(action, dict):
-        raise LifecycleError(404, 'ACTION_NOT_FOUND', 'AI 변경 제안을 찾을 수 없습니다.')
-    changes = action.get('changes') or []
-    target = next((item for item in changes if item.get('change_id') == change_id), None)
-    if target is None:
-        raise LifecycleError(404, 'ACTION_NOT_FOUND', 'AI 변경 제안을 찾을 수 없습니다.')
-    current = target.get('decision_status', 'pending')
-    if current != 'pending' and current != decision:
-        raise LifecycleError(
-            409,
-            'ACTION_DECISION_CONFLICT',
-            '이미 반대 결정으로 처리된 변경입니다.',
-        )
-    target['decision_status'] = decision
-    pending = sum(item.get('decision_status') == 'pending' for item in changes)
-    action['status'] = 'resolved' if pending == 0 else (
-        'pending' if pending == len(changes) else 'partially_resolved'
-    )
-    extracted['action'] = action
-    message.extracted_data = extracted
-    message.save(update_fields=['extracted_data'])
-    response = {
-        'action_id': action['action_id'],
-        'change_id': change_id,
-        'decision_status': decision,
-        'action_status': action['status'],
-    }
-    if decision == 'approved':
-        response['change'] = {
-            key: value
-            for key, value in target.items()
-            if key not in {'change_id', 'decision_status', 'label', 'reason'}
-        }
-    return response
-
-
 def new_request_id():
     return generate_request_id()

@@ -7,7 +7,6 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from .field_registry import ALLOWED_OPERATIONS, FIELDS, SECTION_META
 from .form_actions import normalize_form_action
-from .ai_services import normalize_change_value
 from .models import BasicInfo
 from .serializers import (
     BasicInfoWriteSerializer,
@@ -150,14 +149,7 @@ class FormActionPolicyTests(SimpleTestCase):
             }, 'basic-info')
 
 
-class AIRequestContractTests(SimpleTestCase):
-    def test_monthly_income_suggestion_is_normalized_to_won(self):
-        self.assertEqual(
-            normalize_change_value('basic_info', 'monthly_income', '300'),
-            3_000_000,
-        )
-
-class AITransportRemovalTests(SimpleTestCase):
+class AITransportAndDecisionRemovalTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
@@ -176,6 +168,10 @@ class AITransportRemovalTests(SimpleTestCase):
             '/api/ai/callback/',
             '/api/v2/internal/ai/callback/',
             '/api/v1/consultations/12/messages/stream/',
+            '/api/v1/consultations/12/ai-actions/approve/',
+            '/api/v1/consultations/12/ai-actions/reject/',
+            '/api/v2/consultations/12/ai-actions/action-1/changes/change-1/approve/',
+            '/api/v2/consultations/12/ai-actions/action-1/changes/change-1/reject/',
         ):
             with self.subTest(path=path), self.assertRaises(Resolver404):
                 resolve(path)

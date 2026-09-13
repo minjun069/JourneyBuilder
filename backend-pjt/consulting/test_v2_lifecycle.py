@@ -14,7 +14,6 @@ from .ai_lifecycle import (
     bind_terminal_result,
     build_v2_ai_payload,
     create_v2_assistant_message,
-    decide_change,
     make_processing_state,
     validate_browser_message,
     validate_terminal_payload,
@@ -302,71 +301,7 @@ class TerminalPayloadValidationTests(SimpleTestCase):
             validate_terminal_payload(low_confidence)
 
 
-class FormChangeDecisionTests(SimpleTestCase):
-    def action_message(self):
-        return SimpleNamespace(
-            extracted_data={
-                'action': {
-                    'action_id': 'act_test',
-                    'status': 'pending',
-                    'changes': [
-                        {
-                            'change_id': 'chg_income',
-                            'decision_status': 'pending',
-                            'section': 'basic_info',
-                            'path': 'monthly_income',
-                            'operation': 'set',
-                            'value': 3_000_000,
-                            'label': '세후 월 소득',
-                            'reason': '사용자 발화에서 추출',
-                        },
-                        {
-                            'change_id': 'chg_job',
-                            'decision_status': 'pending',
-                            'section': 'basic_info',
-                            'path': 'job',
-                            'operation': 'set',
-                            'value': '직장인',
-                        },
-                    ],
-                },
-            },
-            save=Mock(),
-        )
-
-    def test_each_change_is_approved_or_rejected_independently(self):
-        message = self.action_message()
-
-        approved = decide_change(
-            message,
-            change_id='chg_income',
-            decision='approved',
-        )
-        self.assertEqual(approved['action_status'], 'partially_resolved')
-        self.assertEqual(approved['change'], {
-            'section': 'basic_info',
-            'path': 'monthly_income',
-            'operation': 'set',
-            'value': 3_000_000,
-        })
-
-        rejected = decide_change(
-            message,
-            change_id='chg_job',
-            decision='rejected',
-        )
-        self.assertEqual(rejected['action_status'], 'resolved')
-        self.assertNotIn('change', rejected)
-
-    def test_opposite_decision_conflicts(self):
-        message = self.action_message()
-        decide_change(message, change_id='chg_income', decision='approved')
-
-        with self.assertRaises(LifecycleError) as captured:
-            decide_change(message, change_id='chg_income', decision='rejected')
-
-        self.assertEqual(captured.exception.code, 'ACTION_DECISION_CONFLICT')
-
+class FormChangeProposalTests(SimpleTestCase):
     @patch('consulting.ai_lifecycle.create_assistant_message_from_terminal')
     def test_terminal_message_exposes_only_v2_action_shape(self, create_message):
         message = SimpleNamespace(

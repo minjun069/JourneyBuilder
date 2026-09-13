@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from django.db import transaction
 from django.http import StreamingHttpResponse
-from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
@@ -16,13 +14,10 @@ from .ai_lifecycle import (
     RedisLifecycleStore,
     build_v2_ai_payload,
     canonical_digest,
-    decide_change,
-    find_action_message,
     make_processing_state,
     new_request_id,
     require_idempotency_key,
     validate_browser_message,
-    v2_success,
 )
 from .ai_security import recover_terminal_state
 from .models import ConsultingSession, Message
@@ -172,77 +167,3 @@ class V2MessageStreamView(V2APIView):
                     True,
                 )
             )
-
-
-class V2ChangeDecisionView(V2APIView):
-    permission_classes = [IsAuthenticated]
-    decision = None
-
-    def post(self, request, session_id, action_id, change_id):
-        session = get_owned_session(session_id, request.user)
-        if session is None:
-            return error_response(
-                LifecycleError(404, 'SESSION_NOT_FOUND', '상담 세션을 찾을 수 없습니다.')
-            )
-        try:
-            key = require_idempotency_key(request)
-            store = RedisLifecycleStore()
-            decision_request = {
-                'action_id': action_id,
-                'change_id': change_id,
-                'decision': self.decision,
-            }
-            digest = canonical_digest(decision_request)
-            replay = store.get_idempotency(request.user.id, session.id, key)
-            if replay is not None:
-                if replay.get('payload_digest') != digest:
-                    raise LifecycleError(
-                        409,
-                        'IDEMPOTENCY_CONFLICT',
-                        '같은 idempotency key의 요청 내용이 다릅니다.',
-                    )
-                return Response(replay['body'], status=replay['status_code'])
-            with transaction.atomic():
-                message = find_action_message(session, action_id, for_update=True)
-                if message is None:
-                    raise LifecycleError(
-                        404,
-                        'ACTION_NOT_FOUND',
-                        'AI 변경 제안을 찾을 수 없습니다.',
-                    )
-                data = decide_change(
-                    message,
-                    change_id=change_id,
-                    decision=self.decision,
-                )
-            response_body = v2_success(data)
-            store.save_idempotency(
-                request.user.id,
-                session.id,
-                key,
-                {
-                    'payload_digest': digest,
-                    'body': response_body,
-                    'status_code': status.HTTP_200_OK,
-                },
-            )
-            return Response(response_body)
-        except LifecycleError as exc:
-            return error_response(exc)
-        except Exception:
-            return error_response(
-                LifecycleError(
-                    503,
-                    'AI_STATE_UNAVAILABLE',
-                    'AI 작업 상태 저장소를 사용할 수 없습니다.',
-                    True,
-                )
-            )
-
-
-class V2ChangeApproveView(V2ChangeDecisionView):
-    decision = 'approved'
-
-
-class V2ChangeRejectView(V2ChangeDecisionView):
-    decision = 'rejected'
