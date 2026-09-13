@@ -4,12 +4,16 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [
+export function createVitePlugins(command, mode) {
+  return [
     vue(),
-    // vueDevTools(),
-  ],
+    ...(command === 'serve' && mode === 'development' ? [vueDevTools()] : []),
+  ]
+}
+
+// https://vite.dev/config/
+export default defineConfig(({ command, mode }) => ({
+  plugins: createVitePlugins(command, mode),
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
@@ -24,4 +28,4 @@ export default defineConfig({
       },
     },
   } : undefined,
-})
+}))

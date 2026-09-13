@@ -11,12 +11,24 @@ export default defineConfig([
     files: ['**/*.{vue,js,mjs,jsx}'],
   },
 
-  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**']),
+  globalIgnores(['**/.vite/**', '**/dist/**', '**/dist-ssr/**', '**/coverage/**']),
 
   {
+    name: 'app/browser-globals',
+    files: ['src/**/*.{vue,js,jsx}'],
     languageOptions: {
       globals: {
         ...globals.browser,
+      },
+    },
+  },
+
+  {
+    name: 'app/node-globals',
+    files: ['*.config.{js,mjs}', '*.test.{js,mjs}', 'src/**/*.test.{js,mjs}', 'tests/**/*.{js,mjs}'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
       },
     },
   },

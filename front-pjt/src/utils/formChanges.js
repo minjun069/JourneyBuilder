@@ -296,7 +296,7 @@ export function cancelErrorReviewSuggestion(item) {
 }
 
 export async function continueSaveAfterOptionalReview(requestReview, persist) {
-  let needsDecision = false
+  let needsDecision
   try {
     needsDecision = await requestReview()
   } catch {

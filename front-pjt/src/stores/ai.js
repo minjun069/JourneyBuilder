@@ -205,6 +205,7 @@ export const useAiStore = defineStore('ai', () => {
       }
       presentationData.value = normalizePresentationData(mapped)
     } catch (err) {
+      presentationData.value = null
       error.value = err
     } finally {
       loading.value = false

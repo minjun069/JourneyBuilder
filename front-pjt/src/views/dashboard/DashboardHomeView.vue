@@ -8,6 +8,10 @@
       </div>
     </div>
 
+    <div v-if="store.error" class="data-warning" role="alert">
+      보고서 데이터를 검증할 수 없어 예시 데이터를 표시하고 있습니다.
+    </div>
+
     <div class="section-rule"></div>
 
     <!-- 섹션: 은퇴 준비 상태 -->
@@ -186,6 +190,16 @@ const groups = computed(() => {
   font-weight: 800;
   color: #1a1a1a;
   margin: 0;
+}
+
+.data-warning {
+  padding: 12px 16px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 /* 공통 카드 */

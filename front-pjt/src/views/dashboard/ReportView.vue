@@ -63,6 +63,22 @@
         <span class="section-label">제안 내용</span>
       </div>
       <div class="action-card">
+        <div class="action-progress" aria-live="polite">
+          <div class="progress-label">
+            <span>실천 진행률</span>
+            <span>{{ doneCount }} / {{ actionCount }} 완료</span>
+          </div>
+          <div
+            class="progress-bar"
+            role="progressbar"
+            aria-label="제안 내용 실천 진행률"
+            aria-valuemin="0"
+            :aria-valuemax="actionCount"
+            :aria-valuenow="doneCount"
+          >
+            <div class="progress-fill" :style="{ width: progressWidth }"></div>
+          </div>
+        </div>
         <ul class="action-list">
           <li
             v-for="(item, idx) in report.action_items"
@@ -132,8 +148,12 @@ function toggleItem(idx) {
   checkedItems.value[idx] = !checkedItems.value[idx]
 }
 
+const actionCount = report.action_items.length
 const doneCount = computed(() => checkedItems.value.filter(Boolean).length)
-const progressWidth = computed(() => `${(doneCount.value / report.action_items.length) * 100}%`)
+const progressWidth = computed(() => {
+  const percent = actionCount > 0 ? (doneCount.value / actionCount) * 100 : 0
+  return `${percent}%`
+})
 
 const categoryMeta = {
   '연금·은퇴': { icon: '🛡️', cls: 'card-pension' },
@@ -446,6 +466,9 @@ function relatedNewsIds(sectionIdx) {
 }
 
 .progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
   font-size: 12px;
   color: #888;
   font-weight: 600;
