@@ -1,9 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from django.test import SimpleTestCase, override_settings
-from rest_framework.test import APIRequestFactory, force_authenticate
+from django.test import SimpleTestCase
 
 from .ai_lifecycle import (
     ACTIVE_STATE_TTL_SECONDS,
@@ -12,25 +11,21 @@ from .ai_lifecycle import (
     LifecycleError,
     RedisLifecycleStore,
     _validate_error_review_fields,
-    bind_terminal_callback,
+    bind_terminal_result,
     build_v2_ai_payload,
     create_v2_assistant_message,
     decide_change,
-    dispatch_v2_ai_request,
-    expire_if_due,
     make_processing_state,
     validate_browser_message,
-    validate_terminal_callback,
-    verify_service_bearer,
+    validate_terminal_payload,
 )
-from .v2_views import V2MessageCreateView, V2PollingView, serialize_v2_message
 
 
 UTC = timezone.utc
 NOW = datetime(2026, 9, 2, 6, 0, tzinfo=UTC)
 
 
-def completed_callback(**overrides):
+def completed_terminal(**overrides):
     payload = {
         'contract_version': CONTRACT_VERSION,
         'request_id': 'ai_req_test',
@@ -114,31 +109,6 @@ class BrowserMessageValidationTests(SimpleTestCase):
         self.assertEqual(elicit['elicit_action'], 'start')
 
 
-class ServiceAuthenticationTests(SimpleTestCase):
-    def setUp(self):
-        self.factory = APIRequestFactory()
-
-    @override_settings(AI_SERVICE_BEARER_TOKEN='expected-token')
-    def test_requires_exact_bearer_token(self):
-        valid = self.factory.post(
-            '/api/v2/internal/ai/callback/',
-            {},
-            format='json',
-            HTTP_AUTHORIZATION='Bearer expected-token',
-        )
-        verify_service_bearer(valid)
-
-        invalid = self.factory.post(
-            '/api/v2/internal/ai/callback/',
-            {},
-            format='json',
-            HTTP_AUTHORIZATION='Bearer wrong-token',
-        )
-        with self.assertRaises(LifecycleError) as captured:
-            verify_service_bearer(invalid)
-        self.assertEqual(captured.exception.code, 'SERVICE_UNAUTHORIZED')
-
-
 class RedisLifecycleStoreTests(SimpleTestCase):
     def test_active_terminal_and_idempotency_ttls_are_distinct(self):
         client = FakeRedis()
@@ -179,7 +149,7 @@ class RedisLifecycleStoreTests(SimpleTestCase):
         self.assertIn('p07:run42:ai:v2:idempotency:3:12:idem-key', client.values)
 
 
-class AIRequestDispatchTests(SimpleTestCase):
+class AIStreamRequestTests(SimpleTestCase):
     @patch('consulting.ai_lifecycle.get_step_field_registry')
     @patch('consulting.ai_lifecycle.build_tool_context')
     @patch('consulting.ai_lifecycle.build_customer_info')
@@ -212,47 +182,6 @@ class AIRequestDispatchTests(SimpleTestCase):
         self.assertEqual(payload['tool_context']['session_id'], 12)
         self.assertNotIn('callback_url', payload)
 
-    @override_settings(
-        AI_SERVICE_URL='http://ai-pjt:8001/chat',
-        AI_SERVICE_BEARER_TOKEN='service-token',
-    )
-    def test_retries_retryable_response_once_with_identical_request(self):
-        first = Mock(status_code=503)
-        second = Mock(status_code=202)
-        second.json.return_value = {
-            'contract_version': CONTRACT_VERSION,
-            'request_id': 'ai_req_test',
-            'status': 'accepted',
-        }
-        post = Mock(side_effect=[first, second])
-        payload = {'request_id': 'ai_req_test'}
-
-        result = dispatch_v2_ai_request(payload, post=post)
-
-        self.assertEqual(result['status'], 'accepted')
-        self.assertEqual(post.call_count, 2)
-        self.assertEqual(post.call_args_list[0], post.call_args_list[1])
-        self.assertEqual(post.call_args.kwargs['timeout'], 5)
-        self.assertEqual(
-            post.call_args.kwargs['headers']['Authorization'],
-            'Bearer service-token',
-        )
-
-    @override_settings(
-        AI_SERVICE_URL='http://ai-pjt:8001/chat',
-        AI_SERVICE_BEARER_TOKEN='service-token',
-    )
-    def test_does_not_retry_non_retryable_http_error(self):
-        response = Mock(status_code=401)
-        response.raise_for_status.side_effect = ValueError('unauthorized')
-        post = Mock(return_value=response)
-
-        with self.assertRaises(ValueError):
-            dispatch_v2_ai_request({'request_id': 'ai_req_test'}, post=post)
-
-        self.assertEqual(post.call_count, 1)
-
-
 class RequestStateTransitionTests(SimpleTestCase):
     def processing_state(self):
         return make_processing_state(
@@ -265,59 +194,43 @@ class RequestStateTransitionTests(SimpleTestCase):
             now=NOW,
         )
 
-    def test_processing_deadline_expires_once(self):
+    def test_terminal_binding_and_digest_are_immutable(self):
         state = self.processing_state()
-        self.assertEqual(state['processing_deadline_at'], '2026-09-02T06:01:30Z')
-
-        active, changed = expire_if_due(state, now=NOW + timedelta(seconds=89))
-        self.assertIs(active, state)
-        self.assertFalse(changed)
-
-        expired, changed = expire_if_due(state, now=NOW + timedelta(seconds=90))
-        self.assertTrue(changed)
-        self.assertEqual(expired['status'], 'expired')
-        self.assertEqual(expired['error']['code'], 'AI_REQUEST_EXPIRED')
-        replay, changed = expire_if_due(expired, now=NOW + timedelta(seconds=180))
-        self.assertIs(replay, expired)
-        self.assertFalse(changed)
-
-    def test_callback_binding_and_terminal_digest_are_immutable(self):
-        state = self.processing_state()
-        payload = completed_callback()
-        bound, replay = bind_terminal_callback(state, payload)
+        payload = completed_terminal()
+        bound, replay = bind_terminal_result(state, payload)
         self.assertFalse(replay)
         terminal = {**bound, 'status': 'completed', 'assistant_message_id': 21}
 
-        replayed, replay = bind_terminal_callback(terminal, payload)
+        replayed, replay = bind_terminal_result(terminal, payload)
         self.assertTrue(replay)
         self.assertIs(replayed, terminal)
 
         with self.assertRaises(LifecycleError) as captured:
-            bind_terminal_callback(
+            bind_terminal_result(
                 terminal,
-                completed_callback(completed_at='2026-09-02T06:00:43Z'),
+                completed_terminal(completed_at='2026-09-02T06:00:43Z'),
             )
-        self.assertEqual(captured.exception.code, 'CALLBACK_CONFLICT')
+        self.assertEqual(captured.exception.code, 'TERMINAL_CONFLICT')
 
-    def test_callback_rejects_binding_mismatch_and_expired_state(self):
+    def test_terminal_rejects_binding_mismatch_and_expired_state(self):
         state = self.processing_state()
         with self.assertRaises(LifecycleError) as captured:
-            bind_terminal_callback(state, completed_callback(session_id=99))
-        self.assertEqual(captured.exception.code, 'CALLBACK_BINDING_MISMATCH')
+            bind_terminal_result(state, completed_terminal(session_id=99))
+        self.assertEqual(captured.exception.code, 'TERMINAL_BINDING_MISMATCH')
 
         with self.assertRaises(LifecycleError) as captured:
-            bind_terminal_callback({**state, 'status': 'expired'}, completed_callback())
-        self.assertEqual(captured.exception.code, 'CALLBACK_CONFLICT')
+            bind_terminal_result({**state, 'status': 'expired'}, completed_terminal())
+        self.assertEqual(captured.exception.code, 'TERMINAL_CONFLICT')
 
         with self.assertRaises(LifecycleError) as captured:
-            bind_terminal_callback({**state, 'status': 'unknown'}, completed_callback())
-        self.assertEqual(captured.exception.code, 'CALLBACK_CONFLICT')
+            bind_terminal_result({**state, 'status': 'unknown'}, completed_terminal())
+        self.assertEqual(captured.exception.code, 'TERMINAL_CONFLICT')
 
 
-class CallbackValidationTests(SimpleTestCase):
-    def test_completed_and_failed_terminal_callbacks_are_valid(self):
-        self.assertEqual(validate_terminal_callback(completed_callback())['status'], 'completed')
-        failed = completed_callback(
+class TerminalPayloadValidationTests(SimpleTestCase):
+    def test_completed_and_failed_terminal_payloads_are_valid(self):
+        self.assertEqual(validate_terminal_payload(completed_terminal())['status'], 'completed')
+        failed = completed_terminal(
             status='failed',
             error={
                 'code': 'LLM_TIMEOUT',
@@ -326,19 +239,19 @@ class CallbackValidationTests(SimpleTestCase):
             },
         )
         failed.pop('output')
-        self.assertEqual(validate_terminal_callback(failed)['status'], 'failed')
+        self.assertEqual(validate_terminal_payload(failed)['status'], 'failed')
 
     def test_missing_status_is_not_inferred(self):
-        payload = completed_callback()
+        payload = completed_terminal()
         payload.pop('status')
         with self.assertRaises(LifecycleError) as captured:
-            validate_terminal_callback(payload)
+            validate_terminal_payload(payload)
         self.assertEqual(captured.exception.message, 'status는 필수입니다.')
 
     def test_rejects_naive_or_malformed_completed_at(self):
         for value in ('not-a-date', '2026-09-02T06:00:42'):
             with self.subTest(value=value), self.assertRaises(LifecycleError):
-                validate_terminal_callback(completed_callback(completed_at=value))
+                validate_terminal_payload(completed_terminal(completed_at=value))
 
     def test_structured_error_review_output_is_validated(self):
         review = {
@@ -355,15 +268,15 @@ class CallbackValidationTests(SimpleTestCase):
                 'confidence_level': 'high',
             }],
         }
-        payload = completed_callback(output={'response': '확인이 필요합니다.', 'review': review})
-        self.assertEqual(validate_terminal_callback(payload), payload)
+        payload = completed_terminal(output={'response': '확인이 필요합니다.', 'review': review})
+        self.assertEqual(validate_terminal_payload(payload), payload)
 
-        invalid = completed_callback(output={
+        invalid = completed_terminal(output={
             'response': '확인이 필요합니다.',
             'review': {**review, 'trigger': 'blocking_save'},
         })
         with self.assertRaises(LifecycleError):
-            validate_terminal_callback(invalid)
+            validate_terminal_payload(invalid)
 
         _validate_error_review_fields({'review': review}, 'basic-info')
         with self.assertRaises(LifecycleError):
@@ -374,7 +287,7 @@ class CallbackValidationTests(SimpleTestCase):
                 },
             }, 'basic-info')
 
-        low_confidence = completed_callback(output={
+        low_confidence = completed_terminal(output={
             'response': '확인이 필요합니다.',
             'review': {
                 **review,
@@ -386,7 +299,7 @@ class CallbackValidationTests(SimpleTestCase):
             },
         })
         with self.assertRaises(LifecycleError):
-            validate_terminal_callback(low_confidence)
+            validate_terminal_payload(low_confidence)
 
 
 class FormChangeDecisionTests(SimpleTestCase):
@@ -454,8 +367,8 @@ class FormChangeDecisionTests(SimpleTestCase):
 
         self.assertEqual(captured.exception.code, 'ACTION_DECISION_CONFLICT')
 
-    @patch('consulting.ai_lifecycle.create_assistant_message_from_callback')
-    def test_callback_message_exposes_only_v2_action_shape(self, create_message):
+    @patch('consulting.ai_lifecycle.create_assistant_message_from_terminal')
+    def test_terminal_message_exposes_only_v2_action_shape(self, create_message):
         message = SimpleNamespace(
             extracted_data={
                 'intent': 'input_assist',
@@ -480,7 +393,7 @@ class FormChangeDecisionTests(SimpleTestCase):
 
         result = create_v2_assistant_message(
             SimpleNamespace(id=12),
-            completed_callback(),
+            completed_terminal(),
             'basic-info',
         )
 
@@ -490,155 +403,3 @@ class FormChangeDecisionTests(SimpleTestCase):
         self.assertTrue(action['changes'][0]['change_id'].startswith('chg_'))
         self.assertEqual(action['changes'][0]['decision_status'], 'pending')
         message.save.assert_called_once_with(update_fields=['extracted_data'])
-
-
-class V2LifecycleViewTests(SimpleTestCase):
-    def setUp(self):
-        self.factory = APIRequestFactory()
-        self.user = SimpleNamespace(id=3, is_authenticated=True)
-        self.session = SimpleNamespace(id=12, status='in_progress')
-
-    def authenticated_post(self, path, body, **headers):
-        request = self.factory.post(path, body, format='json', **headers)
-        force_authenticate(request, user=self.user)
-        return request
-
-    def test_polling_message_uses_the_frozen_public_shape(self):
-        message = SimpleNamespace(
-            id=21,
-            role='assistant',
-            content='확인해주세요.',
-            extracted_data={'action': {}},
-            created_at=NOW,
-        )
-
-        self.assertEqual(serialize_v2_message(message), {
-            'id': 21,
-            'role': 'assistant',
-            'content': '확인해주세요.',
-            'extracted_data': {'action': {}},
-        })
-
-    @patch('consulting.v2_views.dispatch_v2_ai_request')
-    @patch('consulting.v2_views.build_v2_ai_payload')
-    @patch('consulting.v2_views.new_request_id', return_value='ai_req_test')
-    @patch('consulting.v2_views.Message.objects.create')
-    @patch('consulting.v2_views.RedisLifecycleStore')
-    @patch('consulting.v2_views.get_owned_session')
-    def test_message_endpoint_persists_processing_before_dispatch(
-        self,
-        get_session,
-        store_class,
-        create_message,
-        _new_request_id,
-        build_payload,
-        dispatch,
-    ):
-        get_session.return_value = self.session
-        store = store_class.return_value
-        store.get_idempotency.return_value = None
-        create_message.return_value = SimpleNamespace(id=20)
-        build_payload.return_value = {
-            'request_id': 'ai_req_test',
-            'thread_id': 'user-3-session-12',
-        }
-        events = []
-        store.save_active.side_effect = lambda _state: events.append('save_active')
-        dispatch.side_effect = lambda _payload: events.append('dispatch')
-        request = self.authenticated_post(
-            '/api/v2/consultations/12/messages/',
-            {
-                'contract_version': CONTRACT_VERSION,
-                'content': '월급은 세후 300만 원이에요.',
-                'step_id': 'basic-info',
-                'form_data': {},
-            },
-            HTTP_IDEMPOTENCY_KEY='idem-message',
-        )
-
-        response = V2MessageCreateView.as_view()(request, session_id=12)
-
-        self.assertEqual(response.status_code, 202)
-        self.assertEqual(response.data['data']['request_id'], 'ai_req_test')
-        store.save_active.assert_called_once()
-        dispatch.assert_called_once_with(build_payload.return_value)
-        self.assertEqual(events, ['save_active', 'dispatch'])
-        store.save_idempotency.assert_called_once()
-
-    @patch('consulting.v2_views.RedisLifecycleStore')
-    @patch('consulting.v2_views.get_owned_session')
-    def test_identical_message_replay_returns_saved_response(
-        self,
-        get_session,
-        store_class,
-    ):
-        get_session.return_value = self.session
-        body = {
-            'contract_version': CONTRACT_VERSION,
-            'content': '월급은 세후 300만 원이에요.',
-            'step_id': 'basic-info',
-            'form_data': {},
-        }
-        from .ai_lifecycle import canonical_digest
-
-        store_class.return_value.get_idempotency.return_value = {
-            'payload_digest': canonical_digest(body),
-            'status_code': 202,
-            'body': {
-                'contract_version': CONTRACT_VERSION,
-                'success': True,
-                'data': {'request_id': 'ai_req_test', 'status': 'processing'},
-            },
-        }
-        request = self.authenticated_post(
-            '/api/v2/consultations/12/messages/',
-            body,
-            HTTP_IDEMPOTENCY_KEY='idem-message',
-        )
-
-        response = V2MessageCreateView.as_view()(request, session_id=12)
-
-        self.assertEqual(response.status_code, 202)
-        self.assertEqual(response.data['data']['request_id'], 'ai_req_test')
-
-    @patch(
-        'consulting.v2_views.recover_terminal_state',
-        side_effect=lambda _request_id, **kwargs: kwargs['state'],
-    )
-    @patch(
-        'consulting.v2_views.finalize_expired_request',
-        side_effect=lambda state: state,
-    )
-    @patch('consulting.v2_views.RedisLifecycleStore')
-    @patch('consulting.v2_views.get_owned_session')
-    def test_polling_turns_overdue_processing_into_terminal_expired(
-        self,
-        get_session,
-        store_class,
-        _finalize_expired,
-        _recover_terminal,
-    ):
-        get_session.return_value = self.session
-        store = store_class.return_value
-        store.get_request.return_value = {
-            'request_id': 'ai_req_test',
-            'status': 'processing',
-            'session_id': 12,
-            'user_id': 3,
-            'processing_deadline_at': '2020-01-01T00:00:00Z',
-        }
-        request = self.factory.get(
-            '/api/v2/consultations/12/ai-responses/ai_req_test/'
-        )
-        force_authenticate(request, user=self.user)
-
-        response = V2PollingView.as_view()(
-            request,
-            session_id=12,
-            request_id='ai_req_test',
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['data']['status'], 'expired')
-        self.assertEqual(response.data['data']['error']['code'], 'AI_REQUEST_EXPIRED')
-        store.save_terminal.assert_called_once()

@@ -25,7 +25,14 @@ class AISSEV2ConsumerContractTests(unittest.TestCase):
         self.assertIn("Authorization", self.contract["required_service_headers"])
         self.assertEqual(self.contract["ai_endpoint"], "/v2/chat/stream")
 
-    def test_done_and_error_are_callback_compatible_terminal_payloads(self) -> None:
+    def test_all_frontend_conversation_flows_use_sse(self) -> None:
+        policy = self.contract["channel_policy"]
+        self.assertEqual(policy["general_chat"], "sse")
+        self.assertEqual(set(policy["elicit"].values()), {"sse"})
+        self.assertEqual(set(policy["error_review"].values()), {"sse"})
+        self.assertEqual(policy["frontend_polling_flows"], [])
+
+    def test_done_and_error_are_terminal_payloads(self) -> None:
         done = self.contract["ai_events"][-1]
         error = self.contract["error_event"]
         self.assertEqual(done["event"], "done")
@@ -34,6 +41,18 @@ class AISSEV2ConsumerContractTests(unittest.TestCase):
         self.assertEqual(error["data"]["status"], "failed")
         self.assertIn("completed_at", done["data"])
         self.assertIn("completed_at", error["data"])
+
+    def test_non_streaming_transports_are_disabled(self) -> None:
+        policy = self.contract["transport_policy"]
+        self.assertEqual(policy["browser_to_django"], "sse_only")
+        self.assertEqual(policy["django_to_ai"], "sse_only")
+        self.assertFalse(policy["non_streaming_accept"])
+        self.assertFalse(policy["polling_api"])
+        self.assertFalse(policy["http_callback"])
+        self.assertEqual(
+            self.contract["idempotency"]["same_key_completed"]["source"],
+            "terminal_receipt",
+        )
 
 
 if __name__ == "__main__":

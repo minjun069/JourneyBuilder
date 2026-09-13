@@ -34,6 +34,18 @@ def v2_request() -> ChatV2Request:
     )
 
 
+def error_review_request() -> ChatV2Request:
+    return ChatV2Request(
+        **{
+            **v2_request().model_dump(),
+            "step_id": "basic-info",
+            "request_mode": "error_review",
+            "review_trigger": "save",
+            "message": "현재 입력값을 검토해 주세요.",
+        }
+    )
+
+
 class FakeContextAPI:
     async def read_context(self, scope):
         return {}
@@ -86,9 +98,37 @@ class FailingV2Graph:
         raise RuntimeError("외부에 노출하면 안 되는 오류")
 
 
+class FakeErrorReviewGraph:
+    async def astream_events(self, input_data, *, config, version):
+        assert input_data["request_mode"] == "error_review"
+        assert input_data["review_trigger"] == "save"
+        yield {
+            "event": "on_chain_end",
+            "parent_ids": [],
+            "data": {
+                "output": {
+                    "output": {
+                        "response": "입력값에서 확인이 필요한 항목 1개를 찾았습니다.",
+                        "step_id": "basic-info",
+                        "action": None,
+                        "review": {
+                            "type": "error_review",
+                            "trigger": "save",
+                            "manual": {
+                                "document_id": "interface-basic-info",
+                                "version": "1.0.0",
+                            },
+                            "items": [],
+                        },
+                    }
+                }
+            },
+        }
+
+
 class V2SSEStreamTests(IsolatedAsyncioTestCase):
     @patch("main.get_callbacks", return_value=[])
-    async def test_stream_uses_v2_identity_and_callback_compatible_done(self, _callbacks):
+    async def test_stream_uses_v2_identity_and_terminal_done(self, _callbacks):
         frames = [
             parse_frame(frame)
             async for frame in _stream_v2_chat_events(
@@ -125,6 +165,23 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(terminal["status"], "failed")
         self.assertEqual(terminal["error"]["code"], "INTERNAL_ERROR")
         self.assertNotIn("외부에 노출하면 안 되는 오류", str(frames))
+
+    @patch("main.get_callbacks", return_value=[])
+    async def test_error_review_is_preserved_in_sse_done(self, _callbacks):
+        frames = [
+            parse_frame(frame)
+            async for frame in _stream_v2_chat_events(
+                FakeErrorReviewGraph(),
+                FakeContextAPI(),
+                error_review_request(),
+                fake_callback_masker(),
+            )
+        ]
+
+        self.assertEqual([name for name, _ in frames], ["start", "delta", "done"])
+        review = frames[-1][1]["output"]["review"]
+        self.assertEqual(review["type"], "error_review")
+        self.assertEqual(review["trigger"], "save")
 
 
 class V2SSEEndpointTests(IsolatedAsyncioTestCase):

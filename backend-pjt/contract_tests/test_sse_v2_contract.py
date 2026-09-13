@@ -38,6 +38,15 @@ class SSEV2ContractTests(unittest.TestCase):
         self.assertIn("Authorization", headers)
         self.assertIn("Idempotency-Key", headers)
 
+    def test_error_review_uses_sse_and_frontend_polling_is_empty(self) -> None:
+        policy = self.contract["channel_policy"]
+        self.assertEqual(policy["error_review"], {
+            "save": "sse",
+            "user_request": "sse",
+        })
+        self.assertEqual(policy["frontend_polling_flows"], [])
+        self.assertEqual(self.contract["timeouts_seconds"]["stream_read_idle"], 120)
+
 
 if __name__ == "__main__":
     unittest.main()

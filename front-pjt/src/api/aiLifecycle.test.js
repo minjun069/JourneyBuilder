@@ -3,28 +3,11 @@ import test from 'node:test'
 
 import {
   AILifecycleError,
-  abortableDelay,
   createIdempotencyKey,
   deriveV2BaseURL,
   lifecycleErrorFromResponse,
-  pollUntilTerminal,
-  terminalLifecycleError,
-  validateAcceptedEnvelope,
   validateDecisionEnvelope,
-  validatePollingEnvelope,
 } from './aiLifecycle.js'
-
-
-const accepted = {
-  contract_version: '2.0',
-  success: true,
-  data: {
-    user_message_id: 10,
-    request_id: 'ai_req_test',
-    status: 'processing',
-    processing_deadline_at: '2026-09-02T06:01:30Z',
-  },
-}
 
 test('v1 또는 gateway base URL을 frozen v2 경로로 바꾼다', () => {
   assert.equal(deriveV2BaseURL('/api/v1'), '/api/v2')
@@ -56,100 +39,7 @@ test('HTTP 개발 origin에서도 getRandomValues로 안전한 UUID를 만든다
   )
 })
 
-test('접수 응답은 v2 envelope와 processing 상태를 모두 검사한다', () => {
-  assert.deepEqual(validateAcceptedEnvelope(accepted), accepted.data)
-  assert.throws(
-    () => validateAcceptedEnvelope({ ...accepted, contract_version: '1.0' }),
-    AILifecycleError,
-  )
-  assert.throws(
-    () => validateAcceptedEnvelope({ ...accepted, data: { ...accepted.data, status: 'completed' } }),
-    AILifecycleError,
-  )
-})
-
-test('3초 간격 polling이 completed 메시지에서 멈춘다', async () => {
-  const delays = []
-  const states = [
-    accepted,
-    {
-      contract_version: '2.0',
-      success: true,
-      data: {
-        request_id: 'ai_req_test',
-        status: 'completed',
-        message: {
-          id: 11,
-          role: 'assistant',
-          content: '확인해주세요.',
-          extracted_data: null,
-        },
-      },
-    },
-  ]
-
-  const terminal = await pollUntilTerminal({
-    requestId: 'ai_req_test',
-    poll: async () => states.shift(),
-    delay: async (milliseconds) => delays.push(milliseconds),
-  })
-
-  assert.equal(terminal.status, 'completed')
-  assert.equal(terminal.message.id, 11)
-  assert.deepEqual(delays, [3_000, 3_000])
-})
-
-test('polling은 request_id 변경과 알 수 없는 상태를 거절한다', () => {
-  assert.throws(() => validatePollingEnvelope({
-    ...accepted,
-    data: { ...accepted.data, request_id: 'ai_req_other' },
-  }, 'ai_req_test'), AILifecycleError)
-
-  assert.throws(() => validatePollingEnvelope({
-    ...accepted,
-    data: { ...accepted.data, status: 'queued' },
-  }, 'ai_req_test'), AILifecycleError)
-})
-
-test('90초 동안 processing이면 retryable expired 오류가 된다', async () => {
-  let attempts = 0
-  await assert.rejects(
-    pollUntilTerminal({
-      requestId: 'ai_req_test',
-      poll: async () => {
-        attempts += 1
-        return accepted
-      },
-      delay: async () => {},
-    }),
-    (error) => {
-      assert.equal(error.code, 'AI_REQUEST_EXPIRED')
-      assert.equal(error.retryable, true)
-      return true
-    },
-  )
-  assert.equal(attempts, 30)
-})
-
-test('화면 이탈로 취소된 polling은 즉시 AbortError를 반환한다', async () => {
-  const controller = new AbortController()
-  controller.abort()
-  await assert.rejects(
-    abortableDelay(3_000, controller.signal),
-    (error) => error.name === 'AbortError',
-  )
-})
-
-test('failed terminal과 HTTP error envelope를 안전한 오류로 변환한다', () => {
-  const terminal = {
-    request_id: 'ai_req_test',
-    status: 'failed',
-    error: { code: 'LLM_TIMEOUT', message: '시간이 초과되었습니다.', retryable: true },
-  }
-  const terminalError = terminalLifecycleError(terminal)
-  assert.equal(terminalError.code, 'LLM_TIMEOUT')
-  assert.equal(terminalError.retryable, true)
-
+test('HTTP error envelope를 안전한 lifecycle 오류로 변환한다', () => {
   const responseError = lifecycleErrorFromResponse({
     response: {
       status: 409,

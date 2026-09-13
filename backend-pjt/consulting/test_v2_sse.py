@@ -49,7 +49,6 @@ def processing_state():
         'user_message_id': 41,
         'thread_id': 'user-3-session-12',
         'step_id': 'general',
-        'processing_deadline_at': '2026-09-08T00:01:30Z',
     }
 
 
@@ -93,7 +92,7 @@ class V2AIStreamClientTests(SimpleTestCase):
 
 
 class V2SSEProxyTests(SimpleTestCase):
-    @patch('consulting.v2_sse.finalize_terminal_callback')
+    @patch('consulting.v2_sse.finalize_terminal_result')
     @patch('consulting.v2_sse.stream_v2_ai_response')
     def test_done_saves_one_v2_message_and_terminal_state(self, upstream, finalize):
         upstream.return_value = async_items([
@@ -142,7 +141,7 @@ class V2SSEProxyTests(SimpleTestCase):
         self.assertEqual(saved['status'], 'completed')
         self.assertEqual(saved['assistant_message_id'], 99)
 
-    @patch('consulting.v2_sse.finalize_terminal_callback')
+    @patch('consulting.v2_sse.finalize_terminal_result')
     @patch('consulting.v2_sse.stream_v2_ai_response')
     def test_protocol_error_does_not_save_partial_message(self, upstream, finalize):
         upstream.return_value = async_items([
@@ -175,10 +174,10 @@ class V2MessageStreamViewTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
-    def request(self):
+    def request(self, body=None):
         request = self.factory.post(
             '/api/v2/consultations/12/messages/stream/',
-            browser_body(),
+            body or browser_body(),
             format='json',
             HTTP_ACCEPT='text/event-stream',
             HTTP_IDEMPOTENCY_KEY='idem-test',
@@ -222,6 +221,43 @@ class V2MessageStreamViewTests(SimpleTestCase):
         store.save_active.assert_called_once_with(processing_state())
         store.save_idempotency.assert_called_once()
 
+    @patch('consulting.v2_views.proxy_v2_ai_stream')
+    @patch('consulting.v2_views.make_processing_state', return_value=processing_state())
+    @patch('consulting.v2_views.build_v2_ai_payload', return_value=ai_payload())
+    @patch('consulting.v2_views.new_request_id', return_value='ai_req_v2_stream')
+    @patch('consulting.v2_views.Message.objects.create')
+    @patch('consulting.v2_views.RedisLifecycleStore')
+    @patch('consulting.v2_views.get_owned_session')
+    def test_error_review_uses_the_same_sse_endpoint_and_forwards_trigger(
+        self,
+        get_session,
+        store_class,
+        create_user_message,
+        _new_request_id,
+        build_payload,
+        _make_state,
+        proxy_stream,
+    ):
+        get_session.return_value = SimpleNamespace(id=12, status='in_progress')
+        create_user_message.return_value = SimpleNamespace(id=41, content='현재 입력값을 검토해 주세요.')
+        store_class.return_value.get_idempotency.return_value = None
+        proxy_stream.return_value = async_items([
+            'event: start\ndata: {"contract_version":"2.0","request_id":"ai_req_v2_stream"}\n\n'
+        ])
+        body = {
+            **browser_body(),
+            'content': '현재 입력값을 검토해 주세요.',
+            'request_mode': 'error_review',
+            'review_trigger': 'save',
+        }
+
+        response = V2MessageStreamView.as_view()(self.request(body), session_id=12)
+        b''.join(asyncio.run(collect_async(response.streaming_content)))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(build_payload.call_args.kwargs['request_mode'], 'error_review')
+        self.assertEqual(build_payload.call_args.kwargs['review_trigger'], 'save')
+
     @patch(
         'consulting.v2_views.recover_terminal_state',
         side_effect=lambda _request_id, **kwargs: kwargs['state'],
@@ -250,6 +286,56 @@ class V2MessageStreamViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['error']['code'], 'AI_STREAM_IN_PROGRESS')
         create_user_message.assert_not_called()
+
+    @patch(
+        'consulting.v2_views.recover_terminal_state',
+        return_value={
+            **processing_state(),
+            'status': 'completed',
+            'assistant_message_id': 99,
+            'completed_at': '2026-09-08T00:00:01Z',
+            'callback_digest': 'terminal-digest',
+        },
+    )
+    @patch('consulting.v2_views.Message.objects.filter')
+    @patch('consulting.v2_views.Message.objects.create')
+    @patch('consulting.v2_views.RedisLifecycleStore')
+    @patch('consulting.v2_views.get_owned_session')
+    def test_completed_idempotency_replays_receipt_after_redis_loss(
+        self,
+        get_session,
+        store_class,
+        create_user_message,
+        message_filter,
+        recover_terminal,
+    ):
+        session = SimpleNamespace(id=12, status='in_progress')
+        get_session.return_value = session
+        message_filter.return_value.first.return_value = SimpleNamespace(
+            id=99,
+            role='assistant',
+            content='복구된 완료 응답',
+            extracted_data={'action': None},
+        )
+        store = store_class.return_value
+        store.get_idempotency.return_value = {
+            'transport': 'sse',
+            'payload_digest': patch_digest(),
+            'request_id': 'ai_req_v2_stream',
+        }
+        store.get_request.return_value = None
+
+        response = V2MessageStreamView.as_view()(self.request(), session_id=12)
+        frames = [parse_frame(frame.decode()) for frame in asyncio.run(collect_async(
+            response.streaming_content
+        ))]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([event for event, _ in frames], ['start', 'done'])
+        self.assertEqual(frames[-1][1]['message']['id'], 99)
+        create_user_message.assert_not_called()
+        recover_terminal.assert_called_once()
+        store.save_terminal.assert_called_once()
 
 
 def patch_digest():

@@ -27,8 +27,8 @@ Browser
           → 승인된 LLM·Embedding provider
           → RAG index: 승인 금융 지식·인터페이스 가이드
           → MCP server: 검색·검증·결정론적 계산
-      ← AI callback: 답변·인용·변경 제안·실패
-  ← polling 또는 향후 합의된 event channel
+      ← v2 SSE: 일반 채팅·Elicit·Error Review의 답변·인용·변경 제안 또는 실패
+  ← 모든 대화형 AI 응답은 v2 SSE
 ```
 
 Browser는 AI·MCP를 직접 호출하지 않는다. AI는 Django 업무 DB를 직접 수정하지 않으며 사용자 승인 전 변경은 제안 상태로 유지한다.
@@ -54,7 +54,7 @@ Frontend 개발 서버의 Compose 포함 여부와 개발용 host port override�
 - AI FastAPI는 Django가 전달한 snapshot과 AI 전용 checkpoint·RAG·MCP에 의존한다.
 - MCP 도구는 Agent별 allowlist와 최소 권한을 따르고 Browser에 노출되지 않는다.
 - 6-Agent는 공통 상태·라우터·평가·보안 기반을 공유한다. 세부 역할은 [`AI 시스템 명세`](../ai/specification.md)를 따른다.
-- callback과 도구 결과를 포함한 모든 경계 입력은 schema·인증·권한을 다시 검증한다.
+- SSE terminal과 도구 결과를 포함한 모든 경계 입력은 schema·인증·권한을 다시 검증한다.
 
 ## 5. 데이터 소유권
 
@@ -65,7 +65,7 @@ Frontend 개발 서버의 Compose 포함 여부와 개발용 host port override�
 ## 6. 비기능 설계
 
 - 보안·개인정보·Zero Trust 핵심 통제는 [`AI 보안 정책 v0.1`](../security/ai-security-policy.md)을 따른다.
-- Django·AI·MCP·LLM 장애를 분리하고 실패 callback·timeout·제한 재시도로 복구한다.
+- Django·AI·MCP·LLM 장애를 분리하고 SSE terminal error·timeout·제한 재시도로 복구한다.
 - request·thread·trace ID를 가명화해 경계 간 요청을 연결하고 토큰·비용·지연·도구·검색·승인을 관측한다.
 - 모델·프롬프트·인덱스·도구 버전을 독립적으로 rollback할 수 있어야 한다.
 - 목표 SLO는 1차 baseline 뒤 문서와 검증 게이트에 확정한다.

@@ -135,21 +135,12 @@ class Settings:
             active_environ,
         )
 
-        self.backend_url = active_environ.get(
-            "BACKEND_URL", "http://localhost:8080"
-        ).strip()
         self.ai_service_bearer_token = active_environ.get(
             "AI_SERVICE_BEARER_TOKEN", ""
-        ).strip()
-        self.ai_callback_secret = active_environ.get(
-            "AI_CALLBACK_SECRET", ""
         ).strip()
         self.masking_pseudonym_key = active_environ.get(
             "AI_MASKING_PSEUDONYM_KEY", ""
         ).strip()
-        self.callback_timeout_seconds = float(
-            active_environ.get("AI_CALLBACK_TIMEOUT_SECONDS", "5")
-        )
 
         # 기본값을 두어 compose 에 필수 env 를 늘리지 않는다. 필수 변수를 추가하면
         # 서버 app.env 드리프트로 deploy 잡이 사전 점검에서 막힌다.

@@ -30,8 +30,8 @@ export const P07_SCENARIOS = freeze([
     stepId: 'basic-info',
     source: {
       fixtureName: 'lifecycle',
-      caseName: 'polling_completed_proposal',
-      actionPath: 'response.body.data.message.extracted_data.action',
+      caseName: 'terminal_completed_proposal',
+      actionPath: 'browser_event.data.message.extracted_data.action',
     },
     prompt: '월급은 세후 300만 원이고 직업은 직장인으로 정리해 주세요.',
     initial: {

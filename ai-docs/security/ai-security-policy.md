@@ -24,7 +24,7 @@
 
 ## 3. 기본 원칙
 
-1. **명시적 검증**: 내부 네트워크, callback, RAG 문서, Function tool 입력·응답도 신뢰하지 않는다.
+1. **명시적 검증**: 내부 네트워크, SSE terminal, RAG 문서, Function tool 입력·응답도 신뢰하지 않는다.
 2. **최소 권한**: Agent와 도구는 현재 과업에 필요한 데이터·기능만 접근한다.
 3. **데이터 최소화**: 전체 고객 snapshot 대신 Agent별 allowlist를 사용한다.
 4. **기본 거부**: 알 수 없는 단계·필드·도구·권한·출처는 거부하거나 fallback 처리한다.
@@ -35,11 +35,11 @@
 ## 4. 서비스·API 통제
 
 - Browser는 AI 서버와 MCP 서버를 직접 호출하지 않고 Django를 경유하며 Function tool은 AI 프로세스 내부에서만 실행한다.
-- Django→AI와 AI→Django callback은 같은 `AI_SERVICE_BEARER_TOKEN`을 `Authorization: Bearer`로 검증한다.
+- Django→AI SSE는 `AI_SERVICE_BEARER_TOKEN`을 `Authorization: Bearer`로 검증한다.
 - shared bearer token은 빈 값이나 선택적 bypass를 허용하지 않고 TLS 안에서만 전송하며 사용자 JWT와 분리한다.
 - token 하나가 양방향 권한을 가지므로 유출 시 두 서비스를 함께 차단·회전하고, 회전 전에는 신규 접수를 중지한 뒤 기존 processing 작업을 drain한다.
-- `request_id`는 추측하기 어렵고 callback의 idempotency 키로 사용한다.
-- callback은 request·session·thread의 결합을 확인하고 완료된 요청의 중복 부작용을 막는다.
+- `request_id`는 추측하기 어렵고 SSE terminal의 idempotency 키로 사용한다.
+- terminal receipt는 request·session·thread의 결합을 확인하고 완료된 요청의 중복 부작용을 막는다.
 - proposal 승인·거절은 action 안의 change별로 기록하고 같은 결정의 재전송만 idempotent하게 허용한다.
 - 사용자 JWT를 AI payload나 모델이 생성하는 Function tool 인자에 전달하지 않는다.
 - AI·MCP·DB 계정은 분리하고 필요한 테이블·도구 권한만 부여하며, tool adapter에는 현재 request에 필요한 snapshot과 기능만 제공한다.
@@ -51,7 +51,7 @@
 - 사용자 또는 문서가 시스템 지시를 무시하거나 비밀·다른 사용자 데이터를 요구해도 따르지 않는다.
 - 대화 이력은 같은 `thread_id`에 한해 복원하고 사용자·세션 소유권을 Django에서 확인한다.
 - 입력 길이, 허용 자료형, 파일·URL 정책을 검증한다.
-- 출력은 구조화 스키마, 금지 표현, 인용, 민감정보 노출을 검사한 뒤 callback한다.
+- 출력은 구조화 스키마, 금지 표현, 인용, 민감정보 노출을 검사한 뒤 SSE terminal로 반환한다.
 
 ## 6. RAG 통제
 
@@ -69,7 +69,7 @@
 - 쓰기·외부 전송·금융 데이터 변경 도구는 별도 승인과 감사가 없으면 제공하지 않는다.
 - 도구 timeout·오류·부분 실패를 모델 입력과 사용자 응답에 명시적으로 전달한다.
 - 모든 도구 호출은 가명화된 요청자, 도구·버전, 인자 분류, 결과 상태, 승인 여부를 기록한다.
-- raw argument와 금융 결과값은 기본 감사 event에 남기지 않으며 모든 Agent 출력은 callback 전 결정론적 후검증을 통과한다.
+- raw argument와 금융 결과값은 기본 감사 event에 남기지 않으며 모든 Agent 출력은 SSE terminal 전 결정론적 후검증을 통과한다.
 
 ## 8. 가명처리·관측
 
@@ -88,7 +88,7 @@
 - RAG 문서의 간접 프롬프트 인젝션
 - 도구명·인자·권한 조작
 - 미승인 폼 변경과 승인 우회
-- callback 위조·재전송·request/session 바꿔치기
+- SSE terminal 위조·재생·request/session 바꿔치기
 - 과도한 토큰·무한 재시도·대량 도구 호출
 - 금융 수익 보장·과도한 확정 표현 유도
 - 역할극·인코딩·다국어를 이용한 가드레일 우회

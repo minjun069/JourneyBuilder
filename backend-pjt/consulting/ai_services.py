@@ -1,8 +1,5 @@
-import json
 import uuid
 
-from django.conf import settings
-from django.core.serializers.json import DjangoJSONEncoder
 from django.db import transaction
 
 from .models import (
@@ -25,13 +22,7 @@ from .serializers import (
     PensionAssetSerializer,
     RealEstateAssetSerializer,
 )
-from .field_registry import get_step_field_registry
 from .form_actions import normalize_form_action
-
-
-AI_STATUS_PROCESSING = 'processing'
-AI_STATUS_COMPLETED = 'completed'
-AI_STATUS_FAILED = 'failed'
 
 
 ONE_TO_ONE_SECTIONS = {
@@ -68,54 +59,6 @@ def build_thread_id(user, session):
     return f'user-{user.id}-session-{session.id}'
 
 
-def redis_key(request_id):
-    return f'ai:request:{request_id}'
-
-
-def redis_thread_key(thread_id):
-    return f'ai:thread:{thread_id}'
-
-
-def get_redis_client():
-    try:
-        import redis
-    except ImportError as exc:
-        raise RuntimeError('redis 패키지가 설치되어 있지 않습니다.') from exc
-
-    return redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
-
-
-def save_ai_request_state(request_id, payload):
-    client = get_redis_client()
-    client.setex(
-        redis_key(request_id),
-        settings.AI_REQUEST_TTL_SECONDS,
-        json.dumps(payload, ensure_ascii=False, cls=DjangoJSONEncoder),
-    )
-    if payload.get('thread_id'):
-        client.setex(
-            redis_thread_key(payload['thread_id']),
-            settings.AI_REQUEST_TTL_SECONDS,
-            request_id,
-        )
-
-
-def get_ai_request_state(request_id):
-    client = get_redis_client()
-    raw = client.get(redis_key(request_id))
-    if not raw:
-        return None
-    return json.loads(raw)
-
-
-def get_ai_request_state_by_thread_id(thread_id):
-    client = get_redis_client()
-    request_id = client.get(redis_thread_key(thread_id))
-    if not request_id:
-        return None
-    return get_ai_request_state(request_id)
-
-
 def serialize_one_to_one(session, attr_name, serializer_class):
     try:
         obj = getattr(session, attr_name)
@@ -150,71 +93,6 @@ def build_customer_info(session, form_data=None):
         },
         'current_form': form_data or {},
     }
-
-
-def build_ai_request_payload(request_id, session, user, message, step_id, form_data=None):
-    return {
-        'request_id': request_id,
-        'session_id': session.id,
-        'thread_id': build_thread_id(user, session),
-        'step_id': step_id,
-        'message': message,
-        'customer_info': build_customer_info(session, form_data),
-        'field_registry': get_step_field_registry(step_id),
-        'callback_url': settings.AI_CALLBACK_URL,
-    }
-
-
-def dispatch_ai_request(payload):
-    try:
-        import httpx
-    except ImportError as exc:
-        raise RuntimeError('httpx 패키지가 설치되어 있지 않습니다.') from exc
-
-    headers = {}
-    if settings.AI_CALLBACK_SECRET:
-        headers['X-Internal-Secret'] = settings.AI_CALLBACK_SECRET
-
-    response = httpx.post(
-        settings.AI_SERVICE_URL,
-        json=payload,
-        headers=headers,
-        timeout=settings.AI_SERVICE_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-
-
-async def stream_ai_response(payload):
-    try:
-        import httpx
-    except ImportError as exc:
-        raise RuntimeError('httpx 패키지가 설치되어 있지 않습니다.') from exc
-
-    headers = {'Accept': 'text/event-stream'}
-    if settings.AI_CALLBACK_SECRET:
-        headers['X-Internal-Secret'] = settings.AI_CALLBACK_SECRET
-
-    stream_payload = {
-        key: value
-        for key, value in payload.items()
-        if key != 'callback_url'
-    }
-    timeout = httpx.Timeout(
-        connect=settings.AI_SERVICE_TIMEOUT_SECONDS,
-        read=settings.AI_STREAM_READ_TIMEOUT_SECONDS,
-        write=settings.AI_SERVICE_TIMEOUT_SECONDS,
-        pool=settings.AI_SERVICE_TIMEOUT_SECONDS,
-    )
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream(
-            'POST',
-            settings.AI_SERVICE_STREAM_URL,
-            json=stream_payload,
-            headers=headers,
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                yield line
 
 
 def normalize_pending_changes(update, default_section=None):
@@ -288,13 +166,10 @@ def apply_pending_changes(session, message):
     return applied
 
 
-def create_assistant_message_from_callback(session, payload, step_id=None):
+def create_assistant_message_from_terminal(session, payload, step_id):
     output = payload.get('output') or {}
     content = payload.get('content') or output.get('response') or ''
     extracted_data = payload.get('extracted_data')
-    if step_id is None:
-        request_state = get_ai_request_state(payload.get('request_id')) or {}
-        step_id = request_state.get('step_id') or output.get('step_id')
     form_action = normalize_form_action(output, step_id) if step_id else None
 
     if form_action:

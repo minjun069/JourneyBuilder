@@ -7,7 +7,7 @@
   "lifecycle_fixture": "contract-fixtures/ai-lifecycle/v2/lifecycle.json",
   "required_case_groups": [
     "service_bearer",
-    "callback_integrity",
+    "terminal_integrity",
     "replay_idempotency",
     "request_ownership",
     "task_identity",
@@ -22,9 +22,9 @@
       "id": "F12-AUTH-001",
       "title": "AI 요청의 service bearer 누락을 schema 검증 전에 차단",
       "group": "service_bearer",
-      "boundary": "ai_http_auth",
+      "boundary": "ai_sse_auth",
       "downstream_owner": "F12-T02",
-      "source_fixture_case": "service_unauthorized",
+      "source_fixture_case": "service_stream_unauthorized",
       "input": {"authorization": null, "body": {}},
       "expected": {
         "decision": "block",
@@ -36,9 +36,9 @@
     },
     {
       "id": "F12-AUTH-002",
-      "title": "Django callback의 잘못된 service bearer 차단",
+      "title": "AI SSE 요청의 잘못된 service bearer 차단",
       "group": "service_bearer",
-      "boundary": "django_callback_auth",
+      "boundary": "ai_sse_auth",
       "downstream_owner": "F12-T02",
       "input": {
         "authorization": "Bearer <INVALID_SERVICE_TOKEN>",
@@ -54,17 +54,17 @@
     },
     {
       "id": "F12-AUTH-003",
-      "title": "정확한 service bearer의 정상 AI 요청 허용",
+      "title": "정확한 service bearer의 정상 AI SSE 요청 허용",
       "group": "service_bearer",
-      "boundary": "ai_http_auth",
+      "boundary": "ai_sse_auth",
       "downstream_owner": "F12-T02",
-      "source_fixture_case": "django_ai_accepted",
+      "source_fixture_case": "django_ai_stream",
       "input": {"authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
       "expected": {
         "decision": "allow",
-        "reason_code": "REQUEST_ACCEPTED",
-        "http_status": 202,
-        "required_effects": ["validate_request_schema", "claim_request"],
+        "reason_code": "SSE_STREAM_ACCEPTED",
+        "http_status": 200,
+        "required_effects": ["validate_request_schema", "open_sse_stream"],
         "forbidden_effects": ["bypass_request_contract"]
       }
     },
@@ -74,7 +74,7 @@
       "group": "request_ownership",
       "boundary": "browser_session",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "browser_foreign_session_hidden",
+      "source_fixture_case": "browser_stream_foreign_session_hidden",
       "input": {
         "authenticated_user": "F12-SYNTHETIC-USER-A",
         "session_owner": "F12-SYNTHETIC-USER-B"
@@ -89,9 +89,9 @@
     },
     {
       "id": "F12-OWN-002",
-      "title": "callback state 사용자와 실제 session 소유자 불일치 차단",
+      "title": "terminal state 사용자와 실제 session 소유자 불일치 차단",
       "group": "request_ownership",
-      "boundary": "django_callback",
+      "boundary": "django_terminal_receipt",
       "downstream_owner": "F12-T03",
       "input": {
         "request_id": "F12-SYNTHETIC-REQUEST-OWN-002",
@@ -102,23 +102,23 @@
       },
       "expected": {
         "decision": "block",
-        "reason_code": "CALLBACK_BINDING_MISMATCH",
+        "reason_code": "TERMINAL_BINDING_MISMATCH",
         "http_status": 409,
-        "required_effects": ["preserve_request_state", "audit_callback_denial"],
+        "required_effects": ["preserve_request_state", "audit_terminal_denial"],
         "forbidden_effects": ["create_assistant_message", "save_terminal_state", "cross_user_state_change"]
       }
     },
     {
       "id": "F12-CBK-001",
-      "title": "인증되고 식별자 결합이 맞는 최초 callback 허용",
-      "group": "callback_integrity",
-      "boundary": "django_callback",
+      "title": "식별자 결합이 맞는 최초 SSE terminal 결과 허용",
+      "group": "terminal_integrity",
+      "boundary": "django_terminal_receipt",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "callback_completed_proposal",
+      "source_fixture_case": "terminal_completed_proposal",
       "input": {"binding": "request_id+session_id+thread_id"},
       "expected": {
         "decision": "allow",
-        "reason_code": "CALLBACK_ACCEPTED",
+        "reason_code": "TERMINAL_ACCEPTED",
         "http_status": 200,
         "required_effects": ["record_terminal_result", "create_one_assistant_message"],
         "forbidden_effects": ["create_duplicate_message", "change_foreign_session"]
@@ -126,31 +126,31 @@
     },
     {
       "id": "F12-CBK-002",
-      "title": "request에 결합되지 않은 session과 thread callback 차단",
-      "group": "callback_integrity",
-      "boundary": "django_callback",
+      "title": "request에 결합되지 않은 session과 thread terminal 차단",
+      "group": "terminal_integrity",
+      "boundary": "django_terminal_receipt",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "callback_binding_mismatch",
+      "source_fixture_case": "terminal_binding_mismatch",
       "input": {"mutation": ["session_id", "thread_id"]},
       "expected": {
         "decision": "block",
-        "reason_code": "CALLBACK_BINDING_MISMATCH",
+        "reason_code": "TERMINAL_BINDING_MISMATCH",
         "http_status": 409,
-        "required_effects": ["preserve_request_state", "audit_callback_denial"],
+        "required_effects": ["preserve_request_state", "audit_terminal_denial"],
         "forbidden_effects": ["create_assistant_message", "save_terminal_state", "cross_session_state_change"]
       }
     },
     {
       "id": "F12-CBK-003",
-      "title": "expired request에 도착한 terminal callback 차단",
-      "group": "callback_integrity",
-      "boundary": "django_callback",
+      "title": "expired request의 terminal 결과 확정 차단",
+      "group": "terminal_integrity",
+      "boundary": "django_terminal_receipt",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "expired_callback_conflict",
-      "input": {"stored_status": "expired", "callback_status": "completed"},
+      "source_fixture_case": "terminal_conflict",
+      "input": {"stored_status": "expired", "terminal_status": "completed"},
       "expected": {
         "decision": "block",
-        "reason_code": "CALLBACK_CONFLICT",
+        "reason_code": "TERMINAL_CONFLICT",
         "http_status": 409,
         "required_effects": ["preserve_expired_state"],
         "forbidden_effects": ["create_assistant_message", "flip_terminal_state", "overwrite_terminal_payload"]
@@ -158,31 +158,31 @@
     },
     {
       "id": "F12-RPL-001",
-      "title": "동일 AI request ID와 digest 재접수 시 graph 비재실행",
+      "title": "동일 Browser idempotency key 완료 재요청 시 graph 비재실행",
       "group": "replay_idempotency",
-      "boundary": "ai_request_checkpoint",
+      "boundary": "browser_sse",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "django_ai_identical_replay",
+      "source_fixture_case": "browser_stream_same_key_completed",
       "input": {"request_id": "F12-SYNTHETIC-REQUEST-RPL-001", "digest_relation": "same"},
       "expected": {
         "decision": "allow",
-        "reason_code": "REQUEST_REPLAY_IDEMPOTENT",
-        "http_status": 202,
-        "required_effects": ["return_existing_acceptance", "no_graph_reexecution", "no_duplicate_side_effect"],
+        "reason_code": "SSE_RESULT_REPLAYED",
+        "http_status": 200,
+        "required_effects": ["replay_terminal_receipt", "no_graph_reexecution", "no_duplicate_side_effect"],
         "forbidden_effects": ["schedule_graph", "invoke_agent", "invoke_tool"]
       }
     },
     {
       "id": "F12-RPL-002",
-      "title": "같은 AI request ID의 다른 payload digest 충돌",
+      "title": "같은 Browser idempotency key의 다른 payload digest 충돌",
       "group": "replay_idempotency",
-      "boundary": "ai_request_checkpoint",
+      "boundary": "browser_sse",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "django_ai_request_id_conflict",
+      "source_fixture_case": "browser_stream_idempotency_conflict",
       "input": {"request_id": "F12-SYNTHETIC-REQUEST-RPL-002", "digest_relation": "different"},
       "expected": {
         "decision": "block",
-        "reason_code": "REQUEST_ID_CONFLICT",
+        "reason_code": "IDEMPOTENCY_CONFLICT",
         "http_status": 409,
         "required_effects": ["preserve_original_request"],
         "forbidden_effects": ["schedule_graph", "overwrite_request", "invoke_tool"]
@@ -190,15 +190,15 @@
     },
     {
       "id": "F12-RPL-003",
-      "title": "동일 terminal callback digest 재전송 멱등 허용",
+      "title": "동일 SSE terminal digest 재확정 멱등 허용",
       "group": "replay_idempotency",
-      "boundary": "django_callback",
+      "boundary": "django_terminal_receipt",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "callback_identical_replay",
+      "source_fixture_case": "terminal_identical_replay",
       "input": {"digest_relation": "same", "terminal_exists": true},
       "expected": {
         "decision": "allow",
-        "reason_code": "CALLBACK_REPLAY_IDEMPOTENT",
+        "reason_code": "TERMINAL_REPLAY_IDEMPOTENT",
         "http_status": 200,
         "required_effects": ["return_existing_result", "no_duplicate_side_effect"],
         "forbidden_effects": ["create_duplicate_message", "create_duplicate_action", "flip_terminal_state"]
@@ -206,15 +206,15 @@
     },
     {
       "id": "F12-RPL-004",
-      "title": "terminal callback의 다른 digest 재전송 충돌",
+      "title": "terminal 결과의 다른 digest 재확정 충돌",
       "group": "replay_idempotency",
-      "boundary": "django_callback",
+      "boundary": "django_terminal_receipt",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "callback_conflict",
+      "source_fixture_case": "terminal_conflict",
       "input": {"digest_relation": "different", "terminal_exists": true},
       "expected": {
         "decision": "block",
-        "reason_code": "CALLBACK_CONFLICT",
+        "reason_code": "TERMINAL_CONFLICT",
         "http_status": 409,
         "required_effects": ["preserve_terminal_state"],
         "forbidden_effects": ["create_duplicate_message", "flip_terminal_state", "overwrite_terminal_payload"]
@@ -222,15 +222,15 @@
     },
     {
       "id": "F12-RPL-005",
-      "title": "callback HTTP 재시도는 확정 payload만 재전송",
+      "title": "SSE 완료 재요청은 receipt의 확정 payload만 재생",
       "group": "replay_idempotency",
-      "boundary": "ai_callback_delivery",
+      "boundary": "browser_sse",
       "downstream_owner": "F12-T03",
-      "source_fixture_case": "callback_delivery_timeout_exhausted",
-      "input": {"attempts": 4, "retryable_transport_failure": true},
+      "source_fixture_case": "browser_stream_same_key_completed",
+      "input": {"redis_state_missing": true, "terminal_receipt_exists": true},
       "expected": {
         "decision": "allow",
-        "reason_code": "CALLBACK_DELIVERY_RETRY",
+        "reason_code": "TERMINAL_RECEIPT_REPLAY",
         "required_effects": ["reuse_terminal_payload", "no_graph_reexecution", "preserve_request_ids"],
         "forbidden_effects": ["invoke_planner", "invoke_agent", "invoke_tool", "regenerate_form_action"]
       }

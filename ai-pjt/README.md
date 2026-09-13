@@ -8,7 +8,7 @@
 - Container port: 8001
 - Application command: `uvicorn main:app --host 0.0.0.0 --port 8001`
 - Required runtime dependency: PostgreSQL
-- Optional external dependencies: LLM provider, Backend callback
+- Optional external dependency: LLM provider
 
 Langfuse·LangSmith의 model callback tracing은 typed masking 경계를 우회하므로
 활성화하지 않는다. `LANGFUSE_ENABLED`나 자동 LangSmith tracing 환경변수가 켜져
@@ -16,9 +16,9 @@ Langfuse·LangSmith의 model callback tracing은 typed masking 경계를 우회�
 
 `requirements.txt`는 직접 의존성의 호환 범위를 사람이 관리한다. `requirements.lock`은 Python 3.13/Linux에서 해석한 직접·전이 의존성 전체와 배포 파일 hash를 고정하며 Docker와 CI가 설치한다.
 
-FastAPI는 현재 transport 구현의 기준선인 0.115 minor 범위에 유지한다. F04-T01이
-request·callback 계약을 변경하면서 framework 범위를 올릴 경우 `/health`, request
-validation, background callback 회귀검사를 먼저 통과시킨 뒤 lock을 함께 갱신한다.
+FastAPI는 현재 transport 구현의 기준선인 0.115 minor 범위에 유지한다. framework
+범위를 올릴 경우 `/health`, SSE request validation과 terminal 회귀검사를 먼저
+통과시킨 뒤 lock을 함께 갱신한다.
 `--exclude-newer` 날짜는 의도적으로 의존성 기준 시점을 올릴 때만 변경한다.
 
 lock을 갱신할 때는 저장소 루트에서 다음 명령을 실행하고 unit test와 clean image build를 다시 수행한다.
@@ -42,8 +42,7 @@ uv pip compile \
 | 필수 | `DATABASE_URL` | AI startup과 readiness가 사용하는 PostgreSQL DSN |
 | 조건부 필수 | `GOOGLE_API_KEY` | `LLM_PROVIDER=gemini`일 때 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
-| startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/v2/chat[/stream]` request와 Backend callback에 같은 bearer로 사용 |
-| legacy 설정 호환 | `AI_CALLBACK_SECRET` | 읽기만 하며 endpoint에서는 사용하지 않음. 구형 `/chat[/stream]`은 body·header와 무관하게 항상 410 반환 |
+| startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/v2/chat/stream` request bearer로 사용 |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
 | 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.30 |
 | 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM`, `LANGFUSE_*` | retired 인덱스 30일 보관, embedding 차원, 관측 조정값 |
@@ -78,7 +77,7 @@ docker run --rm \
 
 성공하면 `ready`를 출력하고 exit 0, 실패하면 예외 종류만 출력하고 exit 1을 반환한다. DSN·credential·원격 URL이 오류 출력에 포함되지 않도록 예외 메시지는 출력하지 않는다. Dockerfile의 `HEALTHCHECK`가 이 exit code를 `healthy` 또는 `unhealthy`로 변환한다.
 
-실제 LLM 호출, Backend callback, Redis, Langfuse는 readiness에서 제외한다. 이들을 포함하면 외부 장애·rate limit·비용 때문에 정상 AI process까지 연쇄적으로 traffic에서 제외될 수 있다. provider와 callback 상태는 별도 smoke test와 운영 지표로 확인한다.
+실제 LLM 호출, Redis, Langfuse는 readiness에서 제외한다. 이들을 포함하면 외부 장애·rate limit·비용 때문에 정상 AI process까지 연쇄적으로 traffic에서 제외될 수 있다. provider와 SSE 상태는 별도 smoke test와 운영 지표로 확인한다.
 
 readiness unit test:
 
@@ -111,13 +110,13 @@ G1은 `DATABASE_URL`, provider credential과 `AI_SERVICE_BEARER_TOKEN`을 startu
 실패 폐쇄형으로 검증한다. 후속 transport 구현은 이 readiness 경계를 유지하고 다음
 항목을 자동 검사해야 한다.
 
-1. `AI_SERVICE_BEARER_TOKEN`은 request와 callback 양방향 인증에 같은 rotation 가능한 secret으로 연결돼 있다.
-2. legacy `/chat[/stream]`은 410으로 종료됐다. 남은 v1 내부 helper를 제거할 때 `AI_CALLBACK_SECRET` 환경 예시도 함께 제거한다.
-3. startup/config 오류와 callback 로그에 API key, bearer token, 전체 DSN을 남기지 않는다.
+1. `AI_SERVICE_BEARER_TOKEN`은 `/v2/chat/stream` 인증에 연결된 rotation 가능한 secret이다.
+2. 비스트리밍 `/v2/chat`, 구형 `/chat[/stream]`, HTTP callback 전송과 관련 환경변수는 제거됐다.
+3. startup/config 오류와 SSE 로그에 API key, bearer token, 전체 DSN을 남기지 않는다.
 4. `/ready` endpoint를 application에 추가한다면 `readiness.py`와 PostgreSQL 판정이 서로 달라지지 않게 하나를 공통 경계로 만들고 Docker healthcheck도 그 경계를 사용한다.
-5. 실제 LLM·Backend·Redis·Langfuse 호출을 readiness에 추가하지 않는다. 별도 provider/callback smoke test와 운영 관측으로 검증한다.
+5. 실제 LLM·Redis·Langfuse 호출을 readiness에 추가하지 않는다. 별도 provider/SSE smoke test와 운영 관측으로 검증한다.
 
-후속 검증에는 인증 없는 request·callback 거부, DSN/token 마스킹, PostgreSQL 정상·장애,
+후속 검증에는 인증 없는 SSE request 거부, 제거된 route의 404, DSN/token 마스킹, PostgreSQL 정상·장애,
 liveness 정상인데 PostgreSQL이 실패하는 경우를 포함한다. readiness 구현 변경 시
 `tests/test_readiness.py`도 같은 변경에서 갱신한다.
 
@@ -136,4 +135,4 @@ liveness 정상인데 PostgreSQL이 실패하는 경우를 포함한다. readine
 이 P01 결과는 AI image와 PostgreSQL에 한정된 역사적 기록이다. G1에서 실제 Compose
 service name·credential·dependency condition을 사용한 AI·Backend·Redis·PostgreSQL
 전체 clean start와 장애 복구·종료를 다시 검증했다. 실제 LLM provider 호출과 Backend
-callback은 후속 transport 구현 뒤 별도 smoke test가 필요하다.
+SSE 연결은 별도 smoke test가 필요하다.

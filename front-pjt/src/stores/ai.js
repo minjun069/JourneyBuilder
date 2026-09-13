@@ -4,7 +4,6 @@ import {
   getSessions, createSession,
   getMessages, streamMessagesV2,
   approveAiAction, rejectAiAction,
-  postAsyncMessage, getAsyncMessage,
   approveAsyncChange, rejectAsyncChange,
   getBasicInfo,
   putBasicInfo, putFinancialMindset, putFinancialSatisfaction,
@@ -20,9 +19,6 @@ import {
 import {
   createIdempotencyKey,
   lifecycleErrorFromResponse,
-  pollUntilTerminal,
-  terminalLifecycleError,
-  validateAcceptedEnvelope,
   validateDecisionEnvelope,
 } from '@/api/aiLifecycle'
 import { getReports } from '@/api/reports'
@@ -77,62 +73,7 @@ export const useAiStore = defineStore('ai', () => {
     chatMessages.value = res.data
   }
 
-  // frozen v2 기본 경로: 접수 후 3초 간격으로 최대 90초 polling
-  async function sendMessage(content, {
-    stepId,
-    form = null,
-    requestMode = 'chat',
-    reviewTrigger = null,
-    elicitAction = null,
-  } = {}) {
-    if (!sessionId.value) return null
-    cancelActiveStream()
-    const controller = new AbortController()
-    activeStreamController = controller
-
-    try {
-      const response = await postAsyncMessage(
-        sessionId.value,
-        {
-          content,
-          step_id: stepId,
-          form_data: mapCurrentForm(stepId, form ?? {}),
-          request_mode: requestMode,
-          ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
-          ...(elicitAction ? { elicit_action: elicitAction } : {}),
-        },
-        {
-          idempotencyKey: createIdempotencyKey(),
-          signal: controller.signal,
-        },
-      )
-      const accepted = validateAcceptedEnvelope(response.data)
-      requestId.value = accepted.request_id
-      const terminal = await pollUntilTerminal({
-        requestId: accepted.request_id,
-        signal: controller.signal,
-        poll: async (currentRequestId, options) => {
-          const pollingResponse = await getAsyncMessage(
-            sessionId.value,
-            currentRequestId,
-            options,
-          )
-          return pollingResponse.data
-        },
-      })
-      if (terminal.status !== 'completed') throw terminalLifecycleError(terminal)
-      return terminal.message
-    } catch (requestError) {
-      throw lifecycleErrorFromResponse(
-        requestError,
-        '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',
-      )
-    } finally {
-      if (activeStreamController === controller) activeStreamController = null
-    }
-  }
-
-  // 일반 AI 상담 기본 경로: v2 인증·멱등성 계약을 유지하며 SSE로 수신한다.
+  // Browser의 모든 대화형 AI 요청은 v2 인증·멱등성 계약을 유지하며 SSE로 수신한다.
   async function* streamMessageV2(content, {
     stepId,
     form = null,
@@ -170,13 +111,27 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
-  function reviewForm(stepId, form, trigger = 'user_request') {
-    return sendMessage('현재 입력값을 검토해 주세요.', {
-      stepId,
-      form,
-      requestMode: 'error_review',
-      reviewTrigger: trigger,
-    })
+  async function reviewForm(stepId, form, trigger = 'user_request') {
+    for await (const { event, data } of streamMessageV2(
+      '현재 입력값을 검토해 주세요.',
+      {
+        stepId,
+        form,
+        requestMode: 'error_review',
+        reviewTrigger: trigger,
+      },
+    )) {
+      // Error Review는 구조화된 최종 결과만 화면에 반영한다.
+      if (event === 'start' || event === 'delta') continue
+      if (event === 'done') return data.message
+      if (event === 'error') {
+        const reviewError = new Error(data.error.message)
+        reviewError.code = data.error.code
+        reviewError.retryable = data.error.retryable
+        throw reviewError
+      }
+    }
+    throw new Error('AI 검토 스트림이 완료 이벤트 없이 종료되었습니다.')
   }
 
   function cancelActiveStream() {
@@ -319,7 +274,7 @@ export const useAiStore = defineStore('ai', () => {
     presentationData,
     loading, error,
     initSession, loadSessions, continueLatestSession,
-    loadMessages, sendMessage, streamMessageV2, reviewForm, cancelActiveStream,
+    loadMessages, streamMessageV2, reviewForm, cancelActiveStream,
     approveAction, rejectAction, approveChange, rejectChange,
     saveFormData, loadBasicInfo,
     fetchPresentationData,

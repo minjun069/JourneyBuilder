@@ -5,6 +5,26 @@
   "required_browser_headers": ["Authorization", "Idempotency-Key", "Accept"],
   "required_service_headers": ["Authorization", "Accept"],
   "content_type": "text/event-stream",
+  "transport_policy": {
+    "browser_to_django": "sse_only",
+    "django_to_ai": "sse_only",
+    "non_streaming_accept": false,
+    "polling_api": false,
+    "http_callback": false
+  },
+  "channel_policy": {
+    "general_chat": "sse",
+    "elicit": {
+      "start": "sse",
+      "resume": "sse",
+      "continuation": "sse"
+    },
+    "error_review": {
+      "save": "sse",
+      "user_request": "sse"
+    },
+    "frontend_polling_flows": []
+  },
   "terminal_events": ["done", "error"],
   "allowed_events": ["start", "delta", "done", "error"],
   "browser_request": {
@@ -112,13 +132,17 @@
   },
   "idempotency": {
     "same_key_processing": {"http_status": 409, "code": "AI_STREAM_IN_PROGRESS"},
-    "same_key_completed": {"replay_events": ["start", "done"]},
+    "same_key_completed": {
+      "replay_events": ["start", "done"],
+      "source": "terminal_receipt",
+      "graph_reexecution": false
+    },
     "same_key_changed_payload": {"http_status": 409, "code": "IDEMPOTENCY_CONFLICT"},
     "ttl_seconds": 86400
   },
   "timeouts_seconds": {
     "service_connect": 5,
-    "stream_read_idle": 60,
+    "stream_read_idle": 120,
     "gateway_proxy": 130,
     "host_proxy": 140
   }

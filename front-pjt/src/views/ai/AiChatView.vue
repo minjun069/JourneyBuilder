@@ -322,15 +322,7 @@ async function continueConsultation() {
   }
 }
 
-async function sendMessage() {
-  const text = draftMessage.value.trim()
-  if (!text || isTyping.value || isStreamingResponse.value || !hasActiveSession.value) return
-  messages.value.push({ role: 'user', text })
-  draftMessage.value = ''
-  resizeChatInput()
-  scrollToBottom()
-  isTyping.value = true
-  isStreamingResponse.value = true
+async function streamAssistantMessage(text, options) {
   let streamedMessage = null
 
   function ensureStreamedMessage() {
@@ -347,10 +339,7 @@ async function sendMessage() {
   }
 
   try {
-    for await (const { event, data } of aiStore.streamMessageV2(text, {
-      stepId: currentStepId.value,
-      form: activeFormRef.value?.form ?? null,
-    })) {
+    for await (const { event, data } of aiStore.streamMessageV2(text, options)) {
       if (event === 'start') continue
       if (event === 'delta') {
         const message = ensureStreamedMessage()
@@ -373,13 +362,33 @@ async function sendMessage() {
         message.streaming = false
         if (finalMessage.action) message.action = finalMessage.action
         scrollToBottom(false, true)
-        return
+        return finalMessage
       }
     }
     throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
   } catch (error) {
-    if (error?.name === 'AbortError') return
     if (streamedMessage) streamedMessage.streaming = false
+    throw error
+  }
+}
+
+async function sendMessage() {
+  const text = draftMessage.value.trim()
+  if (!text || isTyping.value || isStreamingResponse.value || !hasActiveSession.value) return
+  messages.value.push({ role: 'user', text })
+  draftMessage.value = ''
+  resizeChatInput()
+  scrollToBottom()
+  isTyping.value = true
+  isStreamingResponse.value = true
+
+  try {
+    await streamAssistantMessage(text, {
+      stepId: currentStepId.value,
+      form: activeFormRef.value?.form ?? null,
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') return
     messages.value.push({
       role: 'ai',
       text: error?.message ?? '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',
@@ -425,22 +434,22 @@ async function runElicitAction(elicitAction) {
   const text = elicitAction === 'start' ? '정성정보 수집에 동의합니다.' : '이어서 계속'
   messages.value.push({ role: 'user', text })
   isTyping.value = true
+  isStreamingResponse.value = true
   try {
-    const stored = await aiStore.sendMessage(text, {
+    await streamAssistantMessage(text, {
       stepId: currentStepId.value,
       form: activeFormRef.value.form,
       elicitAction,
     })
-    if (stored) {
-      if (actionIndex !== -1) {
-        messages.value[actionIndex] = { ...messages.value[actionIndex], action: undefined }
-      }
-      messages.value.push(toChatMessage(stored))
+    if (actionIndex !== -1) {
+      messages.value[actionIndex] = { ...messages.value[actionIndex], action: undefined }
     }
   } catch (error) {
+    if (error?.name === 'AbortError') return
     messages.value.push({ role: 'ai', text: error?.message ?? '정성정보 대화를 시작하지 못했습니다.' })
   } finally {
     isTyping.value = false
+    isStreamingResponse.value = false
     scrollToBottom(false, true)
   }
 }
