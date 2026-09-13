@@ -1,10 +1,10 @@
 <script setup>
 import { computed } from 'vue'
-import { useAiStore } from '@/stores/ai'
+import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
 
-const ai = useAiStore()
-const report = computed(() => ai.presentationData?.['lifetime-cashflow'])
+const reportStore = useReportStore()
+const report = computed(() => reportStore.reports?.['lifetime-cashflow'])
 
 const rows = computed(() => report.value?.chart_data ?? [])
 const sampledRows = computed(() => {

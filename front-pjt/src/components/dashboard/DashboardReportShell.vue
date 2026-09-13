@@ -1,16 +1,16 @@
 <script setup>
 import { onMounted } from 'vue'
-import { useDashboardStore } from '@/stores/dashboard'
+import { useReportStore } from '@/stores/report'
 
 defineProps({
   title: { type: String, required: true },
   reportKey: { type: String, required: true },
 })
 
-const store = useDashboardStore()
+const reportStore = useReportStore()
 
 onMounted(() => {
-  store.ensureReportsLoaded()
+  reportStore.loadLatestReports()
 })
 </script>
 
@@ -20,9 +20,9 @@ onMounted(() => {
       <h1 class="page-title">{{ title }}</h1>
     </div>
 
-    <div v-if="store.loading" class="state-card">보고서를 불러오는 중입니다.</div>
-    <div v-else-if="store.error" class="state-card error">보고서를 불러오지 못했습니다.</div>
-    <div v-else-if="!store.hasReport(reportKey)" class="state-card">
+    <div v-if="reportStore.loading" class="state-card">보고서를 불러오는 중입니다.</div>
+    <div v-else-if="reportStore.error" class="state-card error">보고서를 불러오지 못했습니다.</div>
+    <div v-else-if="!reportStore.hasReport(reportKey)" class="state-card">
       AI 상담을 완료하면 생성된 보고서를 여기에서 확인할 수 있습니다.
     </div>
     <div v-else class="report-panel">

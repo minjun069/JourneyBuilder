@@ -1,9 +1,9 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
-import { useAiStore } from '@/stores/ai'
+import { useReportStore } from '@/stores/report'
 
-const ai = useAiStore()
-onMounted(() => ai.fetchPresentationData())
+const reportStore = useReportStore()
+onMounted(() => reportStore.loadReports(null))
 import BalanceSheetSlide from '@/components/presentation/BalanceSheetSlide.vue'
 import CashFlowSlide from '@/components/presentation/CashFlowSlide.vue'
 import FinancialGoalSlide from '@/components/presentation/FinancialGoalSlide.vue'

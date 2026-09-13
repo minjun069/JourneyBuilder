@@ -69,8 +69,12 @@ export const useAuthStore = defineStore('auth', () => {
       }
     } finally {
       clearTokens()
-      const { useAiStore } = await import('@/stores/ai')
-      useAiStore().clearSession()
+      const [{ useConsultationStore }, { useReportStore }] = await Promise.all([
+        import('@/stores/consultation'),
+        import('@/stores/report'),
+      ])
+      useConsultationStore().clearConsultation()
+      useReportStore().clearReports()
     }
   }
 
