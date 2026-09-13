@@ -29,6 +29,9 @@
         <RouterLink to="/dashboard/lifetime" class="sidebar-item child" active-class="active">
           생애현금흐름 및 생애순자산
         </RouterLink>
+        <RouterLink to="/dashboard/simulation" class="sidebar-item child" active-class="active">
+          은퇴 시뮬레이션
+        </RouterLink>
       </div>
     </div>
 

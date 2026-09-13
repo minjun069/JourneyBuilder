@@ -30,6 +30,7 @@ import FinancialIndicatorsSlide from '@/components/presentation/FinancialIndicat
 import FinancialGoalSlide from '@/components/presentation/FinancialGoalSlide.vue'
 import RetirementFundSlide from '@/components/presentation/RetirementFundSlide.vue'
 import RetirementReadinessSlide from '@/components/presentation/RetirementReadinessSlide.vue'
+import RetirementSimulationSlide from '@/components/presentation/RetirementSimulationSlide.vue'
 import PensionScheduleSlide from '@/components/presentation/PensionScheduleSlide.vue'
 import LifetimeCashflowSlide from '@/components/presentation/LifetimeCashflowSlide.vue'
 import RequiredSavingsSlide from '@/components/presentation/RequiredSavingsSlide.vue'
@@ -636,9 +637,10 @@ async function persistFormAndAdvance(nextStepId) {
   dismissNextStepAction()
 
   if (currentStepId.value === 'financial-goals') {
+    void reportStore.calculatePresentation(consultationStore.sessionId, { regenerateReports: true })
     streamAiMessages([{
-      text: '모든 정보 입력이 완료되었습니다. 고생 많으셨어요!\n아래 버튼을 누르시면 제가 고객님의 데이터를 바탕으로 본격적인 재무 종합 진단을 시작하겠습니다.',
-      action: { type: 'next-step', stepId: nextStepId, label: '재무 진단 시작' },
+      text: '모든 정보 입력이 완료되었습니다. 고생 많으셨어요!\n고객님의 데이터를 바탕으로 재무 종합 진단과 은퇴 시뮬레이션 계산을 시작했습니다.',
+      action: { type: 'next-step', stepId: nextStepId, label: '진단 결과 보기' },
     }])
     return
   }
@@ -657,6 +659,7 @@ const PRESENTATION_SLIDE_MAP = {
   'financial-goal-result': FinancialGoalSlide,
   'retirement-fund':       RetirementFundSlide,
   'retirement-readiness':  RetirementReadinessSlide,
+  'retirement-simulation': RetirementSimulationSlide,
   'pension-schedule':      PensionScheduleSlide,
   'lifetime-cashflow':     LifetimeCashflowSlide,
   'required-savings':      RequiredSavingsSlide,
@@ -681,7 +684,10 @@ watch(currentStepId, async (stepId) => {
 })
 
 watch(isPresentationPhase, (val) => {
-  if (val && !reportStore.reports) reportStore.loadReports(consultationStore.sessionId)
+  if (!val || !consultationStore.sessionId) return
+  if (!reportStore.loading && !reportStore.simulationLoading && (!reportStore.reports || !reportStore.simulation)) {
+    void reportStore.calculatePresentation(consultationStore.sessionId)
+  }
 })
 
 onMounted(() => {

@@ -8,7 +8,15 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue'
 import DashboardSidebar from '@/components/dashboard/DashboardSidebar.vue'
+import { useReportStore } from '@/stores/report'
+
+const reportStore = useReportStore()
+
+onMounted(() => {
+  void reportStore.loadLatestPresentation()
+})
 </script>
 
 <style scoped>

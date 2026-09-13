@@ -63,7 +63,7 @@ def browser_body():
 
 class V2AIStreamClientTests(SimpleTestCase):
     @override_settings(
-        AI_SERVICE_URL='http://ai-pjt:8001/chat',
+        AI_SERVICE_URL='http://ai-pjt:8001',
         AI_SERVICE_TIMEOUT_SECONDS=5,
         AI_STREAM_READ_TIMEOUT_SECONDS=60,
         AI_SERVICE_BEARER_TOKEN='service-token',
@@ -84,7 +84,7 @@ class V2AIStreamClientTests(SimpleTestCase):
 
         self.assertEqual(
             client.stream.call_args.args[:2],
-            ('POST', 'http://ai-pjt:8001/v2/chat/stream'),
+            ('POST', 'http://ai-pjt:8001/api/ai/v2/chat/stream'),
         )
         headers = client.stream.call_args.kwargs['headers']
         self.assertEqual(headers['Authorization'], 'Bearer service-token')
@@ -176,7 +176,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
 
     def request(self, body=None):
         request = self.factory.post(
-            '/api/v2/consultations/12/messages/stream/',
+            '/api/consulting/v2/consultations/12/messages/stream/',
             body or browser_body(),
             format='json',
             HTTP_ACCEPT='text/event-stream',

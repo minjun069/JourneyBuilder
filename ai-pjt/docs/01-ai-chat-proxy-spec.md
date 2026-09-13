@@ -8,6 +8,6 @@
 - `ai-docs/contracts/ai-api.md`
 - `ai-docs/decisions/0005-remove-non-streaming-ai-transport.md`
 
-Browser→Django는 `/api/v2/consultations/{session_id}/messages/stream/`,
-Django→AI는 `/v2/chat/stream`만 사용한다. 같은 멱등 키의 완료 결과는 terminal
+Browser→Django는 `/api/consulting/v2/consultations/{session_id}/messages/stream/`,
+Django→AI는 `/api/ai/v2/chat/stream`만 사용한다. 같은 멱등 키의 완료 결과는 terminal
 receipt에서 SSE로 재생하며 graph와 assistant message 저장을 반복하지 않는다.

@@ -4,7 +4,7 @@
 
 이 문서는 Django→AI SSE 요청·terminal 결과, 서비스 인증·상태·오류와 step별 Agent allowlist를 소유한다. Browser↔Django 계약은 [Django HTTP API](http-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
-일반 상담, Elicit과 Error Review의 `POST /v2/chat/stream` 요청과 이벤트는
+일반 상담, Elicit과 Error Review의 `POST /api/ai/v2/chat/stream` 요청과 이벤트는
 [AI 상담 SSE v2 계약](sse-v2.md)을 따른다. 비스트리밍 `POST /v2/chat`과
 AI→Django HTTP callback은 제공하지 않는다.
 
@@ -37,7 +37,7 @@ Authorization: Bearer <AI_SERVICE_BEARER_TOKEN>
 
 ## Django → AI 작업 요청
 
-`POST /v2/chat/stream`은 bearer 인증 뒤 `start -> delta* -> done | error` SSE를 반환한다. 요청 payload로 임의 callback URL을 받지 않는다.
+`POST /api/ai/v2/chat/stream`은 bearer 인증 뒤 `start -> delta* -> done | error` SSE를 반환한다. 요청 payload로 임의 callback URL을 받지 않는다.
 
 ```json
 {
@@ -103,7 +103,7 @@ terminal receipt의 결과를 SSE로 재생한다. 같은 key의 payload가 다�
 - 지원되지 않은 `step_id`는 `fallback`으로 처리한다.
 
 `general`은 폼 맥락 없이 Browser 요청에서 사용하는 transport 전용 ID이며 Frontend의
-23개 화면 단계에는 포함되지 않는다. fixture의 `transport_fallback_step_ids`에 별도로
+24개 화면 단계에는 포함되지 않는다. fixture의 `transport_fallback_step_ids`에 별도로
 등록하고 AI는 classifier를 호출하지 않은 채 `fallback`으로 처리한다.
 
 `elicit`은 `financial-mindset`에서만 허용한다. `financial-info`는 저장 대상이 없는 안내
@@ -133,7 +133,7 @@ chart 단계에서 Django는 `chart_payload`로 렌더링 option이나 screensho
 
 ## AI → Django SSE terminal
 
-AI는 `POST /v2/chat/stream`의 `done` 또는 `error` event로 `completed` 또는 `failed`
+AI는 `POST /api/ai/v2/chat/stream`의 `done` 또는 `error` event로 `completed` 또는 `failed`
 terminal payload를 보낸다. 두 상태 모두 `contract_version`, 세 식별자와
 `completed_at`이 필수다.
 
@@ -229,7 +229,7 @@ SSE transport는 자동 재시도나 polling fallback을 하지 않는다. 인�
 | 409 | `TERMINAL_BINDING_MISMATCH` | false |
 | 409 | `TERMINAL_CONFLICT` | false |
 | 422 | `CONTRACT_VERSION_UNSUPPORTED` | false |
-| 422 | `REQUEST_SCHEMA_INVALID` | false; `/v2/chat/stream` 요청·terminal 필수값·자료형 오류 |
+| 422 | `REQUEST_SCHEMA_INVALID` | false; `/api/ai/v2/chat/stream` 요청·terminal 필수값·자료형 오류 |
 | 429 | `RATE_LIMITED` | true |
 | 503 | `UPSTREAM_UNAVAILABLE` | true |
 

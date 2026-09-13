@@ -22,9 +22,9 @@ from .services import representative_session
 
 User = get_user_model()
 
-ADMIN_PING = '/api/v1/admin/ping/'
-CUSTOMERS = '/api/v1/admin/customers/'
-SUMMARY = '/api/v1/admin/analytics/summary/'
+ADMIN_PING = '/api/admin/v1/ping/'
+CUSTOMERS = '/api/admin/v1/customers/'
+SUMMARY = '/api/admin/v1/analytics/summary/'
 
 
 def bearer_client(user):
@@ -288,7 +288,7 @@ class SegmentsApiTests(TestCase):
         self.client = bearer_client(self.pb)
 
     def test_axes_and_scatter(self):
-        body = self.client.get('/api/v1/admin/analytics/segments/').json()
+        body = self.client.get('/api/admin/v1/analytics/segments/').json()
         data = body['data']
         self.assertEqual(set(data['axes'].keys()), {
             'age_band', 'need', 'tendency_group', 'net_worth_band', 'health', 'session_status'})

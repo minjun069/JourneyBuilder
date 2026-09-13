@@ -22,7 +22,7 @@ class F12SSEServiceAuthenticationContractTests(IsolatedAsyncioTestCase):
             return await client.post(path, content=body, headers=headers)
 
     async def test_stream_authentication_precedes_schema_validation(self):
-        response = await self._post("/v2/chat/stream", b"{}")
+        response = await self._post("/api/ai/v2/chat/stream", b"{}")
 
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["error"]["code"], "SERVICE_UNAUTHORIZED")

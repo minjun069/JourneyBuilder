@@ -38,7 +38,7 @@ class StepRegistryTests(unittest.TestCase):
     def test_shared_registry_loads_all_unique_steps(self) -> None:
         candidates = load_step_candidates()
 
-        self.assertEqual(len(candidates), 23)
+        self.assertEqual(len(candidates), 24)
         self.assertEqual(len(candidates), len(set(candidates)))
         self.assertTrue(all("fallback" in agents for agents in candidates.values()))
 

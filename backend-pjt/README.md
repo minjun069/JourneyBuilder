@@ -125,7 +125,7 @@ lifecycle 구현에는 다음 항목이 남아 있다.
 2. `AI_SERVICE_BEARER_TOKEN`은 실제 Backend→AI SSE 인증에 연결돼 있다.
 3. 비스트리밍 접수·polling·HTTP callback route와 관련 환경변수는 제거됐다.
 4. startup/config/SSE 오류에 password, token, 전체 DSN을 남기지 않는다.
-5. `/health` 또는 `/ready` endpoint를 추가한다면 process·dependency 의미를 분리하고 `readiness.py`와 서로 다른 판정을 만들지 않는다.
+5. `/api/system/v1/health` 또는 별도 readiness endpoint를 추가한다면 process·dependency 의미를 분리하고 `readiness.py`와 서로 다른 판정을 만들지 않는다.
 
 정상 다중 컨테이너 PostgreSQL 연결, secret 기본 거부와 전체 G1 runtime 판정은
 완료됐다. v2 SSE terminal 결과는 `0006_ai_terminal_receipt` migration의

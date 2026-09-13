@@ -11,7 +11,7 @@ polling endpoint는 제공하지 않는다.
 
 ## 공통 규칙
 
-- Browser는 `/api/v2` 아래 Django API만 호출한다. AI 서버와 MCP 서버는 직접 호출하지 않는다.
+- Browser는 `/api/consulting/v2` 아래 Django 상담 API만 호출한다. AI 서버와 MCP 서버는 직접 호출하지 않는다.
 - Function Calling 도구는 AI 프로세스 내부에서만 실행하며 별도 HTTP endpoint로 공개하지 않는다.
 - 사용자 API는 JWT 인증과 상담 세션 소유권을 검증한다. 인증되지 않은 요청은 `401`, 인증됐지만 소유하지 않은 세션·request는 존재 여부를 숨기기 위해 `404`로 응답한다.
 - AI 비동기 요청·응답에는 `contract_version: "2.0"`을 포함한다.
@@ -33,7 +33,7 @@ polling endpoint는 제공하지 않는다.
 
 ## SSE 메시지 접수
 
-`POST /api/v2/consultations/{session_id}/messages/stream/`
+`POST /api/consulting/v2/consultations/{session_id}/messages/stream/`
 
 필수 header:
 

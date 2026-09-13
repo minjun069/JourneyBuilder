@@ -46,7 +46,7 @@ services:
       AI_SERVICE_BEARER_TOKEN: "${AI_SERVICE_BEARER_TOKEN:?AI_SERVICE_BEARER_TOKEN is required}"
       F05_CONTROL_TOKEN: "${F05_CONTROL_TOKEN:?F05_CONTROL_TOKEN is required}"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8001/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8001/api/system/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 2s
       timeout: 2s
       retries: 20
@@ -62,7 +62,7 @@ services:
       dockerfile: front-pjt/tests/e2e/f05/Dockerfile
       target: front
     environment:
-      VITE_API_BASE_URL: /api/v1
+      VITE_API_BASE_URL: /api
       VITE_API_PROXY_TARGET: http://gateway
     depends_on:
       gateway:

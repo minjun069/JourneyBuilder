@@ -54,18 +54,18 @@ export class F05BrowserDriver {
 
   async createIdentity(email) {
     const password = 'P07-e2e-password-42!'
-    await this.api('/api/v1/auth/register/', {
+    await this.api('/api/auth/v1/register/', {
       method: 'POST',
       token: null,
       data: { email, password, name: 'P07 E2E' },
       expected: 201,
     })
-    const login = await this.api('/api/v1/auth/login/', {
+    const login = await this.api('/api/auth/v1/login/', {
       method: 'POST',
       token: null,
       data: { email, password },
     })
-    const created = await this.api('/api/v1/consultations/', {
+    const created = await this.api('/api/consulting/v1/consultations/', {
       method: 'POST',
       token: login.access,
       data: {},
@@ -100,12 +100,12 @@ export class F05BrowserDriver {
     )
 
     if (scenario.stepId === 'basic-info') {
-      await this.api(`/api/v1/consultations/${this.sessionId}/data/basic-info/`, {
+      await this.api(`/api/consulting/v1/consultations/${this.sessionId}/data/basic-info/`, {
         method: 'PUT',
         data: scenario.initial.database,
       })
     } else if (scenario.stepId === 'financial-mindset') {
-      await this.api(`/api/v1/consultations/${this.sessionId}/data/financial-mindset/`, {
+      await this.api(`/api/consulting/v1/consultations/${this.sessionId}/data/financial-mindset/`, {
         method: 'PUT',
         data: scenario.initial.database,
       })
@@ -299,7 +299,7 @@ export class F05BrowserDriver {
     await expect(card.locator('.update-change')).toHaveCount(expectedChangeCount)
     this.observedStates.add('completed-proposal')
 
-    const messages = await this.api(`/api/v1/consultations/${this.sessionId}/messages/`)
+    const messages = await this.api(`/api/consulting/v1/consultations/${this.sessionId}/messages/`)
     const message = [...messages.data].reverse().find((item) => item.extracted_data?.action)
     expect(message).toBeTruthy()
     return { messageId: message.id, action: message.extracted_data.action, card }
@@ -393,7 +393,7 @@ export class F05BrowserDriver {
     const validValue = await valueInput.inputValue()
     await valueInput.fill(String(probe.invalidDraftPatch.value))
     const responsePromise = this.page.waitForResponse((response) => (
-      response.url().includes(`/api/v1/consultations/${this.sessionId}/data/financial-assets/`)
+      response.url().includes(`/api/consulting/v1/consultations/${this.sessionId}/data/financial-assets/`)
       && response.request().method() === 'PUT'
     ))
     await this.page.getByRole('button', { name: '작성 완료', exact: true }).click()
@@ -411,7 +411,7 @@ export class F05BrowserDriver {
       'financial-assets': 'financial-assets',
     }[stepId]
     const responsePromise = this.page.waitForResponse((response) => (
-      response.url().includes(`/api/v1/consultations/${this.sessionId}/data/${fragment}/`)
+      response.url().includes(`/api/consulting/v1/consultations/${this.sessionId}/data/${fragment}/`)
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
@@ -432,7 +432,7 @@ export class F05BrowserDriver {
     expect(schema.rows[0].name).toBe(databaseSchema)
 
     if (foreignUserMustBeDenied) {
-      await this.api(`/api/v1/consultations/${this.sessionId}/`, {
+      await this.api(`/api/consulting/v1/consultations/${this.sessionId}/`, {
         token: this.foreignIdentity.access,
         expected: 404,
       })

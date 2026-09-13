@@ -5,7 +5,7 @@
 #   ENV_FILE=.env deploy/deploy.sh                    # 로컬 재현
 #   deploy/deploy.sh --no-build                       # 이미지 재빌드 없이 재기동만
 #   deploy/deploy.sh --health-url http://127.0.0.1:8080/ --timeout 180
-#   deploy/deploy.sh --api-health-url http://127.0.0.1:8080/api/v1/consultations/
+#   deploy/deploy.sh --api-health-url http://127.0.0.1:8080/api/consulting/v1/consultations/
 #   deploy/deploy.sh --ai-required                    # ai-pjt healthy 를 배포 성공 조건에 포함 (AI_REQUIRED=1 과 동일)
 #   AI_REQUIRED=0 deploy/deploy.sh                    # AI 가 깨진 상황에서 서빙만 급히 배포할 때 (CI 잡 기본값을 끈다)
 #
@@ -28,7 +28,7 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/srv/s15p21b109/secrets/app.env}"
 STATE_DIR="${STATE_DIR:-/srv/s15p21b109/state}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/}"
-API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8080/api/v1/consultations/}"   # 로그인 필요 경로 → 정상이면 401
+API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8080/api/consulting/v1/consultations/}"   # 로그인 필요 경로 → 정상이면 401
 TIMEOUT="${TIMEOUT:-150}"
 AI_REQUIRED="${AI_REQUIRED:-0}"
 BUILD=1

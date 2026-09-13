@@ -163,7 +163,7 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 | 사전 점검 | env 파일 읽기 가능, `compose config --quiet` |
 | 롤백 대상 확인 | 직전 성공 배포가 남긴 유지 태그 `<프로젝트>-<서비스>:last-good` (web·backend·ai-pjt·migrate). 태그가 없는 서비스는 **부트스트랩 승격** — 1순위 그 서비스가 기동 중인 이미지, 없으면 2순위 `<이름>:latest`(컨테이너가 참조하는 이미지 레코드가 사라진 경우). 승격할 이미지도 없으면 그 서비스는 이번 배포가 실패해도 복원되지 않으며 로그에 명시된다. 첫 배포면 대상 없음 → 실패 시 중단만 |
 | 기동 | `compose build --pull` → `up -d --remove-orphans` → **`restart gateway`**. migrate one-shot → backend 순서는 compose `depends_on` 이 보장. gateway 재시작 배경: 원래 gateway nginx 의 upstream 이 고정(`server backend:8000`)이라 backend 가 재생성돼 IP 가 바뀌면 옛 IP 를 물고 `/api` 가 502 가 됐다(2026-09-08 첫 자동 배포에서 발생, S15P21B109-127). S15P21B109-128 에서 upstream 을 `resolve` 방식(10s 주기 재조회)으로 바꿔 배포 외 경로(수동 `up`, 크래시 후 재생성)에서도 자동 회복하도록 했고, 재시작은 즉시 반영용 안전망으로 유지한다. web 의 nginx 는 처음부터 `resolver` 방식 |
-| 헬스체크 | 최대 150s: `web`·`backend` 컨테이너 healthy **and** `GET http://127.0.0.1:8080/` 200 **and** `GET http://127.0.0.1:8080/api/v1/consultations/` 가 5xx·000 이 아님(host→web→gateway→backend 전 구간 검사. 로그인 필요 경로라 **401 이 정상**. `--api-health-url` 로 변경). **ai-pjt 는 `AI_REQUIRED=1`(운영 기본) 이면 같은 대기 조건에 포함하고, `0` 이면 상태만 경고**(`--ai-required` 로 필수 전환) |
+| 헬스체크 | 최대 150s: `web`·`backend` 컨테이너 healthy **and** `GET http://127.0.0.1:8080/` 200 **and** `GET http://127.0.0.1:8080/api/consulting/v1/consultations/` 가 5xx·000 이 아님(host→web→gateway→backend 전 구간 검사. 로그인 필요 경로라 **401 이 정상**. `--api-health-url` 로 변경). **ai-pjt 는 `AI_REQUIRED=1`(운영 기본) 이면 같은 대기 조건에 포함하고, `0` 이면 상태만 경고**(`--ai-required` 로 필수 전환) |
 | 성공 | 방금 성공한 이미지에 `:last-good` 을 다시 붙인다(다음 롤백 대상). 태그가 옮겨가면 직전 세대는 dangling 이 되어 뒤따르는 `docker image prune -f` 가 정리한다 → 서비스당 한 세대만 남는다. `/srv/s15p21b109/state/last_good_images` 는 사람이 읽는 기록용이고 롤백은 이 파일을 읽지 않는다. exit 0 |
 | 실패 | backend 로그 20줄 출력 → `:last-good` 을 `:latest` 로 재태그 → `up -d --no-build` → `restart gateway` → 10s 뒤 롤백 후 상태(web·backend·ai-pjt·http·api) 로그 → exit 1 (파이프라인 failed). 롤백 대상이 없으면 컨테이너를 그대로 두고 중단만 한다 — 그때는 **방금 배포한 이미지가 운영에 남는다** |
 
@@ -255,7 +255,7 @@ Git 증거는 `ai-pjt/evals/artifacts/f14-rollback-rehearsal.json`이 소유한�
 | 상시 | Settings → CI/CD → Variables 에 `AI_REQUIRED` = `0` (잡 `variables` 보다 우선) |
 | 서버에서 직접 | 러너 체크아웃 디렉터리에서 `AI_REQUIRED=0 bash deploy/deploy.sh --no-build` |
 
-**한계 — healthy 는 LLM 정상을 증명하지 않는다.** `ai-pjt` 의 `/health` 는 `{"status":"ok"}` 만 반환하고 LLM·임베딩 공급자를 호출하지 않는다(배포마다 크레딧을 태우지 않기 위한 설계). 이 판정이 잡는 것은 **컨테이너가 아예 뜨지 못하는 경우**(env 누락, import 실패, 크래시 루프)다. GMS 키가 만료돼 응답만 실패하는 상황은 이 게이트를 통과한다 — 그건 파이프라인 실패 알림(S15P21B109-126) 쪽 과제다.
+**한계 — healthy 는 LLM 정상을 증명하지 않는다.** `ai-pjt` 의 `/api/system/v1/health` 는 `{"status":"ok"}` 만 반환하고 LLM·임베딩 공급자를 호출하지 않는다(배포마다 크레딧을 태우지 않기 위한 설계). 이 판정이 잡는 것은 **컨테이너가 아예 뜨지 못하는 경우**(env 누락, import 실패, 크래시 루프)다. GMS 키가 만료돼 응답만 실패하는 상황은 이 게이트를 통과한다 — 그건 파이프라인 실패 알림(S15P21B109-126) 쪽 과제다.
 
 - 검증 기록(2026-09-10, 로컬): `docker`·`curl` 을 스텁으로 갈아끼운 하네스로 판정 로직만 격리해 검사했다(실제 컨테이너·키 불필요). **교정 전 2건 실패 → 교정 후 7건 통과.** 시나리오: `AI_REQUIRED=0` 에 ai `starting` → 성공(경고만, 기존 동작 유지) / `AI_REQUIRED=1` 에 ai 가 12s 뒤 healthy → **16s 대기 후 성공**(교정 전에는 0초에 탈출해 실패·롤백) / ai 끝까지 `starting` → 실패·롤백 / ai 컨테이너 없음 → 실패 / web `unhealthy` + ai healthy → 실패(기존 판정 회귀) / `--ai-required` 플래그 경로도 동일
 - `--ai-required` 는 **한 번도 실행된 적 없는 분기**였다. 루프 밖에서 헬스를 1회만 읽어 `ai-pjt` 의 HEALTHCHECK `start-period=20s` 를 기다리지 못했고, 켜면 정상 배포까지 실패했다. 2026-09-08 첫 배포를 2초에 깬 `PREV: unbound variable` 과 같은 종류의 사각지대다 — `deploy.sh` 를 고칠 때는 밟지 않는 분기가 있는지 본다
@@ -285,7 +285,7 @@ sudo grep -q '^GOOGLE_API_KEY=.\+' /srv/s15p21b109/secrets/app.env && echo 설�
 
 ### 검증 — healthy 만으로는 부족하다
 
-`ai-pjt/main.py` 의 `/health` 는 `{"status":"ok"}` 만 반환하고 공급자를 호출하지 않는다. `validate_runtime()` 도 값이 비었는지만 본다.
+`ai-pjt/main.py` 의 `/api/system/v1/health` 는 `{"status":"ok"}` 만 반환하고 공급자를 호출하지 않는다. `validate_runtime()` 도 값이 비었는지만 본다.
 **틀린 키·틀린 base URL 이어도 컨테이너는 healthy 가 된다.** 그래서 실호출로 판정한다.
 
 ```bash

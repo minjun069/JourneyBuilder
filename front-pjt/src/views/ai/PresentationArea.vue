@@ -6,6 +6,7 @@ import FinancialIndicatorsSlide from '@/components/presentation/FinancialIndicat
 import FinancialGoalSlide from '@/components/presentation/FinancialGoalSlide.vue'
 import RetirementFundSlide from '@/components/presentation/RetirementFundSlide.vue'
 import RetirementReadinessSlide from '@/components/presentation/RetirementReadinessSlide.vue'
+import RetirementSimulationSlide from '@/components/presentation/RetirementSimulationSlide.vue'
 import PensionScheduleSlide from '@/components/presentation/PensionScheduleSlide.vue'
 import LifetimeCashflowSlide from '@/components/presentation/LifetimeCashflowSlide.vue'
 import RequiredSavingsSlide from '@/components/presentation/RequiredSavingsSlide.vue'
@@ -21,6 +22,7 @@ const SLIDE_MAP = {
   'financial-goal-result':FinancialGoalSlide,
   'retirement-fund':      RetirementFundSlide,
   'retirement-readiness': RetirementReadinessSlide,
+  'retirement-simulation': RetirementSimulationSlide,
   'pension-schedule':     PensionScheduleSlide,
   'lifetime-cashflow':    LifetimeCashflowSlide,
   'required-savings':     RequiredSavingsSlide,

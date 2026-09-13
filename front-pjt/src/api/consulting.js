@@ -1,4 +1,4 @@
-import api from '@/api'
+import { consultingApi } from '@/api'
 import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
 import { readSSEStream, validateV2SSEEvents } from '@/api/sse'
 import { mapMonthlyIncome, wrapCurrentListForm } from './consultingMapping.js'
@@ -10,14 +10,14 @@ import {
 } from '@/api/aiLifecycle'
 
 // ── Session ──────────────────────────────────────────────────
-export const getSessions   = ()              => api.get('/consultations/')
-export const createSession = ()              => api.post('/consultations/')
-export const getSession    = (sid)           => api.get(`/consultations/${sid}/`)
-export const deleteSession = (sid)           => api.delete(`/consultations/${sid}/`)
+export const getSessions = () => consultingApi.get('/consultations/')
+export const createSession = () => consultingApi.post('/consultations/')
+export const getSession = (sid) => consultingApi.get(`/consultations/${sid}/`)
+export const deleteSession = (sid) => consultingApi.delete(`/consultations/${sid}/`)
 
 // ── Messages ─────────────────────────────────────────────────
-export const getMessages = (sid)           => api.get(`/consultations/${sid}/messages/`)
-const V2_BASE_URL = deriveV2BaseURL(api.defaults.baseURL)
+export const getMessages = (sid) => consultingApi.get(`/consultations/${sid}/messages/`)
+const V2_BASE_URL = deriveV2BaseURL()
 
 export async function* streamMessagesV2(
   sid,
@@ -63,39 +63,39 @@ export async function* streamMessagesV2(
 }
 
 // ── 1:1 Form data ────────────────────────────────────────────
-export const getBasicInfo = (sid)       => api.get(`/consultations/${sid}/data/basic-info/`)
-export const putBasicInfo = (sid, data) => api.put(`/consultations/${sid}/data/basic-info/`, data)
+export const getBasicInfo = (sid)       => consultingApi.get(`/consultations/${sid}/data/basic-info/`)
+export const putBasicInfo = (sid, data) => consultingApi.put(`/consultations/${sid}/data/basic-info/`, data)
 
-export const getFinancialMindset = (sid)       => api.get(`/consultations/${sid}/data/financial-mindset/`)
-export const putFinancialMindset = (sid, data) => api.put(`/consultations/${sid}/data/financial-mindset/`, data)
+export const getFinancialMindset = (sid)       => consultingApi.get(`/consultations/${sid}/data/financial-mindset/`)
+export const putFinancialMindset = (sid, data) => consultingApi.put(`/consultations/${sid}/data/financial-mindset/`, data)
 
-export const getFinancialSatisfaction = (sid)       => api.get(`/consultations/${sid}/data/financial-satisfaction/`)
-export const putFinancialSatisfaction = (sid, data) => api.put(`/consultations/${sid}/data/financial-satisfaction/`, data)
+export const getFinancialSatisfaction = (sid)       => consultingApi.get(`/consultations/${sid}/data/financial-satisfaction/`)
+export const putFinancialSatisfaction = (sid, data) => consultingApi.put(`/consultations/${sid}/data/financial-satisfaction/`, data)
 
 // ── 1:N Form data (Bulk Replace) ─────────────────────────────
-export const getFinancialAssets = (sid)       => api.get(`/consultations/${sid}/data/financial-assets/`)
-export const putFinancialAssets = (sid, data) => api.put(`/consultations/${sid}/data/financial-assets/`, data)
+export const getFinancialAssets = (sid)       => consultingApi.get(`/consultations/${sid}/data/financial-assets/`)
+export const putFinancialAssets = (sid, data) => consultingApi.put(`/consultations/${sid}/data/financial-assets/`, data)
 
-export const getPensionAssets = (sid)       => api.get(`/consultations/${sid}/data/pension-assets/`)
-export const putPensionAssets = (sid, data) => api.put(`/consultations/${sid}/data/pension-assets/`, data)
+export const getPensionAssets = (sid)       => consultingApi.get(`/consultations/${sid}/data/pension-assets/`)
+export const putPensionAssets = (sid, data) => consultingApi.put(`/consultations/${sid}/data/pension-assets/`, data)
 
-export const getRealEstateAssets = (sid)       => api.get(`/consultations/${sid}/data/real-estate-assets/`)
-export const putRealEstateAssets = (sid, data) => api.put(`/consultations/${sid}/data/real-estate-assets/`, data)
+export const getRealEstateAssets = (sid)       => consultingApi.get(`/consultations/${sid}/data/real-estate-assets/`)
+export const putRealEstateAssets = (sid, data) => consultingApi.put(`/consultations/${sid}/data/real-estate-assets/`, data)
 
-export const getLiabilities = (sid)       => api.get(`/consultations/${sid}/data/liabilities/`)
-export const putLiabilities = (sid, data) => api.put(`/consultations/${sid}/data/liabilities/`, data)
+export const getLiabilities = (sid)       => consultingApi.get(`/consultations/${sid}/data/liabilities/`)
+export const putLiabilities = (sid, data) => consultingApi.put(`/consultations/${sid}/data/liabilities/`, data)
 
-export const getIncomes = (sid)       => api.get(`/consultations/${sid}/data/incomes/`)
-export const putIncomes = (sid, data) => api.put(`/consultations/${sid}/data/incomes/`, data)
+export const getIncomes = (sid)       => consultingApi.get(`/consultations/${sid}/data/incomes/`)
+export const putIncomes = (sid, data) => consultingApi.put(`/consultations/${sid}/data/incomes/`, data)
 
-export const getExpenses = (sid)       => api.get(`/consultations/${sid}/data/expenses/`)
-export const putExpenses = (sid, data) => api.put(`/consultations/${sid}/data/expenses/`, data)
+export const getExpenses = (sid)       => consultingApi.get(`/consultations/${sid}/data/expenses/`)
+export const putExpenses = (sid, data) => consultingApi.put(`/consultations/${sid}/data/expenses/`, data)
 
-export const getGoalPeriods = (sid)       => api.get(`/consultations/${sid}/data/goal-periods/`)
-export const putGoalPeriods = (sid, data) => api.put(`/consultations/${sid}/data/goal-periods/`, data)
+export const getGoalPeriods = (sid)       => consultingApi.get(`/consultations/${sid}/data/goal-periods/`)
+export const putGoalPeriods = (sid, data) => consultingApi.put(`/consultations/${sid}/data/goal-periods/`, data)
 
-export const getGoalMilestones = (sid)       => api.get(`/consultations/${sid}/data/goal-milestones/`)
-export const putGoalMilestones = (sid, data) => api.put(`/consultations/${sid}/data/goal-milestones/`, data)
+export const getGoalMilestones = (sid)       => consultingApi.get(`/consultations/${sid}/data/goal-milestones/`)
+export const putGoalMilestones = (sid, data) => consultingApi.put(`/consultations/${sid}/data/goal-milestones/`, data)
 
 // ── Form Data Mappers (프론트 form → 백엔드 payload) ─────────
 

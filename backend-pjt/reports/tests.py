@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from adminapi.grading import (
     DSR_GOOD_UNDER,
@@ -19,8 +20,9 @@ from .calculators import (
 )
 from .models import Report
 from .policy import active_policy_version, load_financial_policy
-from .services import _build_report_content
+from .services import PRESENTATION_REPORT_TYPES, _build_report_content
 from .snapshots import calculation_input_digest
+from .views import ReportListView
 
 
 class FakeManager(list):
@@ -198,3 +200,40 @@ class FinancialPolicyContractTests(SimpleTestCase):
         self.assertEqual(content["retirement_gap"], 375_000_000)
         self.assertEqual(content["calculation_policy_version"], active_policy_version())
         self.assertEqual(content["input_snapshot_digest"], calculation_input_digest(session))
+
+
+class PresentationGenerationContractTests(SimpleTestCase):
+    def test_bulk_generation_set_contains_every_presentation_report_once(self):
+        self.assertEqual(len(PRESENTATION_REPORT_TYPES), 9)
+        self.assertEqual(len(set(PRESENTATION_REPORT_TYPES)), 9)
+        self.assertNotIn(Report.ReportType.NEWS_REPORT, PRESENTATION_REPORT_TYPES)
+
+    def test_collection_completion_can_start_bulk_generation(self):
+        request = APIRequestFactory().post(
+            '/api/reports/v1/consultations/1/reports/',
+            {},
+            format='json',
+        )
+        force_authenticate(
+            request,
+            user=SimpleNamespace(id=7, is_authenticated=True),
+        )
+        session = SimpleNamespace(
+            status='completed',
+            is_ready_for_reports=lambda: True,
+        )
+        generated = [SimpleNamespace(report_type=report_type) for report_type in PRESENTATION_REPORT_TYPES]
+
+        with (
+            patch.object(ReportListView, 'get_session', return_value=session),
+            patch('reports.views.generate_presentation_reports', return_value=generated) as generate,
+            patch('reports.views.ReportListSerializer') as serializer,
+        ):
+            serializer.return_value.data = [
+                {'report_type': report.report_type} for report in generated
+            ]
+            response = ReportListView.as_view()(request, session_id=1)
+
+        self.assertEqual(response.status_code, 201)
+        generate.assert_called_once_with(session)
+        self.assertEqual(len(response.data['data']), 9)

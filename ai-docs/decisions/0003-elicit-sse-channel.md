@@ -19,7 +19,7 @@ callback + polling helper를 호출했다.
 ## 결정
 
 1. Elicit의 UI 동의 `start`, QA 뒤 `resume`, 활성 질문의 continuation은 모두
-   `POST /api/v2/consultations/{session_id}/messages/stream/`을 사용한다.
+   `POST /api/consulting/v2/consultations/{session_id}/messages/stream/`을 사용한다.
 2. `elicit_action=start|resume`, 현재 form snapshot, 사용자 JWT, 세션 소유권,
    `contract_version`, `Idempotency-Key`와 Elicit checkpoint 의미는 유지한다.
 3. Frontend callback + polling helper는 `elicit_action`을 생산하지 못하게 한다.

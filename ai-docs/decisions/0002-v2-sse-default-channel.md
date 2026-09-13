@@ -22,8 +22,8 @@
 1. 일반 AI 상담의 기본 응답 채널은 v2 SSE로 한다.
 2. v2의 사용자 JWT, 세션 소유권, `contract_version`, `Idempotency-Key`, 서비스
    bearer 인증, 오류 envelope, action/change별 승인 의미를 유지한다.
-3. 외부 endpoint는 `POST /api/v2/consultations/{session_id}/messages/stream/`, 내부
-   AI endpoint는 `POST /v2/chat/stream`으로 분리한다.
+3. 외부 endpoint는 `POST /api/consulting/v2/consultations/{session_id}/messages/stream/`, 내부
+   AI endpoint는 `POST /api/ai/v2/chat/stream`으로 분리한다.
 4. SSE 이벤트 상태 머신은 `start -> delta* -> done | error`로 고정한다.
 5. 사용자 메시지는 스트림 시작 전에 저장하고 Assistant 메시지는 검증된 `done`
    처리 시 한 번만 저장한다.

@@ -23,7 +23,7 @@ class AISSEV2ConsumerContractTests(unittest.TestCase):
 
     def test_ai_stream_requires_service_authorization(self) -> None:
         self.assertIn("Authorization", self.contract["required_service_headers"])
-        self.assertEqual(self.contract["ai_endpoint"], "/v2/chat/stream")
+        self.assertEqual(self.contract["ai_endpoint"], "/api/ai/v2/chat/stream")
 
     def test_all_frontend_conversation_flows_use_sse(self) -> None:
         policy = self.contract["channel_policy"]

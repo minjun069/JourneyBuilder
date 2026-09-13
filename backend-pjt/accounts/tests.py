@@ -5,7 +5,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 User = get_user_model()
 
-ME_URL = '/api/v1/auth/me/'
+ME_URL = '/api/auth/v1/me/'
 
 
 class MeViewTests(TestCase):

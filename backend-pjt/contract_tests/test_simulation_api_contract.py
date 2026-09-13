@@ -41,6 +41,8 @@ from test_simulation_adapter import snapshot as valid_snapshot  # noqa: E402
 
 SESSION_ID = 42
 USER_ID = 7
+CONTRACT_FIXTURE = REPOSITORY_ROOT / 'contract-fixtures' / 'simulation' / 'v1' / 'http.json'
+HTTP_CONTRACT = json.loads(CONTRACT_FIXTURE.read_text(encoding='utf-8'))
 
 
 def fake_session(status=ConsultingSession.Status.COMPLETED, ready=True):
@@ -70,7 +72,7 @@ def wired(session=_DEFAULT, snapshot=None, digest='a' * 64):
 def call(body=None, *, user_id=USER_ID):
     factory = APIRequestFactory()
     request = factory.post(
-        f'/api/v1/consultations/{SESSION_ID}/simulations/',
+        f'/api/simulations/v1/consultations/{SESSION_ID}/simulations/',
         {'mode': 'baseline'} if body is None else body,
         format='json',
     )
@@ -85,11 +87,11 @@ class SuccessContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.data
         self.assertTrue(body['success'])
-        self.assertEqual(set(body), {'success', 'data', 'meta'})
-        self.assertEqual(set(body['data']), {'baseline_key', 'analysis'})
+        self.assertEqual(set(body), set(HTTP_CONTRACT['success_envelope']['required_top_level']))
+        self.assertEqual(set(body['data']), set(HTTP_CONTRACT['success_envelope']['required_data']))
         self.assertEqual(
             set(body['meta']),
-            {'simulation_policy_version', 'package_version', 'executed_at', 'elapsed_ms'},
+            set(HTTP_CONTRACT['success_envelope']['required_meta']),
         )
 
     def test_module_output_is_passed_through_unmodified(self) -> None:
@@ -154,10 +156,13 @@ class RequestValidationTests(unittest.TestCase):
     def test_error_envelope_shape(self) -> None:
         with wired():
             response = call({})
-        self.assertEqual(set(response.data), {'success', 'error'})
+        self.assertEqual(
+            set(response.data),
+            set(HTTP_CONTRACT['error_envelope']['required_top_level']),
+        )
         self.assertEqual(
             set(response.data['error']) - {'details'},
-            {'code', 'message', 'retryable'},
+            set(HTTP_CONTRACT['error_envelope']['required_error']),
         )
 
 
@@ -239,18 +244,21 @@ class InputAndPolicyFailureTests(unittest.TestCase):
 
 
 class RoutingContractTests(unittest.TestCase):
-    def test_endpoint_is_registered_under_api_v1(self) -> None:
+    def test_endpoint_is_registered_under_simulations_v1(self) -> None:
         from django.urls import resolve, reverse  # noqa: PLC0415
 
         url = reverse('simulation-run', kwargs={'session_id': SESSION_ID})
-        self.assertEqual(url, f'/api/v1/consultations/{SESSION_ID}/simulations/')
+        self.assertEqual(
+            url,
+            HTTP_CONTRACT['endpoint'].format(session_id=SESSION_ID),
+        )
         self.assertIs(resolve(url).func.view_class, SimulationRunView)
 
     def test_reports_catch_all_does_not_swallow_the_route(self) -> None:
         """reports/urls.py 의 <slug:report_type> 이 먼저 잡으면 404 가 난다."""
         from django.urls import resolve  # noqa: PLC0415
 
-        match = resolve(f'/api/v1/consultations/{SESSION_ID}/simulations/')
+        match = resolve(f'/api/simulations/v1/consultations/{SESSION_ID}/simulations/')
         self.assertEqual(match.url_name, 'simulation-run')
 
 

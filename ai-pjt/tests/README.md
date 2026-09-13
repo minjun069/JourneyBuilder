@@ -12,7 +12,7 @@ python3 -m unittest discover -s ai-pjt/tests -p 'test_*.py'
 
 `test_router_evaluation.py`는 다음을 확인한다.
 
-- 계약에 동결된 23개 `step_id`와 Agent allowlist가 평가 fixture에 모두 존재한다.
+- 계약에 동결된 24개 `step_id`와 Agent allowlist가 평가 fixture에 모두 존재한다.
 - 여섯 역할의 대표 성공 경로와 모호·미지원·정책 거부·분류기 오류 fallback이 포함된다.
 - `elicit`은 `financial-mindset`에서 명시적으로 정성정보 수집을 요청한 경우에만 성공 라벨이 된다.
 - 모호한 요청은 단계와 관계없이 `fallback`으로 라벨링된다.

@@ -41,6 +41,7 @@
     {"step_id": "financial-goal-result", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
     {"step_id": "retirement-fund", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
     {"step_id": "retirement-readiness", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
+    {"step_id": "retirement-simulation", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
     {"step_id": "pension-schedule", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
     {"step_id": "lifetime-cashflow", "allowed_agents": ["qa", "chart_interpret", "fallback"]},
     {"step_id": "required-savings", "allowed_agents": ["qa", "chart_interpret", "fallback"]}

@@ -198,7 +198,7 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
             transport=httpx.ASGITransport(app=app),
             base_url="http://ai",
         ) as client:
-            return await client.post("/v2/chat/stream", json=payload, headers=headers)
+            return await client.post("/api/ai/v2/chat/stream", json=payload, headers=headers)
 
     async def test_authentication_precedes_request_validation(self):
         response = await self._post({})

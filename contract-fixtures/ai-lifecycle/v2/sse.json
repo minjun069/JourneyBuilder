@@ -1,7 +1,7 @@
 {
   "contract_version": "2.0",
-  "browser_endpoint": "/api/v2/consultations/{session_id}/messages/stream/",
-  "ai_endpoint": "/v2/chat/stream",
+  "browser_endpoint": "/api/consulting/v2/consultations/{session_id}/messages/stream/",
+  "ai_endpoint": "/api/ai/v2/chat/stream",
   "required_browser_headers": ["Authorization", "Idempotency-Key", "Accept"],
   "required_service_headers": ["Authorization", "Accept"],
   "content_type": "text/event-stream",

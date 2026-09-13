@@ -29,7 +29,7 @@ function writeEvent(response, event, data) {
 }
 
 const server = createServer(async (request, response) => {
-  if (request.method === 'GET' && request.url === '/health') {
+  if (request.method === 'GET' && request.url === '/api/system/v1/health') {
     return json(response, 200, { status: 'ok' })
   }
 
@@ -47,7 +47,7 @@ const server = createServer(async (request, response) => {
     }
   }
 
-  if (request.method === 'POST' && request.url === '/v2/chat/stream') {
+  if (request.method === 'POST' && request.url === '/api/ai/v2/chat/stream') {
     if (!authorized(request, bearerToken)) return json(response, 401, { error: 'unauthorized' })
     if (!preparedOutput) return json(response, 409, { error: 'fixture not prepared' })
 

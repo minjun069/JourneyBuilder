@@ -113,7 +113,7 @@ source_meta="$(stat -c '%U:%G:%a' "$ENV_FILE")"
 
 initial_web="$(health_of web)"; initial_backend="$(health_of backend)"; initial_ai="$(health_of ai-pjt)"
 initial_http="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/ || true)"
-initial_api="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/api/v1/consultations/ || true)"
+initial_api="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/api/consulting/v1/consultations/ || true)"
 [ "$initial_web:$initial_backend:$initial_ai:$initial_http" = 'healthy:healthy:healthy:200' ] \
   || die "시작 상태가 healthy가 아닙니다(web=$initial_web backend=$initial_backend ai=$initial_ai http=${initial_http:-000})"
 responded "${initial_api:-000}" || die "시작 API 경로가 응답하지 않습니다(code=${initial_api:-000})"
@@ -206,7 +206,7 @@ deadline=$(( $(date +%s) + 90 ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
   final_web="$(health_of web)"; final_backend="$(health_of backend)"; final_ai="$(health_of ai-pjt)"
   final_http="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/ || true)"
-  final_api="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/api/v1/consultations/ || true)"
+  final_api="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:8080/api/consulting/v1/consultations/ || true)"
   if [ "$final_web:$final_backend:$final_ai:$final_http" = 'healthy:healthy:healthy:200' ] && responded "${final_api:-000}"; then
     break
   fi

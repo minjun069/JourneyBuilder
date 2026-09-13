@@ -42,7 +42,7 @@ class ReadinessTests(unittest.TestCase):
         readiness.check_readiness(
             {
                 "DATABASE_URL": "postgresql://runtime:secret@postgres:5432/retirewise_db",
-                "READINESS_HTTP_URL": "http://127.0.0.1:8001/health",
+                "READINESS_HTTP_URL": "http://127.0.0.1:8001/api/system/v1/health",
                 "READINESS_TIMEOUT_SECONDS": "3",
             },
             http_probe,
@@ -52,7 +52,7 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(
             calls,
             [
-                ("http", "http://127.0.0.1:8001/health", 3.0),
+                ("http", "http://127.0.0.1:8001/api/system/v1/health", 3.0),
                 (
                     "postgres",
                     "postgresql://runtime:secret@postgres:5432/retirewise_db",
@@ -96,7 +96,7 @@ class ReadinessTests(unittest.TestCase):
 
         with patch.object(readiness, "urlopen", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "unexpected payload"):
-                readiness.check_http("http://127.0.0.1:8001/health", 2.0)
+                readiness.check_http("http://127.0.0.1:8001/api/system/v1/health", 2.0)
 
     def test_http_probe_requires_200_status(self) -> None:
         response = MagicMock()
@@ -105,7 +105,7 @@ class ReadinessTests(unittest.TestCase):
 
         with patch.object(readiness, "urlopen", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "non-200 status"):
-                readiness.check_http("http://127.0.0.1:8001/health", 2.0)
+                readiness.check_http("http://127.0.0.1:8001/api/system/v1/health", 2.0)
 
     def test_postgres_probe_runs_select_one_with_rounded_timeout(self) -> None:
         cursor = MagicMock()

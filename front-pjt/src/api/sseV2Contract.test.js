@@ -25,7 +25,7 @@ const lifecycleSource = readFileSync(
 )
 
 test('Frontend는 인증과 멱등 키가 필요한 v2 SSE endpoint를 사용한다', () => {
-  assert.match(contract.browser_endpoint, /^\/api\/v2\//)
+  assert.match(contract.browser_endpoint, /^\/api\/consulting\/v2\//)
   assert.equal(contract.content_type, 'text/event-stream')
   assert.ok(contract.required_browser_headers.includes('Authorization'))
   assert.ok(contract.required_browser_headers.includes('Idempotency-Key'))

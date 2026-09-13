@@ -19,11 +19,11 @@ from django.urls import include, path
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/v2/', include('consulting.v2_urls')),
-    path('api/v1/admin/', include('adminapi.urls')),
-    path('api/v1/auth/', include('accounts.urls')),
-    path('api/v1/', include('consulting.urls')),
-    path('api/v1/', include('reports.urls')),
-    path('api/v1/', include('simulations.urls')),
-    path('api/v1/', include('community.urls')),
+    path('api/auth/v1/', include('accounts.urls')),
+    path('api/consulting/v1/', include('consulting.urls')),
+    path('api/consulting/v2/', include('consulting.v2_urls')),
+    path('api/reports/v1/', include('reports.urls')),
+    path('api/simulations/v1/', include('simulations.urls')),
+    path('api/community/v1/', include('community.urls')),
+    path('api/admin/v1/', include('adminapi.urls')),
 ]

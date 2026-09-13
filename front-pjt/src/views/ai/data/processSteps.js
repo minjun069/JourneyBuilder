@@ -19,6 +19,7 @@ export const PROCESS_STEPS = [
   { id: 'financial-goal-result',  label: '재무목표',                   depth: 1, phase: 'presentation' },
   { id: 'retirement-fund',        label: '은퇴 필요자금',               depth: 1, phase: 'presentation' },
   { id: 'retirement-readiness',   label: '은퇴 준비자금',               depth: 1, phase: 'presentation' },
+  { id: 'retirement-simulation',  label: '은퇴 시뮬레이션',             depth: 1, phase: 'presentation' },
   { id: 'pension-schedule',       label: '연금 스케줄',                 depth: 1, phase: 'presentation' },
   { id: 'lifetime-cashflow',      label: '생애현금흐름 및\n생애순자산',   depth: 1, phase: 'presentation' },
   { id: 'required-savings',       label: '필요저축액',                  depth: 1, phase: 'presentation' },

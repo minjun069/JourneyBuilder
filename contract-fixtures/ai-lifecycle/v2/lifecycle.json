@@ -19,9 +19,9 @@
   ],
   "removed_routes": [
     "POST /api/v1/consultations/{session_id}/messages/",
-    "POST /api/v2/consultations/{session_id}/messages/",
+    "POST /api/consulting/v2/consultations/{session_id}/messages/",
     "GET /api/v1/consultations/{session_id}/ai-responses/{request_id}/",
-    "GET /api/v2/consultations/{session_id}/ai-responses/{request_id}/",
+    "GET /api/consulting/v2/consultations/{session_id}/ai-responses/{request_id}/",
     "POST /api/ai/callback[/]",
     "POST /api/v2/internal/ai/callback/",
     "POST /v2/chat",
@@ -46,7 +46,7 @@
       "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/stream/",
+        "path": "/api/consulting/v2/consultations/1/messages/stream/",
         "headers": {
           "Authorization": "Bearer <user-jwt>",
           "Idempotency-Key": "6f203e35-42be-4cb5-aa64-35f5f91510f3",
@@ -79,7 +79,7 @@
       "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/stream/",
+        "path": "/api/consulting/v2/consultations/1/messages/stream/",
         "headers": {
           "Authorization": "Bearer <user-jwt>",
           "Accept": "text/event-stream"
@@ -108,7 +108,7 @@
       "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/stream/",
+        "path": "/api/consulting/v2/consultations/1/messages/stream/",
         "headers": {
           "Authorization": "Bearer <user-jwt>",
           "Idempotency-Key": "1c126256-8d8d-4e6f-91e8-91fd771120e2",
@@ -137,7 +137,7 @@
       "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/stream/",
+        "path": "/api/consulting/v2/consultations/1/messages/stream/",
         "headers": {
           "Authorization": "Bearer <user-jwt>",
           "Idempotency-Key": "61ed8257-a650-46c4-8fd4-95112fd4d107",
@@ -167,7 +167,7 @@
       "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/stream/",
+        "path": "/api/consulting/v2/consultations/1/messages/stream/",
         "headers": {
           "Idempotency-Key": "44b66c99-48dc-4b39-99a2-4e666837501f",
           "Accept": "text/event-stream"
@@ -197,7 +197,7 @@
       "given": "유효한 JWT의 사용자가 session 1을 소유하지 않는다.",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/stream/",
+        "path": "/api/consulting/v2/consultations/1/messages/stream/",
         "headers": {
           "Authorization": "Bearer <user-jwt>",
           "Idempotency-Key": "foreign-session-key",
@@ -276,7 +276,7 @@
       "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat/stream",
+        "path": "/api/ai/v2/chat/stream",
         "headers": {
           "Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>",
           "Accept": "text/event-stream"
@@ -309,7 +309,7 @@
       "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat/stream",
+        "path": "/api/ai/v2/chat/stream",
         "headers": {
           "Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>",
           "Accept": "text/event-stream"
@@ -346,7 +346,7 @@
       "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat/stream",
+        "path": "/api/ai/v2/chat/stream",
         "headers": {
           "Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>",
           "Accept": "text/event-stream"
@@ -384,7 +384,7 @@
       "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat/stream",
+        "path": "/api/ai/v2/chat/stream",
         "headers": {},
         "body": {}
       },
@@ -561,7 +561,7 @@
       "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat/stream",
+        "path": "/api/ai/v2/chat/stream",
         "headers": {
           "Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>",
           "Accept": "text/event-stream"

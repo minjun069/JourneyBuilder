@@ -297,7 +297,7 @@ async def _stream_v2_chat_events(
         yield _encode_sse("error", terminal)
 
 
-@app.post("/v2/chat/stream")
+@app.post("/api/ai/v2/chat/stream")
 async def chat_v2_stream(
     raw_request: Request,
     authorization: str | None = Header(default=None, alias="Authorization"),
@@ -322,6 +322,6 @@ async def chat_v2_stream(
     )
 
 
-@app.get("/health")
+@app.get("/api/system/v1/health")
 def health():
     return {"status": "ok"}
