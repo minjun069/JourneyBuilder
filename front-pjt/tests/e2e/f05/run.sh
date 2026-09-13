@@ -47,6 +47,7 @@ run_scenario() (
   export POSTGRES_PASSWORD="f05-db-${token}-safe"
   export DJANGO_SECRET_KEY="f05-django-${token}-safe"
   export AI_SERVICE_BEARER_TOKEN="f05-ai-${token}-safe"
+  export AI_MASKING_PSEUDONYM_KEY="f05-mask-${token}-safe"
   export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
   export API_GATEWAY_PORT=0
   project="f05p07${token}"

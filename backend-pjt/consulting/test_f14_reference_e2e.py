@@ -4,7 +4,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from accounts.models import User
 from reports.policy import active_policy_version
 
-from .ai_lifecycle import create_v2_assistant_message, decide_change
+from .ai_lifecycle import create_v2_assistant_message
 from .models import (
     ConsultingSession,
     FinancialGoalPeriod,
@@ -13,7 +13,7 @@ from .models import (
 from .views import GoalPeriodsView
 
 
-class F14ReferenceApprovalSaveE2ETests(TestCase):
+class F14ReferenceProposalSaveE2ETests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
             email="f14-reference@example.invalid",
@@ -37,7 +37,7 @@ class F14ReferenceApprovalSaveE2ETests(TestCase):
             is_fixed=True,
         )
 
-    def test_housing_reference_proposal_requires_approval_then_saves_exact_db_value(self):
+    def test_housing_reference_proposal_stays_unsaved_until_form_save(self):
         reference = {
             "reference_id": "household_monthly_expense_housing_avg",
             "age": 45,
@@ -51,7 +51,7 @@ class F14ReferenceApprovalSaveE2ETests(TestCase):
             "calculation_policy_version": active_policy_version(),
         }
         output = {
-            "response": "승인된 주거비 기준으로 기존 빈 항목 변경안을 만들었습니다.",
+            "response": "주거비 기준으로 기존 빈 항목 변경안을 만들었습니다.",
             "step_id": "financial-goals",
             "action": {
                 "type": "form_change",
@@ -74,7 +74,7 @@ class F14ReferenceApprovalSaveE2ETests(TestCase):
                         "reference_period": "monthly",
                     },
                     "retrieved_at": "2025-12-31",
-                    "transform": "승인 기준값을 원 단위 월 금액으로 직접 매핑",
+                    "transform": "기준값을 원 단위 월 금액으로 직접 매핑",
                     "assumption_level": "household_benchmark",
                     "reference": reference,
                 }],
@@ -94,14 +94,8 @@ class F14ReferenceApprovalSaveE2ETests(TestCase):
         self.item.refresh_from_db()
         self.assertIsNone(self.item.amount)
 
-        approved = decide_change(
-            message,
-            change_id=change["change_id"],
-            decision="approved",
-        )
-        self.assertEqual(approved["decision_status"], "approved")
-        self.assertEqual(approved["change"]["value"], 361_000)
-        self.assertEqual(approved["change"]["reference"], reference)
+        self.assertEqual(change["value"], 361_000)
+        self.assertEqual(change["reference"], reference)
         self.item.refresh_from_db()
         self.assertIsNone(self.item.amount)
 
@@ -115,7 +109,7 @@ class F14ReferenceApprovalSaveE2ETests(TestCase):
                 "items": [{
                     "id": self.item.id,
                     "name": "주거비",
-                    "amount": approved["change"]["value"],
+                    "amount": change["value"],
                     "is_fixed": True,
                 }],
             }],

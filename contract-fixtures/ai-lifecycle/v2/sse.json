@@ -23,6 +23,11 @@
       "save": "sse",
       "user_request": "sse"
     },
+    "change_decision": {
+      "owner": "frontend",
+      "transport": "none",
+      "persists_on_server": false
+    },
     "frontend_polling_flows": []
   },
   "terminal_events": ["done", "error"],

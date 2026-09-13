@@ -1,15 +1,10 @@
 from django.db import transaction
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 import logging
 
-from .ai_services import (
-    apply_pending_changes,
-    mark_message_action,
-)
 from .models import (
     ConsultingSession, Message,
     BasicInfo, FinancialMindset, FinancialSatisfaction,
@@ -117,84 +112,6 @@ class MessageListView(APIView):
         messages = session.messages.all()
         serializer = MessageSerializer(messages, many=True)
         return Response({'success': True, 'data': serializer.data, 'meta': {'total': messages.count()}})
-
-# AI 제안 사용자 approve/reject API
-class AIActionApproveView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, session_id):
-        session = get_session_or_404(session_id, request.user)
-        if not session:
-            return session_not_found()
-
-        message_id = request.data.get('message_id')
-        message = Message.objects.filter(
-            id=message_id,
-            session=session,
-            role=Message.Role.ASSISTANT,
-        ).first()
-        if not message:
-            return Response(
-                {'success': False, 'error': 'AI 메시지를 찾을 수 없습니다.'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        extracted_data = message.extracted_data or {}
-        if extracted_data.get('action_status') == 'approved':
-            return Response(
-                {'success': False, 'error': '이미 승인된 AI 제안입니다.'},
-                status=status.HTTP_409_CONFLICT,
-            )
-        if extracted_data.get('action_status') == 'rejected':
-            return Response(
-                {'success': False, 'error': '이미 거절된 AI 제안입니다.'},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        if not extracted_data.get('requires_approval') or not extracted_data.get('pending_changes'):
-            return Response(
-                {'success': False, 'error': '승인할 입력 제안이 없습니다.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            applied = apply_pending_changes(session, message)
-        except (ValueError, ValidationError) as exc:
-            return Response({'success': False, 'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response({'success': True, 'data': {'message_id': message.id, 'applied': applied}})
-
-
-class AIActionRejectView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, session_id):
-        session = get_session_or_404(session_id, request.user)
-        if not session:
-            return session_not_found()
-
-        message_id = request.data.get('message_id')
-        message = Message.objects.filter(
-            id=message_id,
-            session=session,
-            role=Message.Role.ASSISTANT,
-        ).first()
-        if not message:
-            return Response(
-                {'success': False, 'error': 'AI 메시지를 찾을 수 없습니다.'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        extracted_data = message.extracted_data or {}
-        if extracted_data.get('action_status') == 'approved':
-            return Response(
-                {'success': False, 'error': '이미 승인된 AI 제안입니다.'},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        mark_message_action(message, 'rejected')
-        return Response({'success': True, 'data': {'message_id': message.id, 'action_status': 'rejected'}})
-
 
 # 기본 정보
 class BasicInfoView(APIView):

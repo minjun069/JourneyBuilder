@@ -9,6 +9,7 @@ import {
   continueSaveAfterOptionalReview,
   visibleErrorReviewItems,
 } from '@/utils/formChanges'
+import { decideFormChangeLocally } from '@/utils/formDecision'
 import { PROCESS_STEPS, STEP_IDS } from './data/processSteps.js'
 import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.js'
 import BasicInfoForm from '@/components/forms/BasicInfoForm.vue'
@@ -465,9 +466,9 @@ function decisionStatusLabel(status) {
   return '확인 필요'
 }
 
-async function decideFormChange(msg, change, decision) {
+function decideFormChange(msg, change, decision) {
   const action = msg.action
-  if (change.decision_status !== 'pending' || change.deciding) return
+  if (change.decision_status !== 'pending') return
   if (
     decision === 'approved'
     && action.target === 'draft_form'
@@ -476,24 +477,12 @@ async function decideFormChange(msg, change, decision) {
     sessionError.value = '제안이 만들어진 입력 단계에서 승인해주세요.'
     return
   }
-  change.deciding = true
   try {
-    const result = decision === 'approved'
-      ? await aiStore.approveChange(action.action_id, change.change_id)
-      : await aiStore.rejectChange(action.action_id, change.change_id)
-    change.decision_status = result.decision_status
-    action.status = result.action_status
-    if (decision === 'approved' && action.target === 'draft_form') {
-      try {
-        applyCanonicalChanges(action.step_id, activeFormRef.value.form, [result.change])
-      } catch {
-        sessionError.value = '승인 기록은 완료됐지만 현재 폼에 값을 반영하지 못했습니다. 직접 확인해주세요.'
-      }
-    }
+    decideFormChangeLocally(action, change, decision, (approvedChange) => {
+      applyCanonicalChanges(action.step_id, activeFormRef.value.form, [approvedChange])
+    })
   } catch {
-    streamAiMessages([{ text: 'AI 입력 제안을 처리하지 못했습니다. 다시 시도해주세요.' }], { typingDelay: 0 })
-  } finally {
-    change.deciding = false
+    sessionError.value = '현재 폼에 제안 값을 반영하지 못했습니다. 입력 단계를 확인해주세요.'
   }
 }
 
@@ -770,13 +759,11 @@ onBeforeUnmount(() => {
                           <button
                             class="action-btn action-btn--secondary"
                             type="button"
-                            :disabled="change.deciding"
                             @click="rejectFormChange(msg, change)"
                           >거절</button>
                           <button
                             class="action-btn"
                             type="button"
-                            :disabled="change.deciding"
                             @click="approveFormChange(msg, change)"
                           >승인</button>
                         </div>

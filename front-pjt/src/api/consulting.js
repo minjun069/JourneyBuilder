@@ -17,28 +17,7 @@ export const deleteSession = (sid)           => api.delete(`/consultations/${sid
 
 // ── Messages ─────────────────────────────────────────────────
 export const getMessages = (sid)           => api.get(`/consultations/${sid}/messages/`)
-export const approveAiAction = (sid, messageId) => api.post(`/consultations/${sid}/ai-actions/approve/`, { message_id: messageId })
-export const rejectAiAction = (sid, messageId) => api.post(`/consultations/${sid}/ai-actions/reject/`, { message_id: messageId })
-
 const V2_BASE_URL = deriveV2BaseURL(api.defaults.baseURL)
-
-function decideAsyncChange(sid, actionId, changeId, decision, idempotencyKey) {
-  return api.post(
-    `/consultations/${sid}/ai-actions/${actionId}/changes/${changeId}/${decision}/`,
-    {},
-    {
-      baseURL: V2_BASE_URL,
-      headers: { 'Idempotency-Key': idempotencyKey ?? createIdempotencyKey() },
-    },
-  )
-}
-
-export const approveAsyncChange = (sid, actionId, changeId, options = {}) => (
-  decideAsyncChange(sid, actionId, changeId, 'approve', options.idempotencyKey)
-)
-export const rejectAsyncChange = (sid, actionId, changeId, options = {}) => (
-  decideAsyncChange(sid, actionId, changeId, 'reject', options.idempotencyKey)
-)
 
 export async function* streamMessagesV2(
   sid,

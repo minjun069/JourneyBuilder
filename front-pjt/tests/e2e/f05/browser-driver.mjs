@@ -310,18 +310,29 @@ export class F05BrowserDriver {
       (change) => changeKey(change) === changeKey(decision.match),
     )
     expect(index, `change를 찾을 수 없음: ${changeKey(decision.match)}`).toBeGreaterThanOrEqual(0)
-    const change = proposal.action.changes[index]
-    const endpoint = `/api/v2/consultations/${this.sessionId}/ai-actions/${proposal.action.action_id}/changes/${change.change_id}/${decision.outcome}/`
-    const responsePromise = this.page.waitForResponse((response) => (
-      response.url().includes(endpoint) && response.request().method() === 'POST'
-    ))
+    const networkRequests = []
+    const observeDecisionRequest = (request) => {
+      const pathname = new URL(request.url()).pathname
+      networkRequests.push(`${request.method()} ${pathname}`)
+    }
+    this.page.on('request', observeDecisionRequest)
     const buttonName = decision.outcome === 'approve' ? '승인' : '거절'
-    await proposal.card.locator('.update-change').nth(index).getByRole('button', { name: buttonName }).click()
-    const response = await responsePromise
-    const body = await response.json()
-    expect(response.status(), JSON.stringify(body)).toBe(200)
-    await expect(proposal.card.locator('.update-change').nth(index).locator('.update-decision')).toBeVisible()
-    return body.data
+    try {
+      await proposal.card.locator('.update-change').nth(index).getByRole('button', { name: buttonName }).click()
+      await expect(proposal.card.locator('.update-change').nth(index).locator('.update-decision')).toBeVisible()
+      await this.page.waitForTimeout(100)
+    } finally {
+      this.page.off('request', observeDecisionRequest)
+    }
+    expect(
+      networkRequests,
+      `승인·거절 중 네트워크 요청이 발생함: ${networkRequests.join(', ')}`,
+    ).toEqual([])
+    const pendingControls = await proposal.card.locator('.update-actions').count()
+    return {
+      action_status: pendingControls === 0 ? 'resolved' : 'partially_resolved',
+      decision_status: decision.outcome === 'approve' ? 'approved' : 'rejected',
+    }
   }
 
   async assertActionStatus({ result, expected }) {
@@ -385,12 +396,12 @@ export class F05BrowserDriver {
       response.url().includes(`/api/v1/consultations/${this.sessionId}/data/financial-assets/`)
       && response.request().method() === 'PUT'
     ))
-    await this.page.locator('.submit-form-btn').click()
+    await this.page.getByRole('button', { name: '작성 완료', exact: true }).click()
     const response = await responsePromise
     expect(response.status()).toBe(probe.expectedHttpStatus)
     await this.assertDatabase({ expected: unchangedDatabase, phase: 'rejected-atomic-save' })
     await valueInput.fill(`${validValue.replace(/원$/, '')}원`)
-    await expect(this.page.locator('.submit-form-btn')).toBeEnabled()
+    await expect(this.page.getByRole('button', { name: '작성 완료', exact: true })).toBeEnabled()
   }
 
   async saveForm({ stepId }) {
@@ -404,7 +415,7 @@ export class F05BrowserDriver {
       && response.request().method() === 'PUT'
       && response.status() === 200
     ))
-    await this.page.locator('.submit-form-btn').click()
+    await this.page.getByRole('button', { name: '작성 완료', exact: true }).click()
     await responsePromise
   }
 

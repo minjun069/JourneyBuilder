@@ -11,8 +11,9 @@
   },
   "common_assertions": [
     "AI output에는 action_id, change_id, mode, status, decision_status가 없다.",
-    "Django가 canonical field 검증 뒤 action_id, change_id, mode=proposal과 pending 상태를 부여한다.",
-    "user_requested와 confidence는 승인 증거가 아니며 모든 AI change는 별도 사용자 결정을 거친다.",
+    "Django가 canonical field 검증 뒤 action_id, change_id, mode=proposal과 초기 pending 표시 상태를 부여한다.",
+    "user_requested와 confidence는 승인 증거가 아니며 모든 AI change는 Frontend에서 별도 사용자 결정을 거친다.",
+    "승인·거절은 Frontend 로컬 상태만 바꾸고 Change Decision API를 호출하거나 서버에 결과를 저장하지 않는다.",
     "승인된 proposal만 Frontend draft를 바꾸며 업무 DB 저장 완료가 아니다.",
     "금액은 canonical payload에서 KRW 원 단위 정수다.",
     "배열 index는 항목 식별자로 사용하지 않는다."
@@ -85,7 +86,7 @@
           }
         ]
       },
-      "decisions": [
+      "frontend_decisions": [
         {"change_id": "chg_basic_income", "decision_status": "approved"},
         {"change_id": "chg_basic_job", "decision_status": "approved"}
       ],
@@ -149,7 +150,7 @@
           }
         ]
       },
-      "decisions": [
+      "frontend_decisions": [
         {"change_id": "chg_mindset_challenge", "decision_status": "approved"}
       ],
       "expected": {
@@ -298,7 +299,7 @@
           }
         ]
       },
-      "decisions": [
+      "frontend_decisions": [
         {"change_id": "chg_asset_update", "decision_status": "approved"},
         {"change_id": "chg_asset_remove", "decision_status": "approved"},
         {"change_id": "chg_asset_add", "decision_status": "approved"}
@@ -439,7 +440,7 @@
           }
         ]
       },
-      "decisions": [
+      "frontend_decisions": [
         {"change_id": "chg_goal_item_add", "decision_status": "approved"}
       ],
       "expected": {
@@ -612,7 +613,7 @@
           }
         ]
       },
-      "decisions": [
+      "frontend_decisions": [
         {"change_id": "chg_goal_item_update", "decision_status": "approved"},
         {"change_id": "chg_goal_item_remove", "decision_status": "approved"}
       ],

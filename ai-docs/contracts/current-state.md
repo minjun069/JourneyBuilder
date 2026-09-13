@@ -16,7 +16,7 @@
 | 멱등성 | 사용자·세션·`Idempotency-Key` digest와 `request_id` 결합 |
 | 완료 재생 | 같은 key는 graph를 재실행하지 않고 terminal receipt에서 SSE 결과 재생 |
 | 저장 | completed/failed receipt와 assistant message를 transaction으로 확정하고 Redis 유실 시 복구 |
-| 승인 | 모든 Input Assistance change는 `proposal/pending`; change별 승인 전 draft 적용 금지 |
+| 제안 결정 | 모든 Input Assistance change는 `proposal/pending`; 승인·거절은 FE 로컬에서만 처리하고 결정 API·서버 이력은 없음 |
 
 receipt의 DB 필드명 `callback_digest`는 기존 migration 호환을 위해 유지하지만 현재
 의미는 SSE terminal payload digest다. 브라우저 연결과 독립적인 장기 실행이 필요하면
@@ -27,4 +27,4 @@ polling을 되살리지 않고 RabbitMQ 영속 작업으로 분리한다.
 - 공용 `lifecycle.json`과 `sse.json`은 SSE 단일 전송과 제거 route 목록을 고정한다.
 - Backend는 SSE 정상·실패·취소·동일 key replay·receipt 복구를 검증한다.
 - AI는 `/v2/chat/stream` 인증·terminal을 검증하고 제거된 route의 404를 고정한다.
-- Frontend는 polling helper 없이 네 SSE event와 Error Review 비차단 저장을 소비한다.
+- Frontend는 polling helper 없이 네 SSE event와 Error Review 비차단 저장을 소비하고, 제안 승인·거절 중 `/ai-actions/` 요청이 0건임을 검증한다.

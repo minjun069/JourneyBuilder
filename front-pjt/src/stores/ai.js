@@ -3,8 +3,6 @@ import { defineStore } from 'pinia'
 import {
   getSessions, createSession,
   getMessages, streamMessagesV2,
-  approveAiAction, rejectAiAction,
-  approveAsyncChange, rejectAsyncChange,
   getBasicInfo,
   putBasicInfo, putFinancialMindset, putFinancialSatisfaction,
   putFinancialAssets, putPensionAssets, putRealEstateAssets,
@@ -16,11 +14,7 @@ import {
   mapGoalPeriods, mapGoalMilestones,
   mapCurrentForm,
 } from '@/api/consulting'
-import {
-  createIdempotencyKey,
-  lifecycleErrorFromResponse,
-  validateDecisionEnvelope,
-} from '@/api/aiLifecycle'
+import { createIdempotencyKey } from '@/api/aiLifecycle'
 import { getReports } from '@/api/reports'
 import { MOCK_PRESENTATION_DATA } from '@/mock/aiData'
 import { normalizePresentationData } from '@/utils/reportData'
@@ -35,7 +29,6 @@ export const useAiStore = defineStore('ai', () => {
   const loading          = ref(false)
   const error            = ref(null)
   let activeStreamController = null
-  const decisionIdempotencyKeys = new Map()
 
   // 새 상담 시작: 항상 신규 세션 생성
   async function initSession() {
@@ -139,43 +132,6 @@ export const useAiStore = defineStore('ai', () => {
     activeStreamController = null
   }
 
-  async function approveAction(messageId) {
-    if (!sessionId.value) return
-    return approveAiAction(sessionId.value, messageId)
-  }
-
-  async function rejectAction(messageId) {
-    if (!sessionId.value) return
-    return rejectAiAction(sessionId.value, messageId)
-  }
-
-  async function decideChange(actionId, changeId, decision) {
-    if (!sessionId.value) return null
-    const key = `${actionId}:${changeId}:${decision}`
-    const idempotencyKey = decisionIdempotencyKeys.get(key) ?? createIdempotencyKey()
-    decisionIdempotencyKeys.set(key, idempotencyKey)
-    const requester = decision === 'approve' ? approveAsyncChange : rejectAsyncChange
-    try {
-      const response = await requester(
-        sessionId.value,
-        actionId,
-        changeId,
-        { idempotencyKey },
-      )
-      decisionIdempotencyKeys.delete(key)
-      return validateDecisionEnvelope(response.data, { actionId, changeId, decision })
-    } catch (requestError) {
-      if (requestError?.response) decisionIdempotencyKeys.delete(key)
-      throw lifecycleErrorFromResponse(
-        requestError,
-        'AI 변경 제안을 처리하지 못했습니다. 다시 시도해주세요.',
-      )
-    }
-  }
-
-  const approveChange = (actionId, changeId) => decideChange(actionId, changeId, 'approve')
-  const rejectChange = (actionId, changeId) => decideChange(actionId, changeId, 'reject')
-
   function syncIds(sourceRows, savedRows) {
     ;(sourceRows ?? []).forEach((row, index) => {
       if (savedRows?.[index]?.id != null) row.id = savedRows[index].id
@@ -264,7 +220,6 @@ export const useAiStore = defineStore('ai', () => {
     sessions.value         = []
     presentationData.value = null
     error.value            = null
-    decisionIdempotencyKeys.clear()
   }
 
   return {
@@ -275,7 +230,6 @@ export const useAiStore = defineStore('ai', () => {
     loading, error,
     initSession, loadSessions, continueLatestSession,
     loadMessages, streamMessageV2, reviewForm, cancelActiveStream,
-    approveAction, rejectAction, approveChange, rejectChange,
     saveFormData, loadBasicInfo,
     fetchPresentationData,
     clearSession,

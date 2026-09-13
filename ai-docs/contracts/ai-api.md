@@ -10,14 +10,14 @@ AI→Django HTTP callback은 제공하지 않는다.
 
 ## 호출 주체와 책임
 
-Browser는 AI 서버를 직접 호출하지 않는다. Django가 사용자 인증, 상담 세션 소유권, canonical snapshot, SSE terminal 검증, change별 승인·거절 감사와 최종 폼 저장을 담당한다.
+Browser는 AI 서버를 직접 호출하지 않는다. Django가 사용자 인증, 상담 세션 소유권, canonical snapshot, SSE terminal 검증과 최종 폼 저장을 담당한다. change별 승인·거절은 Frontend 로컬 UI가 소유한다.
 
 AI 서비스는 Django가 전달한 snapshot을 바탕으로 6-Agent를 실행하고 자연어 답변, 인용, draft 변경 제안, 분석 결과를 SSE로 반환한다. AI 서비스는 Django 업무 DB에 직접 쓰지 않는다.
 
 | 주체 | 책임 |
 |---|---|
 | Frontend | 메시지·단계·현재 폼과 Error Review trigger 전달, 모든 대화형 응답의 SSE terminal 표시, 승인된 단일 change 또는 검토 후보의 draft 적용 |
-| Django | 사용자·세션 소유권, request/thread/session 결합, terminal receipt·action 상태, SSE terminal과 form change 재검증 |
+| Django | 사용자·세션 소유권, request/thread/session 결합, terminal receipt, SSE terminal과 form change 재검증 |
 | AI | 문맥 복원, Agent 라우팅·실행, RAG·Function Calling·MCP 실행, 도구 입출력·구조화 출력·보안 검사, 성공·실패 SSE terminal |
 | MCP | 허용 도구 실행, 스키마·권한·timeout·감사 결과 반환 |
 
@@ -176,7 +176,7 @@ terminal payload를 보낸다. 두 상태 모두 `contract_version`, 세 식별�
 }
 ```
 
-AI는 `action_id`, `change_id`, 최종 `mode`, 결정 상태를 만들지 않는다. Django가 terminal의 section/path/operation을 canonical 레지스트리로 검증하고 모든 form action을 `proposal`로 정규화한다. 모든 change에 ID와 `pending` 상태를 부여하며 Browser가 독립 승인·거절한다. AI의 `user_requested`와 confidence는 승인 증거가 아니고 별도 사용자 결정 없이 draft 적용을 허용하지 않는다.
+AI는 `action_id`, `change_id`, 최종 `mode`, 결정 상태를 만들지 않는다. Django가 terminal의 section/path/operation을 canonical 레지스트리로 검증하고 모든 form action을 `proposal`로 정규화한다. 모든 change에 표시 ID와 초기 `pending` 상태를 부여하며 Browser가 독립 승인·거절한다. 이 결정은 Frontend에서만 전이하며 Django로 전송하거나 저장하지 않는다. AI의 `user_requested`와 confidence는 승인 증거가 아니고 별도 사용자 결정 없이 draft 적용을 허용하지 않는다.
 
 반복 항목은 `item_id` 또는 `client_item_id`, 중첩 추가는 부모 ID를 사용한다. 상세 필드·operation·mode 계약은 [데이터 스키마](../data/schema.md)를 따른다.
 
@@ -237,7 +237,7 @@ AI 실패 terminal의 code는 `LLM_TIMEOUT`, `UPSTREAM_UNAVAILABLE`, `OUTPUT_SCH
 
 ## idempotency와 공용 fixture
 
-Browser 접수 key, AI `request_id`, terminal payload digest, change 결정 key는 서로 다른 중복 경계를 보호한다. 정상·누락·잘못된 자료형·권한·timeout·중복 경계는 저장소의 `contract-fixtures/ai-lifecycle/v2/lifecycle.json`, 단일·정성·반복·중첩 draft 변경은 `contract-fixtures/ai-lifecycle/v2/form-actions.json`, 읽기 전용 분석 입력은 `contract-fixtures/ai-lifecycle/v2/chart-payloads.json`을 기계 단일 예제로 사용한다.
+Browser 접수 key, AI `request_id`, terminal payload digest는 서로 다른 중복 경계를 보호한다. Frontend 로컬 승인·거절에는 네트워크 요청과 멱등성 key가 없다. 정상·누락·잘못된 자료형·권한·timeout·중복 경계는 저장소의 `contract-fixtures/ai-lifecycle/v2/lifecycle.json`, 단일·정성·반복·중첩 draft 변경은 `contract-fixtures/ai-lifecycle/v2/form-actions.json`, 읽기 전용 분석 입력은 `contract-fixtures/ai-lifecycle/v2/chart-payloads.json`을 기계 단일 예제로 사용한다.
 
 step registry, lifecycle, form action, chart payload 네 파일은 `ai-contract-v2` fixture set이며 AI·Backend·Frontend는 필요한 case를 직접 provider·consumer test에서 읽는다. 별도 사본을 만들지 않고 문서 예시와 fixture 의미가 달라지면 계약 검사를 실패시킨다. fixture의 credential 표시는 테스트 placeholder이며 실제 secret이나 사용자 원문을 넣지 않는다.
 
@@ -247,7 +247,7 @@ step registry, lifecycle, form action, chart payload 네 파일은 `ai-contract-
 - 선택 필드 추가만 같은 major에서 허용한다. 필수값, 이름, 자료형, 상태 의미, 인증·idempotency 규칙 변경은 다음 major다.
 - 다음 major도 모든 producer·consumer와 fixture를 준비한 뒤 조정 배포한다.
 - rollback은 세 서비스를 이전 release로 함께 되돌린다. v2 consumer와 이전 provider를 섞어 운영하지 않는다.
-- 구현 인수는 provider test, consumer test와 Front→Django→AI SSE→개별 승인·거절 E2E 증거가 있어야 완료된다.
+- 구현 인수는 provider test, consumer test와 Front→Django→AI SSE→FE 로컬 승인·거절→명시적 폼 저장 E2E 및 결정 시 네트워크 요청 0건 증거가 있어야 완료된다.
 
 ## 후속 출력 계약
 

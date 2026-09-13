@@ -18,7 +18,7 @@ const fixtureUrl = new URL(
 )
 const fixture = JSON.parse(readFileSync(fixtureUrl, 'utf8'))
 
-test('every normalized AI change stays pending until a separate decision', () => {
+test('every normalized AI change starts pending for a Frontend-local decision', () => {
   for (const [caseName, contractCase] of Object.entries(fixture.cases)) {
     const action = contractCase.django_normalized_action
     assert.equal(action.mode, 'proposal', caseName)
@@ -29,7 +29,7 @@ test('every normalized AI change stays pending until a separate decision', () =>
       caseName,
     )
     assert.deepEqual(
-      new Set(contractCase.decisions.map((decision) => decision.change_id)),
+      new Set(contractCase.frontend_decisions.map((decision) => decision.change_id)),
       new Set(action.changes.map((change) => change.change_id)),
       caseName,
     )
@@ -72,7 +72,7 @@ test('승인된 D1 fixture 변경은 실제 Frontend draft resolver 결과와 �
   for (const [caseName, contractCase] of Object.entries(fixture.cases)) {
     const draft = structuredClone(contractCase.initial.frontend_draft)
     const approvedIds = new Set(
-      contractCase.decisions
+      contractCase.frontend_decisions
         .filter((decision) => decision.decision_status === 'approved')
         .map((decision) => decision.change_id),
     )

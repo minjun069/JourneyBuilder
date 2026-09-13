@@ -93,3 +93,19 @@ test('Frontend 제품 경로에는 callback polling helper가 남지 않는다',
   assert.doesNotMatch(consultingApiSource, /\/ai-responses\//)
   assert.doesNotMatch(lifecycleSource, /pollUntilTerminal|validatePollingEnvelope/)
 })
+
+test('AI 변경 승인·거절은 Frontend 로컬 처리이며 네트워크 요청을 만들지 않는다', () => {
+  assert.deepEqual(contract.channel_policy.change_decision, {
+    owner: 'frontend',
+    transport: 'none',
+    persists_on_server: false,
+  })
+  const decisionHandler = aiChatViewSource.slice(
+    aiChatViewSource.indexOf('function decideFormChange'),
+    aiChatViewSource.indexOf('const approveFormChange'),
+  )
+  assert.match(decisionHandler, /decideFormChangeLocally/)
+  assert.doesNotMatch(decisionHandler, /await|aiStore\./)
+  assert.doesNotMatch(consultingApiSource, /\/ai-actions\//)
+  assert.doesNotMatch(aiStoreSource, /approveChange|rejectChange|decisionIdempotency/)
+})
