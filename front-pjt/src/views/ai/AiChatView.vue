@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useAiStore } from '@/stores/ai'
+import { useConsultationStore } from '@/stores/consultation'
+import { useReportStore } from '@/stores/report'
 import { mapCurrentForm } from '@/api/consulting'
 import {
   applyCanonicalChanges,
@@ -35,8 +36,9 @@ import RequiredSavingsSlide from '@/components/presentation/RequiredSavingsSlide
 import ProcessSidebar from './ProcessSidebar.vue'
 import StepSkipWarningModal from './StepSkipWarningModal.vue'
 
-const aiStore = useAiStore()
-const hasActiveSession = computed(() => !!aiStore.sessionId)
+const consultationStore = useConsultationStore()
+const reportStore = useReportStore()
+const hasActiveSession = computed(() => !!consultationStore.sessionId)
 
 // ─── Resize ───────────────────────────────────────────────
 const mainAreaRef = ref(null)
@@ -239,7 +241,7 @@ function resetConversationState() {
   isStreamingResponse.value = false
   leftWidth.value = 71.4
   rightWidth.value = 28.6
-  aiStore.presentationData = null
+  reportStore.clearActiveReport()
 }
 
 function showInitialMessages() {
@@ -282,7 +284,7 @@ function toChatMessage(message) {
 }
 
 function restoreStoredMessages() {
-  messages.value = aiStore.chatMessages.map(toChatMessage)
+  messages.value = consultationStore.chatMessages.map(toChatMessage)
 }
 
 async function startNewConsultation() {
@@ -290,7 +292,7 @@ async function startNewConsultation() {
   sessionLoading.value = true
   try {
     resetConversationState()
-    await aiStore.initSession()
+    await consultationStore.initSession()
     showInitialMessages()
   } catch {
     sessionError.value = '새 상담 세션을 만들지 못했습니다. 잠시 후 다시 시도해주세요.'
@@ -304,14 +306,14 @@ async function continueConsultation() {
   sessionLoading.value = true
   try {
     resetConversationState()
-    const sessionId = await aiStore.continueLatestSession()
+    const sessionId = await consultationStore.continueLatestSession()
     if (!sessionId) {
       sessionError.value = '이어갈 기존 상담이 없습니다. 새 상담을 시작해주세요.'
       return
     }
 
-    await aiStore.loadMessages()
-    if (aiStore.chatMessages.length > 0) {
+    await consultationStore.loadMessages()
+    if (consultationStore.chatMessages.length > 0) {
       restoreStoredMessages()
     } else {
       showInitialMessages()
@@ -340,7 +342,7 @@ async function streamAssistantMessage(text, options) {
   }
 
   try {
-    for await (const { event, data } of aiStore.streamMessageV2(text, options)) {
+    for await (const { event, data } of consultationStore.streamMessageV2(text, options)) {
       if (event === 'start') continue
       if (event === 'delta') {
         const message = ensureStreamedMessage()
@@ -563,7 +565,7 @@ async function requestErrorReview(trigger, nextStepId = null) {
   if (reviewLoading.value || !activeFormRef.value?.form) return false
   reviewLoading.value = true
   try {
-    const stored = await aiStore.reviewForm(
+    const stored = await consultationStore.reviewForm(
       currentStepId.value,
       activeFormRef.value.form,
       trigger,
@@ -622,7 +624,7 @@ async function submitForm() {
 async function persistFormAndAdvance(nextStepId) {
   formSaving.value = true
   try {
-    const response = await aiStore.saveFormData(currentStepId.value, activeFormRef.value?.form ?? {})
+    const response = await consultationStore.saveFormData(currentStepId.value, activeFormRef.value?.form ?? {})
     if (currentStepId.value === 'basic-info') {
       basicInfoData.value = response?.data?.data ?? null
     }
@@ -672,14 +674,14 @@ const activePresentationTitle = computed(() => {
 watch(currentStepId, async (stepId) => {
   if (stepId !== 'financial-goals' || basicInfoData.value) return
   try {
-    basicInfoData.value = await aiStore.loadBasicInfo()
+    basicInfoData.value = await consultationStore.loadBasicInfo()
   } catch {
     basicInfoData.value = null
   }
 })
 
 watch(isPresentationPhase, (val) => {
-  if (val && !aiStore.presentationData) aiStore.fetchPresentationData()
+  if (val && !reportStore.reports) reportStore.loadReports(consultationStore.sessionId)
 })
 
 onMounted(() => {
@@ -691,7 +693,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  aiStore.cancelActiveStream()
+  consultationStore.cancelActiveStream()
   window.removeEventListener('mousemove', onResizeMove)
   window.removeEventListener('mouseup', stopResize)
   document.body.style.cursor = ''

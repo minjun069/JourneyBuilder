@@ -11,8 +11,8 @@ const aiChatViewSource = readFileSync(
   new URL('../views/ai/AiChatView.vue', import.meta.url),
   'utf8',
 )
-const aiStoreSource = readFileSync(
-  new URL('../stores/ai.js', import.meta.url),
+const consultationStoreSource = readFileSync(
+  new URL('../stores/consultation.js', import.meta.url),
   'utf8',
 )
 const consultingApiSource = readFileSync(
@@ -66,7 +66,7 @@ test('Elicit start, resume, continuation은 모두 v2 SSE를 사용한다', () =
     aiChatViewSource.indexOf('function dismissAction'),
   )
   assert.match(elicitAction, /streamAssistantMessage\(text/)
-  assert.doesNotMatch(elicitAction, /aiStore\.sendMessage/)
+  assert.doesNotMatch(elicitAction, /consultationStore\.sendMessage/)
 })
 
 test('Error Review 저장·명시 요청은 구조화된 done을 v2 SSE로 받는다', () => {
@@ -75,9 +75,9 @@ test('Error Review 저장·명시 요청은 구조화된 done을 v2 SSE로 받�
     user_request: 'sse',
   })
 
-  const reviewForm = aiStoreSource.slice(
-    aiStoreSource.indexOf('async function reviewForm'),
-    aiStoreSource.indexOf('function cancelActiveStream'),
+  const reviewForm = consultationStoreSource.slice(
+    consultationStoreSource.indexOf('async function reviewForm'),
+    consultationStoreSource.indexOf('function cancelActiveStream'),
   )
   assert.match(reviewForm, /streamMessageV2/)
   assert.match(reviewForm, /requestMode: 'error_review'/)
@@ -88,7 +88,7 @@ test('Error Review 저장·명시 요청은 구조화된 done을 v2 SSE로 받�
 
 test('Frontend 제품 경로에는 callback polling helper가 남지 않는다', () => {
   assert.deepEqual(contract.channel_policy.frontend_polling_flows, [])
-  assert.doesNotMatch(aiStoreSource, /pollUntilTerminal|postAsyncMessage|getAsyncMessage/)
+  assert.doesNotMatch(consultationStoreSource, /pollUntilTerminal|postAsyncMessage|getAsyncMessage/)
   assert.doesNotMatch(consultingApiSource, /postAsyncMessage|getAsyncMessage|\bpostMessage\b|\bgetMessage\b/)
   assert.doesNotMatch(consultingApiSource, /\/ai-responses\//)
   assert.doesNotMatch(lifecycleSource, /pollUntilTerminal|validatePollingEnvelope/)
@@ -105,7 +105,7 @@ test('AI 변경 승인·거절은 Frontend 로컬 처리이며 네트워크 요�
     aiChatViewSource.indexOf('const approveFormChange'),
   )
   assert.match(decisionHandler, /decideFormChangeLocally/)
-  assert.doesNotMatch(decisionHandler, /await|aiStore\./)
+  assert.doesNotMatch(decisionHandler, /await|consultationStore\./)
   assert.doesNotMatch(consultingApiSource, /\/ai-actions\//)
-  assert.doesNotMatch(aiStoreSource, /approveChange|rejectChange|decisionIdempotency/)
+  assert.doesNotMatch(consultationStoreSource, /approveChange|rejectChange|decisionIdempotency/)
 })

@@ -1,9 +1,9 @@
 <script setup>
 import { computed } from 'vue'
-import { useAiStore } from '@/stores/ai'
+import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
 
-const ai = useAiStore()
+const reportStore = useReportStore()
 
 const ASSET_VISUAL = {
   cash:    { icon: '💳', accent: '#3b82f6' },
@@ -18,7 +18,7 @@ const LIABILITY_VISUAL = {
   long:  { icon: '🏚', accent: '#ef4444' },
 }
 
-const bs = computed(() => ai.presentationData?.asset_statement)
+const bs = computed(() => reportStore.reports?.asset_statement)
 
 const assetGroups      = computed(() =>
   (bs.value?.asset_groups ?? []).map(g => ({ ...g, ...ASSET_VISUAL[g.key] }))

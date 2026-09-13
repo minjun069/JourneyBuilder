@@ -1,10 +1,10 @@
 <script setup>
 import { computed } from 'vue'
-import { useAiStore } from '@/stores/ai'
+import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
 
-const ai = useAiStore()
-const gd = computed(() => ai.presentationData?.['financial-goal-result'])
+const reportStore = useReportStore()
+const gd = computed(() => reportStore.reports?.['financial-goal-result'])
 
 const prePhases  = computed(() => gd.value?.pre_retirement ?? [])
 const postPhases = computed(() => gd.value?.post_retirement_phases ?? [])

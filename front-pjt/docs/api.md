@@ -19,10 +19,10 @@
 
 | 호출 위치 | 함수 | 메서드 | 엔드포인트 |
 |---|---|---|---|
-| `stores/ai.js` `initSession` | `getSessions` | GET | `/consultations/` |
-| `stores/ai.js` `initSession` | `createSession` | POST | `/consultations/` |
-| `stores/ai.js` `loadMessages` | `getMessages` | GET | `/consultations/{sid}/messages/` |
-| `stores/ai.js` `sendMessage` | `postMessage` | POST | `/consultations/{sid}/messages/` → body: `{ content }` |
+| `stores/consultation.js` `loadSessions` | `getSessions` | GET | `/consultations/` |
+| `stores/consultation.js` `initSession` | `createSession` | POST | `/consultations/` |
+| `stores/consultation.js` `loadMessages` | `getMessages` | GET | `/consultations/{sid}/messages/` |
+| `stores/consultation.js` `streamMessageV2` | `streamMessagesV2` | POST | `/consultations/{sid}/messages/stream/` → SSE |
 
 ---
 
@@ -194,7 +194,8 @@
 
 | 호출 위치 | 함수 | 메서드 | 엔드포인트 |
 |---|---|---|---|
-| `stores/ai.js` `fetchPresentationData` | `getReports` | GET | `/consultations/{sid}/reports/` |
+| `stores/report.js` `loadLatestReports` | `getSessions` | GET | `/consultations/` |
+| `stores/report.js` `loadReports` | `getReports` | GET | `/consultations/{sid}/reports/` |
 
 ---
 

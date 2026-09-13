@@ -8,7 +8,7 @@
       </div>
     </div>
 
-    <div v-if="store.error" class="data-warning" role="alert">
+    <div v-if="reportStore.error" class="data-warning" role="alert">
       보고서 데이터를 검증할 수 없어 예시 데이터를 표시하고 있습니다.
     </div>
 
@@ -90,7 +90,7 @@
           <div class="card-title">월별 현금흐름</div>
           <CashFlowBarEcharts
             :monthly-history="currentCashflow.history"
-            :selected-period="store.selectedCashflowPeriod"
+            :selected-period="selectedCashflowPeriod"
           />
         </div>
       </div>
@@ -130,8 +130,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
-import { useDashboardStore } from '@/stores/dashboard'
+import { computed, onMounted, ref } from 'vue'
+import { useReportStore } from '@/stores/report'
 
 import RetirementScoreCard from '@/components/dashboard/RetirementScoreCard.vue'
 import StatCard from '@/components/dashboard/StatCard.vue'
@@ -139,14 +139,16 @@ import StatCard from '@/components/dashboard/StatCard.vue'
 import AssetPieEcharts from '@/components/charts/AssetPieEcharts.vue'
 import CashFlowBarEcharts from '@/components/charts/CashFlowBarEcharts.vue'
 
-const store = useDashboardStore()
+const reportStore = useReportStore()
+const selectedPeriod = ref(reportStore.periods[reportStore.periods.length - 1])
+const selectedCashflowPeriod = ref(reportStore.periods[reportStore.periods.length - 1])
 
 onMounted(() => {
-  store.ensureReportsLoaded()
+  reportStore.loadLatestReports()
 })
 
-const currentData = computed(() => store.currentData)
-const currentCashflow = computed(() => store.currentCashflow)
+const currentData = computed(() => reportStore.dashboardOverview(selectedPeriod.value))
+const currentCashflow = computed(() => reportStore.dashboardCashflow(selectedCashflowPeriod.value))
 
 import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue'
 

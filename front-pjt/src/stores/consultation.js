@@ -15,24 +15,24 @@ import {
   mapCurrentForm,
 } from '@/api/consulting'
 import { createIdempotencyKey } from '@/api/aiLifecycle'
-import { getReports } from '@/api/reports'
-import { MOCK_PRESENTATION_DATA } from '@/mock/aiData'
-import { normalizePresentationData } from '@/utils/reportData'
 
-export const useAiStore = defineStore('ai', () => {
-
-  const sessionId        = ref(null)
-  const requestId        = ref(null)
-  const chatMessages     = ref([])
-  const sessions         = ref([])
-  const presentationData = ref(null)
-  const loading          = ref(false)
-  const error            = ref(null)
+export const useConsultationStore = defineStore('consultation', () => {
+  const sessionId = ref(null)
+  const requestId = ref(null)
+  const chatMessages = ref([])
+  const sessions = ref([])
   let activeStreamController = null
+
+  function clearActiveSession() {
+    cancelActiveStream()
+    sessionId.value = null
+    requestId.value = null
+    chatMessages.value = []
+  }
 
   // 새 상담 시작: 항상 신규 세션 생성
   async function initSession() {
-    clearSession()
+    clearActiveSession()
 
     const { data: createRes } = await createSession()
     return (sessionId.value = createRes.data.id)
@@ -49,12 +49,9 @@ export const useAiStore = defineStore('ai', () => {
   async function continueLatestSession() {
     const list = await loadSessions()
     const latest = list[0]
-    if (!latest) {
-      clearSession()
-      return null
-    }
+    clearActiveSession()
+    if (!latest) return null
 
-    clearSession()
     sessionId.value = latest.id
     return latest.id
   }
@@ -177,7 +174,7 @@ export const useAiStore = defineStore('ai', () => {
   async function saveFormData(stepId, formData) {
     if (!sessionId.value) return
     const handler = FORM_SAVE_MAP[stepId]
-    if (!handler) return   // financial-info 등 저장 불필요 스텝은 그냥 통과
+    if (!handler) return
     return handler(sessionId.value, formData)
   }
 
@@ -187,52 +184,18 @@ export const useAiStore = defineStore('ai', () => {
     return res.data
   }
 
-  // 진단 보고서 전체 조회
-  async function fetchPresentationData() {
-    loading.value = true
-    error.value   = null
-    try {
-      if (import.meta.env.DEV) {
-        presentationData.value = normalizePresentationData(MOCK_PRESENTATION_DATA)
-        return
-      }
-      if (!sessionId.value) return
-
-      const { data: res } = await getReports(sessionId.value)
-      const mapped = {}
-      for (const report of res.data) {
-        mapped[report.report_type] = report.content
-      }
-      presentationData.value = normalizePresentationData(mapped)
-    } catch (err) {
-      presentationData.value = null
-      error.value = err
-    } finally {
-      loading.value = false
-    }
-  }
-
-  // 로그아웃 시 실행
-  function clearSession() {
-    cancelActiveStream()
-    sessionId.value        = null
-    requestId.value        = null
-    chatMessages.value     = []
-    sessions.value         = []
-    presentationData.value = null
-    error.value            = null
+  function clearConsultation() {
+    clearActiveSession()
+    sessions.value = []
   }
 
   return {
     sessionId,
     chatMessages,
     sessions,
-    presentationData,
-    loading, error,
     initSession, loadSessions, continueLatestSession,
     loadMessages, streamMessageV2, reviewForm, cancelActiveStream,
     saveFormData, loadBasicInfo,
-    fetchPresentationData,
-    clearSession,
+    clearConsultation,
   }
 })

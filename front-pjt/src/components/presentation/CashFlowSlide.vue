@@ -1,9 +1,9 @@
 <script setup>
 import { computed } from 'vue'
-import { useAiStore } from '@/stores/ai'
+import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
 
-const ai = useAiStore()
+const reportStore = useReportStore()
 
 const INCOME_VISUAL = {
   '근로소득': { icon: '💼', accent: '#5e5ce6' },
@@ -18,7 +18,7 @@ const EXPENSE_VISUAL = {
   variable: { icon: '🛒', accent: '#ef4444' },
 }
 
-const cf = computed(() => ai.presentationData?.cash_flow)
+const cf = computed(() => reportStore.reports?.cash_flow)
 
 const incomeGroups  = computed(() =>
   (cf.value?.income_groups ?? []).map(g => ({ ...g, ...(INCOME_VISUAL[g.key] ?? { icon: '📋', accent: '#818cf8' }) }))

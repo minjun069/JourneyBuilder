@@ -1,12 +1,12 @@
 <script setup>
 import { computed } from 'vue'
-import { useAiStore } from '@/stores/ai'
+import { useReportStore } from '@/stores/report'
 import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue'
 import { makeIndicator } from '@/components/charts/financialIndicatorSchema'
 
-const ai = useAiStore()
+const reportStore = useReportStore()
 
-const fi = computed(() => ai.presentationData?.['financial-indicators'])
+const fi = computed(() => reportStore.reports?.['financial-indicators'])
 
 const GROUP_LABEL = { cashflow: '현금흐름', assets: '자산', risk: '리스크 대비' }
 
