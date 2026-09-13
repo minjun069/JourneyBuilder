@@ -10,9 +10,9 @@ from .ai_lifecycle import (
     CONTRACT_VERSION,
     isoformat_utc,
     utc_now,
-    validate_terminal_callback,
+    validate_terminal_payload,
 )
-from .ai_security import finalize_terminal_callback
+from .ai_security import finalize_terminal_result
 from .sse import SSEProtocolError, aiter_sse_events, encode_sse
 
 
@@ -93,7 +93,7 @@ def _browser_error(state, error):
     }
 
 
-def _failed_callback(state, error):
+def _failed_terminal(state, error):
     return {
         'contract_version': CONTRACT_VERSION,
         'request_id': state['request_id'],
@@ -107,7 +107,7 @@ def _failed_callback(state, error):
 
 async def _finalize(state, payload):
     return await sync_to_async(
-        finalize_terminal_callback,
+        finalize_terminal_result,
         thread_sensitive=True,
     )(state, payload)
 
@@ -142,7 +142,7 @@ async def proxy_v2_ai_stream(session, payload, state, store):
                     })
                 continue
 
-            validated = validate_terminal_callback(data)
+            validated = validate_terminal_payload(data)
             if event_name == 'error':
                 if validated['status'] != 'failed':
                     raise SSEProtocolError('error event must have failed status')
@@ -180,7 +180,7 @@ async def proxy_v2_ai_stream(session, payload, state, store):
     except asyncio.CancelledError:
         logger.info('Django v2 SSE 클라이언트 연결 종료', extra={'request_id': state['request_id']})
         if not terminal:
-            failed = _failed_callback(state, {
+            failed = _failed_terminal(state, {
                 'code': 'UPSTREAM_UNAVAILABLE',
                 'message': 'AI 스트림 연결이 종료되었습니다.',
                 'retryable': True,
@@ -198,7 +198,7 @@ async def proxy_v2_ai_stream(session, payload, state, store):
         }
         if not terminal:
             try:
-                finalized = await _finalize(state, _failed_callback(state, error))
+                finalized = await _finalize(state, _failed_terminal(state, error))
                 terminal = True
                 await _save_terminal(store, finalized.state)
             except Exception:

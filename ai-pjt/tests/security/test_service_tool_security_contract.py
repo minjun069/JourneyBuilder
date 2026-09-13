@@ -38,7 +38,7 @@ class ServiceToolSecurityFixtureTests(unittest.TestCase):
                     )
                 )
 
-    def test_allow_controls_cover_auth_callback_binding_and_tool_paths(self) -> None:
+    def test_allow_controls_cover_auth_terminal_binding_and_tool_paths(self) -> None:
         allow_groups = {
             case["group"]
             for case in self.suite["cases"]
@@ -47,7 +47,7 @@ class ServiceToolSecurityFixtureTests(unittest.TestCase):
         self.assertTrue(
             {
                 "service_bearer",
-                "callback_integrity",
+                "terminal_integrity",
                 "replay_idempotency",
                 "binding_integrity",
                 "tool_authorization",
@@ -79,14 +79,14 @@ class ServiceToolSecurityFixtureTests(unittest.TestCase):
                     & forbidden
                 )
 
-    def test_callback_ownership_mismatch_has_no_write_effect(self) -> None:
+    def test_terminal_ownership_mismatch_has_no_write_effect(self) -> None:
         case = next(
             case for case in self.suite["cases"] if case["id"] == "F12-OWN-002"
         )
         self.assertEqual(case["expected"]["decision"], "block")
         self.assertEqual(
             case["expected"]["reason_code"],
-            "CALLBACK_BINDING_MISMATCH",
+            "TERMINAL_BINDING_MISMATCH",
         )
         self.assertTrue(
             {"create_assistant_message", "save_terminal_state"}.issubset(
@@ -120,7 +120,7 @@ class ServiceToolSecurityFixtureTests(unittest.TestCase):
         errors = validate_suite(mutated, self.lifecycle)
 
         self.assertIn(
-            "F12-AUTH-001 http status differs from service_unauthorized",
+            "F12-AUTH-001 http status differs from service_stream_unauthorized",
             errors,
         )
 

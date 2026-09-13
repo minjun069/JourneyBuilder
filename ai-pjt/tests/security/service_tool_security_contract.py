@@ -25,7 +25,7 @@ REPOSITORY_ROOT = SECURITY_DIRECTORY.parents[2]
 REQUIRED_CASE_GROUPS = frozenset(
     {
         "service_bearer",
-        "callback_integrity",
+        "terminal_integrity",
         "replay_idempotency",
         "request_ownership",
         "task_identity",
@@ -37,12 +37,10 @@ REQUIRED_CASE_GROUPS = frozenset(
 )
 SUPPORTED_BOUNDARIES = frozenset(
     {
-        "ai_http_auth",
-        "django_callback_auth",
+        "ai_sse_auth",
         "browser_session",
-        "django_callback",
-        "ai_request_checkpoint",
-        "ai_callback_delivery",
+        "browser_sse",
+        "django_terminal_receipt",
         "route_plan_validation",
         "task_result_validation",
         "binding_resolution",

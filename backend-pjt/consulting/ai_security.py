@@ -1,4 +1,4 @@
-"""Ownership-bound, exactly-once terminalization for AI callbacks and SSE."""
+"""Ownership-bound, exactly-once terminalization for AI SSE results."""
 
 from __future__ import annotations
 
@@ -12,10 +12,9 @@ from django.db import transaction
 from .ai_lifecycle import (
     CONTRACT_VERSION,
     LifecycleError,
-    bind_terminal_callback,
+    bind_terminal_result,
     create_v2_assistant_message,
     isoformat_utc,
-    utc_now,
 )
 from .ai_services import build_thread_id
 from .models import AITerminalReceipt, ConsultingSession, Message
@@ -87,8 +86,8 @@ def recover_terminal_state(
     return _receipt_state(receipt, state)
 
 
-def _raise_conflict(message='이미 종결된 AI 작업과 callback이 충돌합니다.'):
-    raise LifecycleError(409, 'CALLBACK_CONFLICT', message)
+def _raise_conflict(message='이미 종결된 AI 작업과 terminal 결과가 충돌합니다.'):
+    raise LifecycleError(409, 'TERMINAL_CONFLICT', message)
 
 
 def _validate_receipt(receipt, state, payload):
@@ -104,10 +103,10 @@ def _validate_receipt(receipt, state, payload):
 
 
 def _audit_denial(payload, error):
-    if error.code not in ('CALLBACK_BINDING_MISMATCH', 'CALLBACK_CONFLICT'):
+    if error.code not in ('TERMINAL_BINDING_MISMATCH', 'TERMINAL_CONFLICT'):
         return
     logger.warning(
-        'AI terminal callback denied',
+        'AI SSE terminal result denied',
         extra={
             'request_ref': sha256(
                 str(payload.get('request_id', '')).encode('utf-8')
@@ -117,11 +116,11 @@ def _audit_denial(payload, error):
     )
 
 
-def finalize_terminal_callback(state, payload):
-    """Atomically bind a terminal callback to one owner and one DB result."""
+def finalize_terminal_result(state, payload):
+    """Atomically bind an SSE terminal payload to one owner and one DB result."""
 
     try:
-        bound, redis_replay = bind_terminal_callback(state, payload)
+        bound, redis_replay = bind_terminal_result(state, payload)
         digest = bound['callback_digest']
 
         with transaction.atomic():
@@ -140,8 +139,8 @@ def finalize_terminal_callback(state, payload):
             ):
                 raise LifecycleError(
                     409,
-                    'CALLBACK_BINDING_MISMATCH',
-                    'callback 소유권이 원래 요청과 다릅니다.',
+                    'TERMINAL_BINDING_MISMATCH',
+                    'terminal 결과 소유권이 원래 요청과 다릅니다.',
                 )
 
             receipt = (
@@ -175,8 +174,8 @@ def finalize_terminal_callback(state, payload):
             if user_message is None:
                 raise LifecycleError(
                     409,
-                    'CALLBACK_BINDING_MISMATCH',
-                    'callback 원 요청 메시지가 상담과 다릅니다.',
+                    'TERMINAL_BINDING_MISMATCH',
+                    'terminal 결과의 원 요청 메시지가 상담과 다릅니다.',
                 )
 
             message = None
@@ -207,62 +206,4 @@ def finalize_terminal_callback(state, payload):
             )
     except LifecycleError as error:
         _audit_denial(payload, error)
-        raise
-
-
-def finalize_expired_request(state):
-    """Persist an expiration tombstone under the same owner lock as callbacks."""
-
-    try:
-        with transaction.atomic():
-            session = (
-                ConsultingSession.objects.select_related('user')
-                .select_for_update()
-                .filter(
-                    id=state.get('session_id'),
-                    user_id=state.get('user_id'),
-                )
-                .first()
-            )
-            if session is None or state.get('thread_id') != build_thread_id(
-                session.user,
-                session,
-            ):
-                raise LifecycleError(
-                    409,
-                    'CALLBACK_BINDING_MISMATCH',
-                    'AI 작업 소유권이 원래 요청과 다릅니다.',
-                )
-            receipt = (
-                AITerminalReceipt.objects.select_for_update()
-                .filter(request_id=state['request_id'])
-                .first()
-            )
-            if receipt is not None:
-                return _receipt_state(receipt, state)
-            user_message = Message.objects.filter(
-                id=state.get('user_message_id'),
-                session=session,
-                role=Message.Role.USER,
-            ).first()
-            if user_message is None:
-                raise LifecycleError(
-                    409,
-                    'CALLBACK_BINDING_MISMATCH',
-                    'AI 작업의 원 요청 메시지가 상담과 다릅니다.',
-                )
-            receipt = AITerminalReceipt.objects.create(
-                request_id=state['request_id'],
-                session=session,
-                thread_id=state['thread_id'],
-                step_id=state['step_id'],
-                user_message=user_message,
-                callback_digest='',
-                status=AITerminalReceipt.Status.EXPIRED,
-                completed_at=utc_now(),
-                error=state['error'],
-            )
-            return _receipt_state(receipt, state)
-    except LifecycleError as error:
-        _audit_denial(state, error)
         raise

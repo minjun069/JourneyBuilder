@@ -11,7 +11,6 @@ from core.monitoring import OperationStage, OperationStatus
 from core.runtime_instrumentation import RuntimeStage, RuntimeStatus
 from tests.instrumentation import fake_callback_masker, fake_instrumentation
 from transport.contracts import (
-    ChatAccepted,
     ChatV2Request,
     ServiceContractError,
     verify_service_authorization,
@@ -353,64 +352,3 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             [RuntimeStatus.STARTED, RuntimeStatus.FAILED],
         )
         self.assertEqual(request_events[-1].reason_code, "request_timeout")
-
-
-class V2EndpointTests(IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        from main import app
-
-        self.app = app
-        self.transport = AsyncMock()
-        self.transport.accept.return_value = ChatAccepted(
-            request_id="ai_req_transport"
-        )
-        self.app.state.v2_transport = self.transport
-
-    async def _post(self, payload, *, authorization=None):
-        headers = {}
-        if authorization is not None:
-            headers["Authorization"] = authorization
-        transport = httpx.ASGITransport(app=self.app)
-        async with httpx.AsyncClient(
-            transport=transport,
-            base_url="http://ai",
-        ) as client:
-            return await client.post("/v2/chat", json=payload, headers=headers)
-
-    async def test_authentication_fails_before_empty_body_schema(self):
-        response = await self._post({})
-
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json()["error"]["code"], "SERVICE_UNAUTHORIZED")
-        self.transport.accept.assert_not_awaited()
-
-    async def test_valid_v2_request_returns_accepted_contract(self):
-        request = make_request()
-        with patch("main.settings.ai_service_bearer_token", "test-token"):
-            response = await self._post(
-                request.model_dump(mode="json"),
-                authorization="Bearer test-token",
-            )
-
-        self.assertEqual(response.status_code, 202)
-        self.assertEqual(
-            response.json(),
-            {
-                "contract_version": "2.0",
-                "request_id": "ai_req_transport",
-                "status": "accepted",
-            },
-        )
-        self.transport.accept.assert_awaited_once()
-
-    async def test_strict_session_type_is_rejected(self):
-        payload = make_request().model_dump(mode="json")
-        payload["session_id"] = "one"
-        with patch("main.settings.ai_service_bearer_token", "test-token"):
-            response = await self._post(
-                payload,
-                authorization="Bearer test-token",
-            )
-
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()["error"]["code"], "REQUEST_SCHEMA_INVALID")

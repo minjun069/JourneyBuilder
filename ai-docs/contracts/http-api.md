@@ -2,12 +2,12 @@
 
 상태: **D1 기준 Browser↔Django AI 상담 HTTP·승인 생명주기 v2 단일 원천 동결 — 나머지 HTTP API 미정**
 
-이 문서는 Browser↔Django 메시지 SSE·호환 비동기 접수·change별 결정의 endpoint, envelope, 상태·오류와 호환성을 소유한다. Django↔AI 서비스 경계는 [AI 서비스 API](ai-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
+이 문서는 Browser↔Django 메시지 SSE와 change별 결정의 endpoint, envelope, 상태·오류를 소유한다. Django↔AI 서비스 경계는 [AI 서비스 API](ai-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
-일반 AI 상담, Elicit 전체 대화와 Error Review의 응답 채널은 ADR-0002~ADR-0004에
+일반 AI 상담, Elicit 전체 대화와 Error Review의 응답 채널은 ADR-0002~ADR-0005에
 따라 v2 SSE로 통일한다. 스트리밍 endpoint와 이벤트·멱등성 계약은
-[AI 상담 SSE v2 계약](sse-v2.md)이 소유한다. 아래 callback + polling 계약은 현재
-Frontend가 호출하지 않는 호환 비동기 경로다.
+[AI 상담 SSE v2 계약](sse-v2.md)이 소유한다. 비스트리밍 메시지 POST와 AI 결과
+polling endpoint는 제공하지 않는다.
 
 ## 공통 규칙
 
@@ -31,15 +31,16 @@ Frontend가 호출하지 않는 호환 비동기 경로다.
 }
 ```
 
-## 메시지 접수
+## SSE 메시지 접수
 
-`POST /api/v2/consultations/{session_id}/messages/`
+`POST /api/v2/consultations/{session_id}/messages/stream/`
 
 필수 header:
 
 ```text
 Authorization: Bearer <user-jwt>
 Idempotency-Key: <client-generated-uuid>
+Accept: text/event-stream
 ```
 
 ```json
@@ -57,44 +58,14 @@ Idempotency-Key: <client-generated-uuid>
 - `form` 별칭은 v2에서 지원하지 않는다.
 
 Elicit의 UI 동의 `start`, QA 뒤 `resume`, 활성 질문 continuation과 Error Review의
-`save`·`user_request`는 위 endpoint가 아니라 v2 SSE endpoint를 사용한다.
+`save`·`user_request`도 이 endpoint를 사용한다.
 Elicit `start`·`resume`은 `elicit_action`, Error Review는
 `request_mode=error_review`와 `review_trigger`를 같은 SSE 요청 body에 포함한다.
 
-호환 callback + polling 접수 성공은 `202 Accepted`다.
-
-```json
-{
-  "contract_version": "2.0",
-  "success": true,
-  "data": {
-    "user_message_id": 10,
-    "request_id": "ai_req_...",
-    "status": "processing",
-    "processing_deadline_at": "2026-09-02T06:01:30Z"
-  }
-}
-```
-
-같은 사용자·세션에서 같은 `Idempotency-Key`와 같은 payload를 다시 보내면 기존 응답을 반환한다. 같은 키의 payload가 다르면 `409 IDEMPOTENCY_CONFLICT`다. 접수 결과와 payload digest는 24시간 보존한다. AI 접수 자체가 실패하면 `502 AI_DISPATCH_FAILED`와 이미 생성된 `user_message_id`·`request_id`를 반환하며, 사용자가 다시 시도할 때는 새 키를 사용한다.
-
-## 호환 AI 결과 polling
-
-`GET /api/v2/consultations/{session_id}/ai-responses/{request_id}/`
-
-현재 Frontend 제품 흐름은 이 endpoint와 3초 polling helper를 호출하지 않으며 SSE
-실패 뒤 자동 전환도 하지 않는다. 호환 비동기 소비자는 최대 90초 동안 polling할 수
-있다. 알려진 작업의 `processing`, `completed`, `failed`, `expired`는 모두 `200`이며
-transport·인증·소유권·상태 저장소 오류만 non-2xx다.
-
-| 상태 | 응답 데이터와 의미 |
-|---|---|
-| `processing` | `request_id`, `status`, `processing_deadline_at` |
-| `completed` | 저장된 assistant `message`, citation, 검증된 draft action |
-| `failed` | `error.code`, 사용자 메시지, `retryable` |
-| `expired` | `AI_REQUEST_EXPIRED`; 이전 작업을 되살리지 않고 새 메시지 접수를 안내 |
-
-AI 실행 deadline은 60초, callback 전달 여유를 포함한 Django processing deadline은 90초다. 활성 상태 안전 TTL은 10분이고 terminal 상태와 만료 tombstone은 24시간 보존한다. 90초가 지나도 terminal callback이 없으면 Django는 polling 또는 만료 작업에서 `expired`로 전이한다.
+같은 사용자·세션에서 같은 `Idempotency-Key`와 같은 payload를 다시 보내면 완료된
+terminal receipt를 사용해 `start -> done | error`를 재생한다. 같은 키의 payload가
+다르면 `409 IDEMPOTENCY_CONFLICT`, 아직 실행 중이면 `409 AI_STREAM_IN_PROGRESS`다.
+receipt와 payload digest는 24시간 보존한다.
 
 ## draft 변경과 개별 결정
 
@@ -142,17 +113,18 @@ POST /api/v2/consultations/{session_id}/ai-actions/{action_id}/changes/{change_i
 | 400 | `REQUEST_INVALID` | 필드 누락·형식 오류, 자동 재시도 금지 |
 | 401 | `AUTH_REQUIRED` | 사용자 인증 필요 |
 | 404 | `SESSION_NOT_FOUND` | 없거나 소유하지 않은 상담 세션 |
-| 404 | `AI_REQUEST_NOT_FOUND` | 없거나 소유하지 않은 AI 작업 |
 | 404 | `ACTION_NOT_FOUND` | 없거나 소유하지 않은 action/change |
 | 409 | `SESSION_CLOSED` | 종료된 상담에 메시지 접수 불가 |
 | 409 | `IDEMPOTENCY_CONFLICT` | 같은 키에 다른 payload |
 | 409 | `ACTION_DECISION_CONFLICT` | 이미 반대 결정으로 종결된 change |
-| 422 | `CONTRACT_VERSION_UNSUPPORTED` | `2.0`이 아닌 비동기 payload |
+| 422 | `CONTRACT_VERSION_UNSUPPORTED` | `2.0`이 아닌 SSE payload |
 | 429 | `RATE_LIMITED` | `Retry-After` 이후 재시도 가능 |
-| 502 | `AI_DISPATCH_FAILED` | AI 접수 실패, 사용자 새 요청 가능 |
-| 503 | `AI_STATE_UNAVAILABLE` | 호환 비동기 작업 상태 저장소 장애, 같은 polling 재시도 가능 |
+| 502 | `AI_DISPATCH_FAILED` | AI SSE 연결 실패, 사용자 새 요청 가능 |
 
-`failed`·`expired` 작업의 도메인 오류는 polling의 `data.error`에 들어가며 HTTP 실패 envelope와 구분한다. 정상·누락·잘못된 자료형·권한·timeout·중복 응답은 저장소의 `contract-fixtures/ai-lifecycle/v2/lifecycle.json`, draft 적용 형태는 `contract-fixtures/ai-lifecycle/v2/form-actions.json`을 따른다.
+SSE terminal 오류는 `error` event의 `data.error`에 들어가며 응답 header 이전 HTTP 실패
+envelope와 구분한다. 정상·누락·잘못된 자료형·권한·timeout·중복 응답은 저장소의
+`contract-fixtures/ai-lifecycle/v2/lifecycle.json`, draft 적용 형태는
+`contract-fixtures/ai-lifecycle/v2/form-actions.json`을 따른다.
 
 ## v2 전환 정책
 
@@ -166,6 +138,4 @@ POST /api/v2/consultations/{session_id}/ai-actions/{action_id}/changes/{change_i
 
 전체 제품 API의 날짜·timezone 정책 적용 결과와 AI 상담 외 endpoint의 v2 전환은
 별도 확인이 필요하다. 일반 상담, Elicit 전체 대화와 Error Review는 v2 SSE
-endpoint를 사용한다. callback + polling API는 호환·운영 회귀를 위해 남아 있지만
-현재 Frontend가 소비하지 않으며, 제거는 외부 소비자와 rollback 의존성을 확인한 뒤
-별도 호환성 변경으로 다룬다.
+endpoint만 사용하며 비스트리밍 접수·polling·HTTP callback은 제거됐다.

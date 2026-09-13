@@ -1,8 +1,14 @@
 {
   "fixture_set": "ai-contract-v2",
-  "fixture_kind": "lifecycle",
+  "fixture_kind": "sse_lifecycle",
   "contract_version": "2.0",
-  "companion_fixtures": ["step-registry.json", "form-actions.json", "chart-payloads.json", "tool-contexts.json"],
+  "companion_fixtures": [
+    "sse.json",
+    "step-registry.json",
+    "form-actions.json",
+    "chart-payloads.json",
+    "tool-contexts.json"
+  ],
   "required_case_categories": [
     "normal",
     "missing",
@@ -11,33 +17,40 @@
     "timeout",
     "duplicate"
   ],
+  "removed_routes": [
+    "POST /api/v1/consultations/{session_id}/messages/",
+    "POST /api/v2/consultations/{session_id}/messages/",
+    "GET /api/v1/consultations/{session_id}/ai-responses/{request_id}/",
+    "GET /api/v2/consultations/{session_id}/ai-responses/{request_id}/",
+    "POST /api/ai/callback[/]",
+    "POST /api/v2/internal/ai/callback/",
+    "POST /v2/chat",
+    "POST /chat",
+    "POST /chat/stream"
+  ],
   "placeholder_semantics": {
     "<user-jwt>": "테스트가 주입하는 유효한 사용자 JWT이며 실제 credential이 아니다.",
-    "<AI_SERVICE_BEARER_TOKEN>": "테스트가 양방향 서비스 인증에 주입하는 값이며 실제 secret이 아니다."
+    "<AI_SERVICE_BEARER_TOKEN>": "테스트가 Django→AI SSE 인증에 주입하는 값이며 실제 secret이 아니다."
   },
   "timing": {
-    "ai_accept_timeout_seconds": 5,
-    "ai_accept_max_attempts": 2,
     "ai_execution_deadline_seconds": 60,
-    "callback_timeout_seconds": 5,
-    "callback_max_attempts": 4,
-    "callback_backoff_seconds": [1, 2, 4],
-    "processing_deadline_seconds": 90,
-    "polling_interval_seconds": 3,
+    "service_connect_timeout_seconds": 5,
+    "stream_read_idle_timeout_seconds": 120,
     "active_state_ttl_seconds": 600,
     "terminal_state_ttl_seconds": 86400,
     "idempotency_ttl_seconds": 86400
   },
   "cases": {
-    "browser_message_accepted": {
+    "browser_stream_started": {
       "category": "normal",
-      "boundary": "browser_to_django",
+      "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/",
+        "path": "/api/v2/consultations/1/messages/stream/",
         "headers": {
           "Authorization": "Bearer <user-jwt>",
-          "Idempotency-Key": "6f203e35-42be-4cb5-aa64-35f5f91510f3"
+          "Idempotency-Key": "6f203e35-42be-4cb5-aa64-35f5f91510f3",
+          "Accept": "text/event-stream"
         },
         "body": {
           "contract_version": "2.0",
@@ -47,26 +60,30 @@
         }
       },
       "response": {
-        "status": 202,
-        "body": {
-          "contract_version": "2.0",
-          "success": true,
+        "status": 200,
+        "content_type": "text/event-stream",
+        "first_event": {
+          "event": "start",
           "data": {
-            "user_message_id": 10,
+            "contract_version": "2.0",
             "request_id": "ai_req_fixture_001",
-            "status": "processing",
-            "processing_deadline_at": "2026-09-02T06:01:30Z"
+            "session_id": 1,
+            "thread_id": "user-3-session-1",
+            "user_message_id": 10
           }
         }
       }
     },
-    "browser_message_missing_idempotency_key": {
+    "browser_stream_missing_idempotency_key": {
       "category": "missing",
-      "boundary": "browser_to_django",
+      "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/",
-        "headers": {"Authorization": "Bearer <user-jwt>"},
+        "path": "/api/v2/consultations/1/messages/stream/",
+        "headers": {
+          "Authorization": "Bearer <user-jwt>",
+          "Accept": "text/event-stream"
+        },
         "body": {
           "contract_version": "2.0",
           "content": "월급은 세후 300만 원이에요.",
@@ -86,15 +103,16 @@
         }
       }
     },
-    "browser_message_missing_content": {
+    "browser_stream_missing_content": {
       "category": "missing",
-      "boundary": "browser_to_django",
+      "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/",
+        "path": "/api/v2/consultations/1/messages/stream/",
         "headers": {
           "Authorization": "Bearer <user-jwt>",
-          "Idempotency-Key": "1c126256-8d8d-4e6f-91e8-91fd771120e2"
+          "Idempotency-Key": "1c126256-8d8d-4e6f-91e8-91fd771120e2",
+          "Accept": "text/event-stream"
         },
         "body": {
           "contract_version": "2.0",
@@ -114,15 +132,16 @@
         }
       }
     },
-    "browser_message_invalid_content_type": {
+    "browser_stream_invalid_content_type": {
       "category": "invalid_type",
-      "boundary": "browser_to_django",
+      "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/",
+        "path": "/api/v2/consultations/1/messages/stream/",
         "headers": {
           "Authorization": "Bearer <user-jwt>",
-          "Idempotency-Key": "61ed8257-a650-46c4-8fd4-95112fd4d107"
+          "Idempotency-Key": "61ed8257-a650-46c4-8fd4-95112fd4d107",
+          "Accept": "text/event-stream"
         },
         "body": {
           "contract_version": "2.0",
@@ -143,13 +162,16 @@
         }
       }
     },
-    "browser_auth_required": {
+    "browser_stream_auth_required": {
       "category": "authorization",
-      "boundary": "browser_to_django",
+      "boundary": "browser_to_django_sse",
       "request": {
         "method": "POST",
-        "path": "/api/v2/consultations/1/messages/",
-        "headers": {"Idempotency-Key": "44b66c99-48dc-4b39-99a2-4e666837501f"},
+        "path": "/api/v2/consultations/1/messages/stream/",
+        "headers": {
+          "Idempotency-Key": "44b66c99-48dc-4b39-99a2-4e666837501f",
+          "Accept": "text/event-stream"
+        },
         "body": {
           "contract_version": "2.0",
           "content": "상담을 시작할게요.",
@@ -169,14 +191,24 @@
         }
       }
     },
-    "browser_foreign_session_hidden": {
+    "browser_stream_foreign_session_hidden": {
       "category": "authorization",
-      "boundary": "browser_to_django",
+      "boundary": "browser_to_django_sse",
       "given": "유효한 JWT의 사용자가 session 1을 소유하지 않는다.",
       "request": {
-        "method": "GET",
-        "path": "/api/v2/consultations/1/ai-responses/ai_req_fixture_001/",
-        "headers": {"Authorization": "Bearer <user-jwt>"}
+        "method": "POST",
+        "path": "/api/v2/consultations/1/messages/stream/",
+        "headers": {
+          "Authorization": "Bearer <user-jwt>",
+          "Idempotency-Key": "foreign-session-key",
+          "Accept": "text/event-stream"
+        },
+        "body": {
+          "contract_version": "2.0",
+          "content": "상담을 시작할게요.",
+          "step_id": "intro",
+          "form_data": {}
+        }
       },
       "response": {
         "status": 404,
@@ -190,40 +222,65 @@
         }
       }
     },
-    "browser_message_identical_replay": {
+    "browser_stream_same_key_processing": {
       "category": "duplicate",
-      "boundary": "browser_to_django",
-      "given": "browser_message_accepted와 같은 사용자·세션·Idempotency-Key·payload를 24시간 안에 재전송한다.",
+      "boundary": "browser_to_django_sse",
+      "given": "같은 사용자·세션·Idempotency-Key 요청이 아직 processing이다.",
+      "response": {
+        "status": 409,
+        "body": {
+          "success": false,
+          "error": {
+            "code": "AI_STREAM_IN_PROGRESS",
+            "message": "같은 AI 스트림 요청이 처리 중입니다.",
+            "retryable": true
+          }
+        }
+      },
+      "expected": {
+        "new_user_message_count": 0,
+        "new_ai_request_count": 0
+      }
+    },
+    "browser_stream_same_key_completed": {
+      "category": "duplicate",
+      "boundary": "django_to_browser_sse",
+      "given": "같은 사용자·세션·Idempotency-Key가 completed terminal receipt에 결합돼 있다.",
       "expected": {
         "new_user_message_count": 0,
         "new_ai_request_count": 0,
-        "response_status": 202,
-        "response_body_equals_case": "browser_message_accepted.response.body"
+        "graph_execution_count": 0,
+        "replay_events": ["start", "done"],
+        "same_assistant_message_id": true,
+        "recover_from_terminal_receipt_when_redis_missing": true
       }
     },
-    "browser_message_idempotency_conflict": {
+    "browser_stream_idempotency_conflict": {
       "category": "duplicate",
-      "boundary": "browser_to_django",
-      "given": "browser_message_accepted의 Idempotency-Key를 다른 content와 함께 재사용한다.",
+      "boundary": "browser_to_django_sse",
+      "given": "이미 사용한 Idempotency-Key를 다른 content와 함께 재사용한다.",
       "response": {
         "status": 409,
         "body": {
           "success": false,
           "error": {
             "code": "IDEMPOTENCY_CONFLICT",
-            "message": "같은 idempotency key의 요청 내용이 다릅니다.",
+            "message": "같은 idempotency key의 요청 내용 또는 전송 방식이 다릅니다.",
             "retryable": false
           }
         }
       }
     },
-    "django_ai_accepted": {
+    "django_ai_stream": {
       "category": "normal",
-      "boundary": "django_to_ai",
+      "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat",
-        "headers": {"Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
+        "path": "/v2/chat/stream",
+        "headers": {
+          "Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>",
+          "Accept": "text/event-stream"
+        },
         "body": {
           "contract_version": "2.0",
           "request_id": "ai_req_fixture_001",
@@ -232,74 +289,31 @@
           "step_id": "basic-info",
           "message": "월급은 세후 300만 원이고 직장인이에요.",
           "deadline_at": "2026-09-02T06:01:00Z",
-          "customer_info": {"saved_data": {}, "current_form": {}},
-          "field_registry": [
-            {
-              "step_id": "basic-info",
-              "section": "basic_info",
-              "path": "monthly_income",
-              "value_type": "integer",
-              "unit": "KRW",
-              "constraints": {"min": 0, "period": "month"},
-              "cardinality": "single",
-              "sensitivity": "financial_sensitive",
-              "writable_by_ai": true,
-              "nullable": true,
-              "label": "세후 월 소득",
-              "operations": ["set", "add", "update", "remove"]
-            },
-            {
-              "step_id": "basic-info",
-              "section": "basic_info",
-              "path": "job",
-              "value_type": "string",
-              "unit": "none",
-              "constraints": {
-                "choices": ["직장인", "공무원", "자영업자", "프리랜서", "전업주부", "학생", "퇴직자", "기타"]
-              },
-              "cardinality": "single",
-              "sensitivity": "quasi_identifier",
-              "writable_by_ai": true,
-              "nullable": true,
-              "label": "직업",
-              "operations": ["set", "add", "update", "remove"]
-            }
-          ],
-          "tool_context": {
-            "schema_version": "1.0",
-            "session_id": 1,
-            "step_id": "basic-info",
-            "generated_at": "2026-09-02T06:00:00Z",
-            "field_specs": [],
-            "dashboard_metrics": {
-              "retirement_gap": {
-                "availability": "unavailable",
-                "reason": "report_not_found"
-              }
-            },
-            "retirement_scenarios": {},
-            "available_reports": [],
-            "section_completion": {}
+          "customer_info": {
+            "saved_data": {},
+            "current_form": {}
           },
+          "field_registry": [],
+          "tool_context": null,
           "chart_payload": null
         }
       },
       "response": {
-        "status": 202,
-        "body": {
-          "contract_version": "2.0",
-          "request_id": "ai_req_fixture_001",
-          "status": "accepted"
-        }
+        "status": 200,
+        "content_type": "text/event-stream",
+        "terminal_events": ["done", "error"]
       }
     },
-    "django_ai_missing_request_id": {
+    "django_ai_stream_missing_request_id": {
       "category": "missing",
-      "boundary": "django_to_ai",
+      "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat",
-        "headers": {"Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
+        "path": "/v2/chat/stream",
+        "headers": {
+          "Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>",
+          "Accept": "text/event-stream"
+        },
         "body": {
           "contract_version": "2.0",
           "session_id": 1,
@@ -307,7 +321,10 @@
           "step_id": "basic-info",
           "message": "월급은 세후 300만 원이에요.",
           "deadline_at": "2026-09-02T06:01:00Z",
-          "customer_info": {"saved_data": {}, "current_form": {}},
+          "customer_info": {
+            "saved_data": {},
+            "current_form": {}
+          },
           "field_registry": [],
           "chart_payload": null
         }
@@ -324,13 +341,16 @@
         }
       }
     },
-    "django_ai_invalid_session_id_type": {
+    "django_ai_stream_invalid_session_id_type": {
       "category": "invalid_type",
-      "boundary": "django_to_ai",
+      "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat",
-        "headers": {"Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
+        "path": "/v2/chat/stream",
+        "headers": {
+          "Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>",
+          "Accept": "text/event-stream"
+        },
         "body": {
           "contract_version": "2.0",
           "request_id": "ai_req_fixture_invalid_type",
@@ -339,7 +359,10 @@
           "step_id": "basic-info",
           "message": "월급은 세후 300만 원이에요.",
           "deadline_at": "2026-09-02T06:01:00Z",
-          "customer_info": {"saved_data": {}, "current_form": {}},
+          "customer_info": {
+            "saved_data": {},
+            "current_form": {}
+          },
           "field_registry": [],
           "chart_payload": null
         }
@@ -356,10 +379,15 @@
         }
       }
     },
-    "service_unauthorized": {
+    "service_stream_unauthorized": {
       "category": "authorization",
-      "boundary": "service_http",
-      "request": {"method": "POST", "path": "/v2/chat", "headers": {}, "body": {}},
+      "boundary": "django_to_ai_sse",
+      "request": {
+        "method": "POST",
+        "path": "/v2/chat/stream",
+        "headers": {},
+        "body": {}
+      },
       "response": {
         "status": 401,
         "body": {
@@ -373,177 +401,14 @@
       },
       "assertion": "인증은 schema 검증보다 먼저 실패하고 빈 token으로 우회할 수 없다."
     },
-    "django_ai_identical_replay": {
-      "category": "duplicate",
-      "boundary": "django_to_ai",
-      "given": "django_ai_accepted와 같은 request_id와 payload digest를 24시간 안에 재전송한다.",
-      "expected": {
-        "new_graph_execution_count": 0,
-        "response_status": 202,
-        "response_body_equals_case": "django_ai_accepted.response.body"
-      }
-    },
-    "django_ai_request_id_conflict": {
-      "category": "duplicate",
-      "boundary": "django_to_ai",
-      "given": "ai_req_fixture_001이 다른 payload digest로 이미 접수됐다.",
-      "response": {
-        "status": 409,
-        "body": {
-          "success": false,
-          "error": {
-            "code": "REQUEST_ID_CONFLICT",
-            "message": "같은 request_id의 요청 내용이 다릅니다.",
-            "retryable": false
-          }
-        }
-      }
-    },
-    "django_ai_dispatch_timeout": {
+    "ai_stream_timeout": {
       "category": "timeout",
-      "boundary": "django_to_ai",
-      "given": "AI 접수 요청이 두 번 모두 5초 안에 응답하지 않는다.",
-      "expected": {
-        "ai_attempts": 2,
-        "same_request_id_and_payload_each_attempt": true,
-        "browser_response": {
-          "status": 502,
-          "body": {
-            "contract_version": "2.0",
-            "success": false,
-            "error": {
-              "code": "AI_DISPATCH_FAILED",
-              "message": "AI 작업을 접수하지 못했습니다.",
-              "retryable": true
-            },
-            "data": {
-              "user_message_id": 12,
-              "request_id": "ai_req_fixture_dispatch_timeout"
-            }
-          }
-        }
-      }
-    },
-    "callback_completed_proposal": {
-      "category": "normal",
-      "boundary": "ai_to_django_callback",
-      "request": {
-        "method": "POST",
-        "path": "/api/v2/internal/ai/callback/",
-        "headers": {"Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
-        "body": {
+      "boundary": "ai_to_django_sse",
+      "event": {
+        "event": "error",
+        "data": {
           "contract_version": "2.0",
           "request_id": "ai_req_fixture_001",
-          "session_id": 1,
-          "thread_id": "user-3-session-1",
-          "status": "completed",
-          "completed_at": "2026-09-02T06:00:42Z",
-          "output": {
-            "response": "두 항목을 각각 확인해주세요.",
-            "step_id": "basic-info",
-            "action": {
-              "type": "form_change",
-              "target": "draft_form",
-              "user_requested": false,
-              "confidence": 0.85,
-              "changes": [
-                {
-                  "section": "basic_info",
-                  "path": "monthly_income",
-                  "operation": "set",
-                  "value": 3000000,
-                  "reason": "사용자 발화에서 추출"
-                },
-                {
-                  "section": "basic_info",
-                  "path": "job",
-                  "operation": "set",
-                  "value": "직장인",
-                  "reason": "사용자 발화에서 추출"
-                }
-              ]
-            }
-          }
-        }
-      },
-      "response": {
-        "status": 200,
-        "body": {
-          "contract_version": "2.0",
-          "success": true,
-          "data": {"request_id": "ai_req_fixture_001", "status": "completed", "message_id": 11}
-        }
-      }
-    },
-    "callback_missing_status": {
-      "category": "missing",
-      "boundary": "ai_to_django_callback",
-      "request": {
-        "method": "POST",
-        "path": "/api/v2/internal/ai/callback/",
-        "headers": {"Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
-        "body": {
-          "contract_version": "2.0",
-          "request_id": "ai_req_fixture_missing_status",
-          "session_id": 1,
-          "thread_id": "user-3-session-1",
-          "completed_at": "2026-09-02T06:00:42Z",
-          "output": {"response": "완료 상태가 누락된 응답입니다.", "step_id": "basic-info"}
-        }
-      },
-      "response": {
-        "status": 422,
-        "body": {
-          "success": false,
-          "error": {
-            "code": "REQUEST_SCHEMA_INVALID",
-            "message": "status는 필수입니다.",
-            "retryable": false
-          }
-        }
-      },
-      "assertion": "저장된 request 상태로 status를 보완하지 않는다."
-    },
-    "callback_binding_mismatch": {
-      "category": "authorization",
-      "boundary": "ai_to_django_callback",
-      "given": "ai_req_fixture_001은 session 1과 user-3-session-1에 결합돼 있다.",
-      "request": {
-        "method": "POST",
-        "path": "/api/v2/internal/ai/callback/",
-        "headers": {"Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
-        "body": {
-          "contract_version": "2.0",
-          "request_id": "ai_req_fixture_001",
-          "session_id": 2,
-          "thread_id": "user-9-session-2",
-          "status": "completed",
-          "completed_at": "2026-09-02T06:00:42Z",
-          "output": {"response": "결합이 다른 callback입니다.", "step_id": "basic-info"}
-        }
-      },
-      "response": {
-        "status": 409,
-        "body": {
-          "success": false,
-          "error": {
-            "code": "CALLBACK_BINDING_MISMATCH",
-            "message": "callback 식별자 결합이 원래 요청과 다릅니다.",
-            "retryable": false
-          }
-        }
-      }
-    },
-    "callback_failed_llm_timeout": {
-      "category": "timeout",
-      "boundary": "ai_to_django_callback",
-      "request": {
-        "method": "POST",
-        "path": "/api/v2/internal/ai/callback/",
-        "headers": {"Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
-        "body": {
-          "contract_version": "2.0",
-          "request_id": "ai_req_fixture_002",
           "session_id": 1,
           "thread_id": "user-3-session-1",
           "status": "failed",
@@ -554,138 +419,141 @@
             "retryable": true
           }
         }
+      }
+    },
+    "terminal_completed_proposal": {
+      "category": "normal",
+      "boundary": "django_to_browser_sse",
+      "terminal_payload": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture_001",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "status": "completed",
+        "completed_at": "2026-09-02T06:00:42Z",
+        "output": {
+          "response": "두 항목을 각각 확인해주세요."
+        }
       },
-      "response": {
-        "status": 200,
-        "body": {
+      "browser_event": {
+        "event": "done",
+        "data": {
           "contract_version": "2.0",
-          "success": true,
-          "data": {"request_id": "ai_req_fixture_002", "status": "failed"}
-        }
-      }
-    },
-    "callback_delivery_timeout_exhausted": {
-      "category": "timeout",
-      "boundary": "ai_to_django_callback",
-      "given": "callback의 네 번의 HTTP 요청이 각각 5초 안에 응답하지 않는다.",
-      "expected": {
-        "attempts": 4,
-        "backoff_seconds_before_retries": [1, 2, 4],
-        "same_payload_each_attempt": true,
-        "ai_marks_graph_success": false,
-        "log_fields": ["request_id", "session_id", "thread_id", "error_code"],
-        "forbidden_log_fields": ["Authorization", "customer_info", "raw_financial_values"]
-      }
-    },
-    "polling_processing": {
-      "category": "normal",
-      "boundary": "django_to_browser_polling",
-      "response": {
-        "status": 200,
-        "body": {
-          "contract_version": "2.0",
-          "success": true,
-          "data": {
-            "request_id": "ai_req_fixture_001",
-            "status": "processing",
-            "processing_deadline_at": "2026-09-02T06:01:30Z"
-          }
-        }
-      }
-    },
-    "polling_completed_proposal": {
-      "category": "normal",
-      "boundary": "django_to_browser_polling",
-      "response": {
-        "status": 200,
-        "body": {
-          "contract_version": "2.0",
-          "success": true,
-          "data": {
-            "request_id": "ai_req_fixture_001",
-            "status": "completed",
-            "message": {
-              "id": 11,
-              "role": "assistant",
-              "content": "두 항목을 각각 확인해주세요.",
-              "extracted_data": {
-                "action": {
-                  "action_id": "act_fixture_001",
-                  "type": "form_change",
-                  "step_id": "basic-info",
-                  "target": "draft_form",
-                  "mode": "proposal",
-                  "status": "pending",
-                  "user_requested": false,
-                  "confidence": 0.85,
-                  "changes": [
-                    {
-                      "change_id": "chg_fixture_income",
-                      "decision_status": "pending",
-                      "section": "basic_info",
-                      "path": "monthly_income",
-                      "operation": "set",
-                      "value": 3000000,
-                      "label": "세후 월 소득",
-                      "reason": "사용자 발화에서 추출"
-                    },
-                    {
-                      "change_id": "chg_fixture_job",
-                      "decision_status": "pending",
-                      "section": "basic_info",
-                      "path": "job",
-                      "operation": "set",
-                      "value": "직장인",
-                      "label": "직업",
-                      "reason": "사용자 발화에서 추출"
-                    }
-                  ]
-                }
+          "request_id": "ai_req_fixture_001",
+          "status": "completed",
+          "message": {
+            "id": 11,
+            "role": "assistant",
+            "content": "두 항목을 각각 확인해주세요.",
+            "extracted_data": {
+              "action": {
+                "action_id": "act_fixture_001",
+                "type": "form_change",
+                "step_id": "basic-info",
+                "target": "draft_form",
+                "mode": "proposal",
+                "status": "pending",
+                "user_requested": false,
+                "confidence": 0.85,
+                "changes": [
+                  {
+                    "change_id": "chg_fixture_income",
+                    "decision_status": "pending",
+                    "section": "basic_info",
+                    "path": "monthly_income",
+                    "operation": "set",
+                    "value": 3000000,
+                    "label": "세후 월 소득",
+                    "reason": "사용자 발화에서 추출"
+                  },
+                  {
+                    "change_id": "chg_fixture_job",
+                    "decision_status": "pending",
+                    "section": "basic_info",
+                    "path": "job",
+                    "operation": "set",
+                    "value": "직장인",
+                    "label": "직업",
+                    "reason": "사용자 발화에서 추출"
+                  }
+                ]
               }
             }
           }
         }
       }
     },
-    "polling_failed_retryable": {
+    "terminal_missing_status": {
+      "category": "missing",
+      "boundary": "ai_to_django_sse",
+      "terminal_payload": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture_001",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "completed_at": "2026-09-02T06:00:42Z",
+        "output": {
+          "response": "완료"
+        }
+      },
+      "expected_error": {
+        "status": 422,
+        "code": "REQUEST_SCHEMA_INVALID"
+      }
+    },
+    "terminal_binding_mismatch": {
+      "category": "authorization",
+      "boundary": "django_terminal_receipt",
+      "terminal_payload": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture_001",
+        "session_id": 99,
+        "thread_id": "user-9-session-99",
+        "status": "completed",
+        "completed_at": "2026-09-02T06:00:42Z",
+        "output": {
+          "response": "잘못 결합된 결과"
+        }
+      },
+      "expected_error": {
+        "status": 409,
+        "code": "TERMINAL_BINDING_MISMATCH"
+      }
+    },
+    "terminal_failed_llm_timeout": {
       "category": "timeout",
-      "boundary": "django_to_browser_polling",
-      "response": {
-        "status": 200,
-        "body": {
-          "contract_version": "2.0",
-          "success": true,
-          "data": {
-            "request_id": "ai_req_fixture_002",
-            "status": "failed",
-            "error": {
-              "code": "LLM_TIMEOUT",
-              "message": "AI 응답 생성 시간이 초과되었습니다.",
-              "retryable": true
-            }
-          }
+      "boundary": "django_terminal_receipt",
+      "terminal_payload": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture_timeout",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "status": "failed",
+        "completed_at": "2026-09-02T06:01:00Z",
+        "error": {
+          "code": "LLM_TIMEOUT",
+          "message": "AI 응답 생성 시간이 초과되었습니다.",
+          "retryable": true
         }
       }
     },
-    "polling_expired": {
-      "category": "timeout",
-      "boundary": "django_to_browser_polling",
-      "given": "processing_deadline_at까지 terminal callback이 도착하지 않았다.",
-      "response": {
-        "status": 200,
-        "body": {
-          "contract_version": "2.0",
-          "success": true,
-          "data": {
-            "request_id": "ai_req_fixture_003",
-            "status": "expired",
-            "error": {
-              "code": "AI_REQUEST_EXPIRED",
-              "message": "AI 작업 시간이 만료되었습니다. 다시 요청해주세요.",
-              "retryable": true
-            }
-          }
-        }
+    "terminal_identical_replay": {
+      "category": "duplicate",
+      "boundary": "django_terminal_receipt",
+      "given": "같은 terminal payload digest를 다시 확정한다.",
+      "expected": {
+        "receipt_count": 1,
+        "assistant_message_count": 1,
+        "same_assistant_message_id": true
+      }
+    },
+    "terminal_conflict": {
+      "category": "duplicate",
+      "boundary": "django_terminal_receipt",
+      "given": "같은 request_id에 다른 terminal payload digest를 확정한다.",
+      "expected_error": {
+        "status": 409,
+        "code": "TERMINAL_CONFLICT"
       }
     },
     "change_approve_first": {
@@ -772,64 +640,28 @@
         }
       }
     },
-    "callback_identical_replay": {
-      "category": "duplicate",
-      "boundary": "ai_to_django_callback",
-      "given": "callback_completed_proposal이 같은 payload digest로 이미 저장됐다.",
-      "expected": {
-        "new_assistant_message_count": 0,
-        "response_status": 200,
-        "response_body_equals_case": "callback_completed_proposal.response.body"
-      }
-    },
-    "callback_conflict": {
-      "category": "duplicate",
-      "boundary": "ai_to_django_callback",
-      "given": "ai_req_fixture_001이 다른 terminal status 또는 payload digest로 이미 종결됐다.",
-      "response": {
-        "status": 409,
-        "body": {
-          "success": false,
-          "error": {
-            "code": "CALLBACK_CONFLICT",
-            "message": "이미 종결된 AI 작업과 callback이 충돌합니다.",
-            "retryable": false
-          }
-        }
-      }
-    },
-    "expired_callback_conflict": {
-      "category": "duplicate",
-      "boundary": "ai_to_django_callback",
-      "given": "ai_req_fixture_003이 expired로 종결된 뒤 terminal callback이 도착한다.",
-      "response": {
-        "status": 409,
-        "body": {
-          "success": false,
-          "error": {
-            "code": "CALLBACK_CONFLICT",
-            "message": "만료된 AI 작업에는 callback을 저장할 수 없습니다.",
-            "retryable": false
-          }
-        }
-      }
-    },
     "contract_version_unsupported": {
       "category": "invalid_type",
-      "boundary": "service_http",
+      "boundary": "django_to_ai_sse",
       "request": {
         "method": "POST",
-        "path": "/v2/chat",
-        "headers": {"Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>"},
+        "path": "/v2/chat/stream",
+        "headers": {
+          "Authorization": "Bearer <AI_SERVICE_BEARER_TOKEN>",
+          "Accept": "text/event-stream"
+        },
         "body": {
           "contract_version": "1.0",
-          "request_id": "ai_req_fixture_old_contract",
+          "request_id": "ai_req_fixture_v1",
           "session_id": 1,
           "thread_id": "user-3-session-1",
           "step_id": "basic-info",
-          "message": "이전 계약 요청입니다.",
+          "message": "구형 요청",
           "deadline_at": "2026-09-02T06:01:00Z",
-          "customer_info": {"saved_data": {}, "current_form": {}},
+          "customer_info": {
+            "saved_data": {},
+            "current_form": {}
+          },
           "field_registry": [],
           "chart_payload": null
         }

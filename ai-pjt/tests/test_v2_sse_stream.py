@@ -128,7 +128,7 @@ class FakeErrorReviewGraph:
 
 class V2SSEStreamTests(IsolatedAsyncioTestCase):
     @patch("main.get_callbacks", return_value=[])
-    async def test_stream_uses_v2_identity_and_callback_compatible_done(self, _callbacks):
+    async def test_stream_uses_v2_identity_and_terminal_done(self, _callbacks):
         frames = [
             parse_frame(frame)
             async for frame in _stream_v2_chat_events(

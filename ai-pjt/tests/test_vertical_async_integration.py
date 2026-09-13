@@ -17,13 +17,9 @@ from tests.test_graph_execution import (
     FakePlanner,
     all_agent_graphs,
 )
-from tests.instrumentation import fake_callback_masker, fake_instrumentation
-from transport.contracts import ChatV2Request
-from transport.runtime import (
-    AsyncChatTransport,
-    InMemoryRequestCheckpointStore,
-    request_digest,
-)
+from tests.instrumentation import fake_instrumentation
+from transport.contracts import ChatV2Request, CompletedCallback
+from transport.runtime import ExecutionBudget, utc_now
 
 
 def make_request(request_id: str, session_id: int = 301) -> ChatV2Request:
@@ -73,22 +69,19 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         app.state.context_api = context_api
         return context_api
 
-    async def run_transport(self, request):
-        store = InMemoryRequestCheckpointStore()
+    async def run_stream_execution(self, request):
         processor = AsyncMock(side_effect=_process_v2_graph)
-        callback = SimpleNamespace(send=AsyncMock())
-        transport = AsyncChatTransport(
-            checkpoint_store=store,
-            processor=processor,
-            callback_client=callback,
-            callback_masker=fake_callback_masker(),
-            instrumentation=fake_instrumentation()[0],
-        )
-        await store.claim(request, request_digest(request))
-        first = await transport.run(request)
-        return transport, processor, callback, first
+        output = await processor(request, ExecutionBudget.from_request(request))
+        terminal = CompletedCallback(
+            request_id=request.request_id,
+            session_id=request.session_id,
+            thread_id=request.thread_id,
+            completed_at=utc_now(),
+            output=output,
+        ).model_dump(mode="json")
+        return processor, terminal
 
-    async def test_context_plan_binding_aggregation_and_terminal_replay(self):
+    async def test_context_plan_binding_aggregation_and_terminal_output(self):
         planner = FakePlanner({
             "tasks": [
                 {
@@ -144,15 +137,11 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             tool_executors={"lookup_reference_value": lookup},
         )
         request = make_request("ai_req_vertical_success")
-        transport, processor, callback, first = await self.run_transport(request)
-        replay = await transport.run(request)
+        processor, first = await self.run_stream_execution(request)
 
-        self.assertEqual(first, replay)
         self.assertEqual(first["status"], "completed")
         self.assertEqual(first["output"]["action"]["changes"][0]["value"], 2_500_000)
         processor.assert_awaited_once()
-        self.assertEqual(callback.send.await_count, 2)
-        self.assertEqual(callback.send.await_args_list[0], callback.send.await_args_list[1])
 
         scope = ContextScope(request.session_id, request.thread_id)
         context = await context_api.read_context(scope)
@@ -213,15 +202,13 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             tool_executors={"lookup_reference_value": unavailable_lookup},
         )
         request = make_request("ai_req_vertical_partial")
-        _transport, processor, callback, terminal = await self.run_transport(request)
+        processor, terminal = await self.run_stream_execution(request)
 
         self.assertEqual(terminal["status"], "completed")
         self.assertIsNone(terminal["output"]["action"])
         self.assertIn("선행 작업", terminal["output"]["response"])
         self.assertIn("qa 응답", terminal["output"]["response"])
         processor.assert_awaited_once()
-        callback.send.assert_awaited_once()
-        self.assertEqual(callback.send.await_args.args[0], terminal)
 
         values = await context_api.read_values(
             ContextScope(request.session_id, request.thread_id)
@@ -232,7 +219,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         self.assertEqual(values["task_results"]["task-3"]["status"], "completed")
         self.assertEqual(values["execution_budget"]["tasks_used"], 2)
 
-    async def test_household_reference_lookup_binds_exact_existing_row_and_replays(self):
+    async def test_household_reference_lookup_binds_exact_existing_row(self):
         from agents import input_assist
         from tools.catalog import build_default_registry
         from tools.graph_adapter import build_graph_tool_executors
@@ -328,10 +315,8 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         with patch.object(input_assist, "_classify_chain", classify), patch.object(
             input_assist, "llm", merge_model
         ):
-            transport, processor, _, first = await self.run_transport(request)
-            replay = await transport.run(request)
+            processor, first = await self.run_stream_execution(request)
 
-        self.assertEqual(first, replay)
         self.assertEqual(first["status"], "completed")
         change = first["output"]["action"]["changes"][0]
         self.assertEqual(change["section"], "goal_periods")

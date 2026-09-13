@@ -2,8 +2,7 @@ from django.urls import path
 from .views import (
     ConsultationListCreateView, ConsultationDetailView,
     AIActionApproveView, AIActionRejectView,
-    AIResponsePollingView,
-    MessageListCreateView, MessageStreamView,
+    MessageListView,
     BasicInfoView, FinancialMindsetView, FinancialSatisfactionView,
     FinancialAssetsView, PensionAssetsView, RealEstateAssetsView,
     LiabilitiesView, IncomesView, ExpensesView,
@@ -16,9 +15,7 @@ urlpatterns = [
     path('consultations/<int:session_id>/', ConsultationDetailView.as_view(), name='consultation-detail'),
 
     # 메시지
-    path('consultations/<int:session_id>/messages/', MessageListCreateView.as_view(), name='consultation-messages'),
-    path('consultations/<int:session_id>/messages/stream/', MessageStreamView.as_view(), name='consultation-messages-stream'),
-    path('consultations/<int:session_id>/ai-responses/<str:request_id>/', AIResponsePollingView.as_view(), name='ai-response-polling'),
+    path('consultations/<int:session_id>/messages/', MessageListView.as_view(), name='consultation-messages'),
     path('consultations/<int:session_id>/ai-actions/approve/', AIActionApproveView.as_view(), name='ai-action-approve'),
     path('consultations/<int:session_id>/ai-actions/reject/', AIActionRejectView.as_view(), name='ai-action-reject'),
 

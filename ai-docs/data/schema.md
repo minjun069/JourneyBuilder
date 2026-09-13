@@ -13,7 +13,7 @@
 | 미저장 현재 폼 | Frontend, 요청 시점 snapshot | 사용자 직접 입력·개별 승인된 AI proposal change | Django가 검증·정규화해 AI에 전달 |
 | AI 대화 checkpoint | AI 서비스 | LangGraph checkpointer | 같은 `thread_id`에서만 읽기·쓰기 |
 | RAG 문서·인덱스 | AI 지식 파이프라인 | 승인된 적재 작업 | 검색 도구를 통해 읽기 |
-| AI 작업 상태 | Django | Django callback 처리 | request 상태 callback만 전달 |
+| AI terminal receipt | Django | Django SSE terminal 처리 | request 종결 상태와 메시지 참조만 저장 |
 
 AI와 MCP·Function Calling 도구는 Django 업무 테이블에 직접 쓰지 않는다. v2 AI action은 미저장 draft만 대상으로 하며, DB 영속화는 사용자가 폼 저장을 실행하고 Django serializer가 현재 draft 전체를 검증한 뒤에만 일어난다.
 
@@ -22,10 +22,10 @@ AI와 MCP·Function Calling 도구는 Django 업무 테이블에 직접 쓰지 �
 ### 식별자 불변 조건
 
 - `thread_id`는 사용자와 상담 세션을 함께 식별하며 다른 조합에서 재사용하지 않는다.
-- `request_id`는 하나의 AI 작업을 식별하고 callback idempotency에 사용한다.
+- `request_id`는 하나의 AI SSE 실행을 식별하고 terminal idempotency에 사용한다.
 - `action_id`는 한 assistant message의 form change 묶음을 식별한다.
 - `change_id`는 action 안의 한 change를 식별하며 승인·거절의 최소 단위다.
-- request, thread, session, user 소유권이 일치해야 polling·callback·승인을 처리한다.
+- request, thread, session, user 소유권이 일치해야 SSE terminal·승인을 처리한다.
 
 ### Canonical 필드 레지스트리
 
@@ -92,7 +92,7 @@ Django model·serializer의 snake_case 필드명을 저장·AI 계약의 canonic
 
 ### FormChangeAction
 
-Django가 AI callback을 검증하고 정규화한 draft 변경은 다음 구조를 따른다.
+Django가 AI SSE terminal을 검증하고 정규화한 draft 변경은 다음 구조를 따른다.
 
 ```json
 {
@@ -129,7 +129,7 @@ Django가 AI callback을 검증하고 정규화한 draft 변경은 다음 구조
 }
 ```
 
-AI callback에는 `action_id`, `change_id`, `mode`, 결정 상태가 없다. Django가 canonical 레지스트리 검증 뒤 안정 ID를 부여하고 `mode=proposal`, change별 `decision_status=pending`으로 정규화한다.
+AI terminal에는 `action_id`, `change_id`, `mode`, 결정 상태가 없다. Django가 canonical 레지스트리 검증 뒤 안정 ID를 부여하고 `mode=proposal`, change별 `decision_status=pending`으로 정규화한다.
 
 | operation | cardinality와 무관한 공통 의미 |
 |---|---|

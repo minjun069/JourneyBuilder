@@ -1,30 +1,14 @@
 from django.db import transaction
-from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
-from rest_framework.renderers import JSONRenderer
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 import logging
 
-from asgiref.sync import sync_to_async
-from django.conf import settings
-
 from .ai_services import (
-    AI_STATUS_COMPLETED,
-    AI_STATUS_FAILED,
-    AI_STATUS_PROCESSING,
     apply_pending_changes,
-    build_ai_request_payload,
-    create_assistant_message_from_callback,
-    dispatch_ai_request,
-    generate_request_id,
-    get_ai_request_state,
-    get_ai_request_state_by_thread_id,
     mark_message_action,
-    save_ai_request_state,
-    stream_ai_response,
 )
 from .models import (
     ConsultingSession, Message,
@@ -38,7 +22,6 @@ from .serializers import (
     ConsultingSessionListSerializer,
     ConsultingSessionCreateSerializer,
     MessageSerializer,
-    MessageCreateSerializer,
     BasicInfoSerializer,
     BasicInfoWriteSerializer,
     FinancialMindsetSerializer,
@@ -52,115 +35,9 @@ from .serializers import (
     FinancialGoalPeriodSerializer,
     FinancialGoalMilestoneSerializer,
 )
-from .sse import EventStreamRenderer, SSEProtocolError, aiter_sse_events, encode_sse
 
 
 logger = logging.getLogger(__name__)
-
-_AI_STREAM_EVENTS = {'start', 'delta', 'done', 'error'}
-
-
-def _validate_stream_identity(data, ai_payload):
-    expected = {
-        'request_id': ai_payload['request_id'],
-        'session_id': ai_payload['session_id'],
-        'thread_id': ai_payload['thread_id'],
-    }
-    for field, expected_value in expected.items():
-        if field in data and data[field] != expected_value:
-            raise SSEProtocolError(f'{field} does not match the stream request')
-
-
-def _stream_error(request_id, code='AI_STREAM_FAILED'):
-    return encode_sse('error', {
-        'request_id': request_id,
-        'code': code,
-        'message': 'AI 응답 생성에 실패했습니다.',
-    })
-
-
-async def _proxy_ai_stream(session, ai_payload, step_id, user_message_id):
-    request_id = ai_payload['request_id']
-    yield encode_sse('start', {
-        'request_id': request_id,
-        'session_id': session.id,
-        'user_message_id': user_message_id,
-    })
-
-    chunks: list[str] = []
-    try:
-        async for event_name, data in aiter_sse_events(stream_ai_response(ai_payload)):
-            if event_name not in _AI_STREAM_EVENTS:
-                raise SSEProtocolError(f'unsupported SSE event: {event_name}')
-            _validate_stream_identity(data, ai_payload)
-
-            if event_name == 'start':
-                continue
-
-            if event_name == 'delta':
-                content = data.get('content')
-                if not isinstance(content, str):
-                    raise SSEProtocolError('delta content must be a string')
-                if content:
-                    chunks.append(content)
-                    yield encode_sse('delta', {
-                        'request_id': request_id,
-                        'content': content,
-                    })
-                continue
-
-            if event_name == 'error':
-                code = data.get('code')
-                if not isinstance(code, str) or not code:
-                    code = 'AI_STREAM_FAILED'
-                yield _stream_error(request_id, code=code)
-                return
-
-            output = data.get('output')
-            if not isinstance(output, dict):
-                raise SSEProtocolError('done output must be an object')
-            response_text = output.get('response')
-            if not isinstance(response_text, str) or not response_text:
-                response_text = ''.join(chunks)
-                if not response_text:
-                    raise SSEProtocolError('done output has no response')
-                output = {**output, 'response': response_text}
-
-            assistant_message = await sync_to_async(
-                create_assistant_message_from_callback,
-                thread_sensitive=True,
-            )(
-                session,
-                {
-                    'request_id': request_id,
-                    'session_id': session.id,
-                    'thread_id': ai_payload['thread_id'],
-                    'status': AI_STATUS_COMPLETED,
-                    'output': output,
-                },
-                step_id=step_id,
-            )
-            stored_action = (assistant_message.extracted_data or {}).get('action')
-            client_output = {
-                **output,
-                **({'action': stored_action} if stored_action else {}),
-            }
-            yield encode_sse('done', {
-                'request_id': request_id,
-                'session_id': session.id,
-                'thread_id': ai_payload['thread_id'],
-                'message_id': assistant_message.id,
-                'output': client_output,
-            })
-            return
-
-        yield _stream_error(request_id, code='AI_STREAM_INCOMPLETE')
-    except GeneratorExit:
-        logger.info('Django SSE 클라이언트 연결 종료', extra={'request_id': request_id})
-        raise
-    except Exception:
-        logger.exception('Django AI stream 프록시 실패', extra={'request_id': request_id})
-        yield _stream_error(request_id)
 
 
 # 공통 유틸
@@ -228,8 +105,8 @@ class ConsultationDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# 메시지 목록 / 전송
-class MessageListCreateView(APIView):
+# 메시지 목록. AI 전송은 v2 SSE endpoint만 사용한다.
+class MessageListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, session_id):
@@ -240,279 +117,6 @@ class MessageListCreateView(APIView):
         messages = session.messages.all()
         serializer = MessageSerializer(messages, many=True)
         return Response({'success': True, 'data': serializer.data, 'meta': {'total': messages.count()}})
-
-    # 기존 POST 확장: 사용자 메시지 저장 후 AI 작업 요청 생성
-    def post(self, request, session_id):
-        session = get_session_or_404(session_id, request.user)
-        if not session:
-            return session_not_found()
-
-        if session.status in (ConsultingSession.Status.COMPLETED, ConsultingSession.Status.ABANDONED):
-            return Response({'success': False, 'error': '종료된 세션에는 메시지를 보낼 수 없습니다.'}, status=status.HTTP_409_CONFLICT)
-
-        serializer = MessageCreateSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response({'success': False, 'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-
-        user_message = Message.objects.create(
-            session=session,
-            role=Message.Role.USER,
-            content=serializer.validated_data['content'],
-        )
-
-        request_id = generate_request_id()
-        step_id = serializer.validated_data.get('step_id') or 'general'
-        form_data = serializer.validated_data.get('form_data') or {}
-        ai_payload = build_ai_request_payload(
-            request_id=request_id,
-            session=session,
-            user=request.user,
-            message=user_message.content,
-            step_id=step_id,
-            form_data=form_data,
-        )
-
-        state_payload = {
-            'request_id': request_id,
-            'status': AI_STATUS_PROCESSING,
-            'session_id': session.id,
-            'user_id': request.user.id,
-            'user_message_id': user_message.id,
-            'thread_id': ai_payload['thread_id'],
-            'step_id': step_id,
-        }
-
-        try:
-            save_ai_request_state(request_id, state_payload)
-            dispatch_ai_request(ai_payload)
-        except Exception as exc:
-            logger.exception('AI 요청 전송 실패', extra={'request_id': request_id})
-            state_payload.update({
-                'status': AI_STATUS_FAILED,
-                'error_code': 'AI_SERVICE_UNAVAILABLE',
-                'error': 'AI 서비스에 일시적으로 연결할 수 없습니다.',
-            })
-            try:
-                save_ai_request_state(request_id, state_payload)
-            except Exception:
-                pass
-            return Response(
-                {
-                    'success': False,
-                    'error': 'AI 서버 요청에 실패했습니다.',
-                    'data': {
-                        'user_message_id': user_message.id,
-                        'request_id': request_id,
-                    },
-                },
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        return Response(
-            {
-                'success': True,
-                'data': {
-                    'message': MessageSerializer(user_message).data,
-                    'ai_request': {
-                        'request_id': request_id,
-                        'status': AI_STATUS_PROCESSING,
-                    },
-                    'user_message_id': user_message.id,
-                    'request_id': request_id,
-                    'status': AI_STATUS_PROCESSING,
-                },
-            },
-            status=status.HTTP_202_ACCEPTED,
-        )
-
-
-# Polling API
-class AIResponsePollingView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, session_id, request_id):
-        session = get_session_or_404(session_id, request.user)
-        if not session:
-            return session_not_found()
-
-        try:
-            request_state = get_ai_request_state(request_id)
-        except Exception as exc:
-            logger.exception('AI 작업 상태 조회 실패', extra={'request_id': request_id})
-            return Response(
-                {'success': False, 'error': 'AI 작업 상태를 조회할 수 없습니다.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        if not request_state:
-            return Response(
-                {'success': False, 'error': 'AI 작업 상태를 찾을 수 없습니다.'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        if request_state.get('session_id') != session.id or request_state.get('user_id') != request.user.id:
-            return Response(
-                {'success': False, 'error': 'AI 작업에 접근할 수 없습니다.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        response_data = {
-            'request_id': request_id,
-            'status': request_state.get('status'),
-        }
-
-        if request_state.get('status') == AI_STATUS_COMPLETED:
-            message = Message.objects.filter(
-                id=request_state.get('assistant_message_id'),
-                session=session,
-            ).first()
-            if message:
-                response_data['message'] = MessageSerializer(message).data
-        elif request_state.get('status') == AI_STATUS_FAILED:
-            response_data['error'] = request_state.get('error', 'AI 응답 생성에 실패했습니다.')
-
-        return Response({'success': True, 'data': response_data})
-
-
-# AI 수신 API
-class AICallbackView(APIView):
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def post(self, request):
-        if settings.AI_CALLBACK_SECRET:
-            secret = request.headers.get('X-Internal-Secret')
-            if secret != settings.AI_CALLBACK_SECRET:
-                return Response(
-                    {'success': False, 'error': '유효하지 않은 callback secret입니다.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-        request_id = request.data.get('request_id')
-        session_id = request.data.get('session_id')
-        callback_status = request.data.get('status')
-        thread_id = request.data.get('thread_id')
-
-        if request_id:
-            try:
-                request_state = get_ai_request_state(request_id)
-            except Exception as exc:
-                logger.exception('AI callback 상태 조회 실패', extra={'request_id': request_id})
-                return Response(
-                    {'success': False, 'error': 'AI 작업 상태를 조회할 수 없습니다.'},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-
-            if not request_state:
-                return Response(
-                    {'success': False, 'error': 'AI 작업 상태를 찾을 수 없습니다.'},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-
-            session_id = session_id or request_state.get('session_id')
-            callback_status = callback_status or AI_STATUS_COMPLETED
-        elif thread_id:
-            try:
-                request_state = get_ai_request_state_by_thread_id(thread_id)
-            except Exception as exc:
-                logger.exception('AI callback thread 상태 조회 실패', extra={'thread_id': thread_id})
-                return Response(
-                    {'success': False, 'error': 'AI 작업 상태를 조회할 수 없습니다.'},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-
-            if not request_state:
-                return Response(
-                    {'success': False, 'error': 'AI 작업 상태를 찾을 수 없습니다.'},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-
-            request_id = request_state.get('request_id')
-            session_id = request_state.get('session_id')
-            callback_status = AI_STATUS_COMPLETED
-        else:
-            request_state = None
-
-        if not request_id or not session_id or not callback_status:
-            return Response(
-                {'success': False, 'error': 'request_id, session_id, status는 필수입니다.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        session = ConsultingSession.objects.filter(id=session_id).first()
-        if not session:
-            return Response(
-                {'success': False, 'error': '세션을 찾을 수 없습니다.'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        try:
-            request_state = request_state or get_ai_request_state(request_id) or {
-                'request_id': request_id,
-                'session_id': session.id,
-                'user_id': session.user_id,
-            }
-        except Exception as exc:
-            logger.exception('AI callback 상태 복원 실패', extra={'request_id': request_id})
-            return Response(
-                {'success': False, 'error': 'AI 작업 상태를 조회할 수 없습니다.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        if request_state.get('session_id') != session.id:
-            return Response(
-                {'success': False, 'error': 'request_id와 session_id가 일치하지 않습니다.'},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        if callback_status == AI_STATUS_FAILED:
-            logger.warning(
-                'AI 처리 실패 callback 수신',
-                extra={
-                    'request_id': request_id,
-                    'error_code': request.data.get('error_code', 'AI_PROCESSING_FAILED'),
-                },
-            )
-            request_state.update({
-                'status': AI_STATUS_FAILED,
-                'error_code': request.data.get('error_code', 'AI_PROCESSING_FAILED'),
-                'error': 'AI 응답 생성에 실패했습니다. 다시 시도해주세요.',
-            })
-            save_ai_request_state(request_id, request_state)
-            return Response({'success': True, 'data': {'request_id': request_id, 'status': AI_STATUS_FAILED}})
-
-        if callback_status != AI_STATUS_COMPLETED:
-            return Response(
-                {'success': False, 'error': '지원하지 않는 status입니다.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if request_state.get('status') == AI_STATUS_COMPLETED and request_state.get('assistant_message_id'):
-            return Response({
-                'success': True,
-                'data': {
-                    'request_id': request_id,
-                    'status': AI_STATUS_COMPLETED,
-                    'message_id': request_state.get('assistant_message_id'),
-                },
-            })
-
-        assistant_message = create_assistant_message_from_callback(session, request.data)
-        request_state.update({
-            'status': AI_STATUS_COMPLETED,
-            'assistant_message_id': assistant_message.id,
-        })
-        save_ai_request_state(request_id, request_state)
-
-        return Response({
-            'success': True,
-            'data': {
-                'request_id': request_id,
-                'status': AI_STATUS_COMPLETED,
-                'message_id': assistant_message.id,
-            },
-        })
-
 
 # AI 제안 사용자 approve/reject API
 class AIActionApproveView(APIView):
@@ -590,51 +194,6 @@ class AIActionRejectView(APIView):
 
         mark_message_action(message, 'rejected')
         return Response({'success': True, 'data': {'message_id': message.id, 'action_status': 'rejected'}})
-
-
-# SSE 스트리밍
-class MessageStreamView(APIView):
-    permission_classes = [IsAuthenticated]
-    renderer_classes = [JSONRenderer, EventStreamRenderer]
-
-    def post(self, request, session_id):
-        session = get_session_or_404(session_id, request.user)
-        if not session:
-            return session_not_found()
-
-        if session.status in (ConsultingSession.Status.COMPLETED, ConsultingSession.Status.ABANDONED):
-            return Response({'success': False, 'error': '종료된 세션에는 메시지를 보낼 수 없습니다.'}, status=status.HTTP_409_CONFLICT)
-
-        serializer = MessageCreateSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(
-                {'success': False, 'error': serializer.errors},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        user_message = Message.objects.create(
-            session=session,
-            role=Message.Role.USER,
-            content=serializer.validated_data['content'],
-        )
-        request_id = generate_request_id()
-        step_id = serializer.validated_data.get('step_id') or 'general'
-        ai_payload = build_ai_request_payload(
-            request_id=request_id,
-            session=session,
-            user=request.user,
-            message=user_message.content,
-            step_id=step_id,
-            form_data=serializer.validated_data.get('form_data') or {},
-        )
-
-        response = StreamingHttpResponse(
-            _proxy_ai_stream(session, ai_payload, step_id, user_message.id),
-            content_type='text/event-stream',
-        )
-        response['Cache-Control'] = 'no-cache'
-        response['X-Accel-Buffering'] = 'no'
-        return response
 
 
 # 기본 정보

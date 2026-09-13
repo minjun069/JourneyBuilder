@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any, AsyncIterator
 
-from fastapi import BackgroundTasks, FastAPI, Header, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
@@ -32,10 +32,7 @@ from transport.contracts import (
     verify_service_authorization,
 )
 from transport.runtime import (
-    AsyncChatTransport,
-    CallbackClient,
     ExecutionBudget,
-    PostgresRequestCheckpointStore,
     utc_now,
 )
 
@@ -72,23 +69,6 @@ async def lifespan(app: FastAPI):
             tool_executors=build_graph_tool_executors(tool_runtime),
         )
         app.state.context_api = build_context_state_api(checkpointer)
-        request_store = PostgresRequestCheckpointStore(settings.db_url)
-        await request_store.setup()
-        app.state.v2_transport = AsyncChatTransport(
-            checkpoint_store=request_store,
-            processor=_process_v2_graph,
-            callback_client=CallbackClient(
-                url=(
-                    f"{settings.backend_url.rstrip('/')}"
-                    "/api/v2/internal/ai/callback/"
-                ),
-                bearer_token=settings.ai_service_bearer_token,
-                instrumentation=instrumentation,
-                timeout_seconds=settings.callback_timeout_seconds,
-            ),
-            callback_masker=callback_masker,
-            instrumentation=instrumentation,
-        )
         yield
 
 
@@ -199,25 +179,6 @@ async def _parse_v2_request(raw_request: Request) -> ChatV2Request:
             code="REQUEST_SCHEMA_INVALID",
             message="AI 요청 스키마가 올바르지 않습니다.",
         ) from None
-
-
-@app.post("/v2/chat", status_code=202)
-async def chat_v2(
-    raw_request: Request,
-    background_tasks: BackgroundTasks,
-    authorization: str | None = Header(default=None, alias="Authorization"),
-):
-    verify_service_authorization(
-        authorization,
-        settings.ai_service_bearer_token,
-    )
-    request = await _parse_v2_request(raw_request)
-
-    accepted = await app.state.v2_transport.accept(
-        request,
-        background_tasks.add_task,
-    )
-    return accepted.model_dump(mode="json")
 
 
 async def _stream_v2_chat_events(
@@ -359,30 +320,6 @@ async def chat_v2_stream(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-def _retired_v1_response() -> JSONResponse:
-    return JSONResponse(
-        status_code=410,
-        content={
-            "success": False,
-            "error": {
-                "code": "CONTRACT_VERSION_UNSUPPORTED",
-                "message": "AI v1 서비스 경로는 종료되었습니다.",
-                "retryable": False,
-            },
-        },
-    )
-
-
-@app.post("/chat", include_in_schema=False)
-async def chat(_request: Request):
-    return _retired_v1_response()
-
-
-@app.post("/chat/stream", include_in_schema=False)
-async def chat_stream(_request: Request):
-    return _retired_v1_response()
 
 
 @app.get("/health")

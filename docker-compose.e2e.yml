@@ -34,8 +34,7 @@ services:
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend,gateway,front
       POSTGRES_SCHEMA: "${F05_DB_SCHEMA:?F05_DB_SCHEMA is required}"
       AI_REDIS_NAMESPACE: "${F05_REDIS_NAMESPACE:?F05_REDIS_NAMESPACE is required}"
-      AI_SERVICE_URL: http://fixture-ai:8001/chat
-      AI_SERVICE_STREAM_URL: http://fixture-ai:8001/chat/stream
+      AI_SERVICE_URL: http://fixture-ai:8001
 
   fixture-ai:
     build:

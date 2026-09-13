@@ -28,7 +28,6 @@ Browser
           → RAG index: 승인 금융 지식·인터페이스 가이드
           → MCP server: 검색·검증·결정론적 계산
       ← v2 SSE: 일반 채팅·Elicit·Error Review의 답변·인용·변경 제안 또는 실패
-      ← AI callback: 호환 비동기 경로의 종결 결과
   ← 모든 대화형 AI 응답은 v2 SSE
 ```
 
@@ -55,7 +54,7 @@ Frontend 개발 서버의 Compose 포함 여부와 개발용 host port override�
 - AI FastAPI는 Django가 전달한 snapshot과 AI 전용 checkpoint·RAG·MCP에 의존한다.
 - MCP 도구는 Agent별 allowlist와 최소 권한을 따르고 Browser에 노출되지 않는다.
 - 6-Agent는 공통 상태·라우터·평가·보안 기반을 공유한다. 세부 역할은 [`AI 시스템 명세`](../ai/specification.md)를 따른다.
-- callback과 도구 결과를 포함한 모든 경계 입력은 schema·인증·권한을 다시 검증한다.
+- SSE terminal과 도구 결과를 포함한 모든 경계 입력은 schema·인증·권한을 다시 검증한다.
 
 ## 5. 데이터 소유권
 

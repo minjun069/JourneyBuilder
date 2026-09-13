@@ -1,4 +1,4 @@
-"""Legacy streaming endpoints stay disabled after the v2 contract cutover."""
+"""SSE encoding and removed legacy route checks."""
 
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ class SSEEncodingTests(TestCase):
         self.assertEqual(data, {"content": "은퇴\n준비"})
 
 
-class LegacyEndpointTests(IsolatedAsyncioTestCase):
-    async def test_legacy_chat_endpoints_do_not_parse_or_forward_payloads(self):
+class RemovedEndpointTests(IsolatedAsyncioTestCase):
+    async def test_legacy_chat_endpoints_are_absent(self):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url="http://ai",
@@ -39,11 +39,7 @@ class LegacyEndpointTests(IsolatedAsyncioTestCase):
                         path,
                         content=b"not-json-and-must-not-be-parsed",
                     )
-                    self.assertEqual(response.status_code, 410)
-                    self.assertEqual(
-                        response.json()["error"]["code"],
-                        "CONTRACT_VERSION_UNSUPPORTED",
-                    )
+                    self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

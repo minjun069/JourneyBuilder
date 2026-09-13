@@ -1,4 +1,4 @@
-"""Backend-owned v2 AI request, callback, polling, and decision lifecycle."""
+"""Backend-owned v2 SSE request, terminal receipt, and decision lifecycle."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
-import secrets
 from typing import Any
 import uuid
 
@@ -16,7 +15,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from .ai_services import (
     build_customer_info,
     build_thread_id,
-    create_assistant_message_from_callback,
+    create_assistant_message_from_terminal,
     generate_request_id,
 )
 from .field_registry import get_step_field_registry
@@ -26,10 +25,8 @@ from .tool_context import build_tool_context
 
 CONTRACT_VERSION = '2.0'
 AI_EXECUTION_DEADLINE_SECONDS = 60
-PROCESSING_DEADLINE_SECONDS = 90
 ACTIVE_STATE_TTL_SECONDS = 600
 TERMINAL_STATE_TTL_SECONDS = 86400
-RETRYABLE_HTTP_STATUSES = {408, 429, 502, 503, 504}
 AI_FAILURE_CODES = {
     'LLM_TIMEOUT',
     'UPSTREAM_UNAVAILABLE',
@@ -37,10 +34,6 @@ AI_FAILURE_CODES = {
     'POLICY_BLOCKED',
     'INTERNAL_ERROR',
 }
-
-
-class RetryableAIDispatchError(RuntimeError):
-    pass
 
 
 def utc_now():
@@ -161,22 +154,9 @@ def require_idempotency_key(request):
     return key
 
 
-def verify_service_bearer(request):
-    value = request.headers.get('Authorization', '')
-    scheme, separator, supplied = value.partition(' ')
-    expected = settings.AI_SERVICE_BEARER_TOKEN
-    if not (
-        separator == ' '
-        and scheme == 'Bearer'
-        and expected
-        and secrets.compare_digest(supplied, expected)
-    ):
-        raise LifecycleError(401, 'SERVICE_UNAUTHORIZED', '서비스 인증에 실패했습니다.')
-
-
-def validate_terminal_callback(payload):
+def validate_terminal_payload(payload):
     if not isinstance(payload, dict):
-        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'callback 본문은 객체여야 합니다.')
+        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'terminal 본문은 객체여야 합니다.')
     if payload.get('contract_version') != CONTRACT_VERSION:
         raise LifecycleError(
             422,
@@ -401,51 +381,7 @@ def build_v2_ai_payload(
     return payload
 
 
-def ai_v2_url():
-    base = settings.AI_SERVICE_URL.rstrip('/')
-    if base.endswith('/chat'):
-        base = base[:-5]
-    return f'{base}/v2/chat'
-
-
-def dispatch_v2_ai_request(payload, *, post=None):
-    if post is None:
-        import httpx
-        post = httpx.post
-        transport_errors = (httpx.TransportError,)
-    else:
-        transport_errors = (TimeoutError, ConnectionError)
-    last_error = None
-    for attempt in range(2):
-        try:
-            response = post(
-                ai_v2_url(),
-                json=payload,
-                headers={
-                    'Authorization': f'Bearer {settings.AI_SERVICE_BEARER_TOKEN}',
-                },
-                timeout=5,
-            )
-            if response.status_code in RETRYABLE_HTTP_STATUSES:
-                raise RetryableAIDispatchError(
-                    f'retryable AI response: {response.status_code}'
-                )
-            response.raise_for_status()
-            body = response.json()
-            if (
-                body.get('contract_version') != CONTRACT_VERSION
-                or body.get('request_id') != payload['request_id']
-                or body.get('status') != 'accepted'
-            ):
-                raise RuntimeError('AI accepted response contract mismatch')
-            return body
-        except transport_errors + (RetryableAIDispatchError,) as exc:
-            last_error = exc
-    raise last_error or RuntimeError('AI dispatch failed')
-
-
 def make_processing_state(*, request_id, session, user, user_message_id, thread_id, step_id, now=None):
-    current = now or utc_now()
     return {
         'contract_version': CONTRACT_VERSION,
         'request_id': request_id,
@@ -455,31 +391,10 @@ def make_processing_state(*, request_id, session, user, user_message_id, thread_
         'user_message_id': user_message_id,
         'thread_id': thread_id,
         'step_id': step_id,
-        'processing_deadline_at': isoformat_utc(
-            current + timedelta(seconds=PROCESSING_DEADLINE_SECONDS)
-        ),
     }
 
 
-def expire_if_due(state, *, now=None):
-    if state.get('status') != 'processing':
-        return state, False
-    deadline = datetime.fromisoformat(state['processing_deadline_at'].replace('Z', '+00:00'))
-    if (now or utc_now()) < deadline:
-        return state, False
-    expired = {
-        **state,
-        'status': 'expired',
-        'error': {
-            'code': 'AI_REQUEST_EXPIRED',
-            'message': 'AI 작업 시간이 만료되었습니다. 다시 요청해주세요.',
-            'retryable': True,
-        },
-    }
-    return expired, True
-
-
-def bind_terminal_callback(state, payload):
+def bind_terminal_result(state, payload):
     if (
         state.get('request_id') != payload['request_id']
         or state.get('session_id') != payload['session_id']
@@ -487,29 +402,29 @@ def bind_terminal_callback(state, payload):
     ):
         raise LifecycleError(
             409,
-            'CALLBACK_BINDING_MISMATCH',
-            'callback 식별자 결합이 원래 요청과 다릅니다.',
+            'TERMINAL_BINDING_MISMATCH',
+            'terminal 식별자 결합이 원래 요청과 다릅니다.',
         )
     digest = canonical_digest(payload)
     current_status = state.get('status')
     if current_status == 'expired':
         raise LifecycleError(
             409,
-            'CALLBACK_CONFLICT',
-            '만료된 AI 작업에는 callback을 저장할 수 없습니다.',
+            'TERMINAL_CONFLICT',
+            '만료된 AI 작업에는 terminal 결과를 저장할 수 없습니다.',
         )
     if current_status in ('completed', 'failed'):
         if state.get('callback_digest') == digest:
             return state, True
         raise LifecycleError(
             409,
-            'CALLBACK_CONFLICT',
-            '이미 종결된 AI 작업과 callback이 충돌합니다.',
+            'TERMINAL_CONFLICT',
+            '이미 종결된 AI 작업과 terminal 결과가 충돌합니다.',
         )
     if current_status != 'processing':
         raise LifecycleError(
             409,
-            'CALLBACK_CONFLICT',
+            'TERMINAL_CONFLICT',
             '종결할 수 없는 AI 작업 상태입니다.',
         )
     return {**state, 'callback_digest': digest}, False
@@ -518,7 +433,7 @@ def bind_terminal_callback(state, payload):
 def create_v2_assistant_message(session, payload, step_id):
     output = payload.get('output') if isinstance(payload.get('output'), dict) else {}
     _validate_error_review_fields(output, step_id)
-    message = create_assistant_message_from_callback(session, payload, step_id=step_id)
+    message = create_assistant_message_from_terminal(session, payload, step_id=step_id)
     extracted = message.extracted_data or {}
     extracted_changed = False
     action = extracted.get('action')

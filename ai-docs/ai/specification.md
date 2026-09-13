@@ -21,7 +21,7 @@
 
 | 상태 | 설명 |
 |---|---|
-| request_id | 한 AI 작업의 idempotency·callback 식별자 |
+| request_id | 한 AI SSE 실행의 idempotency·terminal 식별자 |
 | thread_id | 사용자와 상담 세션을 함께 포함한 대화 문맥 식별자 |
 | session_id | Django 상담 세션 식별자 |
 | step_id | 프론트의 실제 프로세스 단계 |
@@ -56,7 +56,7 @@ AI가 만든 모든 변경은 `proposal`로 반환해 사용자가 change별로 
 4. 선택 Agent가 현재 Agent allowlist에 있는 RAG·Function Calling 도구를 호출한다.
 5. runtime이 모델 인자와 분리된 request·step·Agent·deadline 컨텍스트를 주입하고 도구 입력·출력·권한·timeout을 검증한다.
 6. Agent 최종 출력은 form action 유무와 관계없이 항상 `validate_form_update` 파이프라인 노드를 통과한다. 이 노드는 일반 응답 계약과 form action의 canonical 필드·자료형·단위·연산을 결정론적으로 검사한다.
-7. 보안 검사를 통과한 결과만 callback한다.
+7. 보안 검사를 통과한 결과만 SSE terminal로 반환한다.
 
 ## Agent별 종료와 재시도
 
@@ -89,7 +89,7 @@ AI가 만든 모든 변경은 `proposal`로 반환해 사용자가 change별로 
 | Function Calling 도구·공통 출력 후검증 | [tools.md](tools.md) |
 | 평가셋·지표·관측·rollback | [evaluation.md](evaluation.md) |
 | 데이터 보호·권한·공격 통제 | [AI 보안 정책 v0.1](../security/ai-security-policy.md) |
-| AI request·callback·공용 fixture | [AI 서비스 API 계약](../contracts/ai-api.md) |
+| AI request·terminal·공용 fixture | [AI 서비스 API 계약](../contracts/ai-api.md) |
 | 3주 MVP 범위와 제외 범위 | [프로젝트 요구사항](../REQUIREMENTS.md) §4 |
 
 ## 열린 결정

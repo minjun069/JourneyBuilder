@@ -22,16 +22,14 @@ from consulting.ai_lifecycle import (  # noqa: E402
     ACTIVE_STATE_TTL_SECONDS,
     AI_EXECUTION_DEADLINE_SECONDS,
     CONTRACT_VERSION,
-    PROCESSING_DEADLINE_SECONDS,
     TERMINAL_STATE_TTL_SECONDS,
     LifecycleError,
-    bind_terminal_callback,
+    bind_terminal_result,
     build_v2_ai_payload,
     decide_change,
-    expire_if_due,
     require_idempotency_key,
     validate_browser_message,
-    validate_terminal_callback,
+    validate_terminal_payload,
     v2_success,
 )
 
@@ -56,7 +54,7 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
         self.assertLessEqual(set(FIXTURE['required_case_categories']), categories)
 
     def test_browser_validation_errors_match_frozen_responses(self):
-        for case_name in ('browser_message_missing_content', 'browser_message_invalid_content_type'):
+        for case_name in ('browser_stream_missing_content', 'browser_stream_invalid_content_type'):
             with self.subTest(case=case_name):
                 fixture_case = FIXTURE['cases'][case_name]
                 self.assert_lifecycle_error(
@@ -64,7 +62,7 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
                     fixture_case,
                 )
 
-        missing_key = FIXTURE['cases']['browser_message_missing_idempotency_key']
+        missing_key = FIXTURE['cases']['browser_stream_missing_idempotency_key']
         self.assert_lifecycle_error(
             lambda: require_idempotency_key(SimpleNamespace(headers={})),
             missing_key,
@@ -79,7 +77,7 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
         tool_context,
         registry,
     ):
-        fixture_body = FIXTURE['cases']['django_ai_accepted']['request']['body']
+        fixture_body = FIXTURE['cases']['django_ai_stream']['request']['body']
         customer_info.return_value = fixture_body['customer_info']
         registry.return_value = fixture_body['field_registry']
         tool_context.return_value = fixture_body['tool_context']
@@ -97,17 +95,17 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
 
         self.assertEqual(actual, fixture_body)
 
-    def test_callback_shapes_and_errors_match_frozen_cases(self):
-        completed = FIXTURE['cases']['callback_completed_proposal']['request']['body']
-        failed = FIXTURE['cases']['callback_failed_llm_timeout']['request']['body']
-        self.assertEqual(validate_terminal_callback(completed), completed)
-        self.assertEqual(validate_terminal_callback(failed), failed)
+    def test_terminal_shapes_and_errors_match_frozen_cases(self):
+        completed = FIXTURE['cases']['terminal_completed_proposal']['terminal_payload']
+        failed = FIXTURE['cases']['terminal_failed_llm_timeout']['terminal_payload']
+        self.assertEqual(validate_terminal_payload(completed), completed)
+        self.assertEqual(validate_terminal_payload(failed), failed)
 
-        missing = FIXTURE['cases']['callback_missing_status']
-        self.assert_lifecycle_error(
-            lambda: validate_terminal_callback(missing['request']['body']),
-            missing,
-        )
+        missing = FIXTURE['cases']['terminal_missing_status']
+        with self.assertRaises(LifecycleError) as captured:
+            validate_terminal_payload(missing['terminal_payload'])
+        self.assertEqual(captured.exception.status_code, missing['expected_error']['status'])
+        self.assertEqual(captured.exception.code, missing['expected_error']['code'])
 
         state = {
             'request_id': completed['request_id'],
@@ -115,37 +113,16 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
             'thread_id': 'user-3-session-1',
             'status': 'processing',
         }
-        mismatch = FIXTURE['cases']['callback_binding_mismatch']
-        self.assert_lifecycle_error(
-            lambda: bind_terminal_callback(state, mismatch['request']['body']),
-            mismatch,
-        )
-
-    def test_processing_expiry_matches_polling_fixture(self):
-        fixture_response = FIXTURE['cases']['polling_expired']['response']['body']
-        deadline = datetime(2026, 9, 2, 6, 1, 30, tzinfo=timezone.utc)
-        state = {
-            'request_id': fixture_response['data']['request_id'],
-            'status': 'processing',
-            'processing_deadline_at': deadline.isoformat(),
-        }
-
-        expired, changed = expire_if_due(state, now=deadline)
-
-        self.assertTrue(changed)
-        self.assertEqual(
-            v2_success({
-                'request_id': expired['request_id'],
-                'status': expired['status'],
-                'error': expired['error'],
-            }),
-            fixture_response,
-        )
+        mismatch = FIXTURE['cases']['terminal_binding_mismatch']
+        with self.assertRaises(LifecycleError) as captured:
+            bind_terminal_result(state, mismatch['terminal_payload'])
+        self.assertEqual(captured.exception.status_code, mismatch['expected_error']['status'])
+        self.assertEqual(captured.exception.code, mismatch['expected_error']['code'])
 
     def test_individual_decisions_match_both_frozen_responses(self):
         action = deepcopy(
-            FIXTURE['cases']['polling_completed_proposal']['response']['body']
-            ['data']['message']['extracted_data']['action']
+            FIXTURE['cases']['terminal_completed_proposal']['browser_event']['data']
+            ['message']['extracted_data']['action']
         )
         message = SimpleNamespace(extracted_data={'action': action}, save=Mock())
 
@@ -173,7 +150,6 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
         timing = FIXTURE['timing']
         self.assertEqual(CONTRACT_VERSION, FIXTURE['contract_version'])
         self.assertEqual(AI_EXECUTION_DEADLINE_SECONDS, timing['ai_execution_deadline_seconds'])
-        self.assertEqual(PROCESSING_DEADLINE_SECONDS, timing['processing_deadline_seconds'])
         self.assertEqual(ACTIVE_STATE_TTL_SECONDS, timing['active_state_ttl_seconds'])
         self.assertEqual(TERMINAL_STATE_TTL_SECONDS, timing['terminal_state_ttl_seconds'])
         self.assertEqual(TERMINAL_STATE_TTL_SECONDS, timing['idempotency_ttl_seconds'])
