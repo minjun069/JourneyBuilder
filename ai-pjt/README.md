@@ -14,7 +14,8 @@ Langfuse·LangSmith의 raw model callback tracing은 typed masking 경계를 우
 활성화하지 않는다. `LANGFUSE_ENABLED=true`는 callback을 붙이지 않고, 기존
 `MaskedInstrumentationSink`가 직렬화·마스킹한 typed event만 Langfuse v4 exporter로
 보낸다. 자동 LangChain·LangSmith tracing 환경변수는 서비스가 요청을 받기 전에
-startup을 실패시킨다.
+startup을 실패시킨다. Compose는 `LANGCHAIN_TRACING_V2=false`를 리터럴로 고정하고
+`LANGCHAIN_API_KEY`를 서비스에 전달하지 않는다.
 
 `requirements.txt`는 직접 의존성의 호환 범위를 사람이 관리한다. `requirements.lock`은 Python 3.13/Linux에서 해석한 직접·전이 의존성 전체와 배포 파일 hash를 고정하며 Docker와 CI가 설치한다.
 

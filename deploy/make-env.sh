@@ -9,6 +9,7 @@
 #   - .env.example 을 그대로 복사하고 필수 5개만 채운다: DJANGO_SECRET_KEY / POSTGRES_PASSWORD / AI_SERVICE_BEARER_TOKEN /
 #     AI_MASKING_PSEUDONYM_KEY 는
 #     openssl 무작위값, DATABASE_URL 은 POSTGRES_* 로 조립. GOOGLE_API_KEY 는 환경변수에 있으면 넣고 없으면 비워 둔다.
+#   - raw LangChain tracing은 항상 비활성화하고 legacy LANGCHAIN_API_KEY 항목은 결과 파일에서 제거한다.
 #   - 결과 파일은 600. 이미 파일이 있으면 절대 덮어쓰지 않는다 — POSTGRES_PASSWORD 는 볼륨과 짝이라 재생성하면 접속이 끊긴다.
 set -euo pipefail
 
@@ -55,6 +56,8 @@ sed \
   -e "s|^AI_MASKING_PSEUDONYM_KEY=.*|AI_MASKING_PSEUDONYM_KEY=${masking_key}|" \
   -e "s|^DATABASE_URL=.*|DATABASE_URL=${database_url}|" \
   -e "s|^GOOGLE_API_KEY=.*|GOOGLE_API_KEY=${google_key}|" \
+  -e 's|^LANGCHAIN_TRACING_V2=.*|LANGCHAIN_TRACING_V2=false|' \
+  -e '/^LANGCHAIN_API_KEY=/d' \
   "$template" > "$tmp"
 mv "$tmp" "$out"
 chmod 600 "$out"

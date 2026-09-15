@@ -125,8 +125,7 @@ services:
       LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-}"
       LANGFUSE_TRACING_ENVIRONMENT: "${LANGFUSE_TRACING_ENVIRONMENT:-default}"
       LANGFUSE_RELEASE: "${LANGFUSE_RELEASE:-}"
-      LANGCHAIN_TRACING_V2: "${LANGCHAIN_TRACING_V2:-false}"
-      LANGCHAIN_API_KEY: "${LANGCHAIN_API_KEY:-}"
+      LANGCHAIN_TRACING_V2: "false"
     depends_on:
       postgres:
         condition: service_healthy
