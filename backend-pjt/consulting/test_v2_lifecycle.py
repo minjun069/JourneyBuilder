@@ -18,6 +18,7 @@ from .ai_lifecycle import (
     validate_browser_message,
     validate_terminal_payload,
 )
+from .ai_tokenization import ReferenceTokenVault, TOKEN_VAULT_TTL_SECONDS
 
 
 UTC = timezone.utc
@@ -49,6 +50,9 @@ class FakeRedis:
     def setex(self, key, ttl, value):
         self.values[key] = value
         self.ttls[key] = ttl
+
+    def delete(self, key):
+        return int(self.values.pop(key, None) is not None)
 
 
 class BrowserMessageValidationTests(SimpleTestCase):
@@ -136,6 +140,20 @@ class RedisLifecycleStoreTests(SimpleTestCase):
             {'body': {'ok': True}},
         )
 
+        vault = ReferenceTokenVault(
+            user_id=3,
+            session_id=12,
+            request_id='ai_req_test',
+            namespace='a1b2c3d4e5f6',
+        )
+        vault.tokenize({'email': 'gildong@example.com'})
+        store.save_token_vault(vault)
+        token_key = store.token_vault_key('ai_req_test')
+        self.assertEqual(client.ttls[token_key], TOKEN_VAULT_TTL_SECONDS)
+        self.assertIn('gildong@example.com', client.values[token_key])
+        store.delete_token_vault('ai_req_test')
+        self.assertNotIn(token_key, client.values)
+
     def test_optional_namespace_prefixes_every_lifecycle_key(self):
         client = FakeRedis()
         store = RedisLifecycleStore(client, namespace='p07:run42:')
@@ -143,9 +161,16 @@ class RedisLifecycleStoreTests(SimpleTestCase):
 
         store.save_active(state)
         store.save_idempotency(3, 12, 'idem-key', {'body': {'ok': True}})
+        store.save_token_vault(ReferenceTokenVault(
+            user_id=3,
+            session_id=12,
+            request_id='ai_req_test',
+            namespace='a1b2c3d4e5f6',
+        ))
 
         self.assertIn('p07:run42:ai:v2:request:ai_req_test', client.values)
         self.assertIn('p07:run42:ai:v2:idempotency:3:12:idem-key', client.values)
+        self.assertIn('p07:run42:ai:v2:token-vault:ai_req_test', client.values)
 
 
 class AIStreamRequestTests(SimpleTestCase):

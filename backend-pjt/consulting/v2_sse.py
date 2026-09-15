@@ -13,6 +13,7 @@ from .ai_lifecycle import (
     validate_terminal_payload,
 )
 from .ai_security import finalize_terminal_result
+from .ai_tokenization import ReferenceTokenValidationError, ReferenceTokenVault
 from .sse import SSEProtocolError, aiter_sse_events, encode_sse
 
 
@@ -114,11 +115,36 @@ async def _save_terminal(store, state):
     await sync_to_async(store.save_terminal, thread_sensitive=True)(state)
 
 
-async def proxy_v2_ai_stream(session, payload, state, store):
+async def _delete_token_vault(store, request_id):
+    try:
+        await sync_to_async(
+            store.delete_token_vault,
+            thread_sensitive=True,
+        )(request_id)
+    except Exception:
+        logger.exception(
+            'Django AI 참조 token vault 삭제 실패',
+            extra={'request_id': request_id},
+        )
+
+
+async def proxy_v2_ai_stream(
+    session,
+    payload,
+    state,
+    store,
+    *,
+    token_vault: ReferenceTokenVault,
+):
     yield encode_sse('start', _browser_start(state))
 
     terminal = False
     try:
+        token_vault.assert_scope(
+            user_id=state['user_id'],
+            session_id=state['session_id'],
+            request_id=state['request_id'],
+        )
         async for event_name, data in aiter_sse_events(stream_v2_ai_response(payload)):
             if event_name not in _ALLOWED_EVENTS:
                 raise SSEProtocolError(f'unsupported SSE event: {event_name}')
@@ -126,15 +152,16 @@ async def proxy_v2_ai_stream(session, payload, state, store):
 
             if event_name == 'start':
                 continue
-
             validated = validate_terminal_payload(data)
             if event_name == 'error':
                 if validated['status'] != 'failed':
                     raise SSEProtocolError('error event must have failed status')
-                finalized = await _finalize(state, validated)
+                restored = validate_terminal_payload(token_vault.restore(validated))
+                finalized = await _finalize(state, restored)
                 terminal = True
                 await _save_terminal(store, finalized.state)
-                yield encode_sse('error', _browser_error(state, validated['error']))
+                await _delete_token_vault(store, state['request_id'])
+                yield encode_sse('error', _browser_error(state, restored['error']))
                 return
 
             if validated['status'] != 'completed':
@@ -143,9 +170,12 @@ async def proxy_v2_ai_stream(session, payload, state, store):
             if not output.get('response'):
                 raise SSEProtocolError('done output has no response')
 
-            finalized = await _finalize(state, validated)
+            restored = validate_terminal_payload(token_vault.restore(validated))
+
+            finalized = await _finalize(state, restored)
             terminal = True
             await _save_terminal(store, finalized.state)
+            await _delete_token_vault(store, state['request_id'])
             message = finalized.message
             if message is None:
                 raise RuntimeError('completed terminal receipt has no assistant message')
@@ -169,19 +199,35 @@ async def proxy_v2_ai_stream(session, payload, state, store):
             finalized = await _finalize(state, failed)
             terminal = True
             await _save_terminal(store, finalized.state)
+            await _delete_token_vault(store, state['request_id'])
         raise
-    except Exception:
-        logger.exception('Django v2 SSE 프록시 실패', extra={'request_id': state['request_id']})
-        error = {
-            'code': 'INTERNAL_ERROR',
-            'message': 'AI 응답 생성에 실패했습니다.',
-            'retryable': True,
-        }
+    except Exception as exc:
+        if isinstance(exc, ReferenceTokenValidationError):
+            logger.warning(
+                'Django v2 SSE 참조 token 검증 실패',
+                extra={'request_id': state['request_id']},
+            )
+            error = {
+                'code': 'POLICY_BLOCKED',
+                'message': 'AI 응답 데이터 검증에 실패했습니다.',
+                'retryable': False,
+            }
+        else:
+            logger.exception(
+                'Django v2 SSE 프록시 실패',
+                extra={'request_id': state['request_id']},
+            )
+            error = {
+                'code': 'INTERNAL_ERROR',
+                'message': 'AI 응답 생성에 실패했습니다.',
+                'retryable': True,
+            }
         if not terminal:
             try:
                 finalized = await _finalize(state, _failed_terminal(state, error))
                 terminal = True
                 await _save_terminal(store, finalized.state)
+                await _delete_token_vault(store, state['request_id'])
             except Exception:
                 logger.exception(
                     'Django v2 SSE 실패 상태 확정 실패',

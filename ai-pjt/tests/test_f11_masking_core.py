@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+from pathlib import Path
 import unittest
 
 from core.masking import (
     MaskingPolicy,
     MaskingPolicyError,
     MaskingSink,
+    REFERENCE_TOKEN_KINDS,
+    REFERENCE_TOKEN_PATTERN,
     mask_payload,
 )
 from tests.security.masking_contract import (
@@ -49,6 +52,18 @@ def _sentinel_payload() -> dict[str, object]:
 
 
 class MaskingPolicyTests(unittest.TestCase):
+    def test_reference_token_shape_matches_shared_contract(self) -> None:
+        contract_path = (
+            Path(__file__).resolve().parents[2]
+            / "contract-fixtures/ai-lifecycle/v2/reference-tokenization.json"
+        )
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(contract["token_kinds"], list(REFERENCE_TOKEN_KINDS))
+        for index, kind in enumerate(REFERENCE_TOKEN_KINDS, start=1):
+            token = f"[[{kind}_a1b2c3d4e5f6_{index}]]"
+            self.assertIsNotNone(REFERENCE_TOKEN_PATTERN.fullmatch(token))
+
     def test_key_is_required_and_must_be_long_enough(self) -> None:
         for invalid in (b"", b"short", "not-bytes"):
             with self.subTest(invalid=invalid):
@@ -316,6 +331,22 @@ class RecursiveMaskingTests(unittest.TestCase):
         self.assertNotIn("p13-user@example.invalid", rendered)
         self.assertNotIn("01000000000", rendered)
         self.assertNotIn("010-0000-0000", rendered)
+
+    def test_reference_tokens_keep_relationships_in_logs_and_traces(self) -> None:
+        token = "[[USER_NAME_a1b2c3d4e5f6_1]]"
+        payload = {
+            "customer_name": token,
+            "description": f"{token} 사용자의 요청을 처리했습니다.",
+        }
+
+        for sink in (MaskingSink.APPLICATION_LOG, MaskingSink.TRACE_EXPORT):
+            masked = mask_payload(payload, sink=sink, policy=_policy())
+            with self.subTest(sink=sink.value):
+                self.assertEqual(masked["customer_name"], token)
+                self.assertEqual(
+                    masked["description"],
+                    f"{token} 사용자의 요청을 처리했습니다.",
+                )
 
     def test_known_financial_literals_are_removed_from_other_log_fields(self) -> None:
         payload = {

@@ -8,6 +8,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from .v2_sse import proxy_v2_ai_stream, stream_v2_ai_response
 from .v2_views import V2MessageStreamView
+from .ai_tokenization import ReferenceTokenVault
 
 
 async def async_items(items):
@@ -50,6 +51,15 @@ def processing_state():
         'thread_id': 'user-3-session-12',
         'step_id': 'general',
     }
+
+
+def token_vault():
+    return ReferenceTokenVault(
+        user_id=3,
+        session_id=12,
+        request_id='ai_req_v2_stream',
+        namespace='a1b2c3d4e5f6',
+    )
 
 
 def browser_body():
@@ -127,6 +137,7 @@ class V2SSEProxyTests(SimpleTestCase):
                 ai_payload(),
                 processing_state(),
                 store,
+                token_vault=token_vault(),
             )
         ))]
 
@@ -137,6 +148,7 @@ class V2SSEProxyTests(SimpleTestCase):
         saved = store.save_terminal.call_args.args[0]
         self.assertEqual(saved['status'], 'completed')
         self.assertEqual(saved['assistant_message_id'], 99)
+        store.delete_token_vault.assert_called_once_with('ai_req_v2_stream')
 
     @patch('consulting.v2_sse.finalize_terminal_result')
     @patch('consulting.v2_sse.stream_v2_ai_response')
@@ -162,6 +174,7 @@ class V2SSEProxyTests(SimpleTestCase):
                 ai_payload(),
                 processing_state(),
                 store,
+                token_vault=token_vault(),
             )
         ))]
 
@@ -192,12 +205,99 @@ class V2SSEProxyTests(SimpleTestCase):
                 ai_payload(),
                 processing_state(),
                 store,
+                token_vault=token_vault(),
             )
         ))]
 
         self.assertEqual([event for event, _ in frames], ['start', 'error'])
         finalize.assert_called_once()
         self.assertEqual(store.save_terminal.call_args.args[0]['status'], 'failed')
+        store.delete_token_vault.assert_called_once_with('ai_req_v2_stream')
+
+    @patch('consulting.v2_sse.finalize_terminal_result')
+    @patch('consulting.v2_sse.stream_v2_ai_response')
+    def test_restores_only_issued_tokens_before_save_and_browser_delivery(
+        self,
+        upstream,
+        finalize,
+    ):
+        vault = token_vault()
+        tokenized = vault.tokenize({
+            'message': '이름은 홍길동이고 희망 월소득은 350만원입니다.',
+            'total_debt': 73_400_000,
+        })
+        response = f"네, {tokenized['message']}"
+        debt_token = tokenized['total_debt']
+        upstream.return_value = async_items([
+            'event: done',
+            f'data: {json.dumps({"contract_version": "2.0", "request_id": "ai_req_v2_stream", "session_id": 12, "thread_id": "user-3-session-12", "status": "completed", "completed_at": "2026-09-08T00:00:01Z", "output": {"response": response, "step_id": "basic-info", "action": {"type": "form_change", "target": "draft_form", "user_requested": True, "confidence": 1.0, "changes": [{"section": "liabilities", "path": "balance", "operation": "set", "value": debt_token, "reason": "사용자 요청"}]}}}, ensure_ascii=False)}',
+            '',
+        ])
+        restored_response = '네, 이름은 홍길동이고 희망 월소득은 350만원입니다.'
+        message = SimpleNamespace(
+            id=99,
+            role='assistant',
+            content=restored_response,
+            extracted_data={'action': None},
+        )
+        finalize.return_value = SimpleNamespace(
+            state={**processing_state(), 'status': 'completed', 'assistant_message_id': 99},
+            message=message,
+            replay=False,
+        )
+        store = MagicMock()
+
+        frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
+            proxy_v2_ai_stream(
+                SimpleNamespace(id=12),
+                ai_payload(),
+                processing_state(),
+                store,
+                token_vault=vault,
+            )
+        ))]
+
+        finalized_payload = finalize.call_args.args[1]
+        self.assertEqual(finalized_payload['output']['response'], restored_response)
+        self.assertEqual(
+            finalized_payload['output']['action']['changes'][0]['value'],
+            73_400_000,
+        )
+        self.assertEqual([event for event, _ in frames], ['start', 'done'])
+        self.assertEqual(frames[1][1]['message']['content'], restored_response)
+        self.assertNotIn('[[USER_NAME_', json.dumps(frames, ensure_ascii=False))
+        self.assertNotIn('[[FINANCIAL_VALUE_', json.dumps(frames, ensure_ascii=False))
+
+    @patch('consulting.v2_sse.finalize_terminal_result')
+    @patch('consulting.v2_sse.stream_v2_ai_response')
+    def test_unissued_token_fails_closed_without_partial_response(self, upstream, finalize):
+        forged = '[[USER_NAME_deadbeefcafe_1]]'
+        upstream.return_value = async_items([
+            'event: done',
+            f'data: {json.dumps({"contract_version": "2.0", "request_id": "ai_req_v2_stream", "session_id": 12, "thread_id": "user-3-session-12", "status": "completed", "completed_at": "2026-09-08T00:00:01Z", "output": {"response": forged}})}',
+            '',
+        ])
+        finalize.return_value = SimpleNamespace(
+            state={**processing_state(), 'status': 'failed'},
+            message=None,
+            replay=False,
+        )
+        store = MagicMock()
+
+        frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
+            proxy_v2_ai_stream(
+                SimpleNamespace(id=12),
+                ai_payload(),
+                processing_state(),
+                store,
+                token_vault=token_vault(),
+            )
+        ))]
+
+        self.assertEqual([event for event, _ in frames], ['start', 'error'])
+        failure = finalize.call_args.args[1]
+        self.assertEqual(failure['error']['code'], 'POLICY_BLOCKED')
+        self.assertNotIn(forged, json.dumps(frames, ensure_ascii=False))
 
 
 class V2MessageStreamViewTests(SimpleTestCase):
@@ -236,6 +336,14 @@ class V2MessageStreamViewTests(SimpleTestCase):
         create_user_message.return_value = SimpleNamespace(id=41, content='은퇴 준비를 알려줘')
         store = store_class.return_value
         store.get_idempotency.return_value = None
+        _build_payload.return_value = {
+            **ai_payload(),
+            'message': '이메일은 gildong@example.com이고 월소득은 350만원입니다.',
+            'customer_info': {
+                'saved_data': {'email': 'gildong@example.com'},
+                'current_form': {'monthly_income': 3_500_000},
+            },
+        }
         proxy_stream.return_value = async_items([
             'event: start\ndata: {"contract_version":"2.0","request_id":"ai_req_v2_stream"}\n\n'
         ])
@@ -249,7 +357,20 @@ class V2MessageStreamViewTests(SimpleTestCase):
         self.assertIn('event: start', body)
         create_user_message.assert_called_once()
         store.save_active.assert_called_once_with(processing_state())
+        store.save_token_vault.assert_called_once()
         store.save_idempotency.assert_called_once()
+        self.assertIs(
+            proxy_stream.call_args.kwargs['token_vault'],
+            store.save_token_vault.call_args.args[0],
+        )
+        upstream_payload = proxy_stream.call_args.args[1]
+        rendered = json.dumps(upstream_payload, ensure_ascii=False)
+        self.assertNotIn('gildong@example.com', rendered)
+        self.assertNotIn('350만원', rendered)
+        self.assertEqual(
+            upstream_payload['customer_info']['current_form']['monthly_income'],
+            3_500_000,
+        )
 
     @patch('consulting.v2_views.proxy_v2_ai_stream')
     @patch('consulting.v2_views.make_processing_state', return_value=processing_state())

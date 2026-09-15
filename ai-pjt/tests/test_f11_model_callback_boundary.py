@@ -77,8 +77,9 @@ class ModelBoundaryTests(unittest.TestCase):
         settings.masking_pseudonym_key = self.previous_key
 
     def test_common_prompt_has_explicit_version(self) -> None:
-        self.assertEqual(prompt_policy_version, "1.0")
-        self.assertIn("v1.0", DATA_HANDLING_PROMPT)
+        self.assertEqual(prompt_policy_version, "1.1")
+        self.assertIn("v1.1", DATA_HANDLING_PROMPT)
+        self.assertIn("참조 token", DATA_HANDLING_PROMPT)
 
     def test_structured_output_is_schema_validated_and_retried_once(self) -> None:
         provider = FakeStructuredProvider()
@@ -136,6 +137,24 @@ class ModelBoundaryTests(unittest.TestCase):
                         [SystemMessage(content=secure_system_prompt("QA 규칙"))],
                         purpose=ModelPurpose.QA,
                     )
+
+    def test_issued_reference_token_survives_model_input_and_output_checks(self) -> None:
+        token = "[[USER_NAME_a1b2c3d4e5f6_1]]"
+        payload = {"customer_info": {"current_form": {"customer_name": token}}}
+        model = FakeModel(f"네, {token} 님.")
+
+        result = secure_invoke(
+            model,
+            [
+                SystemMessage(content=secure_system_prompt("입력 보조 규칙")),
+                HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+            ],
+            purpose=ModelPurpose.INPUT_ASSIST,
+            sensitive_payload=payload,
+        )
+
+        self.assertIn(token, model.messages[1].content)
+        self.assertEqual(result.content, f"네, {token} 님.")
 
     def test_purpose_allowlist_is_exact_and_never_allows_email(self) -> None:
         payload = {
@@ -269,6 +288,30 @@ class CallbackBoundaryTests(unittest.TestCase):
         ).mask(raw)
         self.assertNotIn("010-9876-5432", masked["output"]["response"])
         self.assertEqual(masked["output"]["action"], None)
+
+    def test_callback_preserves_reference_tokens_for_django_validation(self) -> None:
+        token = "[[EMAIL_ADDRESS_a1b2c3d4e5f6_1]]"
+        raw = {
+            "contract_version": "2.0",
+            "request_id": "request-test",
+            "session_id": 731,
+            "thread_id": "thread-test",
+            "status": "completed",
+            "completed_at": "2026-09-11T00:00:00Z",
+            "output": {
+                "response": f"확인 주소는 {token}입니다.",
+                "step_id": "basic-info",
+                "email": token,
+                "action": None,
+            },
+        }
+
+        masked = CallbackPayloadMasker(
+            pseudonym_key=TEST_MASKING_KEY,
+        ).mask(raw)
+
+        self.assertEqual(masked["output"]["email"], token)
+        self.assertIn(token, masked["output"]["response"])
 
     def test_callback_preserves_only_form_target_identities_needed_by_backend(self) -> None:
         raw = CompletedCallback(

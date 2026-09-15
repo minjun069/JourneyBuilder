@@ -91,6 +91,18 @@ _DIRECT_IDENTIFIER_TOKEN = "[DIRECT_IDENTIFIER]"
 _QUASI_IDENTIFIER_TOKEN = "[QUASI_IDENTIFIER_BUCKETED]"
 _FINANCIAL_TOKEN = "[FINANCIAL_VALUE_MASKED]"
 _SECRET_TOKEN = "[SECRET]"
+REFERENCE_TOKEN_KINDS = (
+    "USER_NAME",
+    "PHONE_NUMBER",
+    "EMAIL_ADDRESS",
+    "ACCOUNT_NUMBER",
+    "DIRECT_IDENTIFIER",
+    "FINANCIAL_VALUE",
+)
+REFERENCE_TOKEN_PATTERN = re.compile(
+    rf"\[\[(?:{'|'.join(REFERENCE_TOKEN_KINDS)})_"
+    rf"[0-9a-f]{{12}}_[1-9][0-9]*\]\]"
+)
 
 _OBSERVABILITY_SINKS = frozenset(
     {MaskingSink.APPLICATION_LOG, MaskingSink.TRACE_EXPORT}
@@ -280,6 +292,12 @@ def mask_payload(
     return masker.mask(payload)
 
 
+def is_reference_token(value: Any) -> bool:
+    """Return whether a scalar is one complete Django-issued token shape."""
+
+    return isinstance(value, str) and REFERENCE_TOKEN_PATTERN.fullmatch(value) is not None
+
+
 class _PayloadMasker:
     def __init__(self, *, sink: MaskingSink, policy: MaskingPolicy) -> None:
         self._sink = sink
@@ -360,6 +378,8 @@ class _PayloadMasker:
         namespace: str | None,
         path: MaskingPath,
     ) -> None:
+        if is_reference_token(value):
+            return
         if data_class is DataClass.OPERATIONAL_INFORMATION and self._is_scalar(value):
             replacement = self._pseudonymize(value, namespace or "operation")
             raw = self._literal_text(value)
@@ -519,6 +539,8 @@ class _PayloadMasker:
         if value is None:
             return None
         self._require_scalar(value, path)
+        if is_reference_token(value):
+            return value
         if data_class is DataClass.SECRET:
             return _SECRET_TOKEN
         if data_class is DataClass.DIRECT_IDENTIFIER:
@@ -569,6 +591,8 @@ class _PayloadMasker:
         data_class: DataClass,
     ) -> tuple[str, ...]:
         if value is None or isinstance(value, bool):
+            return ()
+        if is_reference_token(value):
             return ()
         raw = cls._literal_text(value)
         fragments = {raw} if len(raw) >= 4 else set()
@@ -714,7 +738,18 @@ class _PayloadMasker:
         return pseudonym
 
     def _scrub_text(self, value: str, *, include_sensitive: bool = True) -> str:
-        masked = value
+        protected: dict[str, str] = {}
+
+        def protect(match: re.Match[str]) -> str:
+            index = len(protected)
+            placeholder = f"\x00RWREFTOKENPLACEHOLDER{index}\x00"
+            while placeholder in value or placeholder in protected:
+                index += 1
+                placeholder = f"\x00RWREFTOKENPLACEHOLDER{index}\x00"
+            protected[placeholder] = match.group(0)
+            return placeholder
+
+        masked = REFERENCE_TOKEN_PATTERN.sub(protect, value)
         replacements: dict[str, str] = {}
         if include_sensitive:
             replacements.update(self._sensitive_replacements)
@@ -739,6 +774,8 @@ class _PayloadMasker:
             masked = _LARGE_NUMBER_PATTERN.sub(_FINANCIAL_TOKEN, masked)
         masked = _BEARER_PATTERN.sub(f"Bearer {_SECRET_TOKEN}", masked)
         masked = _JWT_PATTERN.sub(_SECRET_TOKEN, masked)
+        for placeholder, token in protected.items():
+            masked = masked.replace(placeholder, token)
         return masked
 
     def _mask_mapping_key(self, key: str, path: MaskingPath) -> str:

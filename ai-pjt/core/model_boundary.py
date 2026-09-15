@@ -9,16 +9,23 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from core.masking import MaskingPath, MaskingPolicy, MaskingSink, mask_payload
+from core.masking import (
+    MaskingPath,
+    MaskingPolicy,
+    MaskingSink,
+    is_reference_token,
+    mask_payload,
+)
 
 
-prompt_policy_version = "1.0"
+prompt_policy_version = "1.1"
 PROMPT_POLICY_VERSION = prompt_policy_version
 DATA_HANDLING_PROMPT = f"""\
 [공통 데이터 처리 정책 v{prompt_policy_version}]
 - 현재 작업에 필요한 최소 입력만 사용하고 다른 목적에 재사용하지 않습니다.
 - 이름·전화번호·이메일·계좌번호 등 직접 식별정보와 secret은 추론하거나 반복하지 않습니다.
 - 허용된 금융 입력은 해당 작업의 계산·설명에만 사용하고 새 값으로 바꾸지 않습니다.
+- `[[...]]` 형식의 참조 token은 철자와 구분을 바꾸지 않고 필요한 위치에 그대로 사용합니다.
 - 응답에 직접 식별정보나 secret을 포함하지 않습니다.
 """
 
@@ -444,7 +451,7 @@ def _contains_forbidden_field(value: Any) -> bool:
                 or normalized.endswith("_secret")
                 or normalized.endswith("_token")
             )
-            if forbidden and child not in (None, ""):
+            if forbidden and child not in (None, "") and not is_reference_token(child):
                 return True
             if _contains_forbidden_field(child):
                 return True

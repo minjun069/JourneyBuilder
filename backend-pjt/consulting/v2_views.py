@@ -20,6 +20,7 @@ from .ai_lifecycle import (
     validate_browser_message,
 )
 from .ai_security import recover_terminal_state
+from .ai_tokenization import ReferenceTokenVault
 from .models import ConsultingSession, Message
 from .v2_sse import proxy_v2_ai_stream, replay_v2_stream
 
@@ -123,7 +124,7 @@ class V2MessageStreamView(V2APIView):
                 content=body['content'],
             )
             request_id = new_request_id()
-            ai_payload = build_v2_ai_payload(
+            raw_ai_payload = build_v2_ai_payload(
                 request_id=request_id,
                 session=session,
                 user=request.user,
@@ -134,6 +135,12 @@ class V2MessageStreamView(V2APIView):
                 review_trigger=body.get('review_trigger'),
                 elicit_action=body.get('elicit_action'),
             )
+            token_vault = ReferenceTokenVault(
+                user_id=request.user.id,
+                session_id=session.id,
+                request_id=request_id,
+            )
+            ai_payload = token_vault.tokenize(raw_ai_payload)
             state = make_processing_state(
                 request_id=request_id,
                 session=session,
@@ -142,6 +149,7 @@ class V2MessageStreamView(V2APIView):
                 thread_id=ai_payload['thread_id'],
                 step_id=body['step_id'],
             )
+            store.save_token_vault(token_vault)
             store.save_active(state)
             store.save_idempotency(
                 request.user.id,
@@ -154,7 +162,13 @@ class V2MessageStreamView(V2APIView):
                 },
             )
             return self._stream_response(
-                proxy_v2_ai_stream(session, ai_payload, state, store)
+                proxy_v2_ai_stream(
+                    session,
+                    ai_payload,
+                    state,
+                    store,
+                    token_vault=token_vault,
+                )
             )
         except LifecycleError as exc:
             return error_response(exc)
