@@ -15,7 +15,6 @@ class Report(models.Model):
         PENSION_SCHEDULE      = 'pension-schedule',      '연금 스케줄'
         LIFETIME_CASHFLOW     = 'lifetime-cashflow',     '생애현금흐름 및 생애순자산'
         REQUIRED_SAVINGS      = 'required-savings',      '필요저축액'
-        NEWS_REPORT           = 'news_report',           '뉴스 리포트'
 
     class Status(models.TextChoices):
         PROCESSING = 'processing', '생성 중'

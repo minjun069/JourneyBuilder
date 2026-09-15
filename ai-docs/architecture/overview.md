@@ -11,9 +11,8 @@
 | `ai-pjt/` | AI 상담·검색·오케스트레이션 | FastAPI, LangGraph, PostgreSQL checkpoint |
 | `ai-docs/` | AI 요구사항·아키텍처·계약·평가·보안 공유 문서 | Markdown |
 | `db/` | 애플리케이션 데이터베이스 초기화 | PostgreSQL, pgvector |
-| `data-pjt/` | 폐기된 뉴스·데이터 파이프라인 산출물 | 현재 실행·인수 범위에서 제외 |
 
-기존 뉴스 분석과 Kafka·Flink·Spark·Airflow 기반 데이터 파이프라인은 이번 프로젝트에서 폐기한다. 남아 있는 파일은 F01-T03에서 삭제하지 않지만 현재 제품 실행 경로나 지원 대상에 포함하지 않는다.
+기존 뉴스 분석과 Kafka·Flink·Spark·Airflow 기반 데이터 파이프라인은 이번 프로젝트에서 폐기했고, 관련 소스와 레거시 Compose 진입점을 제거했다.
 
 ## 2. 서비스 토폴로지
 
@@ -43,7 +42,7 @@ Browser는 AI·MCP를 직접 호출하지 않는다. AI는 Django 업무 DB를 �
 - PostgreSQL 준비 후 Django migration one-shot이 성공해야 Backend를 시작한다.
 - AI는 PostgreSQL에 의존하지만 현재 사용하지 않는 Redis에는 readiness 의존성을 두지 않는다.
 - 기본 애플리케이션 DB와 사용자는 `retirewise_db`, `retirewise`이며 비밀번호에는 동작 가능한 기본값을 두지 않는다.
-- 기존 데이터 파이프라인 Compose와 `ssafy/streaming_data/news` 초기화는 새 실행 진입점에서 참조하지 않는다.
+- 폐기한 데이터 파이프라인 Compose와 `ssafy/streaming_data/news` 초기화는 현재 실행 진입점에 포함되지 않는다.
 
 Frontend 개발 서버의 Compose 포함 여부와 개발용 host port override는 후속 실행환경 작업에서 결정한다.
 
