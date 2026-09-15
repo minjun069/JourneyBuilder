@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from time import monotonic, time
-from typing import Callable
+from typing import Any, Callable
 
 from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
 from core.runtime_instrumentation import (
@@ -55,6 +55,7 @@ class RuntimeStageSpan:
     artifact_id: str | None = None
     artifact_type: str | None = None
     producer_task_id: str | None = None
+    input: Any | None = None
 
 
 class ExportBlockedInstrumentationSink:
@@ -184,6 +185,7 @@ class BoundRuntimeInstrumentation:
         artifact_id: str | None = None,
         artifact_type: str | None = None,
         producer_task_id: str | None = None,
+        input: Any | None = None,
     ) -> RuntimeStageSpan:
         if stage is RuntimeStage.DEPENDENCY_BLOCK:
             raise ValueError("dependency blocks are terminal-only events")
@@ -198,6 +200,7 @@ class BoundRuntimeInstrumentation:
             artifact_id=artifact_id,
             artifact_type=artifact_type,
             producer_task_id=producer_task_id,
+            input=input,
         )
         self._emit_runtime(span, status=RuntimeStatus.STARTED)
         return span
@@ -210,6 +213,7 @@ class BoundRuntimeInstrumentation:
         artifact_type: str | None = None,
         producer_task_id: str | None = None,
         response_owner: str | None = None,
+        output: Any | None = None,
     ) -> None:
         self._emit_runtime(
             span,
@@ -218,13 +222,25 @@ class BoundRuntimeInstrumentation:
             artifact_type=artifact_type,
             producer_task_id=producer_task_id,
             response_owner=response_owner,
+            output=output,
         )
 
-    def fail(self, span: RuntimeStageSpan, *, reason_code: str) -> None:
+    def fail(
+        self,
+        span: RuntimeStageSpan,
+        *,
+        reason_code: str,
+        output: Any | None = None,
+        error_type: str | None = None,
+        error_fingerprint: str | None = None,
+    ) -> None:
         self._emit_runtime(
             span,
             status=RuntimeStatus.FAILED,
             reason_code=reason_code,
+            output=output,
+            error_type=error_type,
+            error_fingerprint=error_fingerprint,
         )
 
     def record_block(
@@ -258,6 +274,10 @@ class BoundRuntimeInstrumentation:
         duration_ms: int,
         agent: str | None = None,
         error_code: str | None = None,
+        input: Any | None = None,
+        output: Any | None = None,
+        error_type: str | None = None,
+        error_fingerprint: str | None = None,
     ) -> None:
         self._port.emit(OperationTraceEvent(
             trace_id=self.correlation.trace_id,
@@ -270,6 +290,10 @@ class BoundRuntimeInstrumentation:
             step_id=self.correlation.step_id,
             agent=agent,
             error_code=error_code,
+            input=input,
+            output=output,
+            error_type=error_type,
+            error_fingerprint=error_fingerprint,
         ))
 
     def record_tool_audit(self, event: object) -> None:
@@ -348,6 +372,9 @@ class BoundRuntimeInstrumentation:
         artifact_type: str | None = None,
         producer_task_id: str | None = None,
         response_owner: str | None = None,
+        output: Any | None = None,
+        error_type: str | None = None,
+        error_fingerprint: str | None = None,
     ) -> None:
         terminal = status is not RuntimeStatus.STARTED
         self._port.emit(RuntimeTraceEvent(
@@ -369,6 +396,10 @@ class BoundRuntimeInstrumentation:
             executor_kind=span.executor_kind,
             executor_name=span.executor_name,
             response_owner=response_owner,
+            input=span.input if status is RuntimeStatus.STARTED else None,
+            output=output,
+            error_type=error_type,
+            error_fingerprint=error_fingerprint,
         ))
 
 

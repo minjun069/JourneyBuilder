@@ -154,7 +154,7 @@ class MaskedInstrumentationSink:
             masked = mask_payload(raw, sink=self._sink, policy=self._policy)
             if not isinstance(masked, Mapping):
                 raise TypeError("masked instrumentation event must be a mapping")
-            self._downstream.emit(masked)
+            self._downstream.emit({**masked, "masking_status": "applied"})
         except Exception:
             self._dropped_exports += 1
 

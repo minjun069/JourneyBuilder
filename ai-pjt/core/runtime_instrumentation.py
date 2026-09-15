@@ -1,17 +1,18 @@
 """Sink-independent runtime instrumentation contracts for F10-T01.
 
-The port accepts the existing P11 observability events and runtime orchestration
-events without exposing arbitrary metadata.  Producers must pass only
-pseudonymous correlation identifiers and stable machine tokens; message text,
-customer snapshots, tool arguments, and artifact values do not belong here.
+The port accepts typed runtime events, including bounded JSON-like input and
+output snapshots. Content is never exported directly: the mandatory masked
+sink removes sensitive leaves and identifiers before any downstream receives
+it.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol, TypeAlias
+from typing import Any, Protocol, TypeAlias
 
 from core.monitoring import (
     AttemptTraceEvent,
@@ -23,7 +24,8 @@ from core.monitoring import (
 )
 
 
-RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.3"
+RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.4"
+MAX_OBSERVATION_CONTENT_BYTES = 65_536
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 _PSEUDONYMOUS_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -100,6 +102,24 @@ def _validate_identifier_tuple(value: tuple[str, ...], field_name: str) -> None:
         raise ValueError(f"{field_name} cannot contain duplicates")
 
 
+def _validate_observation_content(value: Any, field_name: str) -> None:
+    if value is None:
+        return
+    try:
+        rendered = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field_name} must be JSON-serializable") from error
+    if len(rendered.encode("utf-8")) > MAX_OBSERVATION_CONTENT_BYTES:
+        raise ValueError(
+            f"{field_name} exceeds {MAX_OBSERVATION_CONTENT_BYTES} bytes"
+        )
+
+
 def build_artifact_id(
     *,
     plan_id: str,
@@ -136,6 +156,10 @@ class RuntimeTraceEvent:
     executor_kind: str | None = None
     executor_name: str | None = None
     response_owner: str | None = None
+    input: Any | None = None
+    output: Any | None = None
+    error_type: str | None = None
+    error_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.stage, RuntimeStage):
@@ -184,6 +208,21 @@ class RuntimeTraceEvent:
             )
         if (self.executor_kind is None) != (self.executor_name is None):
             raise ValueError("executor_kind and executor_name must be provided together")
+
+        _validate_observation_content(self.input, "input")
+        _validate_observation_content(self.output, "output")
+        if self.status is RuntimeStatus.STARTED and self.output is not None:
+            raise ValueError("started events cannot contain output")
+        if (self.error_type is None) != (self.error_fingerprint is None):
+            raise ValueError(
+                "error_type and error_fingerprint must be provided together"
+            )
+        for field_name in ("error_type", "error_fingerprint"):
+            value = getattr(self, field_name)
+            if value is not None:
+                _validate_safe_token(value, field_name)
+        if not failed and self.error_type is not None:
+            raise ValueError("error identity is allowed only on failed events")
 
         if self.status is RuntimeStatus.BLOCKED and (
             self.stage is not RuntimeStage.DEPENDENCY_BLOCK
@@ -254,6 +293,10 @@ class RuntimeTraceEvent:
             "executor_kind",
             "executor_name",
             "response_owner",
+            "input",
+            "output",
+            "error_type",
+            "error_fingerprint",
         ):
             value = getattr(self, field_name)
             if value is not None:

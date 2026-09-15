@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
@@ -14,6 +15,10 @@ from core.context import (
     advance_context,
     build_context_window,
     resolve_confirmed_facts,
+)
+from core.observability_masking import (
+    exception_identity_fields,
+    masked_exception_fields,
 )
 from core.runtime_instrumentation import RuntimeStage, SecurityDecision
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
@@ -33,6 +38,9 @@ from guardrails.boundary_policy import (
 from guardrails.plan_policy import evaluate_route_plan
 from tools.output_validation import validate_form_update, validate_form_update_contract
 from tools.runtime import ToolCallBudget
+
+
+logger = logging.getLogger(__name__)
 
 
 def _looks_like_qa(message: str) -> bool:
@@ -322,7 +330,17 @@ def build_graph(
             plan_id=plan_id,
             step_id=str(state.get("step_id") or "step-unknown"),
         )
-        planner_span = observed.start(RuntimeStage.PLANNER)
+        planner_input = {
+            "message": str(state.get("message", "")),
+            "step_id": str(state.get("step_id") or "step-unknown"),
+            "request_mode": str(state.get("request_mode", "chat")),
+            "customer_info": deepcopy(state.get("customer_info", {})),
+            "field_registry": deepcopy(state.get("field_registry", [])),
+        }
+        planner_span = observed.start(
+            RuntimeStage.PLANNER,
+            input=planner_input,
+        )
         validation_span = observed.start(RuntimeStage.PLAN_VALIDATION)
 
         def guard_plan(plan: Mapping[str, Any]):
@@ -365,10 +383,16 @@ def build_graph(
             reason_code=input_decision.reason_code,
         )
         if not input_decision.allowed:
-            observed.fail(planner_span, reason_code=input_decision.reason_code.lower())
+            blocked_output = {"reason_code": input_decision.reason_code}
+            observed.fail(
+                planner_span,
+                reason_code=input_decision.reason_code.lower(),
+                output=blocked_output,
+            )
             observed.fail(
                 validation_span,
                 reason_code=input_decision.reason_code.lower(),
+                output=blocked_output,
             )
             return _policy_blocked_result(
                 state=state,
@@ -397,9 +421,20 @@ def build_graph(
                 context=context,
                 current_confirmed_facts=confirmed_facts,
             )
-        except (TypeError, ValueError):
-            observed.fail(planner_span, reason_code="context_invalid")
-            observed.fail(validation_span, reason_code="context_invalid")
+        except (TypeError, ValueError) as error:
+            error_identity = exception_identity_fields(error)
+            observed.fail(
+                planner_span,
+                reason_code="context_invalid",
+                output={"reason_code": "context_invalid"},
+                **error_identity,
+            )
+            observed.fail(
+                validation_span,
+                reason_code="context_invalid",
+                output={"reason_code": "context_invalid"},
+                **error_identity,
+            )
             fallback_plan = _direct_agent_plan(
                 request_id=str(state.get("request_id", "request-unknown")),
                 task_type="fallback",
@@ -433,11 +468,18 @@ def build_graph(
                 state=state,
             )
             decision = guard_plan(direct_plan)
-            observed.succeed(planner_span)
+            observed.succeed(planner_span, output=direct_plan)
             if decision.allowed:
-                observed.succeed(validation_span)
+                observed.succeed(
+                    validation_span,
+                    output={"valid": True, "issues": []},
+                )
             else:
-                observed.fail(validation_span, reason_code=decision.reason_code.lower())
+                observed.fail(
+                    validation_span,
+                    reason_code=decision.reason_code.lower(),
+                    output=decision.to_dict(),
+                )
                 return _policy_blocked_result(
                     state=state,
                     plan_id=plan_id,
@@ -461,11 +503,18 @@ def build_graph(
                 state=state,
             )
             decision = guard_plan(direct_plan)
-            observed.succeed(planner_span)
+            observed.succeed(planner_span, output=direct_plan)
             if decision.allowed:
-                observed.succeed(validation_span)
+                observed.succeed(
+                    validation_span,
+                    output={"valid": True, "issues": []},
+                )
             else:
-                observed.fail(validation_span, reason_code=decision.reason_code.lower())
+                observed.fail(
+                    validation_span,
+                    reason_code=decision.reason_code.lower(),
+                    output=decision.to_dict(),
+                )
                 return _policy_blocked_result(
                     state=state,
                     plan_id=plan_id,
@@ -488,22 +537,71 @@ def build_graph(
                 registered_tool_capabilities=tuple(active_tools),
                 plan_id=plan_id,
             )
-        except Exception:
-            observed.fail(planner_span, reason_code="planner_error")
-            observed.fail(validation_span, reason_code="plan_validation_error")
+        except Exception as error:
+            error_identity = exception_identity_fields(error)
+            logger.error(
+                "plan request raised",
+                extra={
+                    "event": "planner_error",
+                    "detail": masked_exception_fields(
+                        error,
+                        request_id=request_id,
+                        plan_id=plan_id,
+                        step_id=str(state.get("step_id", "step-unknown")),
+                    ),
+                },
+            )
+            observed.fail(
+                planner_span,
+                reason_code="planner_error",
+                output={"reason_code": "planner_error"},
+                **error_identity,
+            )
+            observed.fail(
+                validation_span,
+                reason_code="plan_validation_error",
+                output={"reason_code": "plan_validation_error"},
+                **error_identity,
+            )
             raise
         if not validation.valid:
             issue_codes = {
                 str(issue.code).lower()
                 for issue in validation.issues
             }
+            diagnostic = next(
+                (
+                    item
+                    for item in validation.diagnostics
+                    if item.get("component") == "planner"
+                ),
+                None,
+            )
+            failure_output = {
+                "valid": False,
+                "issues": [issue.to_dict() for issue in validation.issues],
+                "diagnostics": list(validation.diagnostics),
+            }
             if "planner_error" in issue_codes:
-                observed.fail(planner_span, reason_code="planner_error")
+                observed.fail(
+                    planner_span,
+                    reason_code="planner_error",
+                    output=failure_output,
+                    **(
+                        {
+                            "error_type": diagnostic["error_type"],
+                            "error_fingerprint": diagnostic["error_fingerprint"],
+                        }
+                        if diagnostic is not None
+                        else {}
+                    ),
+                )
             else:
-                observed.succeed(planner_span)
+                observed.succeed(planner_span, output=failure_output)
             observed.fail(
                 validation_span,
                 reason_code=(next(iter(sorted(issue_codes)), "plan_invalid")),
+                output=failure_output,
             )
             fallback_plan = _direct_agent_plan(
                 request_id=str(request_id or "request-unknown"),
@@ -535,9 +633,17 @@ def build_graph(
             "conversation_context": deepcopy(state.get("conversation_context", {})),
         })
         decision = guard_plan(plan)
-        observed.succeed(planner_span)
+        planner_output = {
+            "plan": validation.plan,
+            "diagnostics": list(validation.diagnostics),
+        }
+        observed.succeed(planner_span, output=planner_output)
         if not decision.allowed:
-            observed.fail(validation_span, reason_code=decision.reason_code.lower())
+            observed.fail(
+                validation_span,
+                reason_code=decision.reason_code.lower(),
+                output=decision.to_dict(),
+            )
             return {
                 **_policy_blocked_result(
                     state=state,
@@ -546,7 +652,10 @@ def build_graph(
                 ),
                 **({"elicit_state": paused_state} if paused_state is not None else {}),
             }
-        observed.succeed(validation_span)
+        observed.succeed(
+            validation_span,
+            output={"valid": True, "issues": []},
+        )
         return {
             "route_plan": plan,
             "plan_issues": [],
