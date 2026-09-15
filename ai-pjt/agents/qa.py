@@ -75,6 +75,27 @@ _decision_chain = llm.with_structured_output(RetrievalDecision)
 _judge_chain = llm.with_structured_output(JudgeResult)
 _refine_chain = llm.with_structured_output(RefineResult)
 
+_QUALITATIVE_CHOICE_TERMS = (
+    "안정추구",
+    "균형추구",
+    "위험감수",
+    "단기지향",
+    "장기지향",
+)
+_TERM_EXPLANATION_CUES = (
+    "뜻",
+    "의미",
+    "정의",
+    "설명",
+    "정확히",
+    "뭐",
+    "무엇",
+    "말하",
+    "기간",
+    "어느정도",
+    "기준",
+)
+
 
 # ---------------------------------------------------------------------------
 # 프롬프트
@@ -190,6 +211,8 @@ async def _decide(state: QAState) -> dict:
             "need_retrieval": False,
             "official_value_unavailable": True,
         }
+    if _is_qualitative_choice_explanation(state):
+        return {"need_retrieval": False}
     decision = await secure_ainvoke(
         _decision_chain,
         [
@@ -377,6 +400,18 @@ def _requests_unbound_official_value(state: QAState) -> bool:
     value_tokens = ("얼마", "수치", "금액", "비율", "몇", "%", "원")
     return any(token in text for token in official_tokens) and any(
         token in text for token in value_tokens
+    )
+
+
+def _is_qualitative_choice_explanation(state: QAState) -> bool:
+    """Keep UI choice definitions out of the official-value/RAG path."""
+
+    text = f"{state.get('message', '')} {state.get('current_query', '')}".replace(
+        " ",
+        "",
+    )
+    return any(term in text for term in _QUALITATIVE_CHOICE_TERMS) and any(
+        cue in text for cue in _TERM_EXPLANATION_CUES
     )
 
 
