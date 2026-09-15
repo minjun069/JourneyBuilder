@@ -249,6 +249,9 @@ async def _stream_v2_chat_events(
         output = final_state.get("output", {})
         if not isinstance(output, dict):
             raise ValueError("graph output must be an object")
+        response = output.get("response")
+        if not isinstance(response, str) or not response:
+            raise ValueError("graph output response must be a non-empty string")
         terminal = callback_masker.mask(
             CompletedCallback(
                 request_id=request.request_id,
@@ -258,17 +261,6 @@ async def _stream_v2_chat_events(
                 output=output,
             ).model_dump(mode="json")
         )
-        safe_output = terminal["output"]
-        response = safe_output.get("response", "")
-        if isinstance(response, str) and response:
-            yield _encode_sse(
-                "delta",
-                {
-                    "contract_version": "2.0",
-                    "request_id": request.request_id,
-                    "content": response,
-                },
-            )
         yield _encode_sse("done", terminal)
     except asyncio.CancelledError:
         logger.info("AI v2 stream 연결 종료")

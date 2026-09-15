@@ -99,9 +99,6 @@ class V2SSEProxyTests(SimpleTestCase):
             'event: start',
             'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12"}',
             '',
-            'event: delta',
-            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","content":"안녕"}',
-            '',
             'event: done',
             'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12","status":"completed","completed_at":"2026-09-08T00:00:01Z","output":{"response":"안녕","step_id":"general","action":null}}',
             '',
@@ -133,7 +130,7 @@ class V2SSEProxyTests(SimpleTestCase):
             )
         ))]
 
-        self.assertEqual([event for event, _ in frames], ['start', 'delta', 'done'])
+        self.assertEqual([event for event, _ in frames], ['start', 'done'])
         self.assertEqual(frames[-1][1]['message']['id'], 99)
         finalize.assert_called_once()
         store.save_terminal.assert_called_once()
@@ -143,10 +140,43 @@ class V2SSEProxyTests(SimpleTestCase):
 
     @patch('consulting.v2_sse.finalize_terminal_result')
     @patch('consulting.v2_sse.stream_v2_ai_response')
-    def test_protocol_error_does_not_save_partial_message(self, upstream, finalize):
+    def test_done_without_response_is_rejected(self, upstream, finalize):
         upstream.return_value = async_items([
+            'event: start',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12"}',
+            '',
+            'event: done',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12","status":"completed","completed_at":"2026-09-08T00:00:01Z","output":{"response":"","step_id":"general","action":null}}',
+            '',
+        ])
+        finalize.return_value = SimpleNamespace(
+            state={**processing_state(), 'status': 'failed'},
+            message=None,
+            replay=False,
+        )
+        store = MagicMock()
+
+        frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
+            proxy_v2_ai_stream(
+                SimpleNamespace(id=12),
+                ai_payload(),
+                processing_state(),
+                store,
+            )
+        ))]
+
+        self.assertEqual([event for event, _ in frames], ['start', 'error'])
+        self.assertEqual(store.save_terminal.call_args.args[0]['status'], 'failed')
+
+    @patch('consulting.v2_sse.finalize_terminal_result')
+    @patch('consulting.v2_sse.stream_v2_ai_response')
+    def test_delta_event_is_rejected_without_saving_partial_message(self, upstream, finalize):
+        upstream.return_value = async_items([
+            'event: start',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12"}',
+            '',
             'event: delta',
-            'data: {"contract_version":"2.0","request_id":"another","content":"잘못된 응답"}',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","content":"잘못된 응답"}',
             '',
         ])
         finalize.return_value = SimpleNamespace(

@@ -11,7 +11,7 @@
 | 제품 목표와 AI 범위 확인 | [프로젝트 요구사항](REQUIREMENTS.md), [AI Agent 요구사항](requirements/ai-agent.md) |
 | 서비스 구조와 책임 확인 | [아키텍처 개요](architecture/overview.md), [AI 시스템 명세](ai/specification.md) |
 | Frontend·Django·AI 계약 변경 | [Django HTTP API](contracts/http-api.md), [AI 서비스 API 계약](contracts/ai-api.md), [데이터 스키마](data/schema.md) |
-| AI 전송 경로 결정 확인 | [SSE 단일 전송 ADR](decisions/0005-remove-non-streaming-ai-transport.md), [AI 상담 SSE v2](contracts/sse-v2.md) |
+| AI 전송 경로 결정 확인 | [SSE 단일 전송 ADR](decisions/0005-remove-non-streaming-ai-transport.md), [부분 응답 제거 ADR](decisions/0006-remove-sse-delta-events.md), [AI 상담 SSE v2](contracts/sse-v2.md) |
 | AI 품질과 회귀 기준 확인 | [AI 평가와 운영 관측](ai/evaluation.md), [프로젝트 실행 안내](../README.md) |
 | 개인정보·도구·RAG 경계 확인 | [AI 보안 정책](security/ai-security-policy.md), [검색·지식 거버넌스](ai/retrieval.md), [AI 도구 계약](ai/tools.md) |
 | 현재 구현과 목표 계약 차이 확인 | [현재 계약 불일치 조사](contracts/current-state.md) |
