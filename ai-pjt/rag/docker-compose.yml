@@ -51,4 +51,4 @@ services:
 
 volumes:
   rag_postgres_data:
-    name: "retirewise_rag_${RAG_INSTANCE_ID}_postgres_data"
+    name: "retirewise_rag_${RAG_INSTANCE_ID:?RAG_INSTANCE_ID is required}_postgres_data"

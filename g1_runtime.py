@@ -16,6 +16,7 @@ SECRET_NAMES = {
     "POSTGRES_PASSWORD",
     "DATABASE_URL",
     "AI_SERVICE_BEARER_TOKEN",
+    "AI_MASKING_PSEUDONYM_KEY",
     "GOOGLE_API_KEY",
     "OPENAI_API_KEY",
 }
@@ -90,7 +91,6 @@ def main() -> int:
     postgres_password = secrets.token_urlsafe(24)
     values = {
         "DJANGO_SECRET_KEY": secrets.token_urlsafe(48),
-        "DJANGO_DEBUG": "false",
         "POSTGRES_DB": "retirewise_g1",
         "POSTGRES_USER": "retirewise_g1",
         "POSTGRES_PASSWORD": postgres_password,
@@ -99,11 +99,10 @@ def main() -> int:
             f"{postgres_password}@postgres:5432/retirewise_g1"
         ),
         "AI_SERVICE_BEARER_TOKEN": secrets.token_urlsafe(32),
+        "AI_MASKING_PSEUDONYM_KEY": secrets.token_urlsafe(32),
         "LLM_PROVIDER": "gemini",
-        "EMBEDDING_PROVIDER": "gemini",
         "GOOGLE_API_KEY": "g1-disposable-provider-key",
         "LANGFUSE_ENABLED": "false",
-        "LANGCHAIN_TRACING_V2": "false",
     }
     secrets_to_mask = [values[name] for name in SECRET_NAMES if name in values]
     environ = {

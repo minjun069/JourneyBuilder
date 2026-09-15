@@ -25,10 +25,10 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 | 서버 | `/srv/s15p21b109/secrets/app.env` (root:gitlab-runner 640 — deploy 잡의 러너가 읽어야 한다) | `sudo bash deploy/make-env.sh --output /srv/s15p21b109/secrets/app.env` | 1회 |
 | CI | 없음 — `.gitlab-ci.yml` 의 `ci-only-*` 더미 | 자동 | 매 실행 |
 
-`make-env.sh` 는 `.env.example` 을 복사해 필수 5개를 채운다.
-생성 시 raw LangChain tracing 값은 `LANGCHAIN_TRACING_V2=false`로 정규화하고,
-사용하지 않는 `LANGCHAIN_API_KEY` 항목은 결과 파일에서 제거한다. Compose도 같은 값을
-리터럴 `false`로 고정하며 LangChain API key를 서비스에 전달하지 않는다.
+`make-env.sh`는 `.env.example`을 복사해 네 무작위 secret과 `DATABASE_URL`을 채운다.
+현재 고정 Gemini embedding에 필요한 `GOOGLE_API_KEY`는 사람이 GMS key를 입력한다.
+내부 주소·포트, embedding/RAG 승인값과 raw tracing 차단값은 Compose에 고정하며 루트
+env 파일에는 만들지 않는다. 서비스별 전체 명세는 각 `<서비스>/.env.example`이 소유한다.
 
 | 변수 | 출처 | 바꾸면 |
 |---|---|---|
@@ -42,6 +42,7 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 - 스크립트는 파일이 이미 있으면 덮어쓰지 않는다(exit 2).
 - 서버 canonical 원문은 `/srv/s15p21b109/secrets/app.env` 하나다. 변경 전 원문은 아래 절의 immutable snapshot으로 보존한다. 과거 `app.env.bak`은 새 절차의 복구 원천으로 사용하지 않는다.
 - 누락 확인: `docker compose --env-file <파일> -f docker-compose.yml -f docker-compose.prod.yml config --quiet`
+- 예제·Compose·서비스 reader 정합성: `make env-contract-check` (MR의 blocking CI 잡에서도 동일 실행)
 - 거부되는 값: `change-me`, `password`, `postgres`, `secret`, `ssafy` 등 (`backend-pjt/config/runtime_env.py`).
 
 ### 필수 변수를 새로 추가할 때 (2026-09-11 추가)
@@ -54,7 +55,8 @@ MR 체크리스트:
 2. `deploy/make-env.sh` 에 생성 규칙 추가 (무작위 값이면 `openssl rand`)
 3. `.gitlab-ci.yml` 에 `CI_*` 더미 변수 + 해당 test 잡의 `-e` 추가
 4. 이 문서의 변수 표 갱신
-5. **머지 전에 immutable snapshot을 만든 뒤 서버 `app.env` 에 줄 추가** (아래)
+5. `make env-contract-check` 통과 확인
+6. **머지 전에 immutable snapshot을 만든 뒤 서버 `app.env` 에 줄 추가** (아래)
 
 서버 갱신 — sudo 필요. 먼저 값 없는 식별자만 셸에 넣어 snapshot을 만들고, 값은 편집기에서 사람이 입력한다:
 

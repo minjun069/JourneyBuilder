@@ -4,7 +4,7 @@
 # 설계 근거·서버 세팅 절차: deploy/README.md (S15P21B109-122).
 #
 # 스테이지
-#   test   — 모든 브랜치 push 와 MR 에서 실행. 팀 Makefile 의 g1-* 검사를 그대로 옮겼다.
+#   test   — 모든 브랜치 push 와 MR 에서 실행. 환경변수 계약과 팀 Makefile의 g1-* 검사를 실행한다.
 #            이미지 빌드가 곧 빌드 검증이므로 별도 build 스테이지는 두지 않는다(서버에서 --build).
 #   deploy — master 파이프라인의 test 통과 후 자동 실행(S15P21B109-125). 러너 체크아웃에서 deploy/deploy.sh 를 돌린다.
 #            빌드·기동·헬스체크·롤백은 전부 스크립트 안에 있고 잡은 호출만 한다. 자세한 절차: deploy/README.md
@@ -46,6 +46,14 @@ workflow:
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
     - if: $CI_COMMIT_BRANCH
+
+# ── 환경변수 계약: Compose 치환값·서비스 reader·예제 파일 exact match ─────────
+# stdlib 정적 검사라 secret 값이나 Docker daemon이 필요 없다. 이 잡은 blocking이다.
+test:env-contract:
+  stage: test
+  script:
+    - python3 deploy/check_env_contract.py
+    - python3 -m unittest discover -s deploy/tests -p 'test_env_contract.py' -v
 
 # ── 산출물 정합성 게이트 (Makefile g1-foundation, g1_gate.py — 강병민 작성 2026-09-06) ──
 # AI 문서·매니페스트·RAG 해시 거버넌스를 검사한다. 작성자 개인 규율 도구 성격이라 다른 팀원의 MR 을 막지 않도록

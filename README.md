@@ -34,6 +34,8 @@ Redis healthy ──────────────────────
 - PostgreSQL과 Redis 데이터는 Compose project별 named volume에 저장된다.
 - PostgreSQL 초기화 SQL은 새 `postgres_data` volume을 만들 때만 실행된다.
 - secret에는 동작 가능한 기본값이 없다. 실제 값은 커밋하지 않은 루트 `.env` 또는 실행 환경에서 주입한다.
+- 루트 `.env.example`은 필수값과 운영자가 바꿀 Compose 변수만 담는다. 내부 주소·고정 provider/RAG 값은 Compose가 소유한다.
+- 서비스가 인식하는 전체 변수는 `backend-pjt/.env.example`, `ai-pjt/.env.example`, `front-pjt/.env.example`에 각각 기록한다.
 - 운영 설정 원문과 변경 전 snapshot은 서버 `/srv/s15p21b109/secrets/` 밖으로 내보내지 않는다. snapshot은 root 전용 0500/0400 및 filesystem immutable로 보존하고, Git·CI artifact에는 값 없는 ID·SHA-256·권한·PASS/FAIL만 기록한다. 생성·복구와 실제 rollback 리허설은 [배포 운영 안내](deploy/README.md#운영-설정-immutable-snapshot과-복구)를 따른다.
 
 필수 환경변수:
@@ -44,8 +46,16 @@ Redis healthy ──────────────────────
 | `DATABASE_URL` | AI checkpoint용 PostgreSQL DSN. host는 `postgres`, DB는 `retirewise_db`를 사용 |
 | `DJANGO_SECRET_KEY` | Django secret |
 | `AI_SERVICE_BEARER_TOKEN` | Backend·AI 서비스 인증용 공유 token |
+| `AI_MASKING_PSEUDONYM_KEY` | AI 관측 가명화 전용 32바이트 이상 secret |
+| `GOOGLE_API_KEY` | 현재 고정 Gemini embedding이 사용하는 GMS key |
 
-기본 DB 이름과 사용자는 각각 `retirewise_db`, `retirewise`다. 다른 값을 사용할 때는 `POSTGRES_DB`, `POSTGRES_USER`, `DATABASE_URL`을 함께 바꿔야 한다. LLM provider에 따라 `GOOGLE_API_KEY` 또는 `OPENAI_API_KEY`도 주입한다. 전체 AI·Backend 변수 목록은 `ai-pjt/.env.example`과 `backend-pjt/.env.example`을 따른다.
+기본 DB 이름과 사용자는 각각 `retirewise_db`, `retirewise`다. 다른 값을 사용할 때는 `POSTGRES_DB`, `POSTGRES_USER`, `DATABASE_URL`을 함께 바꿔야 한다. LLM provider를 OpenAI로 바꾸면 `OPENAI_API_KEY`도 주입한다.
+
+예제와 Compose의 동기화는 로컬과 CI에서 다음 명령으로 검사한다.
+
+```bash
+make env-contract-check
+```
 
 secret 누락 여부와 Compose 구조는 컨테이너를 만들기 전에 확인할 수 있다.
 
@@ -90,18 +100,18 @@ G1은 빈 volume·clean image에서 migration, 두 애플리케이션 readiness,
 - SHA-256: `4e8f80a985aed40966f3a00516acb25470a6b3a8c18388202f16969d21cc3ed7`
 - active index: `interface-guides__official-catalog-2-1-0`, `financial-knowledge__official-catalog-2-1-0`
 
-운영 `.env`에는 다음 값을 반드시 설정한다.
+운영 루트 `.env`에는 GMS key와 실제로 바꿀 검색 tuning만 둔다.
 
 ```dotenv
 GOOGLE_API_KEY=<GMS-key>
-EMBEDDING_PROVIDER=gemini
-EMBED_DIM=3072
-RAG_FINANCIAL_COLLECTION=financial-knowledge
-RAG_INTERFACE_COLLECTION=interface-guides
 RAG_TOP_K=5
 RAG_FETCH_K=10
 RAG_MIN_DENSE_SCORE=0.52
+RAG_INDEX_RETENTION_DAYS=30
 ```
+
+`EMBEDDING_PROVIDER=gemini`, `EMBEDDING_MODEL=gemini-embedding-2`, `EMBED_DIM=3072`,
+두 logical collection과 GMS base URL은 승인된 RAG 계약으로 Compose에 고정돼 있다.
 
 공식 artifact 생성·갱신은 RAG 담당자만 수행한다. 생산자 DB 준비, qualification,
 export와 Git 추적 절차는 [RAG pipeline 운영 문서](ai-pjt/rag/README.md#공식-artifact-생성과-갱신)를 따른다.

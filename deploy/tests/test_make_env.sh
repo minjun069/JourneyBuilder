@@ -7,15 +7,21 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 output="$tmp/app.env"
-LANGCHAIN_TRACING_V2=true LANGCHAIN_API_KEY=legacy-test-key \
-  bash "$tool" --output "$output" > "$tmp/create.log"
+GOOGLE_API_KEY=test-gms-key bash "$tool" --output "$output" > "$tmp/create.log"
 
 test "$(stat -c '%a' "$output")" = 600
-test "$(sed -n 's/^LANGCHAIN_TRACING_V2=//p' "$output")" = false
-if grep -q '^LANGCHAIN_API_KEY=' "$output"; then
-  echo 'make-env.sh가 사용하지 않는 LANGCHAIN_API_KEY를 생성했습니다' >&2
-  exit 1
-fi
+test "$(sed -n 's/^GOOGLE_API_KEY=//p' "$output")" = test-gms-key
+
+for fixed_name in \
+  DJANGO_DEBUG EMBEDDING_PROVIDER EMBEDDING_MODEL GOOGLE_GEMINI_BASE_URL \
+  RAG_FINANCIAL_COLLECTION RAG_INTERFACE_COLLECTION EMBED_DIM \
+  LANGCHAIN_TRACING_V2 LANGCHAIN_API_KEY
+do
+  if grep -q "^${fixed_name}=" "$output"; then
+    echo "make-env.sh가 Compose 고정값을 루트 env에 생성했습니다: $fixed_name" >&2
+    exit 1
+  fi
+done
 
 grep -q 'LANGCHAIN_TRACING_V2: "false"' "$repo_root/docker-compose.yml"
 if grep -q 'LANGCHAIN_API_KEY' "$repo_root/docker-compose.yml"; then
@@ -28,4 +34,4 @@ if bash "$tool" --output "$output" > /dev/null 2>&1; then
   exit 1
 fi
 
-echo 'make-env tracing guard tests passed'
+echo 'make-env root contract tests passed'
