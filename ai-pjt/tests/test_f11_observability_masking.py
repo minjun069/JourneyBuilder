@@ -129,6 +129,8 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(sink.dropped_exports, 0)
         self.assertEqual(sink.dropped_exports, len(downstream.payloads))
         rendered = json.dumps(downstream.payloads, ensure_ascii=False, sort_keys=True)
+        self.assertIn("질문", rendered)
+        self.assertIn("정상 금융 설명", rendered)
         for raw in (
             "request-raw-0001",
             "thread-raw-0001",

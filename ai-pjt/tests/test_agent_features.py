@@ -300,6 +300,29 @@ class ErrorReviewManualTests(unittest.TestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_qualitative_choice_explanations_skip_official_value_rag(self) -> None:
+        configure_runtime()
+        from agents import qa
+
+        for message, query in (
+            ("단기 지향이면 어느정도 기간을 말하지?", "단기 지향 기간"),
+            ("안정추구란 정확히 뭘 말하는거야?", "안정 추구 의미"),
+            ("단기 지향의 기간에 대해 설명", "단기 지향 기간"),
+            ("안정추구의 정의에 대해 설명합니다.", "안정 추구 정의"),
+        ):
+            with self.subTest(message=message):
+                decision_chain = SimpleNamespace(ainvoke=AsyncMock())
+                with patch.object(qa, "_decision_chain", decision_chain):
+                    decision = await qa._decide({
+                        "message": message,
+                        "current_query": query,
+                        "customer_info": {},
+                        "bound_inputs": {},
+                    })
+
+                self.assertEqual(decision, {"need_retrieval": False})
+                decision_chain.ainvoke.assert_not_awaited()
+
     async def test_new_official_value_fails_closed_even_with_unrelated_binding(self) -> None:
         configure_runtime()
         from agents import qa
@@ -375,8 +398,20 @@ class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
         from agents import fallback
 
         for category in fallback.MESSAGES:
-            result = fallback._run({"step_id": "intro", "fallback_category": category})
-            self.assertTrue(result["output"]["response"])
+            result = await fallback.graph.ainvoke({
+                "message": "",
+                "step_id": "intro",
+                "customer_info": {},
+                "field_registry": [],
+                "bound_inputs": {},
+                "current_task": {"id": "task-1", "type": "fallback"},
+                "next": "fallback",
+                "fallback_category": category,
+            })
+            self.assertEqual(
+                result["output"]["response"],
+                fallback.MESSAGES[category],
+            )
         with self.assertRaises(ValueError):
             fallback._run({"step_id": "intro", "fallback_category": "capability_unavailable"})
 

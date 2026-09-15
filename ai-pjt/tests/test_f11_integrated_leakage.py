@@ -620,7 +620,8 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
         ])
         self.assertNotIn("p13-user@example.invalid", rendered)
         self.assertNotIn("010-0000-0000", rendered)
-        self.assertEqual(rendered.count("event: delta"), 1)
+        self.assertEqual(rendered.count("event: delta"), 0)
+        self.assertEqual(rendered.count("event: done"), 1)
 
 
 def _request(request_id: str) -> ChatV2Request:

@@ -5,7 +5,7 @@
   "source_contract": "contract-fixtures/ai-lifecycle/v2/step-registry.json",
   "baseline_commit": "f0fa13d35788515cd1a8e5b079545c9c32f8d3c0",
   "accuracy_threshold": 0.95,
-  "minimum_correct": 57,
+  "minimum_correct": 59,
   "cases": [
     {
       "id": "qa-intro-service-scope",
@@ -28,6 +28,22 @@
       "kind": "role_success",
       "step_id": "basic-info",
       "message": "나이가 은퇴 설계에 왜 중요한가요?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-basic-info-short-term-horizon",
+      "kind": "role_success",
+      "step_id": "basic-info",
+      "message": "단기 지향이면 어느정도 기간을 말하지?",
+      "classifier": {"status": "matched", "agent": "qa"},
+      "expected": {"agent": "qa", "reason_code": "intent_match"}
+    },
+    {
+      "id": "qa-basic-info-stability-seeking-meaning",
+      "kind": "role_success",
+      "step_id": "basic-info",
+      "message": "안정추구란 정확히 뭘 말하는거야?",
       "classifier": {"status": "matched", "agent": "qa"},
       "expected": {"agent": "qa", "reason_code": "intent_match"}
     },

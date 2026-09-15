@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 
 from core.context import ContextWindow, ConversationTurn
-from graph.planner import create_route_plan, validate_route_plan
+from graph.planner import (
+    PlannerModelOutput,
+    create_route_plan,
+    validate_route_plan,
+)
 
 
 def task(
@@ -61,6 +65,23 @@ class FakeClassifier:
 
 
 class RoutePlanValidationTests(unittest.TestCase):
+    def test_provider_empty_arguments_are_removed_before_plan_validation(self) -> None:
+        model_output = PlannerModelOutput.model_validate({
+            "tasks": [{
+                "id": "answer",
+                "type": "answer_question",
+                "description": "단기 지향의 기간 설명",
+                "depends_on": [],
+                "bindings": {},
+                "arguments": {},
+            }],
+        })
+
+        route_plan = model_output.to_route_plan()
+
+        self.assertNotIn("arguments", route_plan["tasks"][0])
+        self.assertTrue(validate_route_plan(route_plan, step_id="basic-info").valid)
+
     def test_writable_household_reference_requires_complete_single_source_binding(self) -> None:
         lookup = task(
             "lookup",
@@ -357,6 +378,47 @@ class ContextAwarePlanningTests(unittest.TestCase):
         self.assertEqual(lookup["route"]["reason_code"], "capability_unavailable")
         self.assertEqual(fill["route"]["executor"], "input_assist")
         self.assertEqual(fill["route"]["reason_code"], "intent_match")
+
+    def test_explanation_questions_recover_to_single_qa_plan(self) -> None:
+        def unavailable_planner(**_kwargs: object) -> dict:
+            raise RuntimeError("simulated planner provider timeout")
+
+        def unavailable_classifier(**_kwargs: object) -> dict:
+            raise RuntimeError("simulated router provider timeout")
+
+        window = ContextWindow(
+            turns=(),
+            confirmed_facts={},
+            summary=None,
+            structured_facts=(),
+            input_units=0,
+        )
+        for message in (
+            "단기 지향이면 어느정도 기간을 말하지?",
+            "안정추구란 정확히 뭘 말하는거야?",
+        ):
+            with self.subTest(message=message):
+                validation = create_route_plan(
+                    message=message,
+                    step_id="basic-info",
+                    context_window=window,
+                    planner=unavailable_planner,
+                    classifier=unavailable_classifier,
+                )
+
+                self.assertTrue(validation.valid)
+                self.assertEqual(len(validation.plan["tasks"]), 1)
+                task_result = validation.plan["tasks"][0]
+                self.assertEqual(task_result["type"], "answer_question")
+                self.assertEqual(task_result["route"]["executor"], "qa")
+                self.assertEqual(
+                    task_result["route"]["reason_code"],
+                    "intent_match",
+                )
+                self.assertEqual(
+                    {item["component"] for item in validation.diagnostics},
+                    {"planner", "router_classifier"},
+                )
 
 
 if __name__ == "__main__":

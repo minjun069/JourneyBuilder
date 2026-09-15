@@ -1,20 +1,22 @@
 """Safe P11 observability contracts for the typed production exporter.
 
-The contract deliberately provides no free-form fields for messages, customer
-snapshots, tool arguments, or financial result values. Raw LangChain tracing
-callbacks remain disabled because they bypass this masking-safe export boundary.
+Bounded input/output snapshots are accepted as typed event fields and must pass
+the masking sink before export. Raw LangChain callbacks remain disabled because
+they bypass that masking-safe boundary.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
 from enum import Enum
 from math import isfinite
-from typing import Protocol, TypeAlias
+from typing import Any, Protocol, TypeAlias
 
-OBSERVABILITY_CONTRACT_VERSION = "1.0"
+OBSERVABILITY_CONTRACT_VERSION = "1.1"
+MAX_OBSERVATION_CONTENT_BYTES = 65_536
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 _PSEUDONYMOUS_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -103,6 +105,24 @@ def _validate_nonnegative_int(value: int | None, field_name: str) -> None:
         raise ValueError(f"{field_name} must be a non-negative integer")
 
 
+def _validate_observation_content(value: Any, field_name: str) -> None:
+    if value is None:
+        return
+    try:
+        rendered = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field_name} must be JSON-serializable") from error
+    if len(rendered.encode("utf-8")) > MAX_OBSERVATION_CONTENT_BYTES:
+        raise ValueError(
+            f"{field_name} exceeds {MAX_OBSERVATION_CONTENT_BYTES} bytes"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class OperationTraceEvent:
     """One route/search/tool/model/validation/callback measurement.
@@ -133,6 +153,10 @@ class OperationTraceEvent:
     resource_ids: tuple[str, ...] = ()
     scores: tuple[float, ...] = ()
     result_count: int | None = None
+    input: Any | None = None
+    output: Any | None = None
+    error_type: str | None = None
+    error_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.stage, OperationStage):
@@ -182,6 +206,18 @@ class OperationTraceEvent:
             raise ValueError("succeeded events cannot contain error_code")
         if self.status is not OperationStatus.SUCCEEDED and self.error_code is None:
             raise ValueError("non-success events require a stable error_code")
+        _validate_observation_content(self.input, "input")
+        _validate_observation_content(self.output, "output")
+        if (self.error_type is None) != (self.error_fingerprint is None):
+            raise ValueError(
+                "error_type and error_fingerprint must be provided together"
+            )
+        for field_name in ("error_type", "error_fingerprint"):
+            value = getattr(self, field_name)
+            if value is not None:
+                _validate_safe_token(value, field_name)
+        if self.status is OperationStatus.SUCCEEDED and self.error_type is not None:
+            raise ValueError("error identity is allowed only on failed operations")
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -208,6 +244,10 @@ class OperationTraceEvent:
             "output_tokens",
             "cost_microusd",
             "result_count",
+            "input",
+            "output",
+            "error_type",
+            "error_fingerprint",
         ):
             value = getattr(self, name)
             if value is not None:

@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
-import json
+import logging
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, Literal
 
-from core.model_boundary import ModelPurpose, secure_invoke, secure_system_prompt
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from core.model_boundary import (
+    ModelPurpose,
+    secure_structured_invoke,
+    secure_system_prompt,
+)
+from core.observability_masking import (
+    exception_identity_fields,
+    masked_exception_fields,
+)
 from core.step_registry import load_agent_descriptions, load_step_candidates
 from graph.state import ChatState
 
@@ -17,14 +27,33 @@ FALLBACK_AGENT = "fallback"
 CLASSIFIER_STATUSES = {"matched", "ambiguous", "unsupported"}
 
 TaskClassifier = Callable[..., Mapping[str, Any]]
+RouterDiagnosticSink = Callable[[Mapping[str, str]], None]
+logger = logging.getLogger(__name__)
+
+TASK_TYPE_DEFAULT_AGENTS = {
+    "answer_question": "qa",
+    "answer_dashboard_metric": "qa",
+    "propose_form_change": "input_assist",
+    "review_validation_error": "error_review",
+    "interpret_chart": "chart_interpret",
+    "collect_qualitative_info": "elicit",
+    "fallback": "fallback",
+}
 
 
 ROUTER_PROMPT = secure_system_prompt("""\
 사용자 요청 하나를 분석해 후보 에이전트 중 하나를 선택하세요.
-반드시 JSON object만 반환하세요.
+지정된 구조화 출력 스키마에 맞는 object를 반환하세요.
 
 허용 status: matched, ambiguous, unsupported
 matched이면 agent에 후보 중 하나를 넣고, 그 외에는 null을 넣으세요.
+task type이 역할을 명확히 정한 경우 다음 대응을 우선하세요:
+- answer_question, answer_dashboard_metric: qa
+- propose_form_change: input_assist
+- review_validation_error: error_review
+- interpret_chart: chart_interpret
+- collect_qualitative_info: elicit
+- fallback: fallback
 
 현재 단계: {step_id}
 요청 종류: {task_type}
@@ -33,6 +62,21 @@ matched이면 agent에 후보 중 하나를 넣고, 그 외에는 null을 넣으
 후보 에이전트:
 {candidates}
 """)
+
+
+class RouterModelOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["matched", "ambiguous", "unsupported"]
+    agent: str | None = None
+
+    @model_validator(mode="after")
+    def validate_agent_contract(self) -> "RouterModelOutput":
+        if self.status == "matched" and not self.agent:
+            raise ValueError("matched router output requires an agent")
+        if self.status != "matched" and self.agent is not None:
+            raise ValueError("non-matched router output requires agent=null")
+        return self
 
 
 def _decision(
@@ -62,6 +106,7 @@ def select_route(
     step_candidates: Mapping[str, Sequence[str]],
     classifier: TaskClassifier,
     registered_tool_capabilities: Sequence[str] = (),
+    diagnostic_sink: RouterDiagnosticSink | None = None,
 ) -> dict[str, str]:
     """Select one safe executor for one validated task.
 
@@ -113,37 +158,79 @@ def select_route(
     candidate_tuple = tuple(candidates)
     try:
         classified = classifier(task=task, candidates=candidate_tuple)
-    except Exception:
-        return _decision(
-            task_id=task_id,
-            executor_kind="agent",
-            executor=FALLBACK_AGENT,
-            reason_code="plan_invalid",
+    except Exception as error:
+        _report_classifier_error(
+            error,
+            task=task,
+            step_id=step_id,
+            diagnostic_sink=diagnostic_sink,
         )
+        return _recover_known_route(task, task_id, candidate_tuple)
 
     if not isinstance(classified, Mapping):
-        status = None
-        chosen = None
-    else:
-        status = classified.get("status")
-        chosen = classified.get("agent")
+        error = ValueError("router classifier response must be an object")
+        _report_classifier_error(
+            error,
+            task=task,
+            step_id=step_id,
+            diagnostic_sink=diagnostic_sink,
+        )
+        return _recover_known_route(task, task_id, candidate_tuple)
+
+    status = classified.get("status")
+    chosen = classified.get("agent")
 
     if status not in CLASSIFIER_STATUSES:
-        reason_code = "plan_invalid"
-    elif status == "ambiguous":
+        error = ValueError("router classifier status is invalid")
+        _report_classifier_error(
+            error,
+            task=task,
+            step_id=step_id,
+            diagnostic_sink=diagnostic_sink,
+        )
+        return _recover_known_route(task, task_id, candidate_tuple)
+    if status == "ambiguous":
         reason_code = "ambiguous_intent"
     elif status == "unsupported":
         reason_code = "unsupported_intent"
     elif not isinstance(chosen, str) or not chosen:
-        reason_code = "plan_invalid"
+        error = ValueError("matched router classifier omitted agent")
+        _report_classifier_error(
+            error,
+            task=task,
+            step_id=step_id,
+            diagnostic_sink=diagnostic_sink,
+        )
+        return _recover_known_route(task, task_id, candidate_tuple)
     elif chosen not in candidate_tuple:
-        reason_code = "plan_invalid"
+        error = ValueError("router classifier selected a disallowed agent")
+        _report_classifier_error(
+            error,
+            task=task,
+            step_id=step_id,
+            diagnostic_sink=diagnostic_sink,
+        )
+        return _recover_known_route(task, task_id, candidate_tuple)
     else:
+        expected = TASK_TYPE_DEFAULT_AGENTS.get(str(task.get("type", "")))
+        if expected is not None and expected in candidate_tuple and chosen != expected:
+            error = ValueError("router classifier contradicted the task type")
+            _report_classifier_error(
+                error,
+                task=task,
+                step_id=step_id,
+                diagnostic_sink=diagnostic_sink,
+            )
+            chosen = expected
         return _decision(
             task_id=task_id,
             executor_kind="agent",
             executor=chosen,
-            reason_code="intent_match",
+            reason_code=(
+                "unsupported_intent"
+                if chosen == FALLBACK_AGENT and task.get("type") == "fallback"
+                else "intent_match"
+            ),
         )
 
     return _decision(
@@ -174,8 +261,9 @@ def classify_task_with_model(
         description=task.get("description", ""),
         candidates=candidate_lines,
     ))
-    result = secure_invoke(
+    result = secure_structured_invoke(
         llm,
+        RouterModelOutput,
         [
             system,
             HumanMessage(content=str(task.get("description", ""))),
@@ -183,11 +271,54 @@ def classify_task_with_model(
         purpose=ModelPurpose.ROUTER,
         sensitive_payload={"task": dict(task)},
     )
-    content = result.content if isinstance(result.content, str) else ""
-    payload = json.loads(content)
-    if not isinstance(payload, dict):
-        raise ValueError("router classifier response must be an object")
-    return payload
+    return result.model_dump(mode="json")
+
+
+def _recover_known_route(
+    task: Mapping[str, Any],
+    task_id: str,
+    candidates: tuple[str, ...],
+) -> dict[str, str]:
+    expected = TASK_TYPE_DEFAULT_AGENTS.get(str(task.get("type", "")))
+    if expected is not None and expected in candidates:
+        return _decision(
+            task_id=task_id,
+            executor_kind="agent",
+            executor=expected,
+            reason_code=(
+                "plan_invalid" if expected == FALLBACK_AGENT else "intent_match"
+            ),
+        )
+    return _decision(
+        task_id=task_id,
+        executor_kind="agent",
+        executor=FALLBACK_AGENT,
+        reason_code="plan_invalid",
+    )
+
+
+def _report_classifier_error(
+    error: BaseException,
+    *,
+    task: Mapping[str, Any],
+    step_id: str,
+    diagnostic_sink: RouterDiagnosticSink | None,
+) -> None:
+    diagnostic = exception_identity_fields(error)
+    if diagnostic_sink is not None:
+        diagnostic_sink(diagnostic)
+    logger.error(
+        "router classifier failed contract",
+        extra={
+            "event": "router_classifier_error",
+            "detail": masked_exception_fields(
+                error,
+                step_id=step_id,
+                task_id=_task_id(task),
+                task_type=str(task.get("type", "unknown")),
+            ),
+        },
+    )
 
 
 def router(state: ChatState) -> dict[str, Any]:

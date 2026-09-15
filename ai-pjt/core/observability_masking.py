@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from hashlib import sha256
 import logging
-import traceback
 from typing import Any, Protocol
 
 from core.masking import MaskingPolicy, MaskingSink, mask_payload
@@ -31,8 +31,33 @@ def mask_application_log_payload(
     )
 
 
-_EXCEPTION_MESSAGE_LIMIT = 1000
-_EXCEPTION_TRACEBACK_LIMIT = 8000
+def exception_identity_fields(error: BaseException) -> dict[str, str]:
+    """Return non-content diagnostics suitable for trace metadata.
+
+    Provider and parsing exceptions can contain the full model request in
+    their message. Observability therefore retains only the deepest exception
+    type and a stable one-way fingerprint; raw exception text is discarded.
+    """
+
+    root = error
+    visited: set[int] = set()
+    while root.__cause__ is not None and id(root) not in visited:
+        visited.add(id(root))
+        root = root.__cause__
+    error_type = type(root).__name__
+    error_module = type(root).__module__
+    try:
+        message = str(root)
+    except Exception:  # noqa: BLE001 - exception rendering may itself fail
+        message = "<exception text unavailable>"
+    material = f"{error_module}:{error_type}:{message}".encode(
+        "utf-8",
+        errors="replace",
+    )
+    return {
+        "error_type": error_type,
+        "error_fingerprint": sha256(material).hexdigest()[:24],
+    }
 
 
 def masked_exception_fields(
@@ -41,26 +66,19 @@ def masked_exception_fields(
     pseudonym_key: bytes | None = None,
     **context: Any,
 ) -> dict[str, Any]:
-    """Serialize one caught exception into APPLICATION_LOG-safe log fields.
+    """Serialize one caught exception without copying unstructured raw text.
 
-    ``str(error)`` and the traceback can echo model input (a pydantic
-    ``ValidationError`` quotes the value it rejected), so both go through the
-    application-log masking policy before any handler can see them.  A masking
-    failure degrades to the exception type instead of falling back to raw text.
+    Provider and validation exceptions can quote arbitrary model input. Because
+    a free-form exception string cannot be classified completely, logs retain
+    only its type, module, stable fingerprint, and separately typed context.
     """
 
     fields: dict[str, Any] = {
         **context,
         "error_type": type(error).__name__,
         "error_module": type(error).__module__,
+        **exception_identity_fields(error),
     }
-    try:
-        fields["error_message"] = str(error)[:_EXCEPTION_MESSAGE_LIMIT]
-        fields["error_traceback"] = "".join(
-            traceback.format_exception(type(error), error, error.__traceback__)
-        )[-_EXCEPTION_TRACEBACK_LIMIT:]
-    except Exception:  # noqa: BLE001 - diagnostics must never raise
-        fields["error_message"] = "<exception text unavailable>"
 
     try:
         key = (
@@ -136,7 +154,7 @@ class MaskedInstrumentationSink:
             masked = mask_payload(raw, sink=self._sink, policy=self._policy)
             if not isinstance(masked, Mapping):
                 raise TypeError("masked instrumentation event must be a mapping")
-            self._downstream.emit(masked)
+            self._downstream.emit({**masked, "masking_status": "applied"})
         except Exception:
             self._dropped_exports += 1
 

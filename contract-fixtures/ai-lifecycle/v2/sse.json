@@ -31,7 +31,7 @@
     "frontend_polling_flows": []
   },
   "terminal_events": ["done", "error"],
-  "allowed_events": ["start", "delta", "done", "error"],
+  "allowed_events": ["start", "done", "error"],
   "browser_request": {
     "contract_version": "2.0",
     "content": "월급은 세후 300만 원이에요.",
@@ -61,14 +61,6 @@
       }
     },
     {
-      "event": "delta",
-      "data": {
-        "contract_version": "2.0",
-        "request_id": "ai_req_fixture",
-        "content": "월급 정보를 확인했습니다."
-      }
-    },
-    {
       "event": "done",
       "data": {
         "contract_version": "2.0",
@@ -94,14 +86,6 @@
         "session_id": 1,
         "thread_id": "user-3-session-1",
         "user_message_id": 41
-      }
-    },
-    {
-      "event": "delta",
-      "data": {
-        "contract_version": "2.0",
-        "request_id": "ai_req_fixture",
-        "content": "월급 정보를 확인했습니다."
       }
     },
     {

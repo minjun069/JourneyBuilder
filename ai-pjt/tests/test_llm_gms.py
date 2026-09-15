@@ -9,6 +9,34 @@ from agents.input_assist import ResolveResult
 
 
 class GMSAsyncAdapterTests(unittest.IsolatedAsyncioTestCase):
+    def test_gms_proxy_disables_incompatible_async_streaming_client(self) -> None:
+        from core.llm import _create_llm
+
+        captured: dict[str, object] = {}
+
+        class FakeGoogleModel:
+            def __init__(self, **kwargs: object) -> None:
+                captured.update(kwargs)
+
+        fake_settings = SimpleNamespace(
+            llm_provider="gemini",
+            llm_model="gemini-test",
+            gemini_api_key="test-key",
+            gemini_base_url="https://gms.example.com/gemini",
+        )
+        with (
+            patch(
+                "langchain_google_genai.ChatGoogleGenerativeAI",
+                FakeGoogleModel,
+            ),
+            patch("core.llm.settings", fake_settings),
+        ):
+            _create_llm()
+
+        self.assertIs(captured["disable_streaming"], True)
+        self.assertIs(captured["streaming"], True)
+        self.assertEqual(captured["transport"], "rest")
+
     def test_agent_tool_schemas_do_not_expose_unbounded_any_value_unions(self) -> None:
         resolve_schema = ResolveResult.model_json_schema()
         review_schema = ReviewResult.model_json_schema()

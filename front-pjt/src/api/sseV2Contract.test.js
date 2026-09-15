@@ -32,11 +32,13 @@ test('Frontend는 인증과 멱등 키가 필요한 v2 SSE endpoint를 사용한
   assert.equal(contract.timeouts_seconds.stream_read_idle, 120)
 })
 
-test('Frontend 정상 이벤트는 start, delta, done 순서다', () => {
+test('Frontend 정상 이벤트는 start, done 순서다', () => {
+  assert.deepEqual(contract.allowed_events, ['start', 'done', 'error'])
   assert.deepEqual(
     contract.browser_events.map(({ event }) => event),
-    ['start', 'delta', 'done'],
+    ['start', 'done'],
   )
+  assert.doesNotMatch(aiChatViewSource, /event === 'delta'/)
 })
 
 test('모든 Browser 이벤트는 동일 v2 request identity를 유지한다', () => {

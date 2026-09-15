@@ -74,7 +74,6 @@ const server = createServer(async (request, response) => {
     })
     writeEvent(response, 'start', identity)
     await new Promise((resolve) => setTimeout(resolve, 200))
-    writeEvent(response, 'delta', { ...identity, content: output.response })
     writeEvent(response, 'done', {
       ...identity,
       status: 'completed',

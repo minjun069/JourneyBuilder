@@ -19,11 +19,11 @@ def parse_sse_frame(frame: str) -> tuple[str, dict]:
 
 class SSEEncodingTests(TestCase):
     def test_sse_frame_uses_named_event_and_json_data(self):
-        frame = _encode_sse("delta", {"content": "은퇴\n준비"})
+        frame = _encode_sse("done", {"content": "은퇴\n준비"})
 
         self.assertTrue(frame.endswith("\n\n"))
         event, data = parse_sse_frame(frame)
-        self.assertEqual(event, "delta")
+        self.assertEqual(event, "done")
         self.assertEqual(data, {"content": "은퇴\n준비"})
 
 
