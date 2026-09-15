@@ -197,13 +197,14 @@ def check_step_and_chart_contracts() -> tuple[int, int]:
     lifecycle = _load_json(fixture_root / "lifecycle.json")
     companion_fixtures = set(lifecycle.get("companion_fixtures", []))
     expected_companions = {
+        "sse.json",
         "step-registry.json",
         "form-actions.json",
         "chart-payloads.json",
         "tool-contexts.json",
     }
     if companion_fixtures != expected_companions:
-        raise GateFailure("lifecycle fixture must name all four companion fixtures")
+        raise GateFailure("lifecycle fixture must name all required companion fixtures")
     for companion in companion_fixtures:
         if not (fixture_root / companion).is_file():
             raise GateFailure(f"lifecycle companion fixture is missing: {companion}")

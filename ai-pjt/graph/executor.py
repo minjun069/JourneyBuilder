@@ -580,15 +580,11 @@ def aggregate_task_results(
     """Collapse internal results into one public response and at most one action."""
 
     responses: list[str] = []
-    changes_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
-    change_order: list[tuple[Any, ...]] = []
-    conflicts: set[tuple[Any, ...]] = set()
-    user_requested_values: list[bool] = []
-    confidences: list[float] = []
+    form_changes: list[Mapping[str, Any]] = []
     reviews: list[dict[str, Any]] = []
     ui_actions: list[dict[str, Any]] = []
 
-    for task_index, task in enumerate(tasks):
+    for task in tasks:
         if not isinstance(task, Mapping):
             continue
         result = task_results.get(str(task.get("id")))
@@ -630,40 +626,13 @@ def aggregate_task_results(
         )
         if not isinstance(form_artifact, Mapping) or form_artifact.get("type") != "form_change":
             continue
-        user_requested_values.append(form_artifact.get("user_requested") is True)
-        confidence = form_artifact.get("confidence")
-        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
-            confidences.append(float(confidence))
-        for change_index, raw_change in enumerate(form_artifact.get("changes", [])):
-            if not isinstance(raw_change, Mapping):
-                continue
-            change = deepcopy(dict(raw_change))
-            key = _change_key(change, task_index, change_index)
-            existing = changes_by_key.get(key)
-            if existing is None:
-                changes_by_key[key] = change
-                change_order.append(key)
-            elif not _changes_equivalent(existing, change):
-                conflicts.add(key)
+        form_changes.append(form_artifact)
 
-    if conflicts:
+    action, has_alternatives = _merge_form_changes(form_changes)
+    if has_alternatives:
         responses.append(
-            "같은 입력 항목에 서로 다른 변경안이 있어 해당 항목은 제안에서 제외했습니다."
+            "같은 입력 항목에 서로 다른 변경안이 있어 선택지로 각각 제시했습니다."
         )
-    changes = [
-        changes_by_key[key]
-        for key in change_order
-        if key not in conflicts
-    ]
-    action = None
-    if changes:
-        action = {
-            "type": "form_change",
-            "target": "draft_form",
-            "user_requested": all(user_requested_values),
-            "confidence": min(confidences) if confidences else 0.0,
-            "changes": changes,
-        }
 
     output = {
         "response": "\n\n".join(_deduplicate(responses))
@@ -743,6 +712,49 @@ def _change_key(
         change.get("item_id"),
         change.get("client_item_id"),
     )
+
+
+def _merge_form_changes(
+    form_changes: list[Mapping[str, Any]],
+) -> tuple[dict[str, Any] | None, bool]:
+    if not form_changes:
+        return None, False
+
+    merged_changes: list[dict[str, Any]] = []
+    changes_by_key: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    user_requested_values: list[bool] = []
+    confidences: list[float] = []
+    has_alternatives = False
+
+    for form_index, form_change in enumerate(form_changes):
+        user_requested_values.append(form_change.get("user_requested") is True)
+        confidence = form_change.get("confidence")
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+            confidences.append(float(confidence))
+
+        for change_index, raw_change in enumerate(form_change.get("changes", [])):
+            if not isinstance(raw_change, Mapping):
+                continue
+            change = deepcopy(dict(raw_change))
+            key = _change_key(change, form_index, change_index)
+            existing_options = changes_by_key.setdefault(key, [])
+            if any(
+                _changes_equivalent(existing, change)
+                for existing in existing_options
+            ):
+                continue
+            if existing_options:
+                has_alternatives = True
+            existing_options.append(change)
+            merged_changes.append(change)
+
+    return {
+        "type": "form_change",
+        "target": "draft_form",
+        "user_requested": all(user_requested_values),
+        "confidence": min(confidences) if confidences else 0.0,
+        "changes": merged_changes,
+    }, has_alternatives
 
 
 def _failure_message(reason_code: str) -> str:

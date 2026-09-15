@@ -307,6 +307,8 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         for message, query in (
             ("단기 지향이면 어느정도 기간을 말하지?", "단기 지향 기간"),
             ("안정추구란 정확히 뭘 말하는거야?", "안정 추구 의미"),
+            ("단기 지향의 기간에 대해 설명", "단기 지향 기간"),
+            ("안정추구의 정의에 대해 설명합니다.", "안정 추구 정의"),
         ):
             with self.subTest(message=message):
                 decision_chain = SimpleNamespace(ainvoke=AsyncMock())

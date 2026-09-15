@@ -85,6 +85,8 @@ _QUALITATIVE_CHOICE_TERMS = (
 _TERM_EXPLANATION_CUES = (
     "뜻",
     "의미",
+    "정의",
+    "설명",
     "정확히",
     "뭐",
     "무엇",

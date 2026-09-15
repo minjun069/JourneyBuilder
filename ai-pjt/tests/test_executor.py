@@ -400,7 +400,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AggregationTests(unittest.TestCase):
-    def test_conflicting_changes_are_removed_from_public_action(self) -> None:
+    def test_conflicting_changes_are_kept_as_public_options(self) -> None:
         task_1 = {
             "id": "task-1",
             "depends_on": [],
@@ -420,8 +420,38 @@ class AggregationTests(unittest.TestCase):
             step_id="financial-goals",
             field_registry=[FIELD_SPEC],
         )
-        self.assertIsNone(output["action"])
-        self.assertIn("서로 다른 변경안", output["response"])
+        self.assertEqual(
+            [change["value"] for change in output["action"]["changes"]],
+            [2_500_000, 3_000_000],
+        )
+        self.assertIn("선택지로 각각", output["response"])
+
+    def test_equivalent_changes_are_merged_into_one_option(self) -> None:
+        task_1 = {
+            "id": "task-1",
+            "depends_on": [],
+            "produces": "form_change",
+        }
+        task_2 = {
+            "id": "task-2",
+            "depends_on": [],
+            "produces": "form_change",
+        }
+        duplicate = form_result("task-2")
+        duplicate["artifact"]["changes"][0]["reason"] = "표현만 다른 동일 제안"
+
+        output = aggregate_task_results(
+            tasks=[task_1, task_2],
+            task_results={
+                "task-1": form_result("task-1"),
+                "task-2": duplicate,
+            },
+            step_id="financial-goals",
+            field_registry=[FIELD_SPEC],
+        )
+
+        self.assertEqual(len(output["action"]["changes"]), 1)
+        self.assertNotIn("선택지로 각각", output["response"])
 
     def test_agent_registry_requires_all_six_roles(self) -> None:
         async def executor(_: dict) -> dict:
