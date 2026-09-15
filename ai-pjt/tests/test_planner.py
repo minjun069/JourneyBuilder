@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 
 from core.context import ContextWindow, ConversationTurn
-from graph.planner import create_route_plan, validate_route_plan
+from graph.planner import (
+    PlannerModelOutput,
+    create_route_plan,
+    validate_route_plan,
+)
 
 
 def task(
@@ -61,6 +65,23 @@ class FakeClassifier:
 
 
 class RoutePlanValidationTests(unittest.TestCase):
+    def test_provider_empty_arguments_are_removed_before_plan_validation(self) -> None:
+        model_output = PlannerModelOutput.model_validate({
+            "tasks": [{
+                "id": "answer",
+                "type": "answer_question",
+                "description": "단기 지향의 기간 설명",
+                "depends_on": [],
+                "bindings": {},
+                "arguments": {},
+            }],
+        })
+
+        route_plan = model_output.to_route_plan()
+
+        self.assertNotIn("arguments", route_plan["tasks"][0])
+        self.assertTrue(validate_route_plan(route_plan, step_id="basic-info").valid)
+
     def test_writable_household_reference_requires_complete_single_source_binding(self) -> None:
         lookup = task(
             "lookup",
