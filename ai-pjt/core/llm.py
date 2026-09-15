@@ -79,6 +79,11 @@ def _create_llm() -> BaseChatModel:
             model=settings.llm_model,
             google_api_key=settings.gemini_api_key,
             streaming=True,
+            # LangGraph astream_events installs a streaming callback, which
+            # otherwise selects the provider's async streaming client. The
+            # path-based GMS proxy is supported through the sync REST client
+            # above, so force BaseChatModel to keep using _agenerate there.
+            disable_streaming=bool(settings.gemini_base_url),
             **proxy_options,
         )
 
