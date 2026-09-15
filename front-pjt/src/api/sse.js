@@ -84,7 +84,7 @@ export async function* readSSEStream(body) {
 
 
 export async function* validateSSEEvents(events) {
-  const allowedEvents = new Set(['start', 'delta', 'done', 'error'])
+  const allowedEvents = new Set(['start', 'done', 'error'])
   let requestId = null
   let started = false
 
@@ -115,9 +115,6 @@ export async function* validateV2SSEEvents(events) {
   for await (const event of validateSSEEvents(events)) {
     if (event.data.contract_version !== '2.0') {
       throw new SSEProtocolError('SSE contract_version이 올바르지 않습니다.')
-    }
-    if (event.event === 'delta' && typeof event.data.content !== 'string') {
-      throw new SSEProtocolError('SSE delta content가 올바르지 않습니다.')
     }
     if (event.event === 'done') {
       const message = event.data.message

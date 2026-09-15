@@ -17,7 +17,7 @@ from .sse import SSEProtocolError, aiter_sse_events, encode_sse
 
 
 logger = logging.getLogger(__name__)
-_ALLOWED_EVENTS = {'start', 'delta', 'done', 'error'}
+_ALLOWED_EVENTS = {'start', 'done', 'error'}
 
 
 def ai_v2_stream_url():
@@ -117,7 +117,6 @@ async def _save_terminal(store, state):
 async def proxy_v2_ai_stream(session, payload, state, store):
     yield encode_sse('start', _browser_start(state))
 
-    chunks: list[str] = []
     terminal = False
     try:
         async for event_name, data in aiter_sse_events(stream_v2_ai_response(payload)):
@@ -126,18 +125,6 @@ async def proxy_v2_ai_stream(session, payload, state, store):
             _validate_identity(data, payload)
 
             if event_name == 'start':
-                continue
-            if event_name == 'delta':
-                content = data.get('content')
-                if not isinstance(content, str):
-                    raise SSEProtocolError('delta content must be a string')
-                if content:
-                    chunks.append(content)
-                    yield encode_sse('delta', {
-                        'contract_version': CONTRACT_VERSION,
-                        'request_id': state['request_id'],
-                        'content': content,
-                    })
                 continue
 
             validated = validate_terminal_payload(data)
@@ -154,11 +141,7 @@ async def proxy_v2_ai_stream(session, payload, state, store):
                 raise SSEProtocolError('done event must have completed status')
             output = validated['output']
             if not output.get('response'):
-                response = ''.join(chunks)
-                if not response:
-                    raise SSEProtocolError('done output has no response')
-                output = {**output, 'response': response}
-                validated = {**validated, 'output': output}
+                raise SSEProtocolError('done output has no response')
 
             finalized = await _finalize(state, validated)
             terminal = True

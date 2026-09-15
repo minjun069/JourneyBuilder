@@ -37,7 +37,8 @@ Authorization: Bearer <AI_SERVICE_BEARER_TOKEN>
 
 ## Django → AI 작업 요청
 
-`POST /api/ai/v2/chat/stream`은 bearer 인증 뒤 `start -> delta* -> done | error` SSE를 반환한다. 요청 payload로 임의 callback URL을 받지 않는다.
+`POST /api/ai/v2/chat/stream`은 bearer 인증 뒤 `start -> done | error` SSE를 반환한다.
+`delta`는 보내거나 허용하지 않으며 요청 payload로 임의 callback URL을 받지 않는다.
 
 ```json
 {

@@ -1,6 +1,6 @@
 # AI 상담 SSE v2 계약
 
-상태: **ADR-0002~ADR-0005에 따라 Browser↔Django↔AI SSE 단일 전송 계약 동결**
+상태: **ADR-0006에 따라 Browser↔Django↔AI 완료 응답 전용 SSE 계약 동결**
 
 이 문서는 대화형 AI 상담의 v2 SSE endpoint, 이벤트 상태 머신, 인증, 멱등성,
 오류와 저장 시점을 소유한다. 일반 상담, Elicit의 `start`·`resume`·활성
@@ -38,8 +38,8 @@ Elicit 시작과 재개도 같은 endpoint를 사용한다. 시작은
 Frontend는 세 경우 모두 SSE endpoint만 호출한다.
 
 Error Review는 `request_mode=error_review`와 `review_trigger=save|user_request`를
-같은 endpoint에 보낸다. Frontend는 부분 `delta`를 검토 결과로 표시하지 않고 검증된
-`done.message`의 구조화 review만 현재 draft 검토 UI에 전달한다.
+같은 endpoint에 보낸다. Frontend는 검증된 `done.message`의 구조화 review만 현재
+draft 검토 UI에 전달한다.
 
 Django는 응답 header를 보내기 전에 사용자 JWT, 상담 세션 소유권, 종료 상태,
 body, contract version과 idempotency key를 검증한다. 실패하면 기존 v2 JSON 오류
@@ -68,8 +68,9 @@ X-Accel-Buffering: no
 - 이벤트는 UTF-8이며 빈 줄로 끝난다.
 - 각 `data`는 한 줄 JSON object다.
 - 모든 이벤트는 `contract_version: "2.0"`과 같은 `request_id`를 가진다.
-- 정상 상태 머신은 `start -> delta* -> done`이다.
-- 실패 상태 머신은 `start -> delta* -> error`다.
+- 정상 상태 머신은 `start -> done`이다.
+- 실패 상태 머신은 `start -> error`다.
+- `delta`는 허용하지 않으며 수신하면 protocol 위반으로 실패 처리한다.
 - `done`과 `error`는 terminal event이며 둘 중 하나만 보낸다.
 - 연결 EOF 자체는 완료가 아니다. terminal event가 없으면 client는 실패로 처리한다.
 
@@ -83,20 +84,10 @@ data: {"contract_version":"2.0","request_id":"ai_req_...","session_id":1,"thread
 
 ```
 
-### delta
-
-```text
-event: delta
-data: {"contract_version":"2.0","request_id":"ai_req_...","content":"월급 정보를 "}
-
-```
-
-공개 최종 답변 node의 content만 전달한다. 내부 라우팅, 검색 판단과 구조화 출력
-token은 전달하지 않는다.
-
 ### done
 
-`done.data`는 완료 terminal payload다.
+`done.data`는 graph 실행, 구조화 출력 검증과 terminal masking을 모두 마친 완료
+payload다. 답변 본문은 `output.response`에 한 번만 전달한다.
 
 ```text
 event: done
@@ -119,7 +110,6 @@ data: {"contract_version":"2.0","request_id":"ai_req_...","session_id":1,"thread
 Django는 내부 식별자와 terminal payload를 검증한 뒤 Browser용 이벤트로 변환한다.
 
 - `start`에는 저장된 `user_message_id`를 추가한다.
-- `delta`에는 사용자에게 보여줄 content만 전달한다.
 - `done` 전에 Assistant 메시지를 한 번 저장하고 직렬화된 `message`를 전달한다.
 - `error.error`는 기존 v2 `{code,message,retryable}` 구조를 사용한다.
 
@@ -149,8 +139,8 @@ Decision endpoint나 별도 네트워크 요청을 만들지 않는다.
 
 - 사용자 메시지는 FastAPI 연결 전에 저장한다.
 - Assistant 메시지는 검증된 `done`에서 한 번만 저장한다.
-- `error`, protocol 위반, terminal event 없는 EOF와 client 취소에서는 부분
-  Assistant 메시지를 저장하지 않는다.
+- `error`, protocol 위반, terminal event 없는 EOF와 client 취소에서는 Assistant
+  메시지를 저장하지 않는다.
 - Browser 연결이 닫히면 Django upstream client를 닫고 FastAPI async generator에
   취소를 전파한다.
 - 자동 재연결과 `Last-Event-ID` replay는 이번 계약 범위가 아니다.
@@ -172,3 +162,7 @@ Decision endpoint나 별도 네트워크 요청을 만들지 않는다.
 Frontend의 단일 SSE 경로를 사용한다. 비스트리밍 메시지 접수, 결과 polling,
 AI→Django HTTP callback과 구형 v1 SSE는 제공하지 않는다. rollback은 호환 transport를
 병행하지 않고 세 서비스의 이전 release를 함께 배포한다.
+
+기존 v2에서도 `delta*`는 0개일 수 있어 `start -> done`이 유효했으므로 endpoint와
+`contract_version: "2.0"`은 유지한다. 배포 중 새 consumer가 구 provider의 `delta`를
+받지 않도록 AI provider를 먼저 전환하고 Django·Frontend consumer를 이어서 전환한다.

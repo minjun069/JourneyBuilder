@@ -98,6 +98,23 @@ class FailingV2Graph:
         raise RuntimeError("외부에 노출하면 안 되는 오류")
 
 
+class EmptyResponseV2Graph:
+    async def astream_events(self, input_data, *, config, version):
+        yield {
+            "event": "on_chain_end",
+            "parent_ids": [],
+            "data": {
+                "output": {
+                    "output": {
+                        "response": "",
+                        "step_id": "general",
+                        "action": None,
+                    }
+                }
+            },
+        }
+
+
 class FakeErrorReviewGraph:
     async def astream_events(self, input_data, *, config, version):
         assert input_data["request_mode"] == "error_review"
@@ -139,7 +156,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
             )
         ]
 
-        self.assertEqual([name for name, _ in frames], ["start", "delta", "done"])
+        self.assertEqual([name for name, _ in frames], ["start", "done"])
         for _, data in frames:
             self.assertEqual(data["contract_version"], "2.0")
             self.assertEqual(data["request_id"], "ai_req_v2_stream")
@@ -167,6 +184,21 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertNotIn("외부에 노출하면 안 되는 오류", str(frames))
 
     @patch("main.get_callbacks", return_value=[])
+    async def test_empty_response_returns_error_instead_of_done(self, _callbacks):
+        frames = [
+            parse_frame(frame)
+            async for frame in _stream_v2_chat_events(
+                EmptyResponseV2Graph(),
+                FakeContextAPI(),
+                v2_request(),
+                fake_callback_masker(),
+            )
+        ]
+
+        self.assertEqual([name for name, _ in frames], ["start", "error"])
+        self.assertNotIn("event: done", str(frames))
+
+    @patch("main.get_callbacks", return_value=[])
     async def test_error_review_is_preserved_in_sse_done(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -178,7 +210,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
             )
         ]
 
-        self.assertEqual([name for name, _ in frames], ["start", "delta", "done"])
+        self.assertEqual([name for name, _ in frames], ["start", "done"])
         review = frames[-1][1]["output"]["review"]
         self.assertEqual(review["type"], "error_review")
         self.assertEqual(review["trigger"], "save")
@@ -218,7 +250,8 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         self.assertIn("text/event-stream", response.headers["content-type"])
         self.assertEqual(response.headers["cache-control"], "no-cache")
         self.assertEqual(response.headers["x-accel-buffering"], "no")
-        self.assertIn("event: delta", response.text)
+        self.assertNotIn("event: delta", response.text)
+        self.assertIn("event: done", response.text)
         self.assertIn('"contract_version":"2.0"', response.text)
 
 

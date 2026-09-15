@@ -24,10 +24,10 @@ class SSEV2ContractTests(unittest.TestCase):
     def test_event_state_machine_has_one_terminal_event(self) -> None:
         allowed = set(self.contract["allowed_events"])
         terminal = set(self.contract["terminal_events"])
-        self.assertEqual(allowed, {"start", "delta", "done", "error"})
+        self.assertEqual(allowed, {"start", "done", "error"})
         self.assertEqual(terminal, {"done", "error"})
         names = [item["event"] for item in self.contract["browser_events"]]
-        self.assertEqual(names, ["start", "delta", "done"])
+        self.assertEqual(names, ["start", "done"])
 
     def test_every_fixture_event_keeps_version_and_request_identity(self) -> None:
         for boundary in ("ai_events", "browser_events"):
