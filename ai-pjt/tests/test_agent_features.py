@@ -375,8 +375,20 @@ class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
         from agents import fallback
 
         for category in fallback.MESSAGES:
-            result = fallback._run({"step_id": "intro", "fallback_category": category})
-            self.assertTrue(result["output"]["response"])
+            result = await fallback.graph.ainvoke({
+                "message": "",
+                "step_id": "intro",
+                "customer_info": {},
+                "field_registry": [],
+                "bound_inputs": {},
+                "current_task": {"id": "task-1", "type": "fallback"},
+                "next": "fallback",
+                "fallback_category": category,
+            })
+            self.assertEqual(
+                result["output"]["response"],
+                fallback.MESSAGES[category],
+            )
         with self.assertRaises(ValueError):
             fallback._run({"step_id": "intro", "fallback_category": "capability_unavailable"})
 
