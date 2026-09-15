@@ -206,7 +206,7 @@ class PresentationGenerationContractTests(SimpleTestCase):
     def test_bulk_generation_set_contains_every_presentation_report_once(self):
         self.assertEqual(len(PRESENTATION_REPORT_TYPES), 9)
         self.assertEqual(len(set(PRESENTATION_REPORT_TYPES)), 9)
-        self.assertNotIn(Report.ReportType.NEWS_REPORT, PRESENTATION_REPORT_TYPES)
+        self.assertCountEqual(PRESENTATION_REPORT_TYPES, Report.ReportType.values)
 
     def test_collection_completion_can_start_bulk_generation(self):
         request = APIRequestFactory().post(

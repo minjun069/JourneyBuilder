@@ -14,7 +14,7 @@
 | `ai-docs/` | AI 요구사항·아키텍처·계약·평가·보안 공유 문서 | [문서 읽기 시작점](ai-docs/README.md) |
 | `db/` | 애플리케이션 PostgreSQL 초기화 | 루트 Compose의 `postgres` |
 
-루트 `docker-compose.yml`은 Backend·AI·PostgreSQL·Redis의 통합 실행 진입점이다. 기존 뉴스 분석과 Kafka·Flink·배치 데이터 파이프라인은 이번 프로젝트에서 폐기됐으며, `data-pjt/`, `docker-compose-kafka.yml`, `docker-compose-flink.yml`, `db/docker-compose.yml` 등 남아 있는 산출물은 현재 실행 경로에서 사용하지 않는다. 이 비활성 산출물의 삭제는 별도 정리 작업에서 수행한다.
+루트 `docker-compose.yml`은 Backend·AI·PostgreSQL·Redis의 통합 실행 진입점이다. 기존 뉴스 분석과 Kafka·Flink·Spark·Airflow 데이터 파이프라인은 이번 프로젝트에서 폐기했고, 관련 소스와 레거시 Compose 진입점을 제거했다.
 
 ## Compose 실행 계약
 

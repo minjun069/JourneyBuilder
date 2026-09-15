@@ -6,7 +6,6 @@
 **/.venv
 **/node_modules
 **/dist
-data-pjt
 front-pjt
 
 # 테스트는 이미지에 넣지 않는다. CI 는 저장소를 /src 에 마운트해서 돌므로 이미지 안의 사본은 쓰이지 않고,

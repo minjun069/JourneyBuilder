@@ -35,14 +35,6 @@
       </div>
     </div>
 
-    <br>
-
-    <div class="sidebar-section2">
-      <RouterLink to="/dashboard/report" class="sidebar-item parent" active-class="active">
-        정기 리포트
-      </RouterLink>
-    </div>
-
   </aside>
 </template>
 
@@ -58,13 +50,6 @@
 
 .sidebar-section {
   margin-bottom: 8px;
-}
-
-.sidebar-section2 {
-  margin-bottom: 8px;
-
-  /* 하단 경계선 */
-  border-top: 1px solid #f5f5f5;
 }
 
 .sidebar-header {
