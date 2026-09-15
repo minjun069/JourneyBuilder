@@ -37,10 +37,11 @@ class MaskedExceptionFieldTests(unittest.TestCase):
             "aaaaaaaa.bbbbbbbb.cccccccc",
         ):
             self.assertNotIn(sentinel, rendered)
-        self.assertIn("[DIRECT_IDENTIFIER]", fields["error_message"])
-        self.assertIn("[SECRET]", fields["error_message"])
+        self.assertNotIn("error_message", fields)
+        self.assertNotIn("error_traceback", fields)
+        self.assertRegex(fields["error_fingerprint"], r"^[0-9a-f]{24}$")
 
-    def test_type_and_traceback_survive_for_diagnosis(self) -> None:
+    def test_type_and_fingerprint_survive_for_diagnosis(self) -> None:
         try:
             raise KeyError("current_query")
         except KeyError as error:
@@ -49,11 +50,7 @@ class MaskedExceptionFieldTests(unittest.TestCase):
         self.assertEqual(fields["error_type"], "KeyError")
         self.assertEqual(fields["error_module"], "builtins")
         self.assertEqual(fields["executor_name"], "qa")
-        self.assertIn("KeyError", fields["error_traceback"])
-        self.assertIn(
-            "test_type_and_traceback_survive_for_diagnosis",
-            fields["error_traceback"],
-        )
+        self.assertRegex(fields["error_fingerprint"], r"^[0-9a-f]{24}$")
 
     def test_masking_failure_fails_closed_instead_of_raw_text(self) -> None:
         try:

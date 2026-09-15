@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from enum import Enum
 import re
-from typing import Any
+from typing import Any, TypeVar
+
+from pydantic import BaseModel
 
 from core.masking import MaskingPath, MaskingPolicy, MaskingSink, mask_payload
 
@@ -37,6 +39,13 @@ class ModelOutputBlockedError(ValueError):
     def __init__(self, message: str, *, reason_code: str = "DATA_POLICY_BLOCKED") -> None:
         super().__init__(message)
         self.reason_code = reason_code
+
+
+class StructuredModelOutputError(RuntimeError):
+    """Raised after bounded structured-output attempts are exhausted."""
+
+
+StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
 
 _ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
@@ -139,6 +148,58 @@ def secure_invoke(
     result = runnable.invoke(safe_messages)
     _block_forbidden_output(result)
     return result
+
+
+def secure_structured_invoke(
+    model: Any,
+    schema: type[StructuredModel],
+    messages: Sequence[Any],
+    *,
+    purpose: ModelPurpose,
+    sensitive_payload: Any | None = None,
+    max_attempts: int = 2,
+) -> StructuredModel:
+    """Invoke a provider-enforced schema with one bounded retry by default.
+
+    The provider adapter owns JSON/tool-call parsing. Every returned value is
+    validated again with Pydantic so markdown fences, explanatory prose,
+    missing fields, and invalid enum values never reach planner/router policy.
+    Model calls are read-only, so retrying a transient or parsing failure once
+    cannot duplicate a business side effect.
+    """
+
+    if not isinstance(schema, type) or not issubclass(schema, BaseModel):
+        raise TypeError("schema must be a pydantic BaseModel type")
+    if isinstance(max_attempts, bool) or not isinstance(max_attempts, int):
+        raise TypeError("max_attempts must be an integer")
+    if max_attempts < 1 or max_attempts > 2:
+        raise ValueError("max_attempts must be between 1 and 2")
+
+    try:
+        runnable = model.with_structured_output(schema)
+    except Exception as error:  # noqa: BLE001 - normalize provider adapters
+        raise StructuredModelOutputError(
+            "model does not support the required structured-output contract"
+        ) from error
+
+    last_error: Exception | None = None
+    for _attempt in range(max_attempts):
+        try:
+            result = secure_invoke(
+                runnable,
+                messages,
+                purpose=purpose,
+                sensitive_payload=sensitive_payload,
+            )
+            if isinstance(result, schema):
+                return result
+            return schema.model_validate(result)
+        except Exception as error:  # noqa: BLE001 - bounded model retry
+            last_error = error
+
+    raise StructuredModelOutputError(
+        "model did not return a valid structured response"
+    ) from last_error
 
 
 async def secure_ainvoke(
