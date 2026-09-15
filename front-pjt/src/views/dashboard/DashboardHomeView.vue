@@ -130,7 +130,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useReportStore } from '@/stores/report'
 
 import RetirementScoreCard from '@/components/dashboard/RetirementScoreCard.vue'
@@ -142,10 +142,6 @@ import CashFlowBarEcharts from '@/components/charts/CashFlowBarEcharts.vue'
 const reportStore = useReportStore()
 const selectedPeriod = ref(reportStore.periods[reportStore.periods.length - 1])
 const selectedCashflowPeriod = ref(reportStore.periods[reportStore.periods.length - 1])
-
-onMounted(() => {
-  reportStore.loadLatestReports()
-})
 
 const currentData = computed(() => reportStore.dashboardOverview(selectedPeriod.value))
 const currentCashflow = computed(() => reportStore.dashboardCashflow(selectedCashflowPeriod.value))

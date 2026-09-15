@@ -13,7 +13,7 @@ RabbitMQ 작업 계약에서 별도로 다룬다.
 ## Browser → Django
 
 ```text
-POST /api/v2/consultations/{session_id}/messages/stream/
+POST /api/consulting/v2/consultations/{session_id}/messages/stream/
 Authorization: Bearer <user-jwt>
 Idempotency-Key: <client-generated-uuid>
 Accept: text/event-stream
@@ -48,7 +48,7 @@ envelope와 적절한 HTTP status를 반환한다.
 ## Django → AI
 
 ```text
-POST /v2/chat/stream
+POST /api/ai/v2/chat/stream
 Authorization: Bearer <AI_SERVICE_BEARER_TOKEN>
 Accept: text/event-stream
 Content-Type: application/json

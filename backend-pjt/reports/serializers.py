@@ -17,7 +17,7 @@ class ReportBaseSerializer(serializers.ModelSerializer):
         model = Report
 
 
-# 보고서 목록 조회 — content 제외
+# Dashboard와 Presentation이 한 번의 인증된 조회로 같은 결과 집합을 소비한다.
 class ReportListSerializer(ReportBaseSerializer):
 
     class Meta(ReportBaseSerializer.Meta):
@@ -30,6 +30,7 @@ class ReportListSerializer(ReportBaseSerializer):
             'is_latest',
             'status',
             'status_display',
+            'content',
             'pdf_url',
             'generated_at',
             'created_at',

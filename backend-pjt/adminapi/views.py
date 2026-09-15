@@ -33,7 +33,7 @@ EQUALITY_FILTERS = {
 
 
 class AdminAPIView(APIView):
-    """/api/v1/admin/* 공통 베이스 — is_staff가 아니면 403 (NFR-01).
+    """/api/admin/v1/* 공통 베이스 — is_staff가 아니면 403 (NFR-01).
 
     v1 관리자 API는 조회 전용이므로 하위 뷰는 GET만 구현한다 (NFR-05).
     """

@@ -15,8 +15,10 @@ class SSEV2ContractTests(unittest.TestCase):
         cls.contract = json.loads(FIXTURE.read_text(encoding="utf-8"))
 
     def test_browser_and_ai_endpoints_are_v2_streams(self) -> None:
-        self.assertTrue(self.contract["browser_endpoint"].startswith("/api/v2/"))
-        self.assertEqual(self.contract["ai_endpoint"], "/v2/chat/stream")
+        self.assertTrue(
+            self.contract["browser_endpoint"].startswith("/api/consulting/v2/")
+        )
+        self.assertEqual(self.contract["ai_endpoint"], "/api/ai/v2/chat/stream")
         self.assertEqual(self.contract["content_type"], "text/event-stream")
 
     def test_event_state_machine_has_one_terminal_event(self) -> None:

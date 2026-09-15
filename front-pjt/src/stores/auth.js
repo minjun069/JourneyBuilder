@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import api from '@/api'
+import { authApi } from '@/api'
 
 const ACCESS_KEY  = 'access_token'
 const REFRESH_KEY = 'refresh_token'
@@ -18,7 +18,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   // FR-01: 로그인 직후·앱 부팅 시 프로필을 조회해 PB 여부를 판단한다
   async function fetchMe() {
-    const { data } = await api.get('/auth/me/')
+    const { data } = await authApi.get('/me/')
     user.value = data
     return data
   }
@@ -49,7 +49,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(email, password) {
-    const { data } = await api.post('/auth/login/', { email, password })
+    const { data } = await authApi.post('/login/', { email, password })
     setTokens(data.access, data.refresh)
     try {
       await fetchMe()
@@ -59,13 +59,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function register(payload) {
-    await api.post('/auth/register/', payload)
+    await authApi.post('/register/', payload)
   }
 
   async function logout() {
     try {
       if (refreshToken.value) {
-        await api.post('/auth/logout/', { refresh: refreshToken.value })
+        await authApi.post('/logout/', { refresh: refreshToken.value })
       }
     } finally {
       clearTokens()

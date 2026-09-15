@@ -48,6 +48,7 @@ EXPECTED_STEP_IDS = {
     "financial-goal-result",
     "retirement-fund",
     "retirement-readiness",
+    "retirement-simulation",
     "pension-schedule",
     "lifetime-cashflow",
     "required-savings",
@@ -76,7 +77,7 @@ class RouterEvaluationFixtureTests(unittest.TestCase):
             math.ceil(len(self.cases) * self.fixture["accuracy_threshold"]),
         )
 
-    def test_step_registry_has_all_23_unique_steps(self) -> None:
+    def test_step_registry_has_all_24_unique_steps(self) -> None:
         self.assertEqual(set(self.step_candidates), EXPECTED_STEP_IDS)
         for step_id, candidates in self.step_candidates.items():
             with self.subTest(step_id=step_id):

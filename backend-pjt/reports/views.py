@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from consulting.models import ConsultingSession
 from .models import Report
 from .serializers import ReportSerializer, ReportListSerializer
-from .services import generate_sync_report
+from .services import generate_presentation_reports, generate_sync_report
 
 
 
@@ -52,7 +52,7 @@ class ReportListView(SessionMixin, APIView):
     # 로그인 필수
     permission_classes = [IsAuthenticated]
 
-    # GET /api/v1/consultations/{id}/reports/
+    # GET /api/reports/v1/consultations/{id}/reports/
     # : 세션의 전체 보고서 목록 (최신 버전만)
     def get(self, request, session_id):
         session = self.get_session(session_id, request.user)
@@ -66,6 +66,22 @@ class ReportListView(SessionMixin, APIView):
 
         serializer = ReportListSerializer(reports, many=True)
         return Response({'success': True, 'data': serializer.data})
+
+    def post(self, request, session_id):
+        session = self.get_session(session_id, request.user)
+        if not session:
+            return self.session_not_found_response()
+
+        blocked_response = self.require_completed_session_response(session, '생성')
+        if blocked_response:
+            return blocked_response
+
+        reports = generate_presentation_reports(session)
+        serializer = ReportListSerializer(reports, many=True)
+        return Response(
+            {'success': True, 'data': serializer.data},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 # 보고서 상세/생성 공통 엔드포인트

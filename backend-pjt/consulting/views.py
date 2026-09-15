@@ -117,7 +117,7 @@ class MessageListView(APIView):
 class BasicInfoView(APIView):
     permission_classes = [IsAuthenticated]
 
-    # GET /api/v1/consultations/{session_id}/financial-data/basic-info/
+    # GET /api/consulting/v1/consultations/{session_id}/data/basic-info/
     def get(self, request, session_id):
         session = get_session_or_404(session_id, request.user)
         if not session:
@@ -130,7 +130,7 @@ class BasicInfoView(APIView):
 
         return Response({'success': True, 'data': BasicInfoSerializer(basic_info).data})
 
-    # PUT /api/v1/consultations/{session_id}/financial-data/basic-info/
+    # PUT /api/consulting/v1/consultations/{session_id}/data/basic-info/
     def put(self, request, session_id):
         session = get_session_or_404(session_id, request.user)
         if not session:

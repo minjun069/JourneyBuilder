@@ -56,6 +56,6 @@ class V2AISSEConsumerContractTests(TestCase):
         self.assertIn("POST /v2/chat", removed)
         self.assertIn("POST /api/v2/internal/ai/callback/", removed)
         self.assertIn(
-            "GET /api/v2/consultations/{session_id}/ai-responses/{request_id}/",
+            "GET /api/consulting/v2/consultations/{session_id}/ai-responses/{request_id}/",
             removed,
         )

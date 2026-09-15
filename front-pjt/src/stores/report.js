@@ -1,16 +1,33 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getSessions } from '@/api/consulting'
-import { getReports } from '@/api/reports'
-import { MOCK_PRESENTATION_DATA } from '@/mock/aiData'
+import { createReports, getReports } from '@/api/reports'
+import {
+  runBaselineSimulation as requestBaselineSimulation,
+  runWhatIfSimulation as requestWhatIfSimulation,
+} from '@/api/simulations'
 import { PERIODS, periodData, monthlyHistory } from '@/mock/dashboardData'
 import {
   buildDashboardCashflow,
   buildDashboardOverview,
   normalizePresentationData,
 } from '@/utils/reportData'
+import {
+  normalizeSimulationError,
+  normalizeSimulationResponse,
+} from '@/utils/simulationData'
 
-const DEVELOPMENT_CACHE_KEY = 'development'
+const PRESENTATION_REPORT_TYPES = [
+  'asset_statement',
+  'cash_flow',
+  'financial-indicators',
+  'financial-goal-result',
+  'retirement-fund',
+  'retirement-readiness',
+  'pension-schedule',
+  'lifetime-cashflow',
+  'required-savings',
+]
 
 function reportCacheKey(sessionId) {
   return `session:${sessionId}`
@@ -18,31 +35,50 @@ function reportCacheKey(sessionId) {
 
 function mapReports(rows) {
   const mapped = {}
-  for (const report of rows ?? []) {
-    mapped[report.report_type] = report.content
-  }
+  for (const report of rows ?? []) mapped[report.report_type] = report.content
   return normalizePresentationData(mapped)
+}
+
+function latestReadySession(rows) {
+  return (rows ?? []).find((session) => (
+    session?.is_ready_for_reports === true && session.status !== 'abandoned'
+  )) ?? null
 }
 
 export const useReportStore = defineStore('report', () => {
   const reportsBySession = ref({})
-  const activeCacheKey = ref(null)
+  const simulationsBySession = ref({})
+  const simulationErrorsBySession = ref({})
+  const activeSessionId = ref(null)
   const loadingKeys = ref([])
+  const simulationLoadingKeys = ref([])
   const error = ref(null)
-  const inFlight = new Map()
+  const reportInFlight = new Map()
+  const reportGenerationInFlight = new Map()
+  const simulationInFlight = new Map()
+  const latestSimulationRequest = new Map()
   let cacheGeneration = 0
   let requestSequence = 0
 
-  const reports = computed(() => {
-    if (!activeCacheKey.value) return null
-    return reportsBySession.value[activeCacheKey.value] ?? null
-  })
+  const activeCacheKey = computed(() => (
+    activeSessionId.value ? reportCacheKey(activeSessionId.value) : null
+  ))
+  const reports = computed(() => (
+    activeCacheKey.value ? reportsBySession.value[activeCacheKey.value] ?? null : null
+  ))
+  const simulation = computed(() => (
+    activeCacheKey.value ? simulationsBySession.value[activeCacheKey.value] ?? null : null
+  ))
+  const simulationError = computed(() => (
+    activeCacheKey.value ? simulationErrorsBySession.value[activeCacheKey.value] ?? null : null
+  ))
   const loading = computed(() => loadingKeys.value.length > 0)
+  const simulationLoading = computed(() => simulationLoadingKeys.value.length > 0)
 
-  function setLoading(key, value) {
-    loadingKeys.value = value
-      ? [...new Set([...loadingKeys.value, key])]
-      : loadingKeys.value.filter((loadingKey) => loadingKey !== key)
+  function setLoading(collection, key, value) {
+    collection.value = value
+      ? [...new Set([...collection.value, key])]
+      : collection.value.filter((loadingKey) => loadingKey !== key)
   }
 
   function readCached(key) {
@@ -51,71 +87,229 @@ export const useReportStore = defineStore('report', () => {
       : undefined
   }
 
-  function writeCached(key, value) {
+  function writeReports(key, value) {
     reportsBySession.value = { ...reportsBySession.value, [key]: value }
   }
 
-  async function loadReports(sessionId, { force = false } = {}) {
-    const key = import.meta.env.DEV ? DEVELOPMENT_CACHE_KEY : reportCacheKey(sessionId)
-    activeCacheKey.value = key
-    error.value = null
+  function writeSimulation(key, value) {
+    simulationsBySession.value = { ...simulationsBySession.value, [key]: value }
+  }
 
-    const cached = readCached(key)
-    if (!force && cached !== undefined) return cached
-    if (!import.meta.env.DEV && !sessionId) {
-      activeCacheKey.value = null
+  function writeSimulationError(key, value) {
+    simulationErrorsBySession.value = {
+      ...simulationErrorsBySession.value,
+      [key]: value,
+    }
+  }
+
+  async function loadReports(sessionId, { force = false } = {}) {
+    if (!sessionId) {
+      activeSessionId.value = null
       return null
     }
 
-    if (inFlight.has(key)) return inFlight.get(key)
+    activeSessionId.value = sessionId
+    const key = reportCacheKey(sessionId)
+    error.value = null
+    const cached = readCached(key)
+    if (!force && cached !== undefined) return cached
+    if (reportInFlight.has(key)) return reportInFlight.get(key)
 
     const generation = cacheGeneration
-    const loadingToken = `${key}:${++requestSequence}`
+    const loadingToken = `${key}:load:${++requestSequence}`
     const request = Promise.resolve().then(async () => {
-      setLoading(loadingToken, true)
+      setLoading(loadingKeys, loadingToken, true)
       try {
-        const normalized = import.meta.env.DEV
-          ? normalizePresentationData(MOCK_PRESENTATION_DATA)
-          : mapReports((await getReports(sessionId)).data?.data)
-
-        if (generation === cacheGeneration) writeCached(key, normalized)
+        const normalized = mapReports((await getReports(sessionId)).data?.data)
+        if (generation === cacheGeneration) writeReports(key, normalized)
         return normalized
       } catch (requestError) {
-        if (generation === cacheGeneration && activeCacheKey.value === key) {
-          error.value = requestError
-        }
+        if (generation === cacheGeneration && activeCacheKey.value === key) error.value = requestError
         return null
       } finally {
-        setLoading(loadingToken, false)
-        if (inFlight.get(key) === request) inFlight.delete(key)
+        setLoading(loadingKeys, loadingToken, false)
+        if (reportInFlight.get(key) === request) reportInFlight.delete(key)
       }
     })
 
-    inFlight.set(key, request)
+    reportInFlight.set(key, request)
     return request
   }
 
-  async function loadLatestReports(options) {
-    if (import.meta.env.DEV) return loadReports(null, options)
-    if (!options?.force && reports.value) return reports.value
+  async function generateReports(sessionId) {
+    if (!sessionId) return null
+    activeSessionId.value = sessionId
+    const key = reportCacheKey(sessionId)
+    if (reportGenerationInFlight.has(key)) return reportGenerationInFlight.get(key)
 
-    const loadingToken = `latest-session:${++requestSequence}`
-    setLoading(loadingToken, true)
+    const generation = cacheGeneration
+    const loadingToken = `${key}:generate:${++requestSequence}`
     error.value = null
+    const request = Promise.resolve().then(async () => {
+      setLoading(loadingKeys, loadingToken, true)
+      try {
+        const normalized = mapReports((await createReports(sessionId)).data?.data)
+        if (generation === cacheGeneration) writeReports(key, normalized)
+        return normalized
+      } catch (requestError) {
+        if (generation === cacheGeneration && activeCacheKey.value === key) error.value = requestError
+        return null
+      } finally {
+        setLoading(loadingKeys, loadingToken, false)
+        if (reportGenerationInFlight.get(key) === request) {
+          reportGenerationInFlight.delete(key)
+        }
+      }
+    })
+
+    reportGenerationInFlight.set(key, request)
+    return request
+  }
+
+  async function ensureReports(sessionId) {
+    const current = await loadReports(sessionId, { force: true })
+    if (PRESENTATION_REPORT_TYPES.every((reportType) => current?.[reportType])) return current
+    return generateReports(sessionId)
+  }
+
+  async function resolveLatestReadySession() {
+    const { data } = await getSessions()
+    return latestReadySession(data.data)
+  }
+
+  async function loadLatestReports(options) {
+    if (!options?.force && reports.value) return reports.value
+    const loadingToken = `latest-session:${++requestSequence}`
+    setLoading(loadingKeys, loadingToken, true)
+    error.value = null
+    const generation = cacheGeneration
     try {
-      const { data } = await getSessions()
-      const latest = data.data?.[0]
+      const latest = await resolveLatestReadySession()
+      if (generation !== cacheGeneration) return null
       if (!latest) {
-        activeCacheKey.value = null
+        activeSessionId.value = null
         return null
       }
       return loadReports(latest.id, options)
     } catch (requestError) {
-      activeCacheKey.value = null
+      activeSessionId.value = null
       error.value = requestError
       return null
     } finally {
-      setLoading(loadingToken, false)
+      setLoading(loadingKeys, loadingToken, false)
+    }
+  }
+
+  async function runBaselineSimulation(sessionId = activeSessionId.value) {
+    if (!sessionId) return null
+    activeSessionId.value = sessionId
+    const key = reportCacheKey(sessionId)
+    const inFlightKey = `${key}:baseline`
+    if (simulationInFlight.has(inFlightKey)) return simulationInFlight.get(inFlightKey)
+
+    const requestId = ++requestSequence
+    const loadingToken = `${inFlightKey}:${requestId}`
+    const generation = cacheGeneration
+    latestSimulationRequest.set(key, requestId)
+    writeSimulationError(key, null)
+
+    const request = Promise.resolve().then(async () => {
+      setLoading(simulationLoadingKeys, loadingToken, true)
+      try {
+        const normalized = normalizeSimulationResponse(
+          (await requestBaselineSimulation(sessionId)).data,
+        )
+        if (generation === cacheGeneration && latestSimulationRequest.get(key) === requestId) {
+          writeSimulation(key, { ...normalized, stale: false })
+        }
+        return normalized
+      } catch (requestError) {
+        const normalizedError = normalizeSimulationError(requestError)
+        if (generation === cacheGeneration && latestSimulationRequest.get(key) === requestId) {
+          writeSimulationError(key, normalizedError)
+        }
+        return null
+      } finally {
+        setLoading(simulationLoadingKeys, loadingToken, false)
+        if (simulationInFlight.get(inFlightKey) === request) simulationInFlight.delete(inFlightKey)
+      }
+    })
+
+    simulationInFlight.set(inFlightKey, request)
+    return request
+  }
+
+  async function runWhatIfSimulation(changes, sessionId = activeSessionId.value) {
+    if (!sessionId) return null
+    activeSessionId.value = sessionId
+    const key = reportCacheKey(sessionId)
+    const baselineKey = simulationsBySession.value[key]?.baselineKey
+    if (!baselineKey) {
+      const missing = new Error('기준 시뮬레이션을 먼저 계산해 주세요.')
+      missing.code = 'BASELINE_REQUIRED'
+      missing.retryable = false
+      writeSimulationError(key, missing)
+      return null
+    }
+
+    const requestId = ++requestSequence
+    const loadingToken = `${key}:what-if:${requestId}`
+    const generation = cacheGeneration
+    latestSimulationRequest.set(key, requestId)
+    writeSimulationError(key, null)
+    setLoading(simulationLoadingKeys, loadingToken, true)
+    try {
+      const normalized = normalizeSimulationResponse(
+        (await requestWhatIfSimulation(sessionId, baselineKey, changes)).data,
+      )
+      if (generation === cacheGeneration && latestSimulationRequest.get(key) === requestId) {
+        writeSimulation(key, { ...normalized, stale: false })
+      }
+      return normalized
+    } catch (requestError) {
+      const normalizedError = normalizeSimulationError(requestError)
+      if (generation === cacheGeneration && latestSimulationRequest.get(key) === requestId) {
+        writeSimulationError(key, normalizedError)
+        if (normalizedError.code === 'BASELINE_STALE') {
+          const previous = simulationsBySession.value[key]
+          writeSimulation(key, previous ? { ...previous, baselineKey: null, stale: true } : null)
+        }
+      }
+      return null
+    } finally {
+      setLoading(simulationLoadingKeys, loadingToken, false)
+    }
+  }
+
+  async function calculatePresentation(sessionId, { regenerateReports = false } = {}) {
+    if (!sessionId) return null
+    activeSessionId.value = sessionId
+    const [reportResult, simulationResult] = await Promise.all([
+      regenerateReports ? generateReports(sessionId) : ensureReports(sessionId),
+      runBaselineSimulation(sessionId),
+    ])
+    return { reports: reportResult, simulation: simulationResult }
+  }
+
+  async function loadLatestPresentation() {
+    const loadingToken = `latest-presentation:${++requestSequence}`
+    setLoading(loadingKeys, loadingToken, true)
+    error.value = null
+    const generation = cacheGeneration
+    try {
+      const latest = await resolveLatestReadySession()
+      if (generation !== cacheGeneration) return null
+      if (!latest) {
+        activeSessionId.value = null
+        return null
+      }
+      return calculatePresentation(latest.id)
+    } catch (requestError) {
+      activeSessionId.value = null
+      error.value = requestError
+      return null
+    } finally {
+      setLoading(loadingKeys, loadingToken, false)
     }
   }
 
@@ -131,27 +325,55 @@ export const useReportStore = defineStore('report', () => {
     return buildDashboardCashflow(reports.value, PERIODS, monthlyHistory, period)
   }
 
+  function invalidateSimulation(sessionId = activeSessionId.value) {
+    if (!sessionId) return
+    const key = reportCacheKey(sessionId)
+    if (simulationsBySession.value[key]) {
+      writeSimulation(key, {
+        ...simulationsBySession.value[key],
+        baselineKey: null,
+        stale: true,
+      })
+    }
+  }
+
   function clearActiveReport() {
-    activeCacheKey.value = null
+    activeSessionId.value = null
     error.value = null
   }
 
   function clearReports() {
     cacheGeneration += 1
     reportsBySession.value = {}
-    activeCacheKey.value = null
+    simulationsBySession.value = {}
+    simulationErrorsBySession.value = {}
+    activeSessionId.value = null
     loadingKeys.value = []
+    simulationLoadingKeys.value = []
     error.value = null
-    inFlight.clear()
+    reportInFlight.clear()
+    reportGenerationInFlight.clear()
+    simulationInFlight.clear()
+    latestSimulationRequest.clear()
   }
 
   return {
     reports,
+    simulation,
     loading,
+    simulationLoading,
     error,
+    simulationError,
+    activeSessionId,
     periods: PERIODS,
     loadReports,
     loadLatestReports,
+    generateReports,
+    calculatePresentation,
+    loadLatestPresentation,
+    runBaselineSimulation,
+    runWhatIfSimulation,
+    invalidateSimulation,
     hasReport,
     dashboardOverview,
     dashboardCashflow,

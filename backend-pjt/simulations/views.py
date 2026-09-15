@@ -1,6 +1,6 @@
 """기준 시뮬레이션 실행 API (S15P21B109-137).
 
-POST /api/v1/consultations/<id>/simulations/
+POST /api/simulations/v1/consultations/<id>/simulations/
 
 기준과 What-if 를 한 엔드포인트로 둔다. 모듈 진입점이 analyze_retirement() 하나이고
 mode 는 scenarios 의 공백 여부로 파생되며, What-if 응답은 같은 배치의 기준 결과를

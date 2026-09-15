@@ -40,9 +40,14 @@ test('Consultation Store가 세션·채팅·SSE·폼 저장을 소유한다', ()
   assert.doesNotMatch(consultationStoreSource, /getReports|presentationData|dashboardOverview/)
 })
 
-test('Report Store가 조회·캐시·상태·Dashboard 계산을 소유한다', () => {
+test('Report Store가 보고서와 시뮬레이션의 조회·계산·세션별 캐시를 소유한다', () => {
   assert.match(reportStoreSource, /getReports/)
+  assert.match(reportStoreSource, /runBaselineSimulation/)
+  assert.match(reportStoreSource, /runWhatIfSimulation/)
   assert.match(reportStoreSource, /reportsBySession/)
+  assert.match(reportStoreSource, /simulationsBySession/)
+  assert.match(reportStoreSource, /calculatePresentation/)
+  assert.match(reportStoreSource, /loadLatestPresentation/)
   assert.match(reportStoreSource, /const loading = computed/)
   assert.match(reportStoreSource, /function clearActiveReport/)
   assert.match(reportStoreSource, /function clearReports/)
@@ -56,6 +61,7 @@ test('Dashboard는 Report Store만 사용하고 기간은 화면 로컬 상태�
   assert.doesNotMatch(dashboardSource, /@\/stores\/(?:ai|consultation|dashboard)/)
   assert.match(dashboardSource, /const selectedPeriod = ref/)
   assert.match(dashboardSource, /const selectedCashflowPeriod = ref/)
+  assert.doesNotMatch(dashboardSource, /@\/api\/simulations/)
 })
 
 test('AI 화면만 두 Store를 조합하고 보고서 컴포넌트는 Report Store를 사용한다', () => {
@@ -63,6 +69,7 @@ test('AI 화면만 두 Store를 조합하고 보고서 컴포넌트는 Report St
   assert.match(aiChatViewSource, /@\/stores\/report/)
   assert.match(presentationSource, /@\/stores\/report/)
   assert.doesNotMatch(presentationSource, /@\/stores\/(?:ai|consultation|dashboard)/)
+  assert.doesNotMatch(presentationSource, /@\/api\/simulations/)
 })
 
 test('Admin Store가 PB 조회 데이터와 요청 상태를 소유한다', () => {

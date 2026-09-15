@@ -9,9 +9,9 @@ RUN npm ci --no-audit --no-fund
 
 COPY . .
 
-# 백엔드 라우트가 /api/v1/* 이고 프론트는 v2 를 이 값에서 파생한다(deriveV2BaseURL).
-# 즉 다른 값으로는 앱이 동작하지 않는다 — 환경별로 바꿀 설정이 아니다. 도메인 무관 상대 경로.
-ARG VITE_API_BASE_URL=/api/v1
+# 도메인 API client가 /api/{domain}/v{version}를 이 gateway root에서 조립한다.
+# 환경별로 호스트만 바뀌고 도메인·버전 경계는 각 client가 소유한다.
+ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 RUN npm run build
 

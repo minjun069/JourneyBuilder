@@ -15,6 +15,18 @@ from .calculators import (
 from .policy import active_policy_version
 from .snapshots import calculation_input_digest
 
+PRESENTATION_REPORT_TYPES = (
+    Report.ReportType.ASSET_STATEMENT,
+    Report.ReportType.CASH_FLOW,
+    Report.ReportType.FINANCIAL_INDICATORS,
+    Report.ReportType.FINANCIAL_GOAL_RESULT,
+    Report.ReportType.RETIREMENT_FUND,
+    Report.ReportType.RETIREMENT_READINESS,
+    Report.ReportType.PENSION_SCHEDULE,
+    Report.ReportType.LIFETIME_CASHFLOW,
+    Report.ReportType.REQUIRED_SAVINGS,
+)
+
 
 # 동기 보고서 생성 — 자산현황표, 현금흐름표
 def generate_sync_report(session, report_type):
@@ -27,6 +39,13 @@ def generate_sync_report(session, report_type):
         content=content,
         generated_at=now(),
     )
+
+
+@transaction.atomic
+def generate_presentation_reports(session):
+    """Generate one coherent, latest report set after collection completes."""
+
+    return [generate_sync_report(session, report_type) for report_type in PRESENTATION_REPORT_TYPES]
 
 
 def _create_new_version(session, report_type, status, content=None, generated_at=None):

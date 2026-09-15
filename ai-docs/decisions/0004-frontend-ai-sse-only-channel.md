@@ -21,7 +21,7 @@ Error Review는 형식상 유효한 draft에 대한 비차단 자문이다. 결�
 
 1. 일반 상담, Elicit `start`·`resume`·continuation, Error Review의 `save`·
    `user_request`는 모두
-   `POST /api/v2/consultations/{session_id}/messages/stream/`을 사용한다.
+   `POST /api/consulting/v2/consultations/{session_id}/messages/stream/`을 사용한다.
 2. Error Review는 `start`·`delta`를 사용자 결과로 반영하지 않고 검증된
    `done.message`의 구조화 review만 화면에 적용한다. `error`나 terminal event 없는
    EOF는 기존 비차단 저장 정책에 따라 검토 실패로 처리한다.

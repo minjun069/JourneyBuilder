@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test vite.config.test.js src/api/aiLifecycle.test.js src/api/aiLifecycleContract.test.js src/api/consultingMapping.test.js src/api/sse.test.js src/api/sseV2Contract.test.js src/stores/storeBoundaries.test.js src/utils/canonicalMoney.test.js src/utils/formActionsContract.test.js src/utils/formDecision.test.js src/utils/reportData.test.js src/utils/stepRegistryContract.test.js",
+    "test": "node --test vite.config.test.js src/api/aiLifecycle.test.js src/api/aiLifecycleContract.test.js src/api/consultingMapping.test.js src/api/domainClients.test.js src/api/simulations.test.js src/api/sse.test.js src/api/sseV2Contract.test.js src/stores/storeBoundaries.test.js src/utils/canonicalMoney.test.js src/utils/formActionsContract.test.js src/utils/formDecision.test.js src/utils/reportData.test.js src/utils/simulationData.test.js src/utils/stepRegistryContract.test.js",
     "test:e2e:f05": "playwright test --config tests/e2e/f05/playwright.config.mjs",
     "preview": "vite preview",
     "lint": "run-s lint:oxlint lint:eslint",

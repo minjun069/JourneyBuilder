@@ -17,7 +17,7 @@ Langfuse·LangSmith의 model callback tracing은 typed masking 경계를 우회�
 `requirements.txt`는 직접 의존성의 호환 범위를 사람이 관리한다. `requirements.lock`은 Python 3.13/Linux에서 해석한 직접·전이 의존성 전체와 배포 파일 hash를 고정하며 Docker와 CI가 설치한다.
 
 FastAPI는 현재 transport 구현의 기준선인 0.115 minor 범위에 유지한다. framework
-범위를 올릴 경우 `/health`, SSE request validation과 terminal 회귀검사를 먼저
+범위를 올릴 경우 `/api/system/v1/health`, SSE request validation과 terminal 회귀검사를 먼저
 통과시킨 뒤 lock을 함께 갱신한다.
 `--exclude-newer` 날짜는 의도적으로 의존성 기준 시점을 올릴 때만 변경한다.
 
@@ -42,11 +42,11 @@ uv pip compile \
 | 필수 | `DATABASE_URL` | AI startup과 readiness가 사용하는 PostgreSQL DSN |
 | 조건부 필수 | `GOOGLE_API_KEY` | `LLM_PROVIDER=gemini`일 때 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
-| startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/v2/chat/stream` request bearer로 사용 |
+| startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/api/ai/v2/chat/stream` request bearer로 사용 |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
 | 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.30 |
 | 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM`, `LANGFUSE_*` | retired 인덱스 30일 보관, embedding 차원, 관측 조정값 |
-| readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/health`, 2초 |
+| readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/api/system/v1/health`, 2초 |
 | 미래 선택 | `REDIS_URL` | 현재 AI runtime과 readiness는 사용하지 않음 |
 
 ## Container build와 실행
@@ -69,10 +69,10 @@ docker run --rm \
 
 ## Liveness와 readiness
 
-`GET /health`는 HTTP process가 응답하고 예상 payload `{"status":"ok"}`를 반환하는지 확인하는 liveness다. `readiness.py`는 컨테이너가 새 요청을 받을 조건을 다음 순서로 확인한다.
+`GET /api/system/v1/health`는 HTTP process가 응답하고 예상 payload `{"status":"ok"}`를 반환하는지 확인하는 liveness다. `readiness.py`는 컨테이너가 새 요청을 받을 조건을 다음 순서로 확인한다.
 
 1. `DATABASE_URL`과 probe 설정이 유효하다.
-2. 컨테이너 내부 `GET /health`가 200과 예상 payload를 반환한다.
+2. 컨테이너 내부 `GET /api/system/v1/health`가 200과 예상 payload를 반환한다.
 3. 현재 LangGraph checkpointer가 사용하는 PostgreSQL에서 `SELECT 1`이 성공한다.
 
 성공하면 `ready`를 출력하고 exit 0, 실패하면 예외 종류만 출력하고 exit 1을 반환한다. DSN·credential·원격 URL이 오류 출력에 포함되지 않도록 예외 메시지는 출력하지 않는다. Dockerfile의 `HEALTHCHECK`가 이 exit code를 `healthy` 또는 `unhealthy`로 변환한다.
@@ -101,7 +101,7 @@ G1은 빈 환경에서 lock 설치, PostgreSQL 기동, AI `healthy`, 종료 순�
 
 - `DATABASE_URL` 누락
 - PostgreSQL 미기동 또는 연결 끊김
-- `/health`의 비정상 status 또는 payload
+- `/api/system/v1/health`의 비정상 status 또는 payload
 - 0 이하·10초 초과·숫자가 아닌 readiness timeout
 
 ## 후속 AI transport 인수 사항
@@ -110,7 +110,7 @@ G1은 `DATABASE_URL`, provider credential과 `AI_SERVICE_BEARER_TOKEN`을 startu
 실패 폐쇄형으로 검증한다. 후속 transport 구현은 이 readiness 경계를 유지하고 다음
 항목을 자동 검사해야 한다.
 
-1. `AI_SERVICE_BEARER_TOKEN`은 `/v2/chat/stream` 인증에 연결된 rotation 가능한 secret이다.
+1. `AI_SERVICE_BEARER_TOKEN`은 `/api/ai/v2/chat/stream` 인증에 연결된 rotation 가능한 secret이다.
 2. 비스트리밍 `/v2/chat`, 구형 `/chat[/stream]`, HTTP callback 전송과 관련 환경변수는 제거됐다.
 3. startup/config 오류와 SSE 로그에 API key, bearer token, 전체 DSN을 남기지 않는다.
 4. `/ready` endpoint를 application에 추가한다면 `readiness.py`와 PostgreSQL 판정이 서로 달라지지 않게 하나를 공통 경계로 만들고 Docker healthcheck도 그 경계를 사용한다.
@@ -127,9 +127,9 @@ liveness 정상인데 PostgreSQL이 실패하는 경우를 포함한다. readine
 - `docker build --no-cache -t retirewise-ai:d2 ai-pjt`: Python 3.13.14 base image와 `pip --require-hashes` 설치를 포함한 clean build 성공
 - 격리 network와 새 `postgres:16-bookworm` container에서 PostgreSQL health 확인 후 AI 기동 성공
 - AI container: Python `3.13.14`, user `app`/effective UID `999`, host publish 없이 `8001/tcp`만 노출
-- 정상 상태: `GET /health` 200, `python readiness.py`의 출력 `ready`·exit 0, Docker 상태 `healthy`
+- 정상 상태: `GET /api/system/v1/health` 200, `python readiness.py`의 출력 `ready`·exit 0, Docker 상태 `healthy`
 - `DATABASE_URL` 누락: `not ready: ReadinessConfigurationError`·exit 1이며 credential 출력 없음
-- PostgreSQL 중단: `/health`는 계속 200이지만 readiness는 `not ready: OperationalError`·exit 1, healthcheck 실패 3회 뒤 Docker 상태 `unhealthy`
+- PostgreSQL 중단: `/api/system/v1/health`는 계속 200이지만 readiness는 `not ready: OperationalError`·exit 1, healthcheck 실패 3회 뒤 Docker 상태 `unhealthy`
 - 검증용 container와 network는 결과 확인 뒤 제거
 
 이 P01 결과는 AI image와 PostgreSQL에 한정된 역사적 기록이다. G1에서 실제 Compose

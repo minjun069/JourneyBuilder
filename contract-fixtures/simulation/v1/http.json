@@ -1,0 +1,29 @@
+{
+  "domain": "simulations",
+  "api_version": "v1",
+  "error_schema_version": "simulation-error-v1",
+  "endpoint": "/api/simulations/v1/consultations/{session_id}/simulations/",
+  "method": "POST",
+  "persistence": "none",
+  "request_modes": ["baseline", "what_if"],
+  "supported_changes": [
+    "monthly_savings",
+    "retirement_age",
+    "retirement_expenses"
+  ],
+  "success_envelope": {
+    "required_top_level": ["success", "data", "meta"],
+    "required_data": ["baseline_key", "analysis"],
+    "required_meta": [
+      "simulation_policy_version",
+      "package_version",
+      "executed_at",
+      "elapsed_ms"
+    ]
+  },
+  "error_envelope": {
+    "required_top_level": ["success", "error"],
+    "required_error": ["code", "message", "retryable"],
+    "optional_error": ["details"]
+  }
+}

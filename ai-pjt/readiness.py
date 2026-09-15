@@ -16,7 +16,7 @@ from typing import Any
 from urllib.request import urlopen
 
 
-DEFAULT_HTTP_URL = "http://127.0.0.1:8001/health"
+DEFAULT_HTTP_URL = "http://127.0.0.1:8001/api/system/v1/health"
 DEFAULT_TIMEOUT_SECONDS = 2.0
 MAX_TIMEOUT_SECONDS = 10.0
 

@@ -22,9 +22,7 @@ _ALLOWED_EVENTS = {'start', 'delta', 'done', 'error'}
 
 def ai_v2_stream_url():
     base = settings.AI_SERVICE_URL.rstrip('/')
-    if base.endswith('/chat'):
-        base = base[:-5]
-    return f'{base}/v2/chat/stream'
+    return f'{base}/api/ai/v2/chat/stream'
 
 
 async def stream_v2_ai_response(payload):

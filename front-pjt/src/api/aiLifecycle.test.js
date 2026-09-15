@@ -6,12 +6,10 @@ import {
   deriveV2BaseURL,
 } from './aiLifecycle.js'
 
-test('v1 또는 gateway base URL을 frozen v2 경로로 바꾼다', () => {
-  assert.equal(deriveV2BaseURL('/api/v1'), '/api/v2')
-  assert.equal(deriveV2BaseURL('/api'), '/api/v2')
-  assert.equal(deriveV2BaseURL('/api/v2'), '/api/v2')
-  assert.equal(deriveV2BaseURL('https://example.test/api/v1/'), 'https://example.test/api/v2')
-  assert.equal(deriveV2BaseURL(undefined), '/api/v2')
+test('gateway root를 consulting 도메인의 frozen v2 경로로 바꾼다', () => {
+  assert.equal(deriveV2BaseURL('/api'), '/api/consulting/v2')
+  assert.equal(deriveV2BaseURL('https://example.test/api/'), 'https://example.test/api/consulting/v2')
+  assert.equal(deriveV2BaseURL(undefined), '/api/consulting/v2')
 })
 
 test('브라우저 요청마다 UUID idempotency key를 만든다', () => {

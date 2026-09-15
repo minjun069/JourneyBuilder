@@ -8,7 +8,7 @@ contract-fixtures/ai-lifecycle/v2 로 동결된 AI 라이프사이클 계약이�
 응답에 그 버전을 박으면 계산 계약이 AI 계약 버전에 묶인다. 모듈 인수인계 문서도
 "기존 채팅 오류 코드나 timeout 을 새 계산 계약에 임의로 재사용하지 않는다" 고 못박았다.
 
-봉투는 /api/v1 계열(success/data/error)을 따르되 error 를 객체로 둔다. 문자열 error 는
+봉투는 Simulation 도메인 v1(success/data/error)을 따르되 error 를 객체로 둔다. 문자열 error 는
 기계가 판별할 수 없다 — reports 의 session_not_found_response() 를 재사용하지 않는 이유다.
 """
 

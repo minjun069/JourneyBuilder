@@ -18,6 +18,7 @@ const routes = [
       { path: 'cashflow', component: () => import('@/views/dashboard/CashFlowView.vue') },
       { path: 'goals',    component: () => import('@/views/dashboard/FinancialGoalView.vue') },
       { path: 'lifetime', component: () => import('@/views/dashboard/LifetimeCashFlowView.vue') },
+      { path: 'simulation', component: () => import('@/views/dashboard/SimulationView.vue') },
       { path: 'report',   component: () => import('@/views/dashboard/ReportView.vue') },
     ],
   },
