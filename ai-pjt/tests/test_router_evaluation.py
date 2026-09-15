@@ -70,8 +70,8 @@ class RouterEvaluationFixtureTests(unittest.TestCase):
             "contract-fixtures/ai-lifecycle/v2/step-registry.json",
         )
         self.assertEqual(self.fixture["accuracy_threshold"], 0.95)
-        self.assertEqual(len(self.cases), 60)
-        self.assertEqual(self.fixture["minimum_correct"], 57)
+        self.assertEqual(len(self.cases), 62)
+        self.assertEqual(self.fixture["minimum_correct"], 59)
         self.assertEqual(
             self.fixture["minimum_correct"],
             math.ceil(len(self.cases) * self.fixture["accuracy_threshold"]),
@@ -114,6 +114,20 @@ class RouterEvaluationFixtureTests(unittest.TestCase):
         for agent in EXPECTED_AGENTS:
             with self.subTest(agent=agent):
                 self.assertGreater(route_counts[agent], 0)
+
+    def test_reported_explanation_questions_are_frozen_as_qa_regressions(self) -> None:
+        by_message = {case["message"]: case for case in self.cases}
+        for message in (
+            "단기 지향이면 어느정도 기간을 말하지?",
+            "안정추구란 정확히 뭘 말하는거야?",
+        ):
+            with self.subTest(message=message):
+                case = by_message[message]
+                self.assertEqual(case["step_id"], "basic-info")
+                self.assertEqual(
+                    case["expected"],
+                    {"agent": "qa", "reason_code": "intent_match"},
+                )
 
     def test_success_routes_obey_step_allowlist(self) -> None:
         for case in self.cases:

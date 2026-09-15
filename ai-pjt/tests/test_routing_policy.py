@@ -96,6 +96,26 @@ class ProductionRoutingPolicyTests(unittest.TestCase):
         self.assertEqual(decision["executor"], "fallback")
         self.assertEqual(decision["reason_code"], "plan_invalid")
 
+    def test_known_task_type_recovers_from_classifier_failure(self) -> None:
+        diagnostics: list[dict[str, str]] = []
+        decision = select_route(
+            task={
+                "id": "task-1",
+                "type": "answer_question",
+                "description": "안정추구란 정확히 뭘 말하는거야?",
+                "executor_kind": "agent",
+            },
+            step_id="basic-info",
+            step_candidates=self.step_candidates,
+            classifier=FakeClassifier({"status": "error"}),
+            diagnostic_sink=diagnostics.append,
+        )
+
+        self.assertEqual(decision["executor"], "qa")
+        self.assertEqual(decision["reason_code"], "intent_match")
+        self.assertEqual(diagnostics[0]["error_type"], "RuntimeError")
+        self.assertRegex(diagnostics[0]["error_fingerprint"], r"^[0-9a-f]{24}$")
+
 
 if __name__ == "__main__":
     unittest.main()

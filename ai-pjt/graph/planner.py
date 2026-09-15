@@ -3,14 +3,25 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from core.context import ContextWindow
-from core.model_boundary import ModelPurpose, secure_invoke, secure_system_prompt
+from core.model_boundary import (
+    ModelPurpose,
+    secure_structured_invoke,
+    secure_system_prompt,
+)
+from core.observability_masking import (
+    exception_identity_fields,
+    masked_exception_fields,
+)
 from core.step_registry import load_step_candidates
 from graph.router import TaskClassifier, select_route
 from tools.financial_policy import REFERENCE_VALUE_INPUT_SCHEMA
@@ -22,6 +33,7 @@ PLAN_SCHEMA_VERSION = "1.0"
 HOUSEHOLD_WRITABLE_REFERENCE_PREFIX = "household_monthly_expense_"
 
 TaskPlanner = Callable[..., Mapping[str, Any]]
+logger = logging.getLogger(__name__)
 
 
 TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -222,7 +234,7 @@ FORBIDDEN_PLANNER_FIELDS = {
 
 PLANNER_PROMPT = secure_system_prompt("""\
 사용자 메시지를 실행 가능한 task plan으로 분해하세요.
-반드시 {{"tasks": [...]}} JSON object만 반환하세요.
+지정된 구조화 출력 스키마에 맞는 {{"tasks": [...]}} object를 반환하세요.
 
 제약:
 - task는 1개 이상 {max_tasks}개 이하
@@ -232,6 +244,9 @@ PLANNER_PROMPT = secure_system_prompt("""\
 - depends_on은 반드시 앞에 선언한 task만 참조
 - 선행 결과 사용은 bindings의 task_id와 path로 명시
 - 실행 결과 값, Agent 이름, 도구 handler 이름은 생성하지 않음
+- 용어의 뜻·기준·기간·선택지 설명만 묻는 요청은 answer_question 하나로 계획
+- 예: "단기 지향이면 어느정도 기간을 말하지?", "안정추구란 정확히 뭘 말하는거야?"
+  는 모두 answer_question 하나이며 입력 변경 task가 아님
 
 각 task의 허용 field:
 - id: plan 안에서만 쓰는 고유 문자열
@@ -253,6 +268,30 @@ PLANNER_PROMPT = secure_system_prompt("""\
 """)
 
 
+class PlannerBindingOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    path: str
+
+
+class PlannerTaskOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    type: str
+    description: str
+    depends_on: list[str] = Field(default_factory=list)
+    bindings: dict[str, PlannerBindingOutput] = Field(default_factory=dict)
+    arguments: dict[str, Any] | None = None
+
+
+class PlannerModelOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tasks: list[PlannerTaskOutput]
+
+
 @dataclass(frozen=True)
 class PlanIssue:
     code: str
@@ -268,6 +307,7 @@ class RoutePlanValidation:
     valid: bool
     plan: dict[str, Any]
     issues: tuple[PlanIssue, ...]
+    diagnostics: tuple[dict[str, str], ...] = ()
 
 
 def context_window_payload(window: ContextWindow) -> dict[str, Any]:
@@ -616,29 +656,87 @@ def create_route_plan(
     """Plan with bounded context, validate, then route every canonical task."""
 
     context = context_window_payload(context_window)
+    diagnostics: list[dict[str, str]] = []
     try:
         raw_plan = planner(message=message, step_id=step_id, context=context)
-    except Exception:
-        return _invalid_plan([
-            _issue("PLANNER_ERROR", "plan", "planner가 실행 계획을 만들지 못했습니다.")
-        ])
+    except Exception as error:
+        diagnostic = {
+            "component": "planner",
+            **exception_identity_fields(error),
+        }
+        logger.error(
+            "planner model adapter raised",
+            extra={
+                "event": "planner_error",
+                "detail": masked_exception_fields(
+                    error,
+                    step_id=step_id,
+                ),
+            },
+        )
+        if not _looks_like_explanatory_question(message):
+            return _invalid_plan(
+                [
+                    _issue(
+                        "PLANNER_ERROR",
+                        "plan",
+                        "planner가 실행 계획을 만들지 못했습니다.",
+                    )
+                ],
+                diagnostics=(diagnostic,),
+            )
+        diagnostic["recovery"] = "single_qa_plan"
+        diagnostics.append(diagnostic)
+        raw_plan = {
+            "tasks": [{
+                "id": "answer",
+                "type": "answer_question",
+                "description": message,
+                "depends_on": [],
+                "bindings": {},
+            }],
+        }
 
     validation = validate_route_plan(raw_plan, step_id=step_id)
     if not validation.valid:
-        return validation
+        return RoutePlanValidation(
+            valid=False,
+            plan=validation.plan,
+            issues=validation.issues,
+            diagnostics=tuple(diagnostics),
+        )
 
     active_candidates = step_candidates or load_step_candidates()
     planned = deepcopy(validation.plan)
     planned["plan_id"] = plan_id or f"plan-{uuid4()}"
     for task in planned["tasks"]:
+        task_id = str(task.get("id", "task-unknown"))
+
+        def collect_router_diagnostic(
+            diagnostic: Mapping[str, str],
+            *,
+            current_task_id: str = task_id,
+        ) -> None:
+            diagnostics.append({
+                "component": "router_classifier",
+                "task_id": current_task_id,
+                **dict(diagnostic),
+            })
+
         task["route"] = select_route(
             task=task,
             step_id=step_id,
             step_candidates=active_candidates,
             classifier=classifier,
             registered_tool_capabilities=registered_tool_capabilities,
+            diagnostic_sink=collect_router_diagnostic,
         )
-    return RoutePlanValidation(valid=True, plan=planned, issues=())
+    return RoutePlanValidation(
+        valid=True,
+        plan=planned,
+        issues=(),
+        diagnostics=tuple(diagnostics),
+    )
 
 
 def plan_tasks_with_model(
@@ -660,17 +758,14 @@ def plan_tasks_with_model(
         context=json.dumps(context, ensure_ascii=False, sort_keys=True),
         message=message,
     ))
-    response = secure_invoke(
+    response = secure_structured_invoke(
         llm,
+        PlannerModelOutput,
         [system, HumanMessage(content=message)],
         purpose=ModelPurpose.PLANNER,
         sensitive_payload={"message": message, "context": dict(context)},
     )
-    content = response.content if isinstance(response.content, str) else ""
-    payload = json.loads(content)
-    if not isinstance(payload, dict):
-        raise ValueError("planner response must be an object")
-    return payload
+    return response.model_dump(mode="json", exclude_none=True)
 
 
 def binding_expectations_for(task: Mapping[str, Any]) -> Mapping[str, Mapping[str, Any]]:
@@ -680,13 +775,42 @@ def binding_expectations_for(task: Mapping[str, Any]) -> Mapping[str, Mapping[st
     return deepcopy(contract["binding_expectations"])
 
 
-def _invalid_plan(issues: list[PlanIssue]) -> RoutePlanValidation:
+def _invalid_plan(
+    issues: list[PlanIssue],
+    *,
+    diagnostics: tuple[dict[str, str], ...] = (),
+) -> RoutePlanValidation:
     return RoutePlanValidation(
         valid=False,
         plan={"schema_version": PLAN_SCHEMA_VERSION, "tasks": []},
         issues=tuple(issues),
+        diagnostics=diagnostics,
     )
 
 
 def _issue(code: str, path: str, message: str) -> PlanIssue:
     return PlanIssue(code=code, path=path, message=message)
+
+
+def _looks_like_explanatory_question(message: str) -> bool:
+    compact = message.strip().replace(" ", "")
+    if not compact:
+        return False
+    return (
+        "?" in compact
+        or compact.endswith(
+            (
+                "뭐야",
+                "무엇인가요",
+                "뜻이야",
+                "말하는거야",
+                "인가요",
+                "나요",
+                "까요",
+            )
+        )
+        or any(
+            token in compact
+            for token in ("설명해줘", "알려줘", "무슨뜻", "어느정도기간")
+        )
+    )

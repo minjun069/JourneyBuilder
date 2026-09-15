@@ -4,9 +4,11 @@ import ast
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from typing import Literal
 import unittest
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel
 
 from core.callback_masking import CallbackPayloadMasker
 from core.config import settings
@@ -17,6 +19,7 @@ from core.model_boundary import (
     mask_model_payload,
     prompt_policy_version,
     secure_invoke,
+    secure_structured_invoke,
     secure_system_prompt,
 )
 from transport.contracts import CompletedCallback
@@ -36,6 +39,35 @@ class FakeModel:
         return AIMessage(content=self.content)
 
 
+class StructuredAnswer(BaseModel):
+    status: Literal["matched"]
+    agent: Literal["qa"]
+
+
+class FakeStructuredRunnable:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def invoke(self, _messages: list[object]) -> dict:
+        self.calls += 1
+        if self.calls == 1:
+            return {"status": "invalid", "agent": "qa"}
+        return {"status": "matched", "agent": "qa"}
+
+
+class FakeStructuredProvider:
+    def __init__(self) -> None:
+        self.runnable = FakeStructuredRunnable()
+        self.schema: type[BaseModel] | None = None
+
+    def with_structured_output(
+        self,
+        schema: type[BaseModel],
+    ) -> FakeStructuredRunnable:
+        self.schema = schema
+        return self.runnable
+
+
 class ModelBoundaryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.previous_key = settings.masking_pseudonym_key
@@ -47,6 +79,22 @@ class ModelBoundaryTests(unittest.TestCase):
     def test_common_prompt_has_explicit_version(self) -> None:
         self.assertEqual(prompt_policy_version, "1.0")
         self.assertIn("v1.0", DATA_HANDLING_PROMPT)
+
+    def test_structured_output_is_schema_validated_and_retried_once(self) -> None:
+        provider = FakeStructuredProvider()
+        result = secure_structured_invoke(
+            provider,
+            StructuredAnswer,
+            [SystemMessage(content=secure_system_prompt("Router 규칙"))],
+            purpose=ModelPurpose.ROUTER,
+        )
+
+        self.assertIs(provider.schema, StructuredAnswer)
+        self.assertEqual(provider.runnable.calls, 2)
+        self.assertEqual(
+            result.model_dump(),
+            {"status": "matched", "agent": "qa"},
+        )
 
     def test_direct_identifiers_never_reach_fake_model_prompt(self) -> None:
         raw = {
