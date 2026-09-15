@@ -52,7 +52,8 @@ workflow:
 test:env-contract:
   stage: test
   script:
-    - make env-contract-check
+    - python3 deploy/check_env_contract.py
+    - python3 -m unittest discover -s deploy/tests -p 'test_env_contract.py' -v
 
 # ── 산출물 정합성 게이트 (Makefile g1-foundation, g1_gate.py — 강병민 작성 2026-09-06) ──
 # AI 문서·매니페스트·RAG 해시 거버넌스를 검사한다. 작성자 개인 규율 도구 성격이라 다른 팀원의 MR 을 막지 않도록
