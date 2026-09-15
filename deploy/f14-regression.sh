@@ -34,6 +34,7 @@ f14_cleanup() {
 }
 trap f14_cleanup EXIT INT TERM
 
+bash "$f14_root/deploy/tests/test_make_env.sh"
 bash "$f14_root/deploy/tests/test_f14_config_snapshot.sh"
 
 docker build -q -f "$f14_root/ai-pjt/Dockerfile" -t "$f14_ai_image" "$f14_root"

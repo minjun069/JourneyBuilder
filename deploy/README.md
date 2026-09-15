@@ -26,6 +26,9 @@ GitLab master 머지 ──▶ EC2 gitlab-runner(shell) ──▶ docker compose
 | CI | 없음 — `.gitlab-ci.yml` 의 `ci-only-*` 더미 | 자동 | 매 실행 |
 
 `make-env.sh` 는 `.env.example` 을 복사해 필수 5개를 채운다.
+생성 시 raw LangChain tracing 값은 `LANGCHAIN_TRACING_V2=false`로 정규화하고,
+사용하지 않는 `LANGCHAIN_API_KEY` 항목은 결과 파일에서 제거한다. Compose도 같은 값을
+리터럴 `false`로 고정하며 LangChain API key를 서비스에 전달하지 않는다.
 
 | 변수 | 출처 | 바꾸면 |
 |---|---|---|
