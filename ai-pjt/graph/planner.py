@@ -291,6 +291,15 @@ class PlannerModelOutput(BaseModel):
 
     tasks: list[PlannerTaskOutput]
 
+    def to_route_plan(self) -> dict[str, Any]:
+        """Remove provider-added empty optionals before policy validation."""
+
+        payload = self.model_dump(mode="json", exclude_none=True)
+        for task in payload["tasks"]:
+            if task.get("arguments") == {}:
+                task.pop("arguments")
+        return payload
+
 
 @dataclass(frozen=True)
 class PlanIssue:
@@ -765,7 +774,7 @@ def plan_tasks_with_model(
         purpose=ModelPurpose.PLANNER,
         sensitive_payload={"message": message, "context": dict(context)},
     )
-    return response.model_dump(mode="json", exclude_none=True)
+    return response.to_route_plan()
 
 
 def binding_expectations_for(task: Mapping[str, Any]) -> Mapping[str, Mapping[str, Any]]:
