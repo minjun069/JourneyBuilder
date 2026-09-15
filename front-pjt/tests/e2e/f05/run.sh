@@ -48,6 +48,9 @@ run_scenario() (
   export DJANGO_SECRET_KEY="f05-django-${token}-safe"
   export AI_SERVICE_BEARER_TOKEN="f05-ai-${token}-safe"
   export AI_MASKING_PSEUDONYM_KEY="f05-mask-${token}-safe"
+  # 루트 Compose의 현재 고정 embedding 경계가 GMS key를 필수로 검사한다.
+  # 이 E2E는 ai-pjt를 기동하거나 외부 호출하지 않으므로 폐기 가능한 값만 넣는다.
+  export GOOGLE_API_KEY="f05-disposable-provider-${token}"
   export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
   export API_GATEWAY_PORT=0
   project="f05p07${token}"

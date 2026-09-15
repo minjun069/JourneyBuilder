@@ -43,9 +43,10 @@ uv pip compile \
 | 분류 | 변수 | 현재 판정 |
 |---|---|---|
 | 필수 | `DATABASE_URL` | AI startup과 readiness가 사용하는 PostgreSQL DSN |
-| 조건부 필수 | `GOOGLE_API_KEY` | `LLM_PROVIDER=gemini`일 때 필요 |
+| 현재 필수 | `GOOGLE_API_KEY` | Compose가 고정한 Gemini embedding과 기본 Gemini LLM에 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/api/ai/v2/chat/stream` request bearer로 사용 |
+| startup 필수 | `AI_MASKING_PSEUDONYM_KEY` | 서비스 token과 다른 32바이트 이상 가명화 secret |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
 | 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.30 |
 | 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM` | retired 인덱스 30일 보관, embedding 차원 |
@@ -53,6 +54,9 @@ uv pip compile \
 | Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT`, `LANGFUSE_RELEASE` | 환경 분리와 배포 SHA·버전 표시 |
 | readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/api/system/v1/health`, 2초 |
 | 미래 선택 | `REDIS_URL` | 현재 AI runtime과 readiness는 사용하지 않음 |
+| 운영 선택 | `LOG_LEVEL`, `RAG_SOURCE_REVISION` | 로그 수준과 indexing provenance 재정의 |
+| 개발 선택 | `STEP_REGISTRY_PATH` | bundled registry 대신 별도 fixture를 검증할 때 사용 |
+| 보안 고정 | `LANGCHAIN_TRACING_V2`, `LANGSMITH_TRACING` | raw callback tracing 요청을 startup에서 거부. Compose는 LangChain 값을 false로 고정 |
 
 ## Langfuse v4 사용
 

@@ -33,10 +33,13 @@ uv pip compile \
 | startup 필수 | `DJANGO_SECRET_KEY` | 빈 값·placeholder를 startup에서 거부하고 Django `SECRET_KEY`로 사용 |
 | 현재 사용 | `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS` | 명시적으로 파싱하고 안전한 기본값 유지 |
 | 현재 사용 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | Django `DATABASES`의 단일 입력 |
+| 격리 선택 | `POSTGRES_SCHEMA` | E2E 등 별도 PostgreSQL search path가 필요할 때만 사용 |
 | 현재 필수 | `REDIS_URL` | AI request 상태 저장과 readiness가 사용하는 Redis URL |
+| 격리 선택 | `AI_REDIS_NAMESPACE` | E2E·병렬 실행의 Redis key prefix |
 | 현재 사용 | `AI_SERVICE_URL`, `AI_SERVICE_TIMEOUT_SECONDS`, `AI_STREAM_READ_TIMEOUT_SECONDS` | Backend의 AI SSE base URL과 timeout 설정 |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 빈 값·placeholder를 거부하고 Backend→AI SSE bearer로 사용 |
 | readiness | `READINESS_HOST`, `READINESS_PORT`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `127.0.0.1:8000`, 2초 |
+| 명령 선택 | `PB_PASSWORD` | `create_pb --password`를 생략했을 때만 사용 |
 
 `config/settings.py`는 PostgreSQL과 Django secret/debug/host 설정을 환경변수에서 읽고,
 필수 secret과 boolean·숫자·host 목록을 startup에서 검증한다. host networking이나
