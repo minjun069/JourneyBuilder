@@ -327,53 +327,23 @@ async function continueConsultation() {
 }
 
 async function streamAssistantMessage(text, options) {
-  let streamedMessage = null
-
-  function ensureStreamedMessage() {
-    if (streamedMessage) return streamedMessage
-    isTyping.value = false
-    messages.value.push({
-      role: 'ai',
-      text: '',
-      displayText: '',
-      streaming: true,
-    })
-    streamedMessage = messages.value[messages.value.length - 1]
-    return streamedMessage
-  }
-
-  try {
-    for await (const { event, data } of consultationStore.streamMessageV2(text, options)) {
-      if (event === 'start') continue
-      if (event === 'delta') {
-        const message = ensureStreamedMessage()
-        message.text += data.content
-        message.displayText = message.text
-        scrollToBottom(false, true)
-        continue
-      }
-      if (event === 'error') {
-        const error = new Error(data.error.message)
-        error.code = data.error.code
-        error.retryable = data.error.retryable
-        throw error
-      }
-      if (event === 'done') {
-        const finalMessage = toChatMessage(data.message)
-        const message = ensureStreamedMessage()
-        message.text = finalMessage.text
-        message.displayText = finalMessage.text
-        message.streaming = false
-        if (finalMessage.action) message.action = finalMessage.action
-        scrollToBottom(false, true)
-        return finalMessage
-      }
+  for await (const { event, data } of consultationStore.streamMessageV2(text, options)) {
+    if (event === 'start') continue
+    if (event === 'error') {
+      const error = new Error(data.error.message)
+      error.code = data.error.code
+      error.retryable = data.error.retryable
+      throw error
     }
-    throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
-  } catch (error) {
-    if (streamedMessage) streamedMessage.streaming = false
-    throw error
+    if (event === 'done') {
+      const finalMessage = toChatMessage(data.message)
+      isTyping.value = false
+      messages.value.push(finalMessage)
+      scrollToBottom(false, true)
+      return finalMessage
+    }
   }
+  throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
 }
 
 async function sendMessage() {
