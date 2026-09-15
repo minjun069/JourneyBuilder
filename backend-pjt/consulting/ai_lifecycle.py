@@ -18,6 +18,7 @@ from .ai_services import (
     create_assistant_message_from_terminal,
     generate_request_id,
 )
+from .ai_tokenization import ReferenceTokenVault, TOKEN_VAULT_TTL_SECONDS
 from .field_registry import get_step_field_registry
 from .chart_payload import build_chart_payload
 from .tool_context import build_tool_context
@@ -313,6 +314,9 @@ class RedisLifecycleStore:
     def idempotency_key(self, user_id, session_id, key):
         return f'{self._namespace}ai:v2:idempotency:{user_id}:{session_id}:{key}'
 
+    def token_vault_key(self, request_id):
+        return f'{self._namespace}ai:v2:token-vault:{request_id}'
+
     def get_request(self, request_id):
         raw = self.client.get(self.request_key(request_id))
         return json.loads(raw) if raw else None
@@ -322,6 +326,16 @@ class RedisLifecycleStore:
 
     def save_terminal(self, state):
         self._save_request(state, TERMINAL_STATE_TTL_SECONDS)
+
+    def save_token_vault(self, vault: ReferenceTokenVault):
+        self.client.setex(
+            self.token_vault_key(vault.request_id),
+            TOKEN_VAULT_TTL_SECONDS,
+            json.dumps(vault.to_record(), ensure_ascii=False, cls=DjangoJSONEncoder),
+        )
+
+    def delete_token_vault(self, request_id):
+        self.client.delete(self.token_vault_key(request_id))
 
     def _save_request(self, state, ttl):
         self.client.setex(

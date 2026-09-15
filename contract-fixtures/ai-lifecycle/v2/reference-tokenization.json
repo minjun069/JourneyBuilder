@@ -1,0 +1,27 @@
+{
+  "contract_version": "1.0",
+  "token_format": "[[{kind}_{request_namespace}_{ordinal}]]",
+  "request_namespace_pattern": "^[0-9a-f]{12}$",
+  "token_kinds": [
+    "USER_NAME",
+    "PHONE_NUMBER",
+    "EMAIL_ADDRESS",
+    "ACCOUNT_NUMBER",
+    "DIRECT_IDENTIFIER",
+    "FINANCIAL_VALUE"
+  ],
+  "scope_fields": ["user_id", "session_id", "request_id"],
+  "trusted_financial_prefixes": [
+    ["customer_info"],
+    ["tool_context"],
+    ["chart_payload"]
+  ],
+  "vault_ttl_seconds": 600,
+  "terminal_policy": {
+    "unissued_token": "reject_entire_terminal",
+    "scope_mismatch": "reject_entire_terminal",
+    "restore_before_message_save": true,
+    "delete_after_terminal": true,
+    "completed_replay_source": "django_message"
+  }
+}

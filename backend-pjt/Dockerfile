@@ -67,6 +67,8 @@ RUN python -m pip install --no-cache-dir --no-index --no-deps \
 COPY --chown=app:app backend-pjt/ .
 COPY --chown=app:app contract-fixtures/financial-calculation/v1/policy.json \
     ./contract-fixtures/financial-calculation/v1/policy.json
+COPY --chown=app:app contract-fixtures/ai-lifecycle/v2/reference-tokenization.json \
+    ./contract-fixtures/ai-lifecycle/v2/reference-tokenization.json
 # 시뮬레이션 전용 계산 정책. wheel 에는 정책 JSON 이 들어 있지 않으므로 서버 설정으로 배치한다.
 COPY --chown=app:app contract-fixtures/simulation/v1/policy.json \
     ./contract-fixtures/simulation/v1/policy.json
