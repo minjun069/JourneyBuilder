@@ -9,7 +9,10 @@ import logging
 from typing import Any
 
 from core.monitoring import OperationStage, OperationStatus
-from core.observability_masking import masked_exception_fields
+from core.observability_masking import (
+    exception_identity_fields,
+    masked_exception_fields,
+)
 from core.runtime_instrumentation import RuntimeStage, build_artifact_id
 from core.runtime_instrumentation_adapter import BoundRuntimeInstrumentation
 from core.step_registry import load_agent_descriptions
@@ -236,6 +239,13 @@ async def execute_route_plan(
             "context_scope": deepcopy(plan.get("context_scope", {})),
             "conversation_context": deepcopy(plan.get("conversation_context", {})),
         }
+        observable_execution_input = {
+            "task": deepcopy(dict(task)),
+            "message": str(task.get("description", "")),
+            "step_id": step_id,
+            "customer_info": deepcopy(dict(customer_info)),
+            "bound_inputs": deepcopy(bound_inputs),
+        }
         if executor_kind == "tool":
             execution_input["tool_audit_sink"] = instrumentation.record_tool_audit
         task_span = instrumentation.start(
@@ -244,6 +254,7 @@ async def execute_route_plan(
             depends_on=tuple(str(item) for item in dependencies),
             executor_kind=str(executor_kind),
             executor_name=str(executor_name),
+            input=observable_execution_input,
         )
         operation_started = instrumentation.elapsed_ms(task_span)
         try:
@@ -266,6 +277,11 @@ async def execute_route_plan(
                     ),
                 },
             )
+            error_identity = exception_identity_fields(error)
+            failure_output = {
+                "status": "failed",
+                "reason_code": "executor_error",
+            }
             operation_duration = max(
                 0,
                 instrumentation.elapsed_ms(task_span) - operation_started,
@@ -281,12 +297,20 @@ async def execute_route_plan(
                 duration_ms=operation_duration,
                 agent=str(executor_name) if executor_kind != "tool" else None,
                 error_code="executor_error",
+                input=observable_execution_input,
+                output=failure_output,
+                **error_identity,
             )
             task_results[task_id] = failed_task_result(
                 task_id,
                 "executor_error",
             )
-            instrumentation.fail(task_span, reason_code="executor_error")
+            instrumentation.fail(
+                task_span,
+                reason_code="executor_error",
+                output=failure_output,
+                **error_identity,
+            )
             continue
 
         operation_duration = max(
@@ -303,6 +327,8 @@ async def execute_route_plan(
             operation_name=str(executor_name),
             duration_ms=operation_duration,
             agent=str(executor_name) if executor_kind != "tool" else None,
+            input=observable_execution_input,
+            output=raw_result,
         )
 
         artifact_type = str(task.get("produces", "unknown"))
@@ -346,11 +372,16 @@ async def execute_route_plan(
                 if executor_kind == "tool"
                 else "agent"
             )
-            instrumentation.succeed(task_span, response_owner=response_owner)
+            instrumentation.succeed(
+                task_span,
+                response_owner=response_owner,
+                output=result,
+            )
         else:
             instrumentation.fail(
                 task_span,
                 reason_code=str(result.get("reason_code", "artifact_invalid")),
+                output=result,
             )
 
     has_completed = any(
@@ -401,6 +432,11 @@ async def execute_route_plan(
                 task_id=fallback_task["id"],
                 executor_kind="agent",
                 executor_name="fallback",
+                input={
+                    "task": fallback_task,
+                    "message": fallback_payload["message"],
+                    "step_id": step_id,
+                },
             )
             try:
                 operation_started = instrumentation.elapsed_ms(fallback_span)
@@ -415,6 +451,8 @@ async def execute_route_plan(
                     operation_name="fallback",
                     duration_ms=operation_duration,
                     agent="fallback",
+                    input={"message": fallback_payload["message"]},
+                    output=fallback_result,
                 )
                 fallback_artifact_span = instrumentation.start(
                     RuntimeStage.ARTIFACT_VALIDATION,
@@ -438,6 +476,7 @@ async def execute_route_plan(
                     instrumentation.succeed(
                         fallback_span,
                         response_owner="fallback",
+                        output=fallback_validation.result,
                     )
                 else:
                     instrumentation.fail(
@@ -467,6 +506,11 @@ async def execute_route_plan(
                         ),
                     },
                 )
+                error_identity = exception_identity_fields(error)
+                failure_output = {
+                    "status": "failed",
+                    "reason_code": "executor_error",
+                }
                 operation_duration = max(
                     0,
                     instrumentation.elapsed_ms(fallback_span) - operation_started,
@@ -478,10 +522,15 @@ async def execute_route_plan(
                     duration_ms=operation_duration,
                     agent="fallback",
                     error_code="executor_error",
+                    input={"message": fallback_payload["message"]},
+                    output=failure_output,
+                    **error_identity,
                 )
                 instrumentation.fail(
                     fallback_span,
                     reason_code="executor_error",
+                    output=failure_output,
+                    **error_identity,
                 )
 
     aggregation_span = instrumentation.start(RuntimeStage.AGGREGATION)
@@ -507,7 +556,7 @@ async def execute_route_plan(
         )
         instrumentation.fail(aggregation_span, reason_code="aggregation_error")
         raise
-    instrumentation.succeed(aggregation_span)
+    instrumentation.succeed(aggregation_span, output=output)
     return ExecutionReport(
         task_results=task_results,
         output=output,

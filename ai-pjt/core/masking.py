@@ -91,7 +91,6 @@ _DIRECT_IDENTIFIER_TOKEN = "[DIRECT_IDENTIFIER]"
 _QUASI_IDENTIFIER_TOKEN = "[QUASI_IDENTIFIER_BUCKETED]"
 _FINANCIAL_TOKEN = "[FINANCIAL_VALUE_MASKED]"
 _SECRET_TOKEN = "[SECRET]"
-_FREE_TEXT_TOKEN = "[FREE_TEXT_REDACTED]"
 
 _OBSERVABILITY_SINKS = frozenset(
     {MaskingSink.APPLICATION_LOG, MaskingSink.TRACE_EXPORT}
@@ -237,6 +236,21 @@ _EMAIL_PATTERN = re.compile(
 )
 _PHONE_PATTERN = re.compile(
     r"(?<!\d)(?:\+?82[- .]?)?0?1[016789][- .]?\d{3,4}[- .]?\d{4}(?!\d)"
+)
+_RRN_PATTERN = re.compile(r"(?<!\d)\d{6}[- ]?[1-4]\d{6}(?!\d)")
+_LONG_IDENTIFIER_PATTERN = re.compile(
+    r"(?<![\dA-Za-z])(?:\d[- ]?){9,15}\d(?![\dA-Za-z])"
+)
+_KOREAN_NAME_PATTERN = re.compile(
+    r"((?:이름|성명)(?:은|는|이|가|:)?\s*)[가-힣]{2,5}"
+)
+_KRW_AMOUNT_PATTERN = re.compile(
+    r"(?<!\d)(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*"
+    r"[십백천만억조]*\s*원"
+)
+_PERCENT_PATTERN = re.compile(r"(?<!\d)\d+(?:\.\d+)?\s*%(?!\d)")
+_LARGE_NUMBER_PATTERN = re.compile(
+    r"(?<![\dA-Za-z])(?:\d{1,3}(?:,\d{3})+|\d{7,})(?![\dA-Za-z])"
 )
 _BEARER_PATTERN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _JWT_PATTERN = re.compile(
@@ -488,7 +502,11 @@ class _PayloadMasker:
             ]
             return tuple(masked_items) if isinstance(value, tuple) else masked_items
         self._require_scalar(value, path)
-        return None if value is None else _FREE_TEXT_TOKEN
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="replace")
+        return self._scrub_text(value) if isinstance(value, str) else value
 
     def _mask_classified_scalar(
         self,
@@ -601,7 +619,12 @@ class _PayloadMasker:
             path=path,
         ):
             return _FieldDecision(data_class=DataClass.PROJECT_HIGH_RISK_FINANCIAL)
-        return _FieldDecision(sensitive_container=normalized in _SENSITIVE_CONTAINERS)
+        return _FieldDecision(
+            sensitive_container=(
+                normalized in _SENSITIVE_CONTAINERS
+                and self._sink not in _OBSERVABILITY_SINKS
+            )
+        )
 
     @staticmethod
     def _is_secret_field(key: str) -> bool:
@@ -704,6 +727,16 @@ class _PayloadMasker:
             masked = masked.replace(raw, replacement)
         masked = _EMAIL_PATTERN.sub(_DIRECT_IDENTIFIER_TOKEN, masked)
         masked = _PHONE_PATTERN.sub(_DIRECT_IDENTIFIER_TOKEN, masked)
+        masked = _RRN_PATTERN.sub(_DIRECT_IDENTIFIER_TOKEN, masked)
+        masked = _LONG_IDENTIFIER_PATTERN.sub(_DIRECT_IDENTIFIER_TOKEN, masked)
+        masked = _KOREAN_NAME_PATTERN.sub(
+            lambda match: f"{match.group(1)}{_DIRECT_IDENTIFIER_TOKEN}",
+            masked,
+        )
+        if include_sensitive and self._sink in _OBSERVABILITY_SINKS:
+            masked = _KRW_AMOUNT_PATTERN.sub(_FINANCIAL_TOKEN, masked)
+            masked = _PERCENT_PATTERN.sub(_FINANCIAL_TOKEN, masked)
+            masked = _LARGE_NUMBER_PATTERN.sub(_FINANCIAL_TOKEN, masked)
         masked = _BEARER_PATTERN.sub(f"Bearer {_SECRET_TOKEN}", masked)
         masked = _JWT_PATTERN.sub(_SECRET_TOKEN, masked)
         return masked

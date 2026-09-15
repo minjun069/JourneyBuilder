@@ -290,7 +290,7 @@ class RecursiveMaskingTests(unittest.TestCase):
         )
         self.assertEqual(masked["total_assets"], "[FINANCIAL_VALUE_MASKED]")
 
-    def test_observability_removes_free_text_and_embedded_identifiers(self) -> None:
+    def test_observability_preserves_safe_text_and_masks_sensitive_fragments(self) -> None:
         payload = {
             "request_id": "request-raw-0001",
             "description": (
@@ -308,7 +308,9 @@ class RecursiveMaskingTests(unittest.TestCase):
         )
         rendered = json.dumps(masked, ensure_ascii=False, sort_keys=True)
 
-        self.assertEqual(masked["description"], "[FREE_TEXT_REDACTED]")
+        self.assertIn("담당자", masked["description"])
+        self.assertIn("[DIRECT_IDENTIFIER]", masked["description"])
+        self.assertNotEqual(masked["description"], "[FREE_TEXT_REDACTED]")
         self.assertEqual(masked["authorization"], "[SECRET]")
         self.assertNotIn("request-raw-0001", rendered)
         self.assertNotIn("p13-user@example.invalid", rendered)
@@ -331,15 +333,23 @@ class RecursiveMaskingTests(unittest.TestCase):
         self.assertNotIn("7,310,000", rendered)
         self.assertNotIn("7310000", rendered)
 
-    def test_nested_observability_content_is_masked_recursively(self) -> None:
-        payload = {"content": ["raw text", {"message": "raw message"}]}
+    def test_nested_observability_content_preserves_non_sensitive_text(self) -> None:
+        payload = {
+            "content": [
+                "단기 지향의 뜻을 설명해 줘",
+                {"message": "월급 350만 원과 010-1234-5678은 숨겨줘"},
+            ]
+        }
         masked = mask_payload(
             payload,
             sink=MaskingSink.APPLICATION_LOG,
             policy=_policy(),
         )
-        self.assertEqual(masked["content"][0], "[FREE_TEXT_REDACTED]")
-        self.assertEqual(masked["content"][1]["message"], "[FREE_TEXT_REDACTED]")
+        self.assertEqual(masked["content"][0], "단기 지향의 뜻을 설명해 줘")
+        self.assertEqual(
+            masked["content"][1]["message"],
+            "월급 [FINANCIAL_VALUE_MASKED]과 [DIRECT_IDENTIFIER]은 숨겨줘",
+        )
 
     def test_input_is_not_mutated_and_tuple_shape_is_preserved(self) -> None:
         payload = {

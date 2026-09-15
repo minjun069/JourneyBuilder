@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from hashlib import sha256
+import json
 from math import isfinite
 import re
 from typing import Any, Protocol
@@ -26,17 +27,23 @@ _FORBIDDEN_CONTENT_FIELDS = frozenset(
         "arguments",
         "content",
         "customer_info",
-        "input",
         "message",
-        "output",
         "prompt",
         "query",
         "response",
         "tool_context",
     }
 )
+_OBSERVATION_CONTENT_FIELDS = frozenset({"input", "output"})
+_MAX_OBSERVATION_CONTENT_BYTES = 65_536
 _COMMON_FIELDS = frozenset(
-    {"contract_version", "event_family", "trace_id", "occurred_at_epoch_ms"}
+    {
+        "contract_version",
+        "event_family",
+        "masking_status",
+        "trace_id",
+        "occurred_at_epoch_ms",
+    }
 )
 _ALLOWED_FIELDS_BY_FAMILY = {
     "operation": _COMMON_FIELDS
@@ -46,11 +53,15 @@ _ALLOWED_FIELDS_BY_FAMILY = {
         "cost_microusd",
         "duration_ms",
         "error_code",
+        "error_fingerprint",
+        "error_type",
         "index_version",
+        "input",
         "input_tokens",
         "model_name",
         "model_provider",
         "operation_name",
+        "output",
         "output_tokens",
         "prompt_version",
         "resource_ids",
@@ -83,6 +94,8 @@ _ALLOWED_FIELDS_BY_FAMILY = {
         "blocked_by",
         "depends_on",
         "duration_ms",
+        "error_fingerprint",
+        "error_type",
         "executor_kind",
         "executor_name",
         "plan_id",
@@ -90,6 +103,8 @@ _ALLOWED_FIELDS_BY_FAMILY = {
         "reason_code",
         "request_id",
         "response_owner",
+        "input",
+        "output",
         "stage",
         "status",
         "task_id",
@@ -121,8 +136,9 @@ _TOKEN_LIST_FIELDS = frozenset(
 class LangfuseInstrumentationExporter:
     """Create Langfuse observations from masked mappings only.
 
-    ``MaskedInstrumentationSink`` is the only production caller. This class
-    deliberately has no API for raw model inputs, outputs, or callbacks.
+    ``MaskedInstrumentationSink`` is the only production caller. Input and
+    output are accepted only inside a payload carrying that sink's explicit
+    masking marker; raw model callbacks remain unsupported.
     """
 
     __slots__ = ("_client",)
@@ -141,6 +157,8 @@ class LangfuseInstrumentationExporter:
         trace_id = _required_token(payload, "trace_id")
         if _MASKED_TRACE_ID.fullmatch(trace_id) is None:
             raise ValueError("Langfuse exporter requires a masked trace_id")
+        if payload.get("masking_status") != "applied":
+            raise ValueError("Langfuse exporter requires masking_status=applied")
         forbidden_fields = _FORBIDDEN_CONTENT_FIELDS.intersection(payload)
         if forbidden_fields:
             raise ValueError(
@@ -158,9 +176,16 @@ class LangfuseInstrumentationExporter:
             "trace_context": {"trace_id": _otel_trace_id(trace_id)},
             "name": f"retirewise.{event_family}.{action}",
             "as_type": "span",
-            "metadata": dict(payload),
+            "metadata": {
+                name: value
+                for name, value in payload.items()
+                if name not in _OBSERVATION_CONTENT_FIELDS
+            },
             "version": contract_version,
         }
+        for field_name in _OBSERVATION_CONTENT_FIELDS:
+            if field_name in payload:
+                observation_args[field_name] = payload[field_name]
         if status in {"failed", "timeout", "blocked"} or decision == "denied":
             observation_args["level"] = "ERROR"
 
@@ -219,6 +244,9 @@ def _validate_metadata_payload(
         )
 
     for name, value in payload.items():
+        if name in _OBSERVATION_CONTENT_FIELDS:
+            _validate_observation_content(value, name)
+            continue
         if isinstance(value, str):
             if _SAFE_METADATA_TOKEN.fullmatch(value) is None:
                 raise ValueError(
@@ -248,6 +276,22 @@ def _validate_metadata_payload(
             ):
                 continue
         raise ValueError(f"Langfuse exporter rejects metadata shape: {name}")
+
+
+def _validate_observation_content(value: Any, name: str) -> None:
+    try:
+        rendered = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            f"Langfuse exporter requires JSON-safe observation {name}"
+        ) from error
+    if len(rendered.encode("utf-8")) > _MAX_OBSERVATION_CONTENT_BYTES:
+        raise ValueError(f"Langfuse exporter observation {name} is too large")
 
 
 def _event_action(payload: Mapping[str, Any]) -> str:
