@@ -8,11 +8,13 @@
 - Container port: 8001
 - Application command: `uvicorn main:app --host 0.0.0.0 --port 8001`
 - Required runtime dependency: PostgreSQL
-- Optional external dependency: LLM provider
+- Optional external dependencies: LLM provider, Langfuse
 
-Langfuse·LangSmith의 model callback tracing은 typed masking 경계를 우회하므로
-활성화하지 않는다. `LANGFUSE_ENABLED`나 자동 LangSmith tracing 환경변수가 켜져
-있으면 서비스는 요청을 받기 전에 startup을 실패시킨다.
+Langfuse·LangSmith의 raw model callback tracing은 typed masking 경계를 우회하므로
+활성화하지 않는다. `LANGFUSE_ENABLED=true`는 callback을 붙이지 않고, 기존
+`MaskedInstrumentationSink`가 직렬화·마스킹한 typed event만 Langfuse v4 exporter로
+보낸다. 자동 LangChain·LangSmith tracing 환경변수는 서비스가 요청을 받기 전에
+startup을 실패시킨다.
 
 `requirements.txt`는 직접 의존성의 호환 범위를 사람이 관리한다. `requirements.lock`은 Python 3.13/Linux에서 해석한 직접·전이 의존성 전체와 배포 파일 hash를 고정하며 Docker와 CI가 설치한다.
 
@@ -45,9 +47,48 @@ uv pip compile \
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/api/ai/v2/chat/stream` request bearer로 사용 |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
 | 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.30 |
-| 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM`, `LANGFUSE_*` | retired 인덱스 30일 보관, embedding 차원, 관측 조정값 |
+| 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM` | retired 인덱스 30일 보관, embedding 차원 |
+| Langfuse 조건부 필수 | `LANGFUSE_ENABLED`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | 활성화할 때 세 연결값을 모두 명시하며 URL credential을 금지 |
+| Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT`, `LANGFUSE_RELEASE` | 환경 분리와 배포 SHA·버전 표시 |
 | readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/api/system/v1/health`, 2초 |
 | 미래 선택 | `REDIS_URL` | 현재 AI runtime과 readiness는 사용하지 않음 |
+
+## Langfuse v4 사용
+
+가장 빠른 시작 방법은 Langfuse Cloud에서 project와 API key를 만드는 것이다. 자체
+호스팅은 한 container짜리 구형 v2 snippet을 사용하지 않고
+[공식 v4 Docker Compose](https://langfuse.com/self-hosting/deployment/docker-compose)를
+별도 stack으로 기동한다. 애플리케이션 `.env`에는 실제 배포 위치에 맞는 API base URL을
+명시하며 credential을 Git에 커밋하지 않는다.
+
+```dotenv
+LANGFUSE_ENABLED=true
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_TRACING_ENVIRONMENT=development
+LANGFUSE_RELEASE=<git-sha-or-release>
+LANGCHAIN_TRACING_V2=false
+```
+
+Cloud region이나 자체 호스팅 주소가 다르면 `LANGFUSE_BASE_URL`을 해당 API 주소로
+바꾼다. 설정 확인은 실제 고객 요청 전에 검증 전용 project credential을 사용하는 별도
+연결 smoke로 실행한다.
+
+```bash
+docker compose run --rm --no-deps ai-pjt \
+  python -c 'from langfuse import get_client; raise SystemExit(0 if get_client().auth_check() else 1)'
+```
+
+연결 확인 뒤 AI 서비스를 기동하면 `retirewise.<event_family>.<stage>` observation에서
+가명 trace correlation, 단계·상태·지연, 모델 token·비용 metadata를 확인할 수 있다.
+prompt·response·고객 snapshot·도구 원문은 보내지 않는다. SDK는 이 exporter가 직접
+만든 span만 허용하므로 `langfuse.langchain.CallbackHandler`, `@observe`, 자동
+LangChain tracing을 production 경로에 추가하지 않는다.
+
+Langfuse 전송은 비동기다. FastAPI lifespan 종료 시 SDK `shutdown()`으로 대기 event를
+flush하며, emit 또는 shutdown 장애는 AI 업무 응답을 실패시키지 않는다. Langfuse는
+readiness dependency가 아니므로 장애 여부는 exporter 지표와 별도 smoke에서 확인한다.
 
 ## Container build와 실행
 

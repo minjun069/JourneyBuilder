@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from urllib.parse import urlparse
 
 try:
     from dotenv import load_dotenv
@@ -155,8 +156,8 @@ class Settings:
         self.langfuse_secret_key = active_environ.get(
             "LANGFUSE_SECRET_KEY", ""
         ).strip()
-        self.langfuse_host = active_environ.get(
-            "LANGFUSE_HOST", "http://langfuse:3000"
+        self.langfuse_base_url = active_environ.get(
+            "LANGFUSE_BASE_URL", ""
         ).strip()
 
     @staticmethod
@@ -211,6 +212,30 @@ class Settings:
             self._require_runtime_value("OPENAI_API_KEY", self.openai_api_key)
         if "opensource" in selected_providers and not self.llm_base_url:
             raise RuntimeConfigurationError("LLM_BASE_URL is required")
+
+        if self.langfuse_enabled:
+            self._require_runtime_value(
+                "LANGFUSE_PUBLIC_KEY",
+                self.langfuse_public_key,
+            )
+            self._require_runtime_value(
+                "LANGFUSE_SECRET_KEY",
+                self.langfuse_secret_key,
+            )
+            self._require_runtime_value(
+                "LANGFUSE_BASE_URL",
+                self.langfuse_base_url,
+            )
+            parsed_langfuse_url = urlparse(self.langfuse_base_url)
+            if (
+                parsed_langfuse_url.scheme not in {"http", "https"}
+                or not parsed_langfuse_url.netloc
+                or parsed_langfuse_url.username is not None
+                or parsed_langfuse_url.password is not None
+            ):
+                raise RuntimeConfigurationError(
+                    "LANGFUSE_BASE_URL must be an http(s) URL without credentials"
+                )
 
     @property
     def masking_pseudonym_key_bytes(self) -> bytes:

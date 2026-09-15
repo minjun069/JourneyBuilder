@@ -13,6 +13,7 @@ from core.checkpointer import build_context_state_api, get_checkpointer
 from core.config import settings
 from core.context import ContextScope
 from core.logging_setup import configure_logging
+from core.langfuse_exporter import build_langfuse_instrumentation_exporter
 from core.masking import MaskingSink
 from core.monitoring import get_callbacks
 from core.observability_masking import (
@@ -48,28 +49,45 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings.validate_runtime()
     get_callbacks()
-    async with get_checkpointer() as checkpointer:
-        tool_runtime = build_production_tool_runtime()
-        instrumentation, instrumentation_sink = build_masked_runtime_instrumentation(
-            pseudonym_key=settings.masking_pseudonym_key_bytes,
-            sink=MaskingSink.TRACE_EXPORT,
-            downstream=StructuredLogInstrumentationExporter(
-                logging.getLogger("retirewise.instrumentation")
-            ),
+    if settings.langfuse_enabled:
+        instrumentation_exporter = build_langfuse_instrumentation_exporter(
+            public_key=settings.langfuse_public_key,
+            secret_key=settings.langfuse_secret_key,
+            base_url=settings.langfuse_base_url,
         )
-        app.state.instrumentation = instrumentation
-        app.state.instrumentation_sink = instrumentation_sink
-        callback_masker = CallbackPayloadMasker(
-            pseudonym_key=settings.masking_pseudonym_key_bytes,
+    else:
+        instrumentation_exporter = StructuredLogInstrumentationExporter(
+            logging.getLogger("retirewise.instrumentation")
         )
-        app.state.callback_masker = callback_masker
-        app.state.chat_graph = build_graph(
-            checkpointer,
-            instrumentation=instrumentation,
-            tool_executors=build_graph_tool_executors(tool_runtime),
-        )
-        app.state.context_api = build_context_state_api(checkpointer)
-        yield
+    try:
+        async with get_checkpointer() as checkpointer:
+            tool_runtime = build_production_tool_runtime()
+            instrumentation, instrumentation_sink = build_masked_runtime_instrumentation(
+                pseudonym_key=settings.masking_pseudonym_key_bytes,
+                sink=MaskingSink.TRACE_EXPORT,
+                downstream=instrumentation_exporter,
+            )
+            app.state.instrumentation = instrumentation
+            app.state.instrumentation_sink = instrumentation_sink
+            app.state.instrumentation_exporter = instrumentation_exporter
+            callback_masker = CallbackPayloadMasker(
+                pseudonym_key=settings.masking_pseudonym_key_bytes,
+            )
+            app.state.callback_masker = callback_masker
+            app.state.chat_graph = build_graph(
+                checkpointer,
+                instrumentation=instrumentation,
+                tool_executors=build_graph_tool_executors(tool_runtime),
+            )
+            app.state.context_api = build_context_state_api(checkpointer)
+            yield
+    finally:
+        shutdown = getattr(instrumentation_exporter, "shutdown", None)
+        if callable(shutdown):
+            try:
+                shutdown()
+            except Exception:  # noqa: BLE001 - observability must not break shutdown
+                logger.warning("langfuse_instrumentation_shutdown_failed")
 
 
 app = FastAPI(title="RetireWise AI Service", lifespan=lifespan)

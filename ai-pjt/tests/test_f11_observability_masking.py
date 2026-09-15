@@ -69,6 +69,8 @@ class LogAndTraceMaskingTests(unittest.TestCase):
         source = (AI_ROOT / "main.py").read_text(encoding="utf-8")
         self.assertIn("build_masked_runtime_instrumentation", source)
         self.assertNotIn("build_export_blocked_instrumentation", source)
+        self.assertIn("if settings.langfuse_enabled", source)
+        self.assertIn("downstream=instrumentation_exporter", source)
 
 
 class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):

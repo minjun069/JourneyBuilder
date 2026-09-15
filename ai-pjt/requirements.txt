@@ -27,5 +27,5 @@ llama-index-embeddings-google-genai>=0.6,<1
 llama-index-retrievers-bm25>=0.8,<1
 llama-index-vector-stores-postgres>=0.8,<1
 
-# Optional tracing. The current monitoring adapter imports langfuse.callback.
-langfuse>=2,<3
+# Optional masking-safe typed event export. Raw LangChain callbacks stay disabled.
+langfuse>=4,<5
