@@ -10,26 +10,34 @@ const router = useRouter()
 
 const form = ref({ category: '재무계획', title: '', body: '' })
 const error = ref('')
+const submitting = ref(false)
 
-function submit() {
+async function submit() {
   if (!form.value.title.trim()) { error.value = '제목을 입력해 주세요.'; return }
   if (!form.value.body.trim())  { error.value = '내용을 입력해 주세요.'; return }
+  if (submitting.value) return
 
-  const newPost = {
-    id: Date.now(),
-    category: form.value.category,
-    title: form.value.title.trim(),
-    body: form.value.body.trim(),
-    author: '나',
-    age: '30대', asset: '1~3억', income: '5~7천',
-    likes: 0, liked: false, comments: 0, views: 0,
-    recommended: false,
-    createdAt: '방금 전',
-    commentList: [],
+  submitting.value = true
+  error.value = ''
+  try {
+    const created = await addPost({
+      title: form.value.title.trim(),
+      content: form.value.body.trim(),
+      category: form.value.category,
+    })
+    router.push(`/community/${created.id}`)
+  } catch (err) {
+    if (err.response?.status === 401) {
+      error.value = '로그인이 필요합니다.'
+    } else {
+      const data = err.response?.data
+      error.value = data
+        ? Object.values(data).flat().join(' ')
+        : '글 등록에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+    }
+  } finally {
+    submitting.value = false
   }
-
-  addPost(newPost)
-  router.push(`/community/${newPost.id}`)
 }
 </script>
 
@@ -95,7 +103,9 @@ function submit() {
 
         <div class="form-actions">
           <button class="btn-cancel" @click="router.push('/community')">취소</button>
-          <button class="btn-submit" @click="submit">작성하기</button>
+          <button class="btn-submit" :disabled="submitting" @click="submit">
+            {{ submitting ? '등록 중…' : '작성하기' }}
+          </button>
         </div>
 
       </div>

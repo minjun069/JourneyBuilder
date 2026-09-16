@@ -16,6 +16,27 @@ export const CATEGORY_STYLE = {
 }
 
 
+// 서버 응답(content/like_count/view_count)을 화면이 쓰는 형태(body/likes/views)로 변환한다
+export function toViewPost(data) {
+  return {
+    id: data.id,
+    category: data.category || '기타',
+    title: data.title,
+    body: data.content ?? '',
+    author: data.author ?? '익명',
+    age: '', asset: '', income: '',
+    likes: data.like_count ?? 0,
+    liked: false,
+    comments: 0,
+    views: data.view_count ?? 0,
+    recommended: false,
+    createdAt: data.created_at
+      ? new Date(data.created_at).toLocaleDateString('ko-KR')
+      : '방금 전',
+    commentList: [],
+  }
+}
+
 export const useCommunityStore = defineStore('community', () => {
   const posts   = ref(MOCK_POSTS)
   const loading = ref(false)
@@ -36,8 +57,9 @@ export const useCommunityStore = defineStore('community', () => {
 
   async function addPost(postData) {
     const { data } = await communityApi.createPost(postData)
-    posts.value.unshift(data)
-    return data
+    const viewPost = toViewPost(data)
+    posts.value.unshift(viewPost)
+    return viewPost
   }
 
   async function editPost(pk, postData) {
