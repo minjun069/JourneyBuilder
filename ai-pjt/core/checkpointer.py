@@ -26,6 +26,7 @@ def build_committed_context_store() -> PostgresCommittedContextStore:
         execution_ttl_seconds=settings.context_execution_ttl_seconds,
         receipt_ttl_seconds=settings.context_receipt_ttl_seconds,
         closed_retention_seconds=settings.context_closed_retention_seconds,
+        embedding_dimensions=settings.embed_dim,
     )
 
 

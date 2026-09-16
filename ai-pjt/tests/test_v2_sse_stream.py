@@ -12,7 +12,18 @@ from tests.instrumentation import fake_callback_masker
 from transport.contracts import ChatV2Request
 
 
-EMPTY_CONTEXT = {"schema_version": "2.0", "summary": {}, "turns": []}
+EMPTY_CONTEXT = {
+    "schema_version": "3.0",
+    "summary": {},
+    "structured_state": {
+        "current_goal": None,
+        "response_preferences": [],
+        "decisions": [],
+        "open_questions": [],
+        "entities": [],
+    },
+    "turns": [],
+}
 
 
 def parse_frame(frame: str) -> tuple[str, dict]:
@@ -67,7 +78,15 @@ class FakeContextAPI:
     async def delete_execution(self, scope, request_id):
         return None
 
-    async def commit(self, scope, request_id, payload_digest, context, terminal):
+    async def commit(
+        self,
+        scope,
+        request_id,
+        payload_digest,
+        context,
+        terminal,
+        completed_turn=None,
+    ):
         self.terminal = dict(terminal)
         return self.terminal
 
@@ -75,7 +94,7 @@ class FakeContextAPI:
         self.terminal = dict(terminal)
         return self.terminal
 
-    def state_channels(self, scope, context):
+    def state_channels(self, scope, context, retrieved_memories=()):
         return {"context_scope": {"session_id": scope.session_id}}
 
     def config_for(self, scope, request_id):

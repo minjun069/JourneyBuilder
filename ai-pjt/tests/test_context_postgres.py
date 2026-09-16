@@ -9,8 +9,14 @@ from core.context import (
     ContextStateAPI,
     ConversationContext,
     ConversationTurn,
+    ContextSummary,
+    StructuredConversationState,
 )
-from core.context_store import ContextCommitConflict, PostgresCommittedContextStore
+from core.context_store import (
+    ContextCommitConflict,
+    PostgresCommittedContextStore,
+    committed_scope_key,
+)
 
 
 POSTGRES_TEST_DSN = os.environ.get("AI_CONTEXT_POSTGRES_TEST_DSN", "")
@@ -58,6 +64,57 @@ class PostgresCommittedContextTests(unittest.IsolatedAsyncioTestCase):
             second,
             {"status": "completed", "output": {"response": "second"}},
         )
+        memories = await self.api.retrieve_memories(
+            self.scope,
+            None,
+            exclude_turn_ids=("request-2",),
+            limit=5,
+        )
+        self.assertEqual([item.turn.turn_id for item in memories], ["request-1"])
+        pending_embeddings = await self.api.pending_archive_embeddings(limit=10)
+        archived_first = next(
+            item for item in pending_embeddings if item.turn.turn_id == "request-1"
+        )
+        vector = (1.0, *(0.0 for _ in range(3_071)))
+        await self.api.store_archive_embedding(archived_first.archive_id, vector)
+        semantic = await self.api.retrieve_memories(
+            self.scope,
+            vector,
+            exclude_turn_ids=("request-2",),
+            limit=5,
+        )
+        self.assertEqual(semantic[0].turn.turn_id, "request-1")
+        self.assertAlmostEqual(semantic[0].score, 1.0)
+
+        summary_job = await self.api.claim_summary_job()
+        self.assertIsNotNone(summary_job)
+        before_failure = await self.api.read_context(self.scope)
+        await self.api.fail_summary_job(summary_job, "provider_unavailable")
+        self.assertEqual(await self.api.read_context(self.scope), before_failure)
+
+        async with await self.store._connect(autocommit=True) as connection:
+            await connection.execute(
+                """
+                UPDATE ai_context_summary_jobs
+                SET next_attempt_at = NOW()
+                WHERE scope_key = %s
+                """,
+                (committed_scope_key(self.scope),),
+            )
+        retried_job = await self.api.claim_summary_job()
+        self.assertIsNotNone(retried_job)
+        verified = ContextSummary(
+            text="현재 목표: 테스트 목표.",
+            estimated_units=12,
+            summarized_through_sequence=retried_job.target_cursor,
+        )
+        applied = await self.api.complete_summary_job(
+            retried_job,
+            summary=verified,
+            structured_state=StructuredConversationState(current_goal="테스트 목표"),
+        )
+        self.assertTrue(applied)
+        self.assertEqual((await self.api.read_context(self.scope)).summary, verified)
         failed = {"status": "failed", "error": {"code": "LLM_TIMEOUT"}}
         await self.api.commit_terminal(
             self.scope,
@@ -66,7 +123,9 @@ class PostgresCommittedContextTests(unittest.IsolatedAsyncioTestCase):
             failed,
         )
 
-        self.assertEqual(await self.api.read_context(self.scope), second)
+        current = await self.api.read_context(self.scope)
+        self.assertEqual(current.turns, second.turns)
+        self.assertEqual(current.summary, verified)
         self.assertEqual(await self.api.read_previous_context(self.scope), first)
         self.assertEqual(
             await self.api.read_terminal(self.scope, "request-3", "3" * 64),

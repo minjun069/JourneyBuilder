@@ -11,7 +11,7 @@ import unicodedata
 
 
 MESSAGE_OVERHEAD_UNITS = 4
-CONTEXT_SCHEMA_VERSION = "2.0"
+CONTEXT_SCHEMA_VERSION = "3.0"
 # LangGraph reserves the empty namespace for a top-level compiled graph. Schema
 # versioning stays in the opaque thread key and embedded state instead.
 CONTEXT_CHECKPOINT_NAMESPACE = ""
@@ -152,8 +152,48 @@ class CommittedContextRepository(Protocol):
         payload_digest: str,
         context: ConversationContext,
         terminal: Mapping[str, Any],
+        completed_turn: ConversationTurn | None = None,
     ) -> Mapping[str, Any]:
-        """Atomically replace context and record its completed terminal."""
+        """Atomically archive a turn, replace context, and record its terminal."""
+
+    async def retrieve_memories(
+        self,
+        scope: ContextScope,
+        query_embedding: tuple[float, ...] | None,
+        *,
+        exclude_turn_ids: tuple[str, ...],
+        limit: int,
+    ) -> tuple[RetrievedMemory, ...]:
+        """Read scope-local archived turns relevant to the current question."""
+
+    async def pending_archive_embeddings(
+        self,
+        *,
+        limit: int,
+    ) -> tuple[ArchivedConversationTurn, ...]:
+        """Return archive rows whose retrieval embedding is still missing."""
+
+    async def store_archive_embedding(
+        self,
+        archive_id: int,
+        embedding: tuple[float, ...],
+    ) -> None:
+        """Attach one validated embedding to an archived turn."""
+
+    async def claim_summary_job(self) -> SummaryJob | None:
+        """Lease one due summary job and its lossless source turns."""
+
+    async def complete_summary_job(
+        self,
+        job: SummaryJob,
+        *,
+        summary: ContextSummary,
+        structured_state: StructuredConversationState,
+    ) -> bool:
+        """Apply a verified summary iff its source cursor is still current."""
+
+    async def fail_summary_job(self, job: SummaryJob, error_code: str) -> None:
+        """Leave the old summary intact and persist a bounded retry."""
 
     async def commit_terminal(
         self,
@@ -214,6 +254,7 @@ class ContextStateAPI:
         payload_digest: str,
         context: ConversationContext,
         terminal: Mapping[str, Any],
+        completed_turn: ConversationTurn | None = None,
     ) -> Mapping[str, Any]:
         return await self._committed.commit(
             scope,
@@ -221,7 +262,56 @@ class ContextStateAPI:
             payload_digest,
             context,
             terminal,
+            completed_turn,
         )
+
+    async def retrieve_memories(
+        self,
+        scope: ContextScope,
+        query_embedding: tuple[float, ...] | None,
+        *,
+        exclude_turn_ids: tuple[str, ...] = (),
+        limit: int = 5,
+    ) -> tuple[RetrievedMemory, ...]:
+        return await self._committed.retrieve_memories(
+            scope,
+            query_embedding,
+            exclude_turn_ids=exclude_turn_ids,
+            limit=limit,
+        )
+
+    async def pending_archive_embeddings(
+        self,
+        *,
+        limit: int = 8,
+    ) -> tuple[ArchivedConversationTurn, ...]:
+        return await self._committed.pending_archive_embeddings(limit=limit)
+
+    async def store_archive_embedding(
+        self,
+        archive_id: int,
+        embedding: tuple[float, ...],
+    ) -> None:
+        await self._committed.store_archive_embedding(archive_id, embedding)
+
+    async def claim_summary_job(self) -> SummaryJob | None:
+        return await self._committed.claim_summary_job()
+
+    async def complete_summary_job(
+        self,
+        job: SummaryJob,
+        *,
+        summary: ContextSummary,
+        structured_state: StructuredConversationState,
+    ) -> bool:
+        return await self._committed.complete_summary_job(
+            job,
+            summary=summary,
+            structured_state=structured_state,
+        )
+
+    async def fail_summary_job(self, job: SummaryJob, error_code: str) -> None:
+        await self._committed.fail_summary_job(job, error_code)
 
     async def commit_terminal(
         self,
@@ -241,10 +331,12 @@ class ContextStateAPI:
     def state_channels(
         scope: ContextScope,
         context: ConversationContext,
+        retrieved_memories: tuple[RetrievedMemory, ...] = (),
     ) -> dict[str, Any]:
         return {
             "context_scope": scope.to_state(),
             "conversation_context": context.to_state(),
+            "retrieved_memories": [memory.to_state() for memory in retrieved_memories],
         }
 
     async def delete_execution(
@@ -314,12 +406,113 @@ class ConversationTurn:
 
 
 @dataclass(frozen=True)
+class ArchivedConversationTurn:
+    """One lossless completed turn stored independently of prompt projection."""
+
+    archive_id: int
+    sequence: int
+    scope: ContextScope
+    turn: ConversationTurn
+
+
+@dataclass(frozen=True)
+class RetrievedMemory:
+    """Advisory projection of an archived turn for the current question."""
+
+    sequence: int
+    turn: ConversationTurn
+    score: float | None = None
+
+    def to_state(self) -> dict[str, Any]:
+        return {
+            "sequence": self.sequence,
+            "turn": self.turn.to_state(),
+            "score": self.score,
+            "authority": "advisory_conversation_memory",
+        }
+
+    @classmethod
+    def from_state(cls, payload: Mapping[str, Any]) -> RetrievedMemory:
+        turn = payload.get("turn")
+        if not isinstance(turn, Mapping):
+            raise TypeError("retrieved memory turn must be an object")
+        sequence = payload.get("sequence")
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence <= 0:
+            raise ValueError("retrieved memory sequence must be a positive integer")
+        score = payload.get("score")
+        if score is not None and not isinstance(score, (int, float)):
+            raise TypeError("retrieved memory score must be numeric or null")
+        return cls(
+            sequence=sequence,
+            turn=ConversationTurn.from_state(turn),
+            score=float(score) if score is not None else None,
+        )
+
+
+@dataclass(frozen=True)
+class StructuredConversationState:
+    """Non-financial conversational memory extracted from verified evidence."""
+
+    current_goal: str | None = None
+    response_preferences: tuple[str, ...] = ()
+    decisions: tuple[str, ...] = ()
+    open_questions: tuple[str, ...] = ()
+    entities: tuple[str, ...] = ()
+
+    def to_state(self) -> dict[str, Any]:
+        return {
+            "current_goal": self.current_goal,
+            "response_preferences": list(self.response_preferences),
+            "decisions": list(self.decisions),
+            "open_questions": list(self.open_questions),
+            "entities": list(self.entities),
+        }
+
+    @classmethod
+    def from_state(cls, payload: Mapping[str, Any]) -> StructuredConversationState:
+        goal = payload.get("current_goal")
+        if goal is not None and not isinstance(goal, str):
+            raise TypeError("structured current_goal must be a string or null")
+
+        def values(name: str) -> tuple[str, ...]:
+            raw = payload.get(name, ())
+            if not isinstance(raw, (list, tuple)) or any(
+                not isinstance(item, str) for item in raw
+            ):
+                raise TypeError(f"structured {name} must be a string list")
+            return tuple(raw)
+
+        return cls(
+            current_goal=goal,
+            response_preferences=values("response_preferences"),
+            decisions=values("decisions"),
+            open_questions=values("open_questions"),
+            entities=values("entities"),
+        )
+
+
+@dataclass(frozen=True)
+class SummaryJob:
+    """Persisted summary lease built from archived, never reconstructed turns."""
+
+    scope: ContextScope
+    base_cursor: int
+    target_cursor: int
+    attempts: int
+    existing_summary: ContextSummary | None
+    existing_structured_state: StructuredConversationState
+    source_turns: tuple[ConversationTurn, ...]
+
+
+@dataclass(frozen=True)
 class ContextBudgetPolicy:
-    """Token-budget projection limits with no fixed recent-turn cap."""
+    """Independent budgets for the layered model-context projection."""
 
     max_model_input_units: int = 3_200
     max_summary_units: int = 600
     max_structured_units: int = 1_000
+    max_memory_units: int = 600
+    max_recent_turns: int = 12
 
     def __post_init__(self) -> None:
         if self.max_model_input_units <= 0:
@@ -328,8 +521,17 @@ class ContextBudgetPolicy:
             raise ValueError("max_summary_units must not be negative")
         if self.max_structured_units < 0:
             raise ValueError("max_structured_units must not be negative")
-        if self.max_summary_units + self.max_structured_units > self.max_model_input_units:
-            raise ValueError("summary and structured budgets exceed model input budget")
+        if self.max_memory_units < 0:
+            raise ValueError("max_memory_units must not be negative")
+        if self.max_recent_turns <= 0:
+            raise ValueError("max_recent_turns must be greater than 0")
+        if (
+            self.max_summary_units
+            + self.max_structured_units
+            + self.max_memory_units
+            > self.max_model_input_units
+        ):
+            raise ValueError("reserved context budgets exceed model input budget")
 
 
 class TextUnitCounter(Protocol):
@@ -422,6 +624,7 @@ class ContextSummary:
 
     text: str
     estimated_units: int
+    summarized_through_sequence: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.text, str):
@@ -433,11 +636,19 @@ class ContextSummary:
             raise TypeError("summary estimated_units must be an integer")
         if self.estimated_units < 0:
             raise ValueError("summary estimated_units must not be negative")
+        if (
+            isinstance(self.summarized_through_sequence, bool)
+            or not isinstance(self.summarized_through_sequence, int)
+        ):
+            raise TypeError("summary cursor must be an integer")
+        if self.summarized_through_sequence < 0:
+            raise ValueError("summary cursor must not be negative")
 
     def to_state(self) -> dict[str, Any]:
         return {
             "text": self.text,
             "estimated_units": self.estimated_units,
+            "summarized_through_sequence": self.summarized_through_sequence,
         }
 
     @classmethod
@@ -445,6 +656,10 @@ class ContextSummary:
         return cls(
             text=payload.get("text", ""),
             estimated_units=payload.get("estimated_units", 0),
+            summarized_through_sequence=payload.get(
+                "summarized_through_sequence",
+                0,
+            ),
         )
 
 
@@ -454,11 +669,13 @@ class ConversationContext:
 
     turns: tuple[ConversationTurn, ...] = ()
     summary: ContextSummary | None = None
+    structured_state: StructuredConversationState = StructuredConversationState()
 
     def to_state(self) -> dict[str, Any]:
         return {
             "schema_version": CONTEXT_SCHEMA_VERSION,
             "summary": self.summary.to_state() if self.summary else {},
+            "structured_state": self.structured_state.to_state(),
             "turns": [turn.to_state() for turn in self.turns],
         }
 
@@ -477,9 +694,15 @@ class ConversationContext:
             raise TypeError("turns must be a list")
         if any(not isinstance(item, Mapping) for item in turns):
             raise TypeError("turn entries must be objects")
+        structured_payload = payload.get("structured_state", {})
+        if not isinstance(structured_payload, Mapping):
+            raise TypeError("structured_state must be an object")
         return cls(
             turns=tuple(ConversationTurn.from_state(item) for item in turns),
             summary=summary,
+            structured_state=StructuredConversationState.from_state(
+                structured_payload
+            ),
         )
 
 
@@ -529,9 +752,11 @@ class DeterministicIncrementalSummaryUpdater:
 class ContextWindow:
     """The only token-budgeted projection allowed to reach a model."""
 
-    turns: tuple[ConversationTurn, ...]
     confirmed_facts: Mapping[str, Any]
+    structured_state: StructuredConversationState
     summary: ContextSummary | None
+    retrieved_memories: tuple[RetrievedMemory, ...]
+    turns: tuple[ConversationTurn, ...]
     input_units: int
 
     def __post_init__(self) -> None:
@@ -567,6 +792,7 @@ def build_context_window(
     *,
     context: ConversationContext,
     current_confirmed_facts: Mapping[str, Any],
+    retrieved_memories: tuple[RetrievedMemory, ...] = (),
     policy: ContextBudgetPolicy | None = None,
     counter: TextUnitCounter | None = None,
 ) -> ContextWindow:
@@ -587,21 +813,58 @@ def build_context_window(
         if summary and summary.text
         else 0
     )
-    confirmed_facts = _select_current_facts(
-        current_confirmed_facts=current_confirmed_facts,
+    structured_state = _project_structured_state(
+        context.structured_state,
         max_units=min(
             active_policy.max_structured_units,
             active_policy.max_model_input_units - summary_units,
         ),
         counter=active_counter,
     )
-    structured_units = sum(
+    memory_state_units = _estimate_structured_state(
+        structured_state,
+        active_counter,
+    )
+    confirmed_facts = _select_current_facts(
+        current_confirmed_facts=current_confirmed_facts,
+        max_units=min(
+            active_policy.max_structured_units,
+            active_policy.max_model_input_units
+            - summary_units
+            - memory_state_units,
+        ),
+        counter=active_counter,
+    )
+    confirmed_units = sum(
         _estimate_current_fact(path, value, active_counter)
         for path, value in confirmed_facts.items()
     )
 
+    memory_budget = min(
+        active_policy.max_memory_units,
+        max(
+            active_policy.max_model_input_units
+            - summary_units
+            - memory_state_units
+            - confirmed_units,
+            0,
+        ),
+    )
+    selected_memories: list[RetrievedMemory] = []
+    retrieved_units = 0
+    for memory in retrieved_memories:
+        item_units = _estimate_turn(memory.turn, active_counter)
+        if retrieved_units + item_units > memory_budget:
+            continue
+        selected_memories.append(memory)
+        retrieved_units += item_units
+
     remaining_units = max(
-        active_policy.max_model_input_units - summary_units - structured_units,
+        active_policy.max_model_input_units
+        - summary_units
+        - memory_state_units
+        - confirmed_units
+        - retrieved_units,
         0,
     )
     selected_reversed: list[ConversationTurn] = []
@@ -615,10 +878,18 @@ def build_context_window(
     selected = tuple(reversed(selected_reversed))
 
     return ContextWindow(
-        turns=selected,
         confirmed_facts=confirmed_facts,
+        structured_state=structured_state,
         summary=summary,
-        input_units=raw_units + summary_units + structured_units,
+        retrieved_memories=tuple(selected_memories),
+        turns=selected,
+        input_units=(
+            raw_units
+            + summary_units
+            + memory_state_units
+            + confirmed_units
+            + retrieved_units
+        ),
     )
 
 
@@ -630,32 +901,35 @@ def advance_context(
     counter: TextUnitCounter | None = None,
     summary_updater: IncrementalSummaryUpdater | None = None,
 ) -> ConversationContext:
-    """Append one completed turn and incrementally summarize only on overflow."""
+    """Append one turn and evict old prompt copies without synthesizing memory.
+
+    Every completed turn is archived atomically by the repository.  Evicted
+    turns are therefore lossless summary/retrieval inputs, and this synchronous
+    request path never replaces the last verified summary.
+    """
 
     active_policy = policy or ContextBudgetPolicy()
     active_counter = counter or ApproximateUnitCounter()
-    active_updater = summary_updater or DeterministicIncrementalSummaryUpdater()
+    del summary_updater  # retained as a source-compatible no-op during v3 migration
     turns = list(context.turns)
     turns.append(new_turn)
-    summary = context.summary
 
-    while turns and _all_projection_units(
+    while len(turns) > 1 and (
+        len(turns) > active_policy.max_recent_turns
+        or _all_projection_units(
         turns=turns,
-        summary=summary,
+        summary=context.summary,
         policy=active_policy,
         counter=active_counter,
-    ) > active_policy.max_model_input_units:
-        omitted = turns.pop(0)
-        summary = active_updater.update(
-            existing_summary=summary,
-            new_turn=omitted,
-            max_units=active_policy.max_summary_units,
-            counter=active_counter,
         )
+        > active_policy.max_model_input_units
+    ):
+        turns.pop(0)
 
     return ConversationContext(
         turns=tuple(turns),
-        summary=summary,
+        summary=context.summary,
+        structured_state=context.structured_state,
     )
 
 
@@ -700,6 +974,68 @@ def _all_projection_units(
 ) -> int:
     summary_units = counter.estimate_text(summary.text) if summary and summary.text else 0
     return summary_units + sum(_estimate_turn(turn, counter) for turn in turns)
+
+
+def _estimate_structured_state(
+    state: StructuredConversationState,
+    counter: TextUnitCounter,
+) -> int:
+    return counter.estimate_text(json.dumps(
+        state.to_state(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ))
+
+
+def _project_structured_state(
+    state: StructuredConversationState,
+    *,
+    max_units: int,
+    counter: TextUnitCounter,
+) -> StructuredConversationState:
+    if max_units <= 0:
+        return StructuredConversationState()
+
+    selected = StructuredConversationState()
+    goal = state.current_goal
+    if goal is not None:
+        candidate = StructuredConversationState(current_goal=goal)
+        if _estimate_structured_state(candidate, counter) <= max_units:
+            selected = candidate
+
+    def append_values(name: str, values: tuple[str, ...]) -> None:
+        nonlocal selected
+        for value in values:
+            candidate_values = (*getattr(selected, name), value)
+            candidate = StructuredConversationState(
+                current_goal=selected.current_goal,
+                response_preferences=(
+                    candidate_values
+                    if name == "response_preferences"
+                    else selected.response_preferences
+                ),
+                decisions=(
+                    candidate_values if name == "decisions" else selected.decisions
+                ),
+                open_questions=(
+                    candidate_values
+                    if name == "open_questions"
+                    else selected.open_questions
+                ),
+                entities=(
+                    candidate_values if name == "entities" else selected.entities
+                ),
+            )
+            if _estimate_structured_state(candidate, counter) > max_units:
+                return
+            selected = candidate
+
+    append_values("response_preferences", state.response_preferences)
+    append_values("decisions", state.decisions)
+    append_values("open_questions", state.open_questions)
+    append_values("entities", state.entities)
+    return selected
 
 
 def _estimate_current_fact(
@@ -785,4 +1121,5 @@ def _project_summary(
     return ContextSummary(
         text=text,
         estimated_units=counter.estimate_text(text) if text else 0,
+        summarized_through_sequence=summary.summarized_through_sequence,
     )

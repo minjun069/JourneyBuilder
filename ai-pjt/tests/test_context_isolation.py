@@ -23,6 +23,24 @@ class ContextIsolationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await api.read_context(target), context)
         self.assertEqual(await api.read_context(other_session), ConversationContext())
         self.assertEqual(await api.read_context(other_thread), ConversationContext())
+        self.assertEqual(
+            await api.retrieve_memories(
+                other_session,
+                None,
+                exclude_turn_ids=(),
+                limit=5,
+            ),
+            (),
+        )
+        self.assertEqual(
+            await api.retrieve_memories(
+                other_thread,
+                None,
+                exclude_turn_ids=(),
+                limit=5,
+            ),
+            (),
+        )
 
     async def test_request_scoped_configs_do_not_share_langgraph_threads(self):
         api = ContextStateAPI(FakeCheckpointer(), InMemoryCommittedContextStore())

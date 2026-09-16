@@ -28,11 +28,14 @@ class FakeCheckpointer:
 
 
 class ContextSchemaTests(unittest.TestCase):
-    def test_state_contains_only_summary_and_turns(self):
+    def test_state_contains_only_layered_non_financial_memory_and_turns(self):
         context = ConversationContext(turns=(turn("req-1"),))
         state = context.to_state()
         self.assertEqual(state["schema_version"], CONTEXT_SCHEMA_VERSION)
-        self.assertEqual(set(state), {"schema_version", "summary", "turns"})
+        self.assertEqual(
+            set(state),
+            {"schema_version", "summary", "structured_state", "turns"},
+        )
         self.assertNotIn("fact_revisions", state)
         self.assertNotIn("turn_digests", state)
         self.assertNotIn("source_turn_ids", state["summary"])
@@ -61,16 +64,21 @@ class ContextSchemaTests(unittest.TestCase):
         )
         self.assertEqual(dict(window.confirmed_facts), {"income.monthly": 500})
 
-    def test_overflow_keeps_bounded_recent_turns_and_incremental_summary(self):
+    def test_overflow_keeps_verified_summary_unchanged_and_evicts_recent_copy(self):
         context = ConversationContext()
-        policy = ContextBudgetPolicy(120, 40, 0)
+        policy = ContextBudgetPolicy(
+            max_model_input_units=120,
+            max_summary_units=40,
+            max_structured_units=0,
+            max_memory_units=0,
+        )
         for index in range(12):
             context = advance_context(
                 context=context,
                 new_turn=turn(f"req-{index}", "긴내용" * 15),
                 policy=policy,
             )
-        self.assertIsNotNone(context.summary)
+        self.assertIsNone(context.summary)
         self.assertLess(len(context.turns), 12)
 
 
@@ -108,7 +116,11 @@ class CommittedContextTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_same_request_with_another_payload_is_rejected(self):
         await self.api.commit(
-            self.scope, "req-1", "a" * 64, ConversationContext(), {"status": "completed"}
+            self.scope,
+            "req-1",
+            "a" * 64,
+            ConversationContext(turns=(turn("req-1"),)),
+            {"status": "completed"},
         )
         with self.assertRaises(ContextCommitConflict):
             await self.api.read_terminal(self.scope, "req-1", "b" * 64)

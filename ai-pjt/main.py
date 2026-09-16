@@ -17,7 +17,8 @@ from core.checkpointer import (
     get_checkpointer,
 )
 from core.config import settings
-from core.context import ContextScope, ConversationContext
+from core.context import ContextScope, ConversationContext, ConversationTurn
+from core.context_summary import ConversationMemoryManager, ModelSummaryGenerator
 from core.logging_setup import configure_logging
 from core.langfuse_exporter import build_langfuse_instrumentation_exporter
 from core.masking import MaskingSink
@@ -63,6 +64,17 @@ async def _context_cleanup_loop(context_api, context_store) -> None:
         await asyncio.sleep(settings.context_cleanup_interval_seconds)
 
 
+async def _context_memory_loop(memory_manager: ConversationMemoryManager) -> None:
+    while True:
+        try:
+            await memory_manager.run_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - durable jobs remain retryable
+            logger.exception("context_memory_worker_failed")
+        await asyncio.sleep(settings.context_memory_interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime()
@@ -101,16 +113,33 @@ async def lifespan(app: FastAPI):
             )
             app.state.context_store = context_store
             app.state.context_api = build_context_state_api(checkpointer, context_store)
+            from core.llm import embed_model, llm
+
+            app.state.context_memory = ConversationMemoryManager(
+                app.state.context_api,
+                embedding_model=embed_model,
+                summary_generator=ModelSummaryGenerator(llm),
+                retrieval_limit=settings.context_memory_top_k,
+                embedding_batch_size=settings.context_embedding_batch_size,
+            )
             await app.state.context_api.cleanup_expired_executions()
             cleanup_task = asyncio.create_task(
                 _context_cleanup_loop(app.state.context_api, context_store)
+            )
+            memory_task = asyncio.create_task(
+                _context_memory_loop(app.state.context_memory)
             )
             try:
                 yield
             finally:
                 cleanup_task.cancel()
+                memory_task.cancel()
                 try:
                     await cleanup_task
+                except asyncio.CancelledError:
+                    pass
+                try:
+                    await memory_task
                 except asyncio.CancelledError:
                     pass
     finally:
@@ -192,9 +221,15 @@ async def _process_v2_graph(
     await context_api.begin_execution(scope, request.request_id)
     try:
         context = await context_api.read_context(scope)
+        memory_manager = getattr(app.state, "context_memory", None)
+        memories = (
+            await memory_manager.retrieve(scope, request.message, context)
+            if memory_manager is not None
+            else ()
+        )
         graph_input = {
             **_graph_input(request),
-            **context_api.state_channels(scope, context),
+            **context_api.state_channels(scope, context, memories),
             "execution_budget": budget.to_state(),
         }
         graph_config = {
@@ -223,6 +258,11 @@ async def _process_v2_graph(
                 completed_at=utc_now(),
                 output=output,
             ).model_dump(mode="json"),
+            ConversationTurn(
+                turn_id=request.request_id,
+                user_message=request.message,
+                assistant_message=str(output.get("response", "")),
+            ),
         )
         return output
     finally:
@@ -279,6 +319,7 @@ async def _stream_v2_chat_events(
     context_api,
     request: ChatV2Request,
     callback_masker: CallbackPayloadMasker,
+    memory_manager: ConversationMemoryManager | None = None,
 ) -> AsyncIterator[str]:
     identity = {
         "contract_version": "2.0",
@@ -307,9 +348,14 @@ async def _stream_v2_chat_events(
         await context_api.begin_execution(scope, request.request_id)
         execution_started = True
         context = await context_api.read_context(scope)
+        memories = (
+            await memory_manager.retrieve(scope, request.message, context)
+            if memory_manager is not None
+            else ()
+        )
         graph_input = {
             **_graph_input(request),
-            **context_api.state_channels(scope, context),
+            **context_api.state_channels(scope, context, memories),
             "execution_budget": budget.to_state(),
         }
         graph_config = {
@@ -359,6 +405,11 @@ async def _stream_v2_chat_events(
             request.payload_digest,
             completed_context,
             terminal,
+            ConversationTurn(
+                turn_id=request.request_id,
+                user_message=request.message,
+                assistant_message=response,
+            ),
         )
         yield _encode_sse("done", dict(committed_terminal))
     except asyncio.CancelledError:
@@ -448,6 +499,7 @@ async def chat_v2_stream(
             app.state.context_api,
             request,
             app.state.callback_masker,
+            getattr(app.state, "context_memory", None),
         ),
         media_type="text/event-stream",
         headers={

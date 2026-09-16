@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from core.context import ContextWindow, ConversationTurn
+from core.context import (
+    ContextWindow,
+    ConversationTurn,
+    StructuredConversationState,
+)
 from graph.planner import (
     PlannerModelOutput,
     create_route_plan,
@@ -414,7 +418,9 @@ class ContextAwarePlanningTests(unittest.TestCase):
                 assistant_message="연령대를 확인했습니다.",
             ),),
             confirmed_facts={"profile.age_band": "40대"},
+            structured_state=StructuredConversationState(),
             summary=None,
+            retrieved_memories=(),
             input_units=20,
         )
         validation = create_route_plan(
@@ -453,7 +459,9 @@ class ContextAwarePlanningTests(unittest.TestCase):
         window = ContextWindow(
             turns=(),
             confirmed_facts={},
+            structured_state=StructuredConversationState(),
             summary=None,
+            retrieved_memories=(),
             input_units=0,
         )
         for message in (

@@ -473,8 +473,15 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             agent_graphs=all_agent_graphs(),
         )
         context = {
-            "schema_version": "2.0",
+            "schema_version": "3.0",
             "summary": {},
+            "structured_state": {
+                "current_goal": None,
+                "response_preferences": [],
+                "decisions": [],
+                "open_questions": [],
+                "entities": [],
+            },
             "turns": [{
                 "turn_id": "previous-request",
                 "user_message": "이전 질문",
@@ -489,7 +496,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             "customer_info": {"saved_data": {}, "current_form": {}},
             "field_registry": [],
             "context_scope": {
-                "schema_version": "2.0",
+                "schema_version": "3.0",
                 "session_id": 1,
                 "thread_id": "thread-context-event",
             },

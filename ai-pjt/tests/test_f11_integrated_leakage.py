@@ -598,7 +598,13 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                 return None
 
             async def commit(
-                self, _scope, _request_id, _payload_digest, _context, terminal
+                self,
+                _scope,
+                _request_id,
+                _payload_digest,
+                _context,
+                terminal,
+                _completed_turn=None,
             ):
                 self.terminal = terminal
                 return terminal
@@ -609,7 +615,7 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                 self.terminal = terminal
                 return terminal
 
-            def state_channels(self, scope, _context):
+            def state_channels(self, scope, _context, _retrieved_memories=()):
                 return {"context_scope": {"session_id": scope.session_id}}
 
             def config_for(self, scope, _request_id):
@@ -627,8 +633,15 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                     "parent_ids": [],
                     "data": {"output": {
                         "conversation_context": {
-                            "schema_version": "2.0",
+                            "schema_version": "3.0",
                             "summary": {},
+                            "structured_state": {
+                                "current_goal": None,
+                                "response_preferences": [],
+                                "decisions": [],
+                                "open_questions": [],
+                                "entities": [],
+                            },
                             "turns": [],
                         },
                         "output": {

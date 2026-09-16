@@ -10,6 +10,7 @@ class ContextScopeState(TypedDict):
 class PersistedConversationState(TypedDict):
     schema_version: str
     summary: dict[str, Any]
+    structured_state: dict[str, Any]
     turns: list[dict[str, Any]]
 
 
@@ -39,6 +40,7 @@ class ChatState(TypedDict):
     output: dict  # 에이전트 응답 — input_assist는 FormChangeAction 포함
     context_scope: NotRequired[ContextScopeState]
     conversation_context: NotRequired[PersistedConversationState]
+    retrieved_memories: NotRequired[list[dict[str, Any]]]
     route: NotRequired[dict[str, Any]]
     route_plan: NotRequired[dict[str, Any]]
     current_task: NotRequired[dict[str, Any]]

@@ -124,6 +124,15 @@ class Settings:
         self.context_cleanup_interval_seconds = _read_positive_int(
             "AI_CONTEXT_CLEANUP_INTERVAL_SECONDS", 300, active_environ
         )
+        self.context_memory_interval_seconds = _read_positive_int(
+            "AI_CONTEXT_MEMORY_INTERVAL_SECONDS", 5, active_environ
+        )
+        self.context_memory_top_k = _read_positive_int(
+            "AI_CONTEXT_MEMORY_TOP_K", 5, active_environ
+        )
+        self.context_embedding_batch_size = _read_positive_int(
+            "AI_CONTEXT_EMBEDDING_BATCH_SIZE", 8, active_environ
+        )
 
         self.rag_financial_collection = active_environ.get(
             "RAG_FINANCIAL_COLLECTION", "financial-knowledge"
