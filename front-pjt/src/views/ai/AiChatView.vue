@@ -14,6 +14,7 @@ import { decideFormChangeLocally } from '@/utils/formDecision'
 import { addSentenceLineBreaks, renderChatMarkdown } from '@/utils/chatMarkdown'
 import { validateConsultationForm } from '@/utils/formValidation'
 import {
+  cloneFormState,
   completedStepsForSession,
   replaceFormState,
   resolveResumeStep,
@@ -101,7 +102,11 @@ function dismissNextStepAction() {
 
 async function navigateToStep(stepId) {
   if (currentStepId.value === stepId) return
-  captureActiveFormDraft()
+  try {
+    captureActiveFormDraft()
+  } catch {
+    sessionError.value = '현재 입력 화면의 임시본을 보관하지 못했지만 요청한 단계로 이동했습니다.'
+  }
   dismissNextStepAction()
   const next = new Set(visitedStepIds.value)
   next.add(currentStepId.value)
@@ -597,7 +602,7 @@ function clearFormWarning() {
 function captureActiveFormDraft() {
   const form = activeFormRef.value?.form
   if (!form || !STEP_FORM_MAP[currentStepId.value]) return
-  formDrafts[currentStepId.value] = structuredClone(form)
+  formDrafts[currentStepId.value] = cloneFormState(form)
 }
 
 async function hydrateActiveForm(stepId) {
@@ -608,7 +613,7 @@ async function hydrateActiveForm(stepId) {
     restoringForm.value = true
     try {
       stored = await consultationStore.loadFormData(stepId)
-      if (stored) formDrafts[stepId] = structuredClone(stored)
+      if (stored) formDrafts[stepId] = cloneFormState(stored)
     } catch {
       sessionError.value = '저장된 입력값 일부를 불러오지 못했습니다. 현재 단계의 값을 확인해주세요.'
     } finally {
@@ -627,7 +632,7 @@ async function restoreConsultationProcess(session) {
   if (resumeStep === 'income') {
     try {
       const liabilities = await consultationStore.loadFormData('liabilities')
-      if (liabilities?.assets?.length) formDrafts.liabilities = structuredClone(liabilities)
+      if (liabilities?.assets?.length) formDrafts.liabilities = cloneFormState(liabilities)
       else resumeStep = 'liabilities'
     } catch {
       resumeStep = 'liabilities'
@@ -681,6 +686,7 @@ async function requestErrorReview(nextStepId = null) {
       currentStepId.value,
       activeFormRef.value.form,
     )
+    reviewLoading.value = false
     const bubble = toChatMessage(stored)
     const items = bubble.action?.type === 'error-review' ? bubble.action.items : []
     if (!items.length) return false
@@ -782,7 +788,6 @@ async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = fa
     if (savedStepId === 'basic-info') {
       basicInfoData.value = response?.data?.data ?? null
     }
-    captureActiveFormDraft()
   } catch (error) {
     sessionError.value = error?.response?.data?.error?.message
       ?? error?.message
@@ -790,6 +795,12 @@ async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = fa
     return false
   } finally {
     formSaving.value = false
+  }
+
+  try {
+    captureActiveFormDraft()
+  } catch {
+    sessionError.value = '입력값은 서버에 저장됐지만 화면 임시본을 만들지 못했습니다. 다음 단계에서 이전 입력을 다시 확인해주세요.'
   }
 
   completedStepIds.value = new Set(completedStepIds.value).add(savedStepId)
@@ -929,7 +940,6 @@ onBeforeUnmount(() => {
                   <p v-if="sessionError" class="session-error" role="alert">{{ sessionError }}</p>
                 </div>
               </div>
-              <p v-if="hasActiveSession && sessionError" class="chat-error" role="alert">{{ sessionError }}</p>
               <template v-for="(msg, i) in messages" :key="i">
                 <div v-if="msg.role === 'divider'" class="step-divider" :data-step-id="msg.stepId">
                   <span class="divider-line"></span>
@@ -1017,6 +1027,11 @@ onBeforeUnmount(() => {
               </article>
               <div ref="chatSpacerRef" class="chat-spacer"></div>
             </div>
+            <div v-if="reviewLoading" class="chat-operation-status" role="status" aria-live="polite">
+              <span class="chat-operation-dot" aria-hidden="true"></span>
+              <span>입력값의 이상 여부를 검토하고 있습니다.</span>
+            </div>
+            <p v-if="hasActiveSession && sessionError" class="chat-error" role="alert">{{ sessionError }}</p>
             <div v-if="hasActiveSession" class="composer">
               <textarea
                 ref="chatInputRef"
