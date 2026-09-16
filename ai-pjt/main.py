@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
 import asyncio
+from hashlib import sha256
+import hmac
 import json
 import logging
 from typing import Any, AsyncIterator
@@ -9,9 +11,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from core.callback_masking import CallbackPayloadMasker
-from core.checkpointer import build_context_state_api, get_checkpointer
+from core.checkpointer import (
+    build_committed_context_store,
+    build_context_state_api,
+    get_checkpointer,
+)
 from core.config import settings
-from core.context import ContextScope
+from core.context import ContextScope, ConversationContext
 from core.logging_setup import configure_logging
 from core.langfuse_exporter import build_langfuse_instrumentation_exporter
 from core.masking import MaskingSink
@@ -45,6 +51,18 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+async def _context_cleanup_loop(context_api, context_store) -> None:
+    while True:
+        try:
+            await context_api.cleanup_expired_executions()
+            await context_store.cleanup_closed_contexts()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - cleanup failure must not stop serving
+            logger.exception("context_cleanup_failed")
+        await asyncio.sleep(settings.context_cleanup_interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_runtime()
@@ -61,6 +79,8 @@ async def lifespan(app: FastAPI):
         )
     try:
         async with get_checkpointer() as checkpointer:
+            context_store = build_committed_context_store()
+            await context_store.setup()
             tool_runtime = build_production_tool_runtime()
             instrumentation, instrumentation_sink = build_masked_runtime_instrumentation(
                 pseudonym_key=settings.masking_pseudonym_key_bytes,
@@ -79,8 +99,20 @@ async def lifespan(app: FastAPI):
                 instrumentation=instrumentation,
                 tool_executors=build_graph_tool_executors(tool_runtime),
             )
-            app.state.context_api = build_context_state_api(checkpointer)
-            yield
+            app.state.context_store = context_store
+            app.state.context_api = build_context_state_api(checkpointer, context_store)
+            await app.state.context_api.cleanup_expired_executions()
+            cleanup_task = asyncio.create_task(
+                _context_cleanup_loop(app.state.context_api, context_store)
+            )
+            try:
+                yield
+            finally:
+                cleanup_task.cancel()
+                try:
+                    await cleanup_task
+                except asyncio.CancelledError:
+                    pass
     finally:
         shutdown = getattr(instrumentation_exporter, "shutdown", None)
         if callable(shutdown):
@@ -157,24 +189,44 @@ async def _process_v2_graph(
     budget.require_time()
     scope = ContextScope(request.session_id, request.thread_id)
     context_api = app.state.context_api
-    context = await context_api.read_context(scope)
-    graph_input = {
-        **_graph_input(request),
-        **context_api.state_channels(scope, context),
-        "execution_budget": budget.to_state(),
-    }
-    graph_config = {
-        **context_api.config_for(scope),
-        "callbacks": get_callbacks(),
-    }
-    result = await app.state.chat_graph.ainvoke(
-        graph_input,
-        config=graph_config,
-    )
-    output = result.get("output", {})
-    if not isinstance(output, dict):
-        raise ValueError("graph output must be an object")
-    return output
+    await context_api.begin_execution(scope, request.request_id)
+    try:
+        context = await context_api.read_context(scope)
+        graph_input = {
+            **_graph_input(request),
+            **context_api.state_channels(scope, context),
+            "execution_budget": budget.to_state(),
+        }
+        graph_config = {
+            **context_api.config_for(scope, request.request_id),
+            "callbacks": get_callbacks(),
+        }
+        result = await app.state.chat_graph.ainvoke(
+            graph_input,
+            config=graph_config,
+        )
+        output = result.get("output", {})
+        if not isinstance(output, dict):
+            raise ValueError("graph output must be an object")
+        context_payload = result.get("conversation_context")
+        if not isinstance(context_payload, dict):
+            raise ValueError("completed graph state must include conversation_context")
+        await context_api.commit(
+            scope,
+            request.request_id,
+            request.payload_digest,
+            ConversationContext.from_state(context_payload),
+            CompletedCallback(
+                request_id=request.request_id,
+                session_id=request.session_id,
+                thread_id=request.thread_id,
+                completed_at=utc_now(),
+                output=output,
+            ).model_dump(mode="json"),
+        )
+        return output
+    finally:
+        await asyncio.shield(context_api.delete_execution(scope, request.request_id))
 
 
 @app.exception_handler(ServiceContractError)
@@ -188,10 +240,33 @@ async def service_contract_error_handler(
 async def _parse_v2_request(raw_request: Request) -> ChatV2Request:
     try:
         raw_payload = await raw_request.json()
+        if not isinstance(raw_payload, dict):
+            raise ValueError("request body must be an object")
+        supplied_digest = raw_payload.get("payload_digest")
+        digest_payload = {
+            key: value for key, value in raw_payload.items() if key != "payload_digest"
+        }
+        computed_digest = sha256(json.dumps(
+            digest_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        if not isinstance(supplied_digest, str) or not hmac.compare_digest(
+            supplied_digest,
+            computed_digest,
+        ):
+            raise ServiceContractError(
+                status_code=409,
+                code="PAYLOAD_DIGEST_MISMATCH",
+                message="request_id에 결합된 요청 내용이 다릅니다.",
+            )
         return ChatV2Request.model_validate(raw_payload)
     except ValidationError as exc:
         raise _v2_validation_error(exc) from None
-    except ValueError:
+    except ServiceContractError:
+        raise
+    except (TypeError, ValueError):
         raise ServiceContractError(
             status_code=422,
             code="REQUEST_SCHEMA_INVALID",
@@ -214,10 +289,23 @@ async def _stream_v2_chat_events(
     yield _encode_sse("start", identity)
 
     final_state: dict[str, Any] = {}
+    scope = ContextScope(request.session_id, request.thread_id)
+    execution_started = False
     try:
+        replay = await context_api.read_terminal(
+            scope,
+            request.request_id,
+            request.payload_digest,
+        )
+        if replay is not None:
+            event = "done" if replay.get("status") == "completed" else "error"
+            yield _encode_sse(event, dict(replay))
+            return
+
         budget = ExecutionBudget.from_request(request)
         budget.require_time()
-        scope = ContextScope(request.session_id, request.thread_id)
+        await context_api.begin_execution(scope, request.request_id)
+        execution_started = True
         context = await context_api.read_context(scope)
         graph_input = {
             **_graph_input(request),
@@ -225,7 +313,7 @@ async def _stream_v2_chat_events(
             "execution_budget": budget.to_state(),
         }
         graph_config = {
-            **context_api.config_for(scope),
+            **context_api.config_for(scope, request.request_id),
             "callbacks": get_callbacks(),
         }
 
@@ -261,7 +349,18 @@ async def _stream_v2_chat_events(
                 output=output,
             ).model_dump(mode="json")
         )
-        yield _encode_sse("done", terminal)
+        context_payload = final_state.get("conversation_context")
+        if not isinstance(context_payload, dict):
+            raise ValueError("completed graph state must include conversation_context")
+        completed_context = ConversationContext.from_state(context_payload)
+        committed_terminal = await context_api.commit(
+            scope,
+            request.request_id,
+            request.payload_digest,
+            completed_context,
+            terminal,
+        )
+        yield _encode_sse("done", dict(committed_terminal))
     except asyncio.CancelledError:
         logger.info("AI v2 stream 연결 종료")
         raise
@@ -279,6 +378,15 @@ async def _stream_v2_chat_events(
                 ),
             ).model_dump(mode="json")
         )
+        try:
+            terminal = dict(await context_api.commit_terminal(
+                scope,
+                request.request_id,
+                request.payload_digest,
+                terminal,
+            ))
+        except Exception:  # noqa: BLE001 - still return a bounded terminal error
+            logger.exception("terminal_receipt_commit_failed")
         yield _encode_sse("error", terminal)
     except Exception as error:
         logger.error(
@@ -304,7 +412,24 @@ async def _stream_v2_chat_events(
                 ),
             ).model_dump(mode="json")
         )
+        try:
+            terminal = dict(await context_api.commit_terminal(
+                scope,
+                request.request_id,
+                request.payload_digest,
+                terminal,
+            ))
+        except Exception:  # noqa: BLE001 - still return a bounded terminal error
+            logger.exception("terminal_receipt_commit_failed")
         yield _encode_sse("error", terminal)
+    finally:
+        if execution_started:
+            try:
+                await asyncio.shield(
+                    context_api.delete_execution(scope, request.request_id)
+                )
+            except Exception:  # noqa: BLE001 - TTL cleanup remains as fallback
+                logger.exception("temporary_context_cleanup_failed")
 
 
 @app.post("/api/ai/v2/chat/stream")

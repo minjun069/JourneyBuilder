@@ -412,11 +412,9 @@ class ContextAwarePlanningTests(unittest.TestCase):
                 turn_id="turn-1",
                 user_message="저는 40대입니다.",
                 assistant_message="연령대를 확인했습니다.",
-                confirmed_facts={"profile.age_band": "40대"},
             ),),
             confirmed_facts={"profile.age_band": "40대"},
             summary=None,
-            structured_facts=(),
             input_units=20,
         )
         validation = create_route_plan(
@@ -456,7 +454,6 @@ class ContextAwarePlanningTests(unittest.TestCase):
             turns=(),
             confirmed_facts={},
             summary=None,
-            structured_facts=(),
             input_units=0,
         )
         for message in (

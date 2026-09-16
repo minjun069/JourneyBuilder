@@ -142,6 +142,51 @@ class AITerminalReceipt(models.Model):
         db_table = 'consulting_ai_terminal_receipts'
 
 
+class AIRequestExecution(models.Model):
+    """Durable identity and serialization record created before an AI call."""
+
+    class Status(models.TextChoices):
+        PROCESSING = 'processing', '처리 중'
+        COMPLETED = 'completed', '완료'
+        FAILED = 'failed', '실패'
+        EXPIRED = 'expired', '만료'
+
+    request_id = models.CharField(max_length=128, unique=True)
+    session = models.ForeignKey(
+        ConsultingSession,
+        on_delete=models.CASCADE,
+        related_name='ai_request_executions',
+    )
+    thread_id = models.CharField(max_length=255)
+    step_id = models.CharField(max_length=100)
+    user_message = models.ForeignKey(
+        Message,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    payload_digest = models.CharField(max_length=64)
+    request_payload = models.JSONField()
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PROCESSING,
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'consulting_ai_request_executions'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['session'],
+                condition=models.Q(status='processing'),
+                name='one_active_ai_request_per_session',
+            ),
+        ]
+
+
 # ──────────────────────────────────────────────────────────
 # 사용자 정보 입력 처리
 # ──────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 """Sink-independent runtime instrumentation contracts for F10-T01.
 
-The port accepts typed runtime events, including bounded JSON-like input and
+The port accepts typed runtime events, including JSON-like input and
 output snapshots. Content is never exported directly: the mandatory masked
 sink removes sensitive leaves and identifiers before any downstream receives
 it.
@@ -24,8 +24,7 @@ from core.monitoring import (
 )
 
 
-RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.4"
-MAX_OBSERVATION_CONTENT_BYTES = 65_536
+RUNTIME_INSTRUMENTATION_CONTRACT_VERSION = "1.5"
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 _PSEUDONYMOUS_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -106,7 +105,7 @@ def _validate_observation_content(value: Any, field_name: str) -> None:
     if value is None:
         return
     try:
-        rendered = json.dumps(
+        json.dumps(
             value,
             ensure_ascii=False,
             allow_nan=False,
@@ -114,10 +113,6 @@ def _validate_observation_content(value: Any, field_name: str) -> None:
         )
     except (TypeError, ValueError) as error:
         raise ValueError(f"{field_name} must be JSON-serializable") from error
-    if len(rendered.encode("utf-8")) > MAX_OBSERVATION_CONTENT_BYTES:
-        raise ValueError(
-            f"{field_name} exceeds {MAX_OBSERVATION_CONTENT_BYTES} bytes"
-        )
 
 
 def build_artifact_id(

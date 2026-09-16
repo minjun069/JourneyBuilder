@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
@@ -9,6 +10,9 @@ import httpx
 from main import app, _stream_v2_chat_events
 from tests.instrumentation import fake_callback_masker
 from transport.contracts import ChatV2Request
+
+
+EMPTY_CONTEXT = {"schema_version": "2.0", "summary": {}, "turns": []}
 
 
 def parse_frame(frame: str) -> tuple[str, dict]:
@@ -23,6 +27,7 @@ def v2_request() -> ChatV2Request:
     return ChatV2Request(
         contract_version="2.0",
         request_id="ai_req_v2_stream",
+        payload_digest="0" * 64,
         session_id=12,
         thread_id="user-3-session-12",
         step_id="general",
@@ -47,13 +52,33 @@ def error_review_request() -> ChatV2Request:
 
 
 class FakeContextAPI:
+    def __init__(self):
+        self.terminal = None
+
     async def read_context(self, scope):
         return {}
+
+    async def read_terminal(self, scope, request_id, payload_digest):
+        return self.terminal
+
+    async def begin_execution(self, scope, request_id):
+        return None
+
+    async def delete_execution(self, scope, request_id):
+        return None
+
+    async def commit(self, scope, request_id, payload_digest, context, terminal):
+        self.terminal = dict(terminal)
+        return self.terminal
+
+    async def commit_terminal(self, scope, request_id, payload_digest, terminal):
+        self.terminal = dict(terminal)
+        return self.terminal
 
     def state_channels(self, scope, context):
         return {"context_scope": {"session_id": scope.session_id}}
 
-    def config_for(self, scope):
+    def config_for(self, scope, request_id):
         return {"configurable": {"thread_id": scope.thread_id}}
 
 
@@ -78,6 +103,7 @@ class FakeV2Graph:
             "parent_ids": [],
             "data": {
                 "output": {
+                    "conversation_context": EMPTY_CONTEXT,
                     "output": {
                         "response": "안녕하세요",
                         "step_id": "general",
@@ -105,6 +131,7 @@ class EmptyResponseV2Graph:
             "parent_ids": [],
             "data": {
                 "output": {
+                    "conversation_context": EMPTY_CONTEXT,
                     "output": {
                         "response": "",
                         "step_id": "general",
@@ -124,6 +151,7 @@ class FakeErrorReviewGraph:
             "parent_ids": [],
             "data": {
                 "output": {
+                    "conversation_context": EMPTY_CONTEXT,
                     "output": {
                         "response": "입력값에서 확인이 필요한 항목 1개를 찾았습니다.",
                         "step_id": "basic-info",
@@ -222,7 +250,18 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         app.state.context_api = FakeContextAPI()
         app.state.callback_masker = fake_callback_masker()
 
-    async def _post(self, payload, authorization=None):
+    async def _post(self, payload, authorization=None, *, sign=True):
+        if sign and isinstance(payload, dict) and payload:
+            unsigned = {key: value for key, value in payload.items() if key != "payload_digest"}
+            payload = {
+                **unsigned,
+                "payload_digest": sha256(json.dumps(
+                    unsigned,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()).hexdigest(),
+            }
         headers = {"Accept": "text/event-stream"}
         if authorization is not None:
             headers["Authorization"] = authorization
@@ -253,6 +292,16 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         self.assertNotIn("event: delta", response.text)
         self.assertIn("event: done", response.text)
         self.assertIn('"contract_version":"2.0"', response.text)
+
+    async def test_payload_digest_mismatch_is_rejected_before_graph_execution(self):
+        with patch("main.settings.ai_service_bearer_token", "test-token"):
+            response = await self._post(
+                v2_request().model_dump(mode="json"),
+                authorization="Bearer test-token",
+                sign=False,
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"]["code"], "PAYLOAD_DIGEST_MISMATCH")
 
 
 if __name__ == "__main__":

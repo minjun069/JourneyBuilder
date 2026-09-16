@@ -265,6 +265,7 @@ async def _callback_replay_scenario() -> dict[str, Any]:
     request = ChatV2Request.model_validate({
         "contract_version": "2.0",
         "request_id": "f14-attack-replay",
+        "payload_digest": "0" * 64,
         "session_id": 1401,
         "thread_id": "thread-f14-replay",
         "step_id": "basic-info",

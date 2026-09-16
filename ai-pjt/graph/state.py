@@ -10,9 +10,7 @@ class ContextScopeState(TypedDict):
 class PersistedConversationState(TypedDict):
     schema_version: str
     summary: dict[str, Any]
-    structured_context: list[dict[str, Any]]
     turns: list[dict[str, Any]]
-    turn_digests: list[list[str]]
 
 
 class ExecutionBudgetState(TypedDict):

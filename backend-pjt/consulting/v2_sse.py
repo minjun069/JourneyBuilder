@@ -191,15 +191,14 @@ async def proxy_v2_ai_stream(
     except asyncio.CancelledError:
         logger.info('Django v2 SSE 클라이언트 연결 종료', extra={'request_id': state['request_id']})
         if not terminal:
-            failed = _failed_terminal(state, {
-                'code': 'UPSTREAM_UNAVAILABLE',
-                'message': 'AI 스트림 연결이 종료되었습니다.',
-                'retryable': True,
+            # The AI may already have atomically committed context and its
+            # terminal while delivery to Django was interrupted. Keep the
+            # original request identity and vault so an idempotent retry can
+            # query/replay that exact terminal instead of creating a new turn.
+            await sync_to_async(store.save_active, thread_sensitive=True)({
+                **state,
+                'retry_after_disconnect': True,
             })
-            finalized = await _finalize(state, failed)
-            terminal = True
-            await _save_terminal(store, finalized.state)
-            await _delete_token_vault(store, state['request_id'])
         raise
     except Exception as exc:
         if isinstance(exc, ReferenceTokenValidationError):

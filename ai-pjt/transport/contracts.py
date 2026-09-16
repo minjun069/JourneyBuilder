@@ -140,6 +140,7 @@ class ChatV2Request(BaseModel):
 
     contract_version: Literal["2.0"]
     request_id: StrictStr = Field(min_length=1, max_length=128)
+    payload_digest: StrictStr = Field(pattern=r"^[0-9a-f]{64}$")
     session_id: StrictInt = Field(gt=0)
     thread_id: StrictStr = Field(min_length=1, max_length=256)
     step_id: StrictStr = Field(min_length=1, max_length=128)

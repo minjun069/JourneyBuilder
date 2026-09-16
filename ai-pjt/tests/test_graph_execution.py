@@ -460,6 +460,48 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             0,
         )
 
+    async def test_planner_instrumentation_includes_conversation_context(self) -> None:
+        from graph.builder import build_graph
+        from core.runtime_instrumentation import RuntimeStage, RuntimeStatus
+
+        instrumentation, sink = fake_instrumentation()
+        graph = build_graph(
+            None,
+            instrumentation=instrumentation,
+            planner=FakePlanner({"tasks": []}),
+            classifier=FakeClassifier(),
+            agent_graphs=all_agent_graphs(),
+        )
+        context = {
+            "schema_version": "2.0",
+            "summary": {},
+            "turns": [{
+                "turn_id": "previous-request",
+                "user_message": "이전 질문",
+                "assistant_message": "이전 답변",
+            }],
+        }
+        await graph.ainvoke({
+            "request_id": "req-context-event",
+            "thread_id": "thread-context-event",
+            "message": "요청",
+            "step_id": "intro",
+            "customer_info": {"saved_data": {}, "current_form": {}},
+            "field_registry": [],
+            "context_scope": {
+                "schema_version": "2.0",
+                "session_id": 1,
+                "thread_id": "thread-context-event",
+            },
+            "conversation_context": context,
+        })
+        planner_start = next(
+            event for event in sink.runtime_events
+            if event.stage is RuntimeStage.PLANNER
+            and event.status is RuntimeStatus.STARTED
+        )
+        self.assertEqual(planner_start.input["context"]["conversation"], context)
+
     async def test_invalid_plan_reaches_compiled_fallback_graph(self) -> None:
         from agents import fallback
         from graph.builder import build_graph

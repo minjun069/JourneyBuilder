@@ -21,6 +21,7 @@ def request_payload(tool_context=None) -> dict:
     return {
         "contract_version": "2.0",
         "request_id": "req-tool-context",
+        "payload_digest": "0" * 64,
         "session_id": 12,
         "thread_id": "user-3-session-12",
         "step_id": "basic-info",

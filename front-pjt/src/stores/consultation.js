@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   getSessions, createSession, getSession,
@@ -29,6 +29,7 @@ export const useConsultationStore = defineStore('consultation', () => {
   const sessions = ref([])
   const activeSession = ref(null)
   const streaming = ref(false)
+  const isAiRequestActive = computed(() => streaming.value)
   let activeStreamController = null
 
   function clearActiveSession() {
@@ -91,8 +92,9 @@ export const useConsultationStore = defineStore('consultation', () => {
   } = {}) {
     if (!sessionId.value) return
     if (streaming.value || activeStreamController) {
-      const error = new Error('이전 AI 응답을 처리하고 있습니다. 잠시 후 다시 시도해주세요.')
+      const error = new Error('이 상담의 AI 응답이 아직 처리 중입니다.')
       error.code = 'AI_STREAM_IN_PROGRESS'
+      error.retryable = true
       throw error
     }
     const controller = new AbortController()
@@ -139,19 +141,21 @@ export const useConsultationStore = defineStore('consultation', () => {
       throw error
     } finally {
       clearTimeout(idleTimer)
-      if (activeStreamController === controller) activeStreamController = null
-      streaming.value = false
+      if (activeStreamController === controller) {
+        activeStreamController = null
+        streaming.value = false
+      }
     }
   }
 
-  async function reviewForm(stepId, form) {
+  async function reviewForm(stepId, form, trigger = 'user_request') {
     for await (const { event, data } of streamMessageV2(
       '현재 입력값을 검토해 주세요.',
       {
         stepId,
         form,
         requestMode: 'error_review',
-        reviewTrigger: 'save',
+        reviewTrigger: trigger,
       },
     )) {
       // Error Review는 구조화된 최종 결과만 화면에 반영한다.
@@ -168,8 +172,10 @@ export const useConsultationStore = defineStore('consultation', () => {
   }
 
   function cancelActiveStream() {
-    activeStreamController?.abort()
+    const controller = activeStreamController
     activeStreamController = null
+    streaming.value = false
+    controller?.abort()
   }
 
   function syncIds(sourceRows, savedRows) {
@@ -275,6 +281,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     sessionId,
     activeSession,
     streaming,
+    isAiRequestActive,
     chatMessages,
     sessions,
     initSession, loadSessions, continueLatestSession, loadActiveSession,

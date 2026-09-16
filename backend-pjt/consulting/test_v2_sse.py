@@ -26,7 +26,7 @@ def parse_frame(frame):
 
 
 def ai_payload():
-    return {
+    payload = {
         'contract_version': '2.0',
         'request_id': 'ai_req_v2_stream',
         'session_id': 12,
@@ -38,6 +38,9 @@ def ai_payload():
         'field_registry': [],
         'chart_payload': None,
     }
+    from .ai_lifecycle import canonical_digest
+
+    return {**payload, 'payload_digest': canonical_digest(payload)}
 
 
 def processing_state():
@@ -50,6 +53,7 @@ def processing_state():
         'user_message_id': 41,
         'thread_id': 'user-3-session-12',
         'step_id': 'general',
+        'payload_digest': ai_payload()['payload_digest'],
     }
 
 
@@ -102,6 +106,36 @@ class V2AIStreamClientTests(SimpleTestCase):
 
 
 class V2SSEProxyTests(SimpleTestCase):
+    @patch('consulting.v2_sse.finalize_terminal_result')
+    @patch('consulting.v2_sse.stream_v2_ai_response')
+    def test_disconnect_preserves_request_for_exact_retry(self, upstream, finalize):
+        async def cancelled_stream():
+            raise asyncio.CancelledError
+            yield ''
+
+        upstream.return_value = cancelled_stream()
+        store = MagicMock()
+
+        async def consume():
+            async for _frame in proxy_v2_ai_stream(
+                SimpleNamespace(id=12),
+                ai_payload(),
+                processing_state(),
+                store,
+                token_vault=token_vault(),
+            ):
+                pass
+
+        with self.assertRaises(asyncio.CancelledError):
+            asyncio.run(consume())
+
+        finalize.assert_not_called()
+        store.save_terminal.assert_not_called()
+        store.delete_token_vault.assert_not_called()
+        self.assertTrue(
+            store.save_active.call_args.args[0]['retry_after_disconnect']
+        )
+
     @patch('consulting.v2_sse.finalize_terminal_result')
     @patch('consulting.v2_sse.stream_v2_ai_response')
     def test_done_saves_one_v2_message_and_terminal_state(self, upstream, finalize):
@@ -322,8 +356,14 @@ class V2MessageStreamViewTests(SimpleTestCase):
     @patch('consulting.v2_views.Message.objects.create')
     @patch('consulting.v2_views.RedisLifecycleStore')
     @patch('consulting.v2_views.get_owned_session')
+    @patch('consulting.v2_views.transaction.atomic')
+    @patch('consulting.v2_views.AIRequestExecution.objects')
+    @patch('consulting.v2_views.ConsultingSession.objects')
     def test_new_request_saves_state_and_returns_async_sse(
         self,
+        session_objects,
+        execution_objects,
+        _atomic,
         get_session,
         store_class,
         create_user_message,
@@ -332,7 +372,10 @@ class V2MessageStreamViewTests(SimpleTestCase):
         _make_state,
         proxy_stream,
     ):
-        get_session.return_value = SimpleNamespace(id=12, status='in_progress')
+        session = SimpleNamespace(id=12, status='in_progress')
+        get_session.return_value = session
+        session_objects.select_for_update.return_value.filter.return_value.first.return_value = session
+        execution_objects.filter.return_value.exists.return_value = False
         create_user_message.return_value = SimpleNamespace(id=41, content='은퇴 준비를 알려줘')
         store = store_class.return_value
         store.get_idempotency.return_value = None
@@ -371,6 +414,18 @@ class V2MessageStreamViewTests(SimpleTestCase):
             upstream_payload['customer_info']['current_form']['monthly_income'],
             3_500_000,
         )
+        unsigned = {
+            key: value for key, value in upstream_payload.items()
+            if key != 'payload_digest'
+        }
+        from .ai_lifecycle import canonical_digest
+
+        self.assertEqual(upstream_payload['payload_digest'], canonical_digest(unsigned))
+        execution_objects.create.assert_called_once()
+        self.assertEqual(
+            execution_objects.create.call_args.kwargs['payload_digest'],
+            upstream_payload['payload_digest'],
+        )
 
     @patch('consulting.v2_views.proxy_v2_ai_stream')
     @patch('consulting.v2_views.make_processing_state', return_value=processing_state())
@@ -379,8 +434,14 @@ class V2MessageStreamViewTests(SimpleTestCase):
     @patch('consulting.v2_views.Message.objects.create')
     @patch('consulting.v2_views.RedisLifecycleStore')
     @patch('consulting.v2_views.get_owned_session')
+    @patch('consulting.v2_views.transaction.atomic')
+    @patch('consulting.v2_views.AIRequestExecution.objects')
+    @patch('consulting.v2_views.ConsultingSession.objects')
     def test_error_review_uses_the_same_sse_endpoint_and_forwards_trigger(
         self,
+        session_objects,
+        execution_objects,
+        _atomic,
         get_session,
         store_class,
         create_user_message,
@@ -389,7 +450,10 @@ class V2MessageStreamViewTests(SimpleTestCase):
         _make_state,
         proxy_stream,
     ):
-        get_session.return_value = SimpleNamespace(id=12, status='in_progress')
+        session = SimpleNamespace(id=12, status='in_progress')
+        get_session.return_value = session
+        session_objects.select_for_update.return_value.filter.return_value.first.return_value = session
+        execution_objects.filter.return_value.exists.return_value = False
         create_user_message.return_value = SimpleNamespace(id=41, content='현재 입력값을 검토해 주세요.')
         store_class.return_value.get_idempotency.return_value = None
         proxy_stream.return_value = async_items([
@@ -437,6 +501,75 @@ class V2MessageStreamViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['error']['code'], 'AI_STREAM_IN_PROGRESS')
         create_user_message.assert_not_called()
+
+    @patch('consulting.v2_views.proxy_v2_ai_stream')
+    @patch(
+        'consulting.v2_views.recover_terminal_state',
+        side_effect=lambda _request_id, **kwargs: kwargs['state'],
+    )
+    @patch('consulting.v2_views.AIRequestExecution.objects')
+    @patch('consulting.v2_views.RedisLifecycleStore')
+    @patch('consulting.v2_views.get_owned_session')
+    def test_disconnected_request_reuses_same_request_id_and_payload(
+        self,
+        get_session,
+        store_class,
+        execution_objects,
+        _recover_terminal,
+        proxy_stream,
+    ):
+        session = SimpleNamespace(id=12, status='in_progress')
+        state = {**processing_state(), 'retry_after_disconnect': True}
+        stored_payload = ai_payload()
+        vault = token_vault()
+        get_session.return_value = session
+        store = store_class.return_value
+        store.get_idempotency.return_value = {
+            'transport': 'sse',
+            'payload_digest': patch_digest(),
+            'request_id': 'ai_req_v2_stream',
+        }
+        store.get_request.return_value = state
+        store.get_token_vault.return_value = vault
+        execution_objects.filter.return_value.first.return_value = SimpleNamespace(
+            request_payload=stored_payload,
+        )
+        proxy_stream.return_value = async_items([
+            'event: start\ndata: {"request_id":"ai_req_v2_stream"}\n\n'
+        ])
+
+        response = V2MessageStreamView.as_view()(self.request(), session_id=12)
+        b''.join(asyncio.run(collect_async(response.streaming_content)))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(proxy_stream.call_args.args[1], stored_payload)
+        self.assertEqual(proxy_stream.call_args.args[2]['request_id'], 'ai_req_v2_stream')
+        self.assertNotIn('retry_after_disconnect', proxy_stream.call_args.args[2])
+        self.assertIs(proxy_stream.call_args.kwargs['token_vault'], vault)
+
+    @patch('consulting.v2_views.RedisLifecycleStore')
+    @patch('consulting.v2_views.get_owned_session')
+    @patch('consulting.v2_views.transaction.atomic')
+    @patch('consulting.v2_views.AIRequestExecution.objects')
+    @patch('consulting.v2_views.ConsultingSession.objects')
+    def test_distinct_request_is_rejected_while_session_stream_is_processing(
+        self,
+        session_objects,
+        execution_objects,
+        _atomic,
+        get_session,
+        store_class,
+    ):
+        session = SimpleNamespace(id=12, status='in_progress')
+        get_session.return_value = session
+        store_class.return_value.get_idempotency.return_value = None
+        session_objects.select_for_update.return_value.filter.return_value.first.return_value = session
+        execution_objects.filter.return_value.exists.return_value = True
+
+        response = V2MessageStreamView.as_view()(self.request(), session_id=12)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['error']['code'], 'AI_STREAM_IN_PROGRESS')
 
     @patch(
         'consulting.v2_views.recover_terminal_state',

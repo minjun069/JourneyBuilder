@@ -183,6 +183,32 @@ class ReferenceTokenVault:
             'tokens': dict(self._tokens),
         }
 
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> 'ReferenceTokenVault':
+        if not isinstance(record, Mapping) or record.get('version') != TOKENIZATION_VERSION:
+            raise ReferenceTokenError('unsupported token vault record')
+        vault = cls(
+            user_id=record.get('user_id'),
+            session_id=record.get('session_id'),
+            request_id=record.get('request_id'),
+            namespace=record.get('namespace'),
+        )
+        tokens = record.get('tokens')
+        if not isinstance(tokens, Mapping):
+            raise ReferenceTokenError('token vault entries must be an object')
+        for token, value in tokens.items():
+            match = REFERENCE_TOKEN_PATTERN.fullmatch(token) if isinstance(token, str) else None
+            if match is None or match.group('namespace') != vault._namespace:
+                raise ReferenceTokenError('token vault entry is malformed')
+            _require_scalar(value)
+            kind = match.group('kind')
+            identity = (kind, _canonical_scalar(value))
+            if identity in vault._reverse:
+                raise ReferenceTokenError('token vault contains duplicate values')
+            vault._tokens[token] = value
+            vault._reverse[identity] = token
+        return vault
+
     def _tokenize_node(
         self,
         value: Any,

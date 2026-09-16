@@ -29,6 +29,7 @@ def make_request(**changes) -> ChatV2Request:
     payload = {
         "contract_version": "2.0",
         "request_id": "ai_req_transport",
+        "payload_digest": "0" * 64,
         "session_id": 1,
         "thread_id": "user-3-session-1",
         "step_id": "basic-info",

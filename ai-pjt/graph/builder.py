@@ -308,6 +308,10 @@ def build_graph(
             "request_mode": str(state.get("request_mode", "chat")),
             "customer_info": deepcopy(state.get("customer_info", {})),
             "field_registry": deepcopy(state.get("field_registry", [])),
+            "context": {
+                "conversation": deepcopy(state.get("conversation_context", {})),
+                "elicit": deepcopy(state.get("elicit_contexts", {})),
+            },
         }
         planner_span = observed.start(
             RuntimeStage.PLANNER,
@@ -694,24 +698,12 @@ def build_graph(
         request_id = state.get("request_id")
         if not isinstance(request_id, str) or not request_id.strip():
             return {}
-        customer_info = state.get("customer_info", {})
-        registry = state.get("field_registry", [])
-        confirmed_facts = (
-            _flatten_customer_info(
-                customer_info,
-                field_registry=registry if isinstance(registry, list) else [],
-                step_id=state["step_id"],
-            )
-            if isinstance(customer_info, Mapping)
-            else {}
-        )
         updated = advance_context(
             context=context,
             new_turn=ConversationTurn(
                 turn_id=request_id,
                 user_message=state["message"],
                 assistant_message=response if isinstance(response, str) else "",
-                confirmed_facts=confirmed_facts,
             ),
         )
         return {"conversation_context": updated.to_state()}

@@ -25,6 +25,7 @@ from consulting.ai_lifecycle import (  # noqa: E402
     LifecycleError,
     bind_terminal_result,
     build_v2_ai_payload,
+    canonical_digest,
     require_idempotency_key,
     validate_browser_message,
     validate_terminal_payload,
@@ -89,6 +90,7 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
             form_data=fixture_body['customer_info']['current_form'],
             now=deadline - timedelta(seconds=AI_EXECUTION_DEADLINE_SECONDS),
         )
+        actual['payload_digest'] = canonical_digest(actual)
 
         self.assertEqual(actual, fixture_body)
 

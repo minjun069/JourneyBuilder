@@ -669,13 +669,18 @@ function cancelReviewSuggestion(item) {
   cancelErrorReviewSuggestion(item)
 }
 
-async function requestErrorReview(nextStepId = null) {
-  if (reviewLoading.value || !activeFormRef.value?.form) return false
+async function requestErrorReview(trigger = 'user_request', nextStepId = null) {
+  if (
+    reviewLoading.value
+    || consultationStore.isAiRequestActive
+    || !activeFormRef.value?.form
+  ) return false
   reviewLoading.value = true
   try {
     const stored = await consultationStore.reviewForm(
       currentStepId.value,
       activeFormRef.value.form,
+      trigger,
     )
     const bubble = toChatMessage(stored)
     const items = bubble.action?.type === 'error-review' ? bubble.action.items : []
@@ -738,7 +743,7 @@ async function submitForm() {
 
   try {
     await continueSaveAfterOptionalReview(
-      () => requestErrorReview(nextStepId),
+      () => requestErrorReview('save', nextStepId),
       () => persistFormAndAdvance(nextStepId),
     )
   } catch (error) {

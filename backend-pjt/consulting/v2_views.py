@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.db import transaction
 from django.http import StreamingHttpResponse
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 from rest_framework.permissions import IsAuthenticated
@@ -21,7 +22,7 @@ from .ai_lifecycle import (
 )
 from .ai_security import recover_terminal_state
 from .ai_tokenization import ReferenceTokenVault
-from .models import ConsultingSession, Message
+from .models import AIRequestExecution, ConsultingSession, Message
 from .v2_sse import proxy_v2_ai_stream, replay_v2_stream
 
 
@@ -104,6 +105,37 @@ class V2MessageStreamView(V2APIView):
                 if state is not cached_state:
                     store.save_terminal(state)
                 if state['status'] == 'processing':
+                    if state.get('retry_after_disconnect') is True:
+                        execution = (
+                            AIRequestExecution.objects.filter(
+                                request_id=state['request_id'],
+                                session=session,
+                                thread_id=state['thread_id'],
+                                payload_digest=state.get('payload_digest'),
+                                status=AIRequestExecution.Status.PROCESSING,
+                            )
+                            .first()
+                        )
+                        token_vault = store.get_token_vault(state['request_id'])
+                        if execution is None or token_vault is None:
+                            raise LifecycleError(
+                                503,
+                                'AI_STATE_UNAVAILABLE',
+                                '기존 AI 요청을 안전하게 재개할 수 없습니다.',
+                                True,
+                            )
+                        resumed_state = dict(state)
+                        resumed_state.pop('retry_after_disconnect', None)
+                        store.save_active(resumed_state)
+                        return self._stream_response(
+                            proxy_v2_ai_stream(
+                                session,
+                                execution.request_payload,
+                                resumed_state,
+                                store,
+                                token_vault=token_vault,
+                            )
+                        )
                     raise LifecycleError(
                         409,
                         'AI_STREAM_IN_PROGRESS',
@@ -118,51 +150,83 @@ class V2MessageStreamView(V2APIView):
                     ).first()
                 return self._stream_response(replay_v2_stream(state, message))
 
-            user_message = Message.objects.create(
-                session=session,
-                role=Message.Role.USER,
-                content=body['content'],
-            )
-            request_id = new_request_id()
-            raw_ai_payload = build_v2_ai_payload(
-                request_id=request_id,
-                session=session,
-                user=request.user,
-                message=body['content'],
-                step_id=body['step_id'],
-                form_data=body['form_data'],
-                request_mode=body.get('request_mode', 'chat'),
-                review_trigger=body.get('review_trigger'),
-            )
-            token_vault = ReferenceTokenVault(
-                user_id=request.user.id,
-                session_id=session.id,
-                request_id=request_id,
-            )
-            ai_payload = token_vault.tokenize(raw_ai_payload)
-            state = make_processing_state(
-                request_id=request_id,
-                session=session,
-                user=request.user,
-                user_message_id=user_message.id,
-                thread_id=ai_payload['thread_id'],
-                step_id=body['step_id'],
-            )
-            store.save_token_vault(token_vault)
-            store.save_active(state)
-            store.save_idempotency(
-                request.user.id,
-                session.id,
-                key,
-                {
-                    'transport': 'sse',
-                    'payload_digest': digest,
-                    'request_id': request_id,
-                },
-            )
+            with transaction.atomic():
+                locked_session = (
+                    ConsultingSession.objects.select_for_update()
+                    .filter(id=session.id, user=request.user)
+                    .first()
+                )
+                if locked_session is None:
+                    raise LifecycleError(404, 'SESSION_NOT_FOUND', '상담 세션을 찾을 수 없습니다.')
+                if AIRequestExecution.objects.filter(
+                    session=locked_session,
+                    status=AIRequestExecution.Status.PROCESSING,
+                ).exists():
+                    raise LifecycleError(
+                        409,
+                        'AI_STREAM_IN_PROGRESS',
+                        '이 상담의 다른 AI 스트림 요청이 처리 중입니다.',
+                        True,
+                    )
+
+                user_message = Message.objects.create(
+                    session=locked_session,
+                    role=Message.Role.USER,
+                    content=body['content'],
+                )
+                request_id = new_request_id()
+                raw_ai_payload = build_v2_ai_payload(
+                    request_id=request_id,
+                    session=locked_session,
+                    user=request.user,
+                    message=body['content'],
+                    step_id=body['step_id'],
+                    form_data=body['form_data'],
+                    request_mode=body.get('request_mode', 'chat'),
+                    review_trigger=body.get('review_trigger'),
+                )
+                token_vault = ReferenceTokenVault(
+                    user_id=request.user.id,
+                    session_id=locked_session.id,
+                    request_id=request_id,
+                )
+                ai_payload = token_vault.tokenize(raw_ai_payload)
+                ai_payload.pop('payload_digest', None)
+                ai_payload_digest = canonical_digest(ai_payload)
+                ai_payload['payload_digest'] = ai_payload_digest
+                state = make_processing_state(
+                    request_id=request_id,
+                    session=locked_session,
+                    user=request.user,
+                    user_message_id=user_message.id,
+                    thread_id=ai_payload['thread_id'],
+                    step_id=body['step_id'],
+                    payload_digest=ai_payload_digest,
+                )
+                AIRequestExecution.objects.create(
+                    request_id=request_id,
+                    session=locked_session,
+                    thread_id=ai_payload['thread_id'],
+                    step_id=body['step_id'],
+                    user_message=user_message,
+                    payload_digest=ai_payload_digest,
+                    request_payload=ai_payload,
+                )
+                store.save_token_vault(token_vault)
+                store.save_active(state)
+                store.save_idempotency(
+                    request.user.id,
+                    locked_session.id,
+                    key,
+                    {
+                        'transport': 'sse',
+                        'payload_digest': digest,
+                        'request_id': request_id,
+                    },
+                )
             return self._stream_response(
                 proxy_v2_ai_stream(
-                    session,
+                    locked_session,
                     ai_payload,
                     state,
                     store,
