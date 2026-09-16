@@ -1,9 +1,9 @@
 # ── 1단계: 은퇴 시뮬레이션 wheel 빌더 (S15P21B109-135) ──────────────────────────
-# ai-pjt/retirement_simulation 은 외부 의존성이 없는 순수 계산 패키지다. 계산 API 가
+# backend-pjt/packages/retirement_simulation 은 외부 의존성이 없는 순수 계산 패키지다. 계산 API 가
 # import 해서 직접 호출하므로 BE 이미지에 정식 설치해야 한다.
 #
 # 왜 wheel 을 여기서 만드는가: 실행 가능한 wheel 은 Git 에 넣지 않는다는 모듈 방침
-# (ai-pjt/retirement_simulation/docs/package-installation.md)과, 러너 체크아웃에서
+# (backend-pjt/packages/retirement_simulation/docs/package-installation.md)과, 러너 체크아웃에서
 # docker compose build 로 이미지를 만드는 배포 전제를 동시에 만족하는 지점이 여기뿐이다.
 #
 # 왜 `pip install <소스 디렉터리>` 가 아닌가: 그 형태는 direct_url.json 에 dir_info 를
@@ -25,8 +25,8 @@ WORKDIR /build
 COPY backend-pjt/requirements-build.lock ./requirements-build.lock
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements-build.lock
 
-# ai-pjt 전체가 아니라 모듈 디렉터리만 가져온다.
-COPY ai-pjt/retirement_simulation/ ./retirement_simulation/
+# Backend 내 패키지 소스만 가져온다.
+COPY backend-pjt/packages/retirement_simulation/ ./retirement_simulation/
 
 # --no-build-isolation: 위에서 해시 검증으로 설치한 setuptools 를 그대로 쓴다
 #   (pyproject 의 build-system.requires 와 같은 84.0.0 이어야 한다).

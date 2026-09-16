@@ -18,6 +18,8 @@ backend-pjt/contract_tests
 backend-pjt/**/tests.py
 backend-pjt/**/test_*.py
 backend-pjt/config/settings_test.py
+backend-pjt/packages/retirement_simulation/docs
+backend-pjt/packages/retirement_simulation/tests
 ai-pjt/tests
 ai-pjt/**/tests
 ai-pjt/experiments

@@ -14,6 +14,7 @@ g1-ai:
 	$(PYTHON) -m unittest discover -s ai-pjt/tests -v
 
 g1-backend:
+	$(PYTHON) -m unittest discover -s backend-pjt/packages/retirement_simulation/tests -t backend-pjt/packages -q
 	$(PYTHON) -m unittest discover -s backend-pjt/tests -v
 	$(PYTHON) -m unittest discover -s backend-pjt/contract_tests -v
 

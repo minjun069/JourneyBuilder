@@ -8,7 +8,7 @@ readiness.py 는 이 모듈을 import 하지 않으므로 설치가 깨져도 �
 조건부 skip 을 넣으면 설치가 안 된 상태에서도 CI 가 초록불이 된다.
 
 로컬 venv 에서 InstalledSimulationTests 가 실패하면 1회 설치하면 된다:
-    <venv>/python -m pip install --no-deps ./ai-pjt/retirement_simulation
+    <venv>/python -m pip install --no-deps ./backend-pjt/packages/retirement_simulation
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import unittest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = BACKEND_ROOT.parent
-MODULE_ROOT = REPOSITORY_ROOT / "ai-pjt/retirement_simulation"
+MODULE_ROOT = REPOSITORY_ROOT / "backend-pjt/packages/retirement_simulation"
 DISTRIBUTION = "retirewise-retirement-simulation"
 # 버전은 어디에도 적지 않는다. 모듈 pyproject 가 단일 출처다 (S15P21B109-142).
 WHEEL_GLOB = "retirewise_retirement_simulation-*-py3-none-any.whl"
@@ -48,7 +48,7 @@ class SimulationImageContractTests(unittest.TestCase):
         self.assertIn("AS simulation-builder", dockerfile)
         self.assertIn("COPY backend-pjt/requirements-build.lock", dockerfile)
         self.assertIn("--require-hashes -r requirements-build.lock", dockerfile)
-        self.assertIn("COPY ai-pjt/retirement_simulation/", dockerfile)
+        self.assertIn("COPY backend-pjt/packages/retirement_simulation/", dockerfile)
         self.assertIn(WHEEL_GLOB, dockerfile)
         # 소스 폴백 금지 — PYTHONPATH 로 우회하면 설치본이 아닌 소스가 잡힌다.
         # 지시자만 본다. 이 규칙을 설명하는 주석 자체는 허용한다.
@@ -73,7 +73,7 @@ class SimulationImageContractTests(unittest.TestCase):
 
     def test_build_backend_pin_matches_the_module_pyproject(self) -> None:
         pyproject = (
-            REPOSITORY_ROOT / "ai-pjt/retirement_simulation/pyproject.toml"
+            REPOSITORY_ROOT / "backend-pjt/packages/retirement_simulation/pyproject.toml"
         ).read_text(encoding="utf-8")
         build_lock = (BACKEND_ROOT / "requirements-build.lock").read_text(encoding="utf-8")
         self.assertIn('requires = ["setuptools==84.0.0"]', pyproject)
@@ -86,11 +86,10 @@ class SimulationImageContractTests(unittest.TestCase):
             for line in (REPOSITORY_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
             if line.strip() and not line.startswith("#")
         ]
-        # ai-pjt/**/tests 제외는 있어도 된다(wheel 에 들어가지 않는다). 모듈 소스 자체를
+        # 패키지 docs/tests 제외는 있어도 된다(wheel 에 들어가지 않는다). 모듈 소스 자체를
         # 막는 규칙만 없으면 된다.
         for rule in rules:
-            self.assertNotEqual(rule, "ai-pjt")
-            self.assertNotEqual(rule, "ai-pjt/retirement_simulation")
+            self.assertNotEqual(rule, "backend-pjt/packages/retirement_simulation")
 
 
 class InstalledSimulationTests(unittest.TestCase):

@@ -1,4 +1,4 @@
 # 이미지 빌드 전용. 런타임에는 설치되지 않는다 (멀티스테이지 builder 에만 존재).
 # 은퇴 시뮬레이션 wheel 을 저장소 소스에서 만들기 위한 빌드 백엔드다.
-# ai-pjt/retirement_simulation/pyproject.toml 의 build-system.requires 와 같은 버전이어야 한다.
+# backend-pjt/packages/retirement_simulation/pyproject.toml 의 build-system.requires 와 같은 버전이어야 한다.
 setuptools==84.0.0
