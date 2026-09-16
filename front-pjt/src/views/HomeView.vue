@@ -1,6 +1,12 @@
 <script setup>
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import mainPageImg from '@/assets/images/main_page.jpg'
+
+// 로그인 상태에서 /signup은 guestOnly 가드에 막혀 클릭이 무시되므로 AI 상담으로 보낸다
+const auth = useAuthStore()
+const ctaTarget = computed(() => (auth.hasSession ? '/ai' : '/signup'))
 </script>
 
 <template>
@@ -138,7 +144,7 @@ import mainPageImg from '@/assets/images/main_page.jpg'
       <div class="cta-inner">
         <h2 class="cta-title">지금 바로 재무 건강을 점검해 보세요</h2>
         <p class="cta-desc">5분이면 나의 재무 점수와 개선 방향을 알 수 있습니다</p>
-        <RouterLink to="/signup" class="cta-btn">무료로 시작하기</RouterLink>
+        <RouterLink :to="ctaTarget" class="cta-btn">무료로 시작하기</RouterLink>
       </div>
     </section>
 
