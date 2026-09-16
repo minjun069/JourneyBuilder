@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   getSessions, createSession, getSession,
@@ -29,7 +29,7 @@ export const useConsultationStore = defineStore('consultation', () => {
   const sessions = ref([])
   const activeSession = ref(null)
   const streaming = ref(false)
-  const isAiRequestActive = computed(() => streaming.value)
+  const isAiRequestActive = ref(false)
   let activeStreamController = null
 
   function clearActiveSession() {
@@ -91,7 +91,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     reviewTrigger = null,
   } = {}) {
     if (!sessionId.value) return
-    if (streaming.value || activeStreamController) {
+    if (streaming.value || isAiRequestActive.value || activeStreamController) {
       const error = new Error('이 상담의 AI 응답이 아직 처리 중입니다.')
       error.code = 'AI_STREAM_IN_PROGRESS'
       error.retryable = true
@@ -100,6 +100,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     const controller = new AbortController()
     activeStreamController = controller
     streaming.value = true
+    isAiRequestActive.value = true
     let idleTimedOut = false
     let idleTimer = null
     const resetIdleTimer = () => {
@@ -144,18 +145,19 @@ export const useConsultationStore = defineStore('consultation', () => {
       if (activeStreamController === controller) {
         activeStreamController = null
         streaming.value = false
+        isAiRequestActive.value = false
       }
     }
   }
 
-  async function reviewForm(stepId, form, trigger = 'user_request') {
+  async function reviewForm(stepId, form) {
     for await (const { event, data } of streamMessageV2(
       '현재 입력값을 검토해 주세요.',
       {
         stepId,
         form,
         requestMode: 'error_review',
-        reviewTrigger: trigger,
+        reviewTrigger: 'save',
       },
     )) {
       // Error Review는 구조화된 최종 결과만 화면에 반영한다.
@@ -175,6 +177,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     const controller = activeStreamController
     activeStreamController = null
     streaming.value = false
+    isAiRequestActive.value = false
     controller?.abort()
   }
 

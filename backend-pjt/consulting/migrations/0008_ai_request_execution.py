@@ -4,7 +4,7 @@ import django.db.models.deletion
 
 class Migration(migrations.Migration):
     dependencies = [
-        ('consulting', '0006_ai_terminal_receipt'),
+        ('consulting', '0007_consultingsession_financial_assets_confirmed_empty'),
     ]
 
     operations = [
