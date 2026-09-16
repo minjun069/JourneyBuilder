@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from core.context import (
@@ -20,6 +21,30 @@ from core.context_store import (
 
 
 POSTGRES_TEST_DSN = os.environ.get("AI_CONTEXT_POSTGRES_TEST_DSN", "")
+
+
+class PostgresCommittedContextCursorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expired_execution_keys_fetches_async_cursor_rows(self) -> None:
+        cursor = AsyncMock()
+        cursor.fetchall.return_value = [
+            {"thread_key": "checkpoint:first"},
+            {"thread_key": "checkpoint:second"},
+        ]
+        connection = AsyncMock()
+        connection.__aenter__.return_value = connection
+        connection.execute.return_value = cursor
+        store = PostgresCommittedContextStore("postgresql://unused")
+
+        connect = AsyncMock(return_value=connection)
+        with patch.object(store, "_connect", connect):
+            keys = await store.expired_execution_keys()
+
+        self.assertEqual(keys, ("checkpoint:first", "checkpoint:second"))
+        connect.assert_awaited_once_with(autocommit=True)
+        connection.execute.assert_awaited_once_with(
+            "SELECT thread_key FROM ai_temporary_executions WHERE expires_at <= NOW()"
+        )
+        cursor.fetchall.assert_awaited_once_with()
 
 
 @unittest.skipUnless(POSTGRES_TEST_DSN, "PostgreSQL context integration is opt-in")
