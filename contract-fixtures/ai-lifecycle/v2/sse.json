@@ -15,9 +15,7 @@
   "channel_policy": {
     "general_chat": "sse",
     "elicit": {
-      "start": "sse",
-      "resume": "sse",
-      "continuation": "sse"
+      "planner_routed_turn": "sse"
     },
     "error_review": {
       "save": "sse",

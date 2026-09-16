@@ -82,10 +82,7 @@ class FeatureControlContractTests(IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             make_request(request_mode="error_review")
 
-    def test_elicit_action_is_bound_to_financial_mindset_chat(self):
-        elicit = make_request(step_id="financial-mindset", elicit_action="start")
-        self.assertEqual(elicit.elicit_action, "start")
-
+    def test_legacy_elicit_action_is_rejected(self):
         with self.assertRaises(ValueError):
             make_request(elicit_action="start")
 

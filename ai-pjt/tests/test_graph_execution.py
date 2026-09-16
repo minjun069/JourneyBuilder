@@ -23,6 +23,7 @@ class FakeClassifier:
             "answer_question": "qa",
             "answer_dashboard_metric": "qa",
             "propose_form_change": "input_assist",
+            "collect_qualitative_info": "elicit",
         }.get(task["type"], "fallback")
         return {
             "status": "matched",
@@ -98,6 +99,182 @@ FIELD_SPEC = {
 
 @unittest.skipUnless(LANGGRAPH_AVAILABLE, "LangGraph runtime image에서 실행")
 class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_other_step_keeps_elicit_memory_out_of_planner_scope(self) -> None:
+        from graph.builder import build_graph
+        from graph.elicit_context import initial_elicit_contexts
+
+        class CapturePlanner:
+            def __init__(self) -> None:
+                self.context: dict | None = None
+
+            def __call__(
+                self,
+                *,
+                message: str,
+                step_id: str,
+                context: dict,
+            ) -> dict:
+                self.context = context
+                return {
+                    "elicit_routing": {
+                        "is_related": False,
+                        "field": None,
+                        "turn_kind": None,
+                        "confidence_sufficient": False,
+                    },
+                    "tasks": [{
+                        "id": "answer",
+                        "type": "answer_question",
+                        "description": message,
+                        "depends_on": [],
+                        "bindings": {},
+                    }],
+                }
+
+        scope = {
+            "schema_version": "1.0",
+            "session_id": 12,
+            "thread_id": "user-3-session-12",
+        }
+        mindset_state = {
+            "step_id": "financial-mindset",
+            "customer_info": {"saved_data": {}, "current_form": {}},
+            "context_scope": scope,
+        }
+        contexts = initial_elicit_contexts(mindset_state)
+        contexts["contexts"]["future_goals"].update({
+            "open_question": "은퇴 후 어떤 삶을 원하시나요?",
+            "status": "open",
+            "updated_at": "2026-09-16T00:00:00Z",
+        })
+        planner = CapturePlanner()
+        agents = all_agent_graphs()
+        graph = build_graph(
+            None,
+            instrumentation=fake_instrumentation()[0],
+            planner=planner,
+            classifier=FakeClassifier(),
+            agent_graphs=agents,
+        )
+
+        result = await graph.ainvoke({
+            "request_id": "turn-intro",
+            "message": "이 서비스는 어떻게 쓰나요?",
+            "step_id": "intro",
+            "customer_info": {"saved_data": {}, "current_form": {}},
+            "field_registry": [],
+            "context_scope": scope,
+            "elicit_contexts": contexts,
+        })
+
+        self.assertEqual(planner.context["elicit_context_index"], {})
+        self.assertEqual(result["elicit_contexts"], contexts)
+        self.assertEqual(result["output"]["response"], "qa 응답")
+        self.assertEqual(len(agents["fallback"].calls), 0)
+
+    async def test_planner_reconnects_field_context_after_intervening_qa(self) -> None:
+        from graph.builder import build_graph
+        from graph.elicit_context import initial_elicit_contexts
+
+        class InterleavedPlanner:
+            def __init__(self) -> None:
+                self.calls: list[dict] = []
+
+            def __call__(self, *, message: str, step_id: str, context: dict) -> dict:
+                self.calls.append(context)
+                if "계산" in message:
+                    return {
+                        "elicit_routing": {
+                            "is_related": False,
+                            "field": None,
+                            "turn_kind": None,
+                            "confidence_sufficient": False,
+                        },
+                        "tasks": [{
+                            "id": "answer",
+                            "type": "answer_question",
+                            "description": message,
+                            "depends_on": [],
+                            "bindings": {},
+                        }],
+                    }
+                return {
+                    "elicit_routing": {
+                        "is_related": True,
+                        "field": "future_goals",
+                        "turn_kind": "correction",
+                        "confidence_sufficient": True,
+                    },
+                    "tasks": [{
+                        "id": "correct",
+                        "type": "collect_qualitative_info",
+                        "description": message,
+                        "depends_on": [],
+                        "bindings": {},
+                    }],
+                }
+
+        scope = {
+            "schema_version": "1.0",
+            "session_id": 12,
+            "thread_id": "user-3-session-12",
+        }
+        base_state = {
+            "step_id": "financial-mindset",
+            "customer_info": {"saved_data": {}, "current_form": {}},
+            "context_scope": scope,
+        }
+        contexts = initial_elicit_contexts(base_state)
+        contexts["contexts"]["future_goals"].update({
+            "open_question": "은퇴 후 어떤 삶을 원하시나요?",
+            "status": "open",
+            "updated_at": "2026-09-16T00:00:00Z",
+        })
+        planner = InterleavedPlanner()
+        agents = all_agent_graphs()
+        graph = build_graph(
+            None,
+            instrumentation=fake_instrumentation()[0],
+            planner=planner,
+            classifier=FakeClassifier(),
+            agent_graphs=agents,
+        )
+
+        qa_result = await graph.ainvoke({
+            **base_state,
+            "request_id": "turn-calc",
+            "message": "필요 저축액 계산 방식은 뭐야?",
+            "field_registry": [],
+            "elicit_contexts": contexts,
+        })
+        self.assertEqual(len(agents["qa"].calls), 1)
+        self.assertEqual(len(agents["elicit"].calls), 0)
+        self.assertNotIn("ui_action", qa_result["output"])
+
+        correction_result = await graph.ainvoke({
+            **base_state,
+            "request_id": "turn-correction",
+            "message": "아까 말한 여행은 국내 여행 위주야.",
+            "field_registry": [],
+            "elicit_contexts": qa_result["elicit_contexts"],
+        })
+
+        self.assertEqual(len(agents["elicit"].calls), 1)
+        self.assertEqual(
+            agents["elicit"].calls[0]["elicit_routing"],
+            {
+                "is_related": True,
+                "field": "future_goals",
+                "turn_kind": "correction",
+                "confidence_sufficient": True,
+            },
+        )
+        self.assertEqual(
+            planner.calls[0]["elicit_context_index"],
+            planner.calls[1]["elicit_context_index"],
+        )
+        self.assertEqual(correction_result["output"]["response"], "elicit 응답")
+
     async def test_explanation_questions_do_not_fall_back_on_model_adapter_outage(
         self,
     ) -> None:

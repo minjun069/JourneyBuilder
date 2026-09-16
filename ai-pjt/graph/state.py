@@ -35,8 +35,8 @@ class ChatState(TypedDict):
     chart_payload: NotRequired[dict[str, Any] | None]
     request_mode: NotRequired[str]
     review_trigger: NotRequired[str]
-    elicit_action: NotRequired[str]
-    elicit_state: NotRequired[dict[str, Any]]
+    elicit_routing: NotRequired[dict[str, Any]]
+    elicit_contexts: NotRequired[dict[str, Any]]
     next: str   # 라우터가 결정한 다음 에이전트 노드명
     output: dict  # 에이전트 응답 — input_assist는 FormChangeAction 포함
     context_scope: NotRequired[ContextScopeState]

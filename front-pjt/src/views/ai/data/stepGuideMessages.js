@@ -29,7 +29,7 @@ export const STEP_GUIDE_MESSAGES = {
 
   'financial-mindset': [
     { text: '가치관, 과거 경험, 현재 상황, 당면 과제, 투자 철학, 미래 목표를 고객님의 말로 정리하는 단계입니다.' },
-    { text: 'AI가 여섯 항목을 하나씩 질문하고, 각 답변을 폼 제안으로 만들기 전에 확인해도 될까요?', action: { type: 'elicit-consent', label: '정성정보 대화 시작' } },
+    { text: '원하는 항목부터 편하게 말씀하거나 질문해 달라고 요청해 주세요. 다른 질문을 나눈 뒤에도 이전 내용을 이어서 보완할 수 있고, 폼 제안 전에는 정리한 내용을 확인합니다.' },
   ],
 
   'financial-satisfaction': [

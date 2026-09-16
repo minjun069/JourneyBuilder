@@ -27,6 +27,11 @@ from graph.executor import (
     execute_route_plan,
     validate_agent_executor_registry,
 )
+from graph.elicit_context import (
+    ELICIT_STEP_ID,
+    elicit_context_index,
+    load_elicit_contexts,
+)
 from graph.planner import create_route_plan, plan_tasks_with_model
 from graph.router import classify_task_with_model
 from graph.state import ChatState
@@ -41,43 +46,6 @@ from tools.runtime import ToolCallBudget
 
 
 logger = logging.getLogger(__name__)
-
-
-def _looks_like_qa(message: str) -> bool:
-    compact = message.strip().replace(" ", "")
-    if not compact:
-        return False
-    return (
-        "?" in compact
-        or compact.endswith(("뭐야", "무엇인가요", "왜요", "인가요", "나요", "까요"))
-        or any(token in compact for token in ("설명해줘", "알려줘", "무슨뜻", "어떻게계산"))
-    )
-
-
-def _pause_elicit_state(existing: Mapping[str, Any]) -> dict[str, Any]:
-    phase = existing.get("phase")
-    if phase not in {"asking", "confirming"}:
-        raise ValueError("only an active Elicit state can be paused")
-    paused = deepcopy(dict(existing))
-    paused["paused_from"] = phase
-    paused["phase"] = "paused"
-    return paused
-
-
-def _with_elicit_resume_action(
-    output: dict[str, Any],
-    elicit_state: Any,
-) -> dict[str, Any]:
-    if (
-        isinstance(elicit_state, Mapping)
-        and elicit_state.get("phase") == "paused"
-        and output.get("ui_action") is None
-    ):
-        return {
-            **output,
-            "ui_action": {"type": "resume_elicit", "label": "이어서 계속"},
-        }
-    return output
 
 
 def _direct_agent_plan(
@@ -113,8 +81,7 @@ def _direct_agent_plan(
         "chart_payload": deepcopy(state.get("chart_payload")),
         "request_mode": state.get("request_mode", "chat"),
         "review_trigger": state.get("review_trigger"),
-        "elicit_action": state.get("elicit_action"),
-        "elicit_state": deepcopy(state.get("elicit_state", {})),
+        "elicit_contexts": deepcopy(state.get("elicit_contexts", {})),
         "context_scope": deepcopy(state.get("context_scope", {})),
         "conversation_context": deepcopy(state.get("conversation_context", {})),
     }
@@ -176,8 +143,12 @@ def _agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
             "chart_payload": None if is_fallback else payload.get("chart_payload"),
             "request_mode": payload.get("request_mode", "chat"),
             "review_trigger": payload.get("review_trigger"),
-            "elicit_action": payload.get("elicit_action"),
-            "elicit_state": {} if is_fallback else deepcopy(payload.get("elicit_state", {})),
+            "elicit_routing": (
+                {} if is_fallback else deepcopy(payload.get("elicit_routing", {}))
+            ),
+            "elicit_contexts": (
+                {} if is_fallback else deepcopy(payload.get("elicit_contexts", {}))
+            ),
             "context_scope": {} if is_fallback else deepcopy(payload.get("context_scope", {})),
             "conversation_context": {} if is_fallback else deepcopy(payload.get("conversation_context", {})),
             "request_id": payload.get("request_id"),
@@ -213,7 +184,7 @@ def _agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
             "response": output["response"],
             "artifact": artifact,
         }
-        for key in ("review", "ui_action"):
+        for key in ("review",):
             if isinstance(output.get(key), Mapping):
                 task_result[key] = deepcopy(dict(output[key]))
         if isinstance(output.get("elicit_capture"), Mapping):
@@ -228,9 +199,11 @@ def _agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
             if not capture_validation.valid:
                 return failed_task_result(task_id, "artifact_invalid")
             task_result["elicit_capture"] = deepcopy(dict(output["elicit_capture"]))
-        if isinstance(result, Mapping) and isinstance(result.get("elicit_state"), Mapping):
+        if isinstance(result, Mapping) and isinstance(
+            result.get("elicit_contexts"), Mapping
+        ):
             task_result["state_update"] = {
-                "elicit_state": deepcopy(dict(result["elicit_state"]))
+                "elicit_contexts": deepcopy(dict(result["elicit_contexts"]))
             }
         return task_result
 
@@ -315,7 +288,6 @@ def build_graph(
     active_tools = dict(tool_executors or {})
 
     def plan_request(state: ChatState) -> dict[str, Any]:
-        paused_state = None
         request_id = str(state.get("request_id") or "request-unknown")
         plan_id = f"plan-{request_id}"
         scope = state.get("context_scope", {})
@@ -421,6 +393,17 @@ def build_graph(
                 context=context,
                 current_confirmed_facts=confirmed_facts,
             )
+            if state["step_id"] == ELICIT_STEP_ID:
+                elicit_contexts = load_elicit_contexts(state)
+                planner_elicit_index = elicit_context_index(elicit_contexts)
+            else:
+                stored_contexts = state.get("elicit_contexts")
+                elicit_contexts = (
+                    deepcopy(stored_contexts)
+                    if isinstance(stored_contexts, Mapping)
+                    else {}
+                )
+                planner_elicit_index = {}
         except (TypeError, ValueError) as error:
             error_identity = exception_identity_fields(error)
             observed.fail(
@@ -489,44 +472,6 @@ def build_graph(
                 "route_plan": direct_plan,
                 "plan_issues": [],
             }
-        existing_elicit = state.get("elicit_state", {})
-        phase = existing_elicit.get("phase") if isinstance(existing_elicit, Mapping) else None
-        elicit_action = state.get("elicit_action")
-        if elicit_action in {"start", "resume"} or (
-            phase in {"asking", "confirming"} and not _looks_like_qa(state["message"])
-        ):
-            direct_plan = _direct_agent_plan(
-                request_id=str(request_id or "request-unknown"),
-                task_type="collect_qualitative_info",
-                description=state["message"],
-                agent="elicit",
-                state=state,
-            )
-            decision = guard_plan(direct_plan)
-            observed.succeed(planner_span, output=direct_plan)
-            if decision.allowed:
-                observed.succeed(
-                    validation_span,
-                    output={"valid": True, "issues": []},
-                )
-            else:
-                observed.fail(
-                    validation_span,
-                    reason_code=decision.reason_code.lower(),
-                    output=decision.to_dict(),
-                )
-                return _policy_blocked_result(
-                    state=state,
-                    plan_id=plan_id,
-                    reason_code=decision.reason_code,
-                )
-            return {
-                "route_plan": direct_plan,
-                "plan_issues": [],
-            }
-        if phase in {"asking", "confirming"} and _looks_like_qa(state["message"]):
-            paused_state = _pause_elicit_state(existing_elicit)
-            state = {**state, "elicit_state": paused_state}
         try:
             validation = create_route_plan(
                 message=state["message"],
@@ -536,6 +481,7 @@ def build_graph(
                 classifier=classifier,
                 registered_tool_capabilities=tuple(active_tools),
                 plan_id=plan_id,
+                elicit_context_index=planner_elicit_index,
             )
         except Exception as error:
             error_identity = exception_identity_fields(error)
@@ -627,8 +573,7 @@ def build_graph(
             "chart_payload": deepcopy(state.get("chart_payload")),
             "request_mode": state.get("request_mode", "chat"),
             "review_trigger": state.get("review_trigger"),
-            "elicit_action": state.get("elicit_action"),
-            "elicit_state": deepcopy(state.get("elicit_state", {})),
+            "elicit_contexts": deepcopy(elicit_contexts),
             "context_scope": deepcopy(state.get("context_scope", {})),
             "conversation_context": deepcopy(state.get("conversation_context", {})),
         })
@@ -644,14 +589,11 @@ def build_graph(
                 reason_code=decision.reason_code.lower(),
                 output=decision.to_dict(),
             )
-            return {
-                **_policy_blocked_result(
-                    state=state,
-                    plan_id=plan_id,
-                    reason_code=decision.reason_code,
-                ),
-                **({"elicit_state": paused_state} if paused_state is not None else {}),
-            }
+            return _policy_blocked_result(
+                state=state,
+                plan_id=plan_id,
+                reason_code=decision.reason_code,
+            )
         observed.succeed(
             validation_span,
             output={"valid": True, "issues": []},
@@ -659,7 +601,6 @@ def build_graph(
         return {
             "route_plan": plan,
             "plan_issues": [],
-            **({"elicit_state": paused_state} if paused_state is not None else {}),
         }
 
     async def execute_plan(state: ChatState) -> dict[str, Any]:
@@ -729,13 +670,9 @@ def build_graph(
             else {"task_limit": task_limit, "tasks_used": report.tasks_used}
         )
         state_update = report.state_update or {}
-        output = report.output
-        current_elicit = state_update.get("elicit_state", state.get("elicit_state"))
-        if isinstance(output, dict):
-            output = _with_elicit_resume_action(output, current_elicit)
         return {
             "task_results": report.task_results,
-            "output": output,
+            "output": report.output,
             "execution_budget": updated_budget,
             **state_update,
         }

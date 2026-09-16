@@ -277,10 +277,6 @@ function toChatMessage(message) {
       items: visibleItems.map((item) => ({ ...item, decision: 'pending' })),
     }
   }
-  const uiAction = message.extracted_data?.ui_action
-  if (uiAction?.type === 'resume_elicit') {
-    bubble.action = { type: 'resume-elicit', label: uiAction.label ?? '이어서 계속' }
-  }
   return bubble
 }
 
@@ -392,40 +388,6 @@ function resizeChatInput() {
 
 async function executeAction(action) {
   if (action.type === 'next-step') navigateToStep(action.stepId)
-  if (action.type === 'elicit-consent') await runElicitAction('start')
-  if (action.type === 'resume-elicit') await runElicitAction('resume')
-}
-
-async function runElicitAction(elicitAction) {
-  if (isTyping.value || isStreamingResponse.value || !activeFormRef.value?.form) return
-  let actionIndex = -1
-  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
-    if (messages.value[index].action?.type === `${elicitAction === 'start' ? 'elicit-consent' : 'resume-elicit'}`) {
-      actionIndex = index
-      break
-    }
-  }
-  const text = elicitAction === 'start' ? '정성정보 수집에 동의합니다.' : '이어서 계속'
-  messages.value.push({ role: 'user', text })
-  isTyping.value = true
-  isStreamingResponse.value = true
-  try {
-    await streamAssistantMessage(text, {
-      stepId: currentStepId.value,
-      form: activeFormRef.value.form,
-      elicitAction,
-    })
-    if (actionIndex !== -1) {
-      messages.value[actionIndex] = { ...messages.value[actionIndex], action: undefined }
-    }
-  } catch (error) {
-    if (error?.name === 'AbortError') return
-    messages.value.push({ role: 'ai', text: error?.message ?? '정성정보 대화를 시작하지 못했습니다.' })
-  } finally {
-    isTyping.value = false
-    isStreamingResponse.value = false
-    scrollToBottom(false, true)
-  }
 }
 
 function dismissAction(msg) {

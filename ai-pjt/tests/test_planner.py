@@ -80,7 +80,65 @@ class RoutePlanValidationTests(unittest.TestCase):
         route_plan = model_output.to_route_plan()
 
         self.assertNotIn("arguments", route_plan["tasks"][0])
+        self.assertEqual(route_plan["elicit_routing"]["is_related"], False)
         self.assertTrue(validate_route_plan(route_plan, step_id="basic-info").valid)
+
+    def test_elicit_task_requires_structured_field_routing(self) -> None:
+        elicit_task = task(
+            "elicit",
+            "collect_qualitative_info",
+            "미래 목표 답변을 이어서 정리",
+        )
+        missing = validate_route_plan(
+            {"tasks": [elicit_task]},
+            step_id="financial-mindset",
+        )
+        self.assertFalse(missing.valid)
+        self.assertIn(
+            "ELICIT_ROUTING_REQUIRED",
+            {issue.code for issue in missing.issues},
+        )
+
+        routed = validate_route_plan({
+            "elicit_routing": {
+                "is_related": True,
+                "field": "future_goals",
+                "turn_kind": "correction",
+                "confidence_sufficient": True,
+            },
+            "tasks": [elicit_task],
+        }, step_id="financial-mindset")
+        self.assertTrue(routed.valid, [issue.to_dict() for issue in routed.issues])
+        self.assertEqual(
+            routed.plan["elicit_routing"]["field"],
+            "future_goals",
+        )
+
+    def test_low_confidence_elicit_judgment_cannot_execute_elicit(self) -> None:
+        routing = {
+            "is_related": True,
+            "field": None,
+            "turn_kind": None,
+            "confidence_sufficient": False,
+        }
+        routed = validate_route_plan({
+            "elicit_routing": routing,
+            "tasks": [task("clarify", "fallback", "대상 항목 확인")],
+        }, step_id="financial-mindset")
+        self.assertTrue(routed.valid, [issue.to_dict() for issue in routed.issues])
+        blocked = validate_route_plan({
+            "elicit_routing": routing,
+            "tasks": [task(
+                "elicit",
+                "collect_qualitative_info",
+                "불확실한 대상의 정성정보 수집",
+            )],
+        }, step_id="financial-mindset")
+        self.assertFalse(blocked.valid)
+        self.assertIn(
+            "ELICIT_ROUTING_REQUIRED",
+            {issue.code for issue in blocked.issues},
+        )
 
     def test_writable_household_reference_requires_complete_single_source_binding(self) -> None:
         lookup = task(
@@ -367,12 +425,20 @@ class ContextAwarePlanningTests(unittest.TestCase):
             context_window=window,
             planner=planner,
             classifier=FakeClassifier(),
+            elicit_context_index={
+                "schema_version": "2.0",
+                "fields": [{"field": "future_goals", "status": "open"}],
+            },
         )
 
         self.assertTrue(validation.valid)
         self.assertEqual(
             planner.calls[0]["context"]["confirmed_facts"],
             {"profile.age_band": "40대"},
+        )
+        self.assertEqual(
+            planner.calls[0]["context"]["elicit_context_index"]["fields"][0],
+            {"field": "future_goals", "status": "open"},
         )
         lookup, fill = validation.plan["tasks"]
         self.assertEqual(lookup["route"]["reason_code"], "capability_unavailable")

@@ -464,22 +464,6 @@ class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             fallback._run({"step_id": "intro", "fallback_category": "capability_unavailable"})
 
-    async def test_active_elicit_qa_pause_gets_only_resume_ui_contract(self) -> None:
-        configure_runtime()
-        from graph.builder import _pause_elicit_state, _with_elicit_resume_action
-
-        paused = _pause_elicit_state({"phase": "confirming", "pending_value": "안정"})
-        self.assertEqual(paused["phase"], "paused")
-        self.assertEqual(paused["paused_from"], "confirming")
-        self.assertEqual(_with_elicit_resume_action({
-            "response": "국민연금 설명",
-            "action": None,
-        }, paused)["ui_action"], {
-            "type": "resume_elicit",
-            "label": "이어서 계속",
-        })
-
-
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class ElicitStateTests(unittest.IsolatedAsyncioTestCase):
     def state(self, request_id: str, message: str, **extra) -> dict:
@@ -496,13 +480,37 @@ class ElicitStateTests(unittest.IsolatedAsyncioTestCase):
             **extra,
         }
 
-    async def test_ui_start_and_one_field_confirmation_create_deterministic_capture(self) -> None:
+    @staticmethod
+    def routing(field: str, turn_kind: str) -> dict:
+        return {
+            "is_related": True,
+            "field": field,
+            "turn_kind": turn_kind,
+            "confidence_sufficient": True,
+        }
+
+    async def test_field_context_confirmation_creates_deterministic_capture(self) -> None:
         configure_runtime()
         from agents import elicit
 
-        started = await elicit._run(self.state("turn-start", "동의", elicit_action="start"))
-        self.assertEqual(started["elicit_state"]["phase"], "asking")
+        started = await elicit._run(self.state(
+            "turn-start",
+            "가치관부터 질문해 줘",
+            elicit_routing=self.routing("values", "new"),
+        ))
+        values = started["elicit_contexts"]["contexts"]["values"]
+        self.assertEqual(values["status"], "open")
         self.assertEqual(started["output"]["response"].count("?"), 1)
+        next_field = await elicit._run(self.state(
+            "turn-next-field",
+            "과거 경험도 질문해 줘",
+            elicit_routing=self.routing("past_experience", "new"),
+            elicit_contexts=started["elicit_contexts"],
+        ))
+        self.assertNotIn(
+            "재무계획에 담을 고객님의 기준",
+            next_field["output"]["response"],
+        )
 
         analysis = SimpleNamespace(ainvoke=AsyncMock(return_value=elicit.ElicitAnalysis(
             response_class="substantive",
@@ -512,52 +520,69 @@ class ElicitStateTests(unittest.IsolatedAsyncioTestCase):
             pending = await elicit._run(self.state(
                 "turn-answer",
                 "안정적인 생활이 제일 중요해요",
-                elicit_state=started["elicit_state"],
+                elicit_routing=self.routing("values", "answer"),
+                elicit_contexts=started["elicit_contexts"],
             ))
-        self.assertEqual(pending["elicit_state"]["phase"], "confirming")
+        values = pending["elicit_contexts"]["contexts"]["values"]
+        self.assertEqual(values["status"], "awaiting_confirmation")
         self.assertIn("가치관 항목", pending["output"]["response"])
         self.assertNotIn("elicit_capture", pending["output"])
+        rejected = await elicit._run(self.state(
+            "turn-reject",
+            "아니요",
+            elicit_routing=self.routing("values", "confirmation"),
+            elicit_contexts=pending["elicit_contexts"],
+        ))
+        self.assertEqual(
+            rejected["elicit_contexts"]["contexts"]["values"]["source_turns"],
+            [],
+        )
 
         confirmed = await elicit._run(self.state(
             "turn-confirm",
             "네",
-            elicit_state=pending["elicit_state"],
+            elicit_routing=self.routing("values", "confirmation"),
+            elicit_contexts=pending["elicit_contexts"],
         ))
         capture = confirmed["output"]["elicit_capture"]["changes"][0]
         self.assertEqual(capture["path"], "values")
         self.assertEqual(capture["value"], "안정적인 생활을 우선한다")
-        self.assertEqual(capture["source_turn_ids"], ["turn-answer"])
-        self.assertEqual(confirmed["elicit_state"]["field_index"], 1)
+        self.assertEqual(
+            capture["source_turn_ids"],
+            ["turn-answer", "turn-confirm"],
+        )
+        contexts = confirmed["elicit_contexts"]["contexts"]
+        self.assertEqual(contexts["values"]["status"], "completed")
+        self.assertEqual(contexts["past_experience"]["status"], "unstarted")
+        self.assertNotIn("phase", confirmed["elicit_contexts"])
 
-    async def test_corrupted_pause_state_is_not_resumed(self) -> None:
+    async def test_corrupted_field_context_is_rejected(self) -> None:
         configure_runtime()
         from agents import elicit
 
-        started = await elicit._run(self.state("turn-start", "동의", elicit_action="start"))
-        corrupted = {
-            **started["elicit_state"],
-            "phase": "paused",
-            "paused_from": "unknown",
-        }
-        result = await elicit._run(self.state(
-            "turn-resume",
-            "이어서 계속",
-            elicit_action="resume",
-            elicit_state=corrupted,
+        started = await elicit._run(self.state(
+            "turn-start",
+            "가치관부터 질문해 줘",
+            elicit_routing=self.routing("values", "new"),
         ))
+        corrupted = {
+            **started["elicit_contexts"],
+            "scope": {"session_id": 999, "thread_id": "other", "step_id": "financial-mindset"},
+        }
+        with self.assertRaises(ValueError):
+            await elicit._run(self.state(
+                "turn-answer",
+                "안정이 중요해요",
+                elicit_routing=self.routing("values", "answer"),
+                elicit_contexts=corrupted,
+            ))
 
-        self.assertNotIn("elicit_state", result)
-        self.assertIn("동의", result["output"]["response"])
-
-    async def test_chat_request_without_ui_consent_does_not_start_collection(self) -> None:
+    async def test_agent_requires_planner_routing(self) -> None:
         configure_runtime()
         from agents import elicit
 
-        result = await elicit._run(self.state("turn-chat", "질문을 시작해줘"))
-
-        self.assertNotIn("elicit_state", result)
-        self.assertIn("동의", result["output"]["response"])
-        self.assertIsNone(result["output"]["action"])
+        with self.assertRaises(ValueError):
+            await elicit._run(self.state("turn-chat", "질문을 시작해줘"))
 
 
 if __name__ == "__main__":

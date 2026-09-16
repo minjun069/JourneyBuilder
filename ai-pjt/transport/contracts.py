@@ -151,7 +151,6 @@ class ChatV2Request(BaseModel):
     chart_payload: dict[str, Any] | None = None
     request_mode: Literal["chat", "error_review"] = "chat"
     review_trigger: Literal["save", "user_request"] | None = None
-    elicit_action: Literal["start", "resume"] | None = None
 
     @model_validator(mode="after")
     def validate_tool_context_binding(self):
@@ -164,10 +163,6 @@ class ChatV2Request(BaseModel):
             raise ValueError("error review requires review_trigger")
         if self.request_mode == "chat" and self.review_trigger is not None:
             raise ValueError("review_trigger is only valid for error review")
-        if self.elicit_action is not None and (
-            self.request_mode != "chat" or self.step_id != "financial-mindset"
-        ):
-            raise ValueError("elicit_action request binding mismatch")
         return self
 
 

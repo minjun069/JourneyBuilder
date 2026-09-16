@@ -1,53 +1,26 @@
-"""Versioned, scope-bound qualitative information elicitation."""
+"""Planner-routed, field-scoped qualitative information elicitation."""
 
 from __future__ import annotations
 
-from copy import deepcopy
-import json
-from pathlib import Path
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from core.llm import llm
-from core.model_boundary import (
-    ModelPurpose,
-    secure_ainvoke,
-    secure_system_prompt,
+from core.model_boundary import ModelPurpose, secure_ainvoke, secure_system_prompt
+from graph.elicit_context import (
+    ELICIT_TURN_KINDS,
+    FIELD_ID_SET,
+    FIELD_LABELS,
+    FIELD_QUESTIONS,
+    MAX_FIELD_RESETS,
+    MAX_FIELD_TURNS,
+    load_elicit_contexts,
 )
 from graph.state import ChatState
-
-
-def _load_policy() -> dict:
-    relative = Path("contract-fixtures/ai-lifecycle/v2/elicit-policy.json")
-    module_path = Path(__file__).resolve()
-    for candidate in (module_path.parents[2] / relative, module_path.parents[1] / relative):
-        if candidate.is_file():
-            payload = json.loads(candidate.read_text(encoding="utf-8"))
-            break
-    else:
-        raise ValueError("Elicit policy fixture unavailable")
-    if payload.get("fixture_kind") != "elicit-policy" or payload.get("schema_version") != "1.0":
-        raise ValueError("unsupported Elicit policy")
-    if set(payload.get("field_order", [])) != set(payload.get("fields", {})):
-        raise ValueError("Elicit field policy mismatch")
-    return payload
-
-
-ELICIT_POLICY = _load_policy()
-STATE_VERSION = ELICIT_POLICY["state_schema_version"]
-MAX_FIELD_TURNS = ELICIT_POLICY["limits"]["max_field_turns"]
-MAX_TOTAL_TURNS = ELICIT_POLICY["limits"]["max_total_turns"]
-FIELDS = tuple(
-    (field_id, ELICIT_POLICY["fields"][field_id]["question"])
-    for field_id in ELICIT_POLICY["field_order"]
-)
-FIELD_LABELS = {
-    field_id: ELICIT_POLICY["fields"][field_id]["label"]
-    for field_id in ELICIT_POLICY["field_order"]
-}
 
 
 class ElicitAnalysis(BaseModel):
@@ -60,243 +33,185 @@ class ElicitAnalysis(BaseModel):
 _analysis_chain = llm.with_structured_output(ElicitAnalysis)
 
 ANALYZE_PROMPT = secure_system_prompt("""\
-정성정보 수집 질문에 대한 사용자의 현재 답변 하나만 분류하세요.
+정성정보 필드에 관한 사용자의 현재 발화 하나만 분류하세요.
 - substantive: 필드에 기록할 사용자의 직접 표현이 있음
 - uncertain: 잘 모르겠음 또는 생각할 시간이 필요함
-- refusal: 답하고 싶지 않음
-- stop: 전체 수집을 중단함
-- skip: 현재 항목만 건너뜀
-- reset: 현재 항목 답변을 처음부터 다시 함
-captured_text는 substantive일 때만 사용자의 의미를 보태지 말고 간결히 정리합니다.
+- refusal: 이 필드에 답하고 싶지 않음
+- stop: 이 필드에 관한 질문을 더 이어가고 싶지 않음
+- skip: 이 필드를 건너뜀
+- reset: 이 필드의 후보를 버리고 처음부터 다시 질문함
+captured_text는 substantive일 때만 작성하세요. 사용자의 의미를 보태지 마세요.
+발화 종류가 correction이고 기존 확인 내용이 있다면, 기존 내용 중 사용자가 명시적으로
+고친 부분만 반영해 필드 전체의 수정된 요약을 반환하세요.
 재무 조언이나 다음 질문을 생성하지 마세요.
 """)
 
 
-def _scope(state: ChatState) -> dict:
-    raw = state.get("context_scope", {})
-    return {
-        "session_id": raw.get("session_id"),
-        "thread_id": raw.get("thread_id"),
-        "step_id": state["step_id"],
-    }
-
-
-def _initial_state(state: ChatState) -> dict:
-    current_form = state.get("customer_info", {}).get("current_form", {})
-    confirmed = {
-        field_id: {
-            "status": "existing" if current_form.get(field_id) not in (None, "") else "pending",
-            "value": current_form.get(field_id),
-            "source_turn_ids": [],
-        }
-        for field_id, _ in FIELDS
-    }
-    index = next((i for i, (field_id, _) in enumerate(FIELDS) if confirmed[field_id]["status"] == "pending"), len(FIELDS))
-    return {
-        "schema_version": STATE_VERSION,
-        "scope": _scope(state),
-        "phase": "completed" if index == len(FIELDS) else "asking",
-        "field_index": index,
-        "fields": confirmed,
-        "pending_value": None,
-        "pending_source_turn_ids": [],
-        "field_turns": 0,
-        "total_turns": 0,
-        "reset_used": False,
-        "purpose_shown": True,
-    }
-
-
-def _valid_existing(state: ChatState, candidate: object) -> bool:
-    if not isinstance(candidate, dict):
-        return False
-    required_keys = {
-        "schema_version", "scope", "phase", "field_index", "fields",
-        "pending_value", "pending_source_turn_ids", "field_turns", "total_turns",
-        "reset_used", "purpose_shown",
-    }
-    allowed_keys = required_keys | {"paused_from"}
-    if not required_keys.issubset(candidate) or set(candidate) - allowed_keys:
-        return False
-    if candidate.get("schema_version") != STATE_VERSION or candidate.get("scope") != _scope(state):
-        return False
-    if candidate.get("phase") not in {"asking", "confirming", "paused", "completed", "stopped"}:
-        return False
-    if candidate.get("phase") == "paused":
-        if candidate.get("paused_from") not in {"asking", "confirming"}:
-            return False
-    elif "paused_from" in candidate:
-        return False
-    fields = candidate.get("fields")
-    if not isinstance(fields, dict) or set(fields) != {field_id for field_id, _ in FIELDS}:
-        return False
-    if any(
-        not isinstance(value, dict)
-        or set(value) != {"status", "value", "source_turn_ids"}
-        or value.get("status") not in {"pending", "existing", "confirmed", "skipped"}
-        or not isinstance(value.get("source_turn_ids"), list)
-        or not all(isinstance(turn_id, str) and turn_id for turn_id in value["source_turn_ids"])
-        for value in fields.values()
-    ):
-        return False
-    pending_turns = candidate.get("pending_source_turn_ids")
+def _routing(state: ChatState) -> tuple[str, str]:
+    raw = state.get("elicit_routing")
+    if not isinstance(raw, dict) or set(raw) != {
+        "is_related",
+        "field",
+        "turn_kind",
+        "confidence_sufficient",
+    }:
+        raise ValueError("Elicit routing metadata is missing")
+    field_id = raw.get("field")
+    turn_kind = raw.get("turn_kind")
     if (
-        not isinstance(pending_turns, list)
-        or not all(isinstance(turn_id, str) and turn_id for turn_id in pending_turns)
-        or not isinstance(candidate.get("reset_used"), bool)
-        or candidate.get("purpose_shown") is not True
+        raw.get("is_related") is not True
+        or raw.get("confidence_sufficient") is not True
+        or field_id not in FIELD_ID_SET
+        or turn_kind not in ELICIT_TURN_KINDS
     ):
-        return False
-    index = candidate.get("field_index")
-    counters = (candidate.get("field_turns"), candidate.get("total_turns"))
-    if (
-        isinstance(index, bool)
-        or not isinstance(index, int)
-        or not 0 <= index <= len(FIELDS)
-        or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counters)
-        or candidate["field_turns"] > MAX_FIELD_TURNS + 1
-        or candidate["total_turns"] > MAX_TOTAL_TURNS + 1
-    ):
-        return False
-    effective_phase = candidate.get("paused_from") if candidate.get("phase") == "paused" else candidate.get("phase")
-    if effective_phase == "confirming" and (
-        candidate.get("pending_value") in (None, "") or not pending_turns
-    ):
-        return False
-    if candidate.get("phase") == "completed" and index != len(FIELDS):
-        return False
-    if candidate.get("phase") in {"asking", "confirming", "paused"} and index >= len(FIELDS):
-        return False
-    return True
+        raise ValueError("Elicit routing metadata is not executable")
+    return str(field_id), str(turn_kind)
 
 
-def _question(elicit_state: dict) -> str:
-    index = int(elicit_state["field_index"])
-    return FIELDS[index][1] if index < len(FIELDS) else ""
+def _updated_at() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _advance(elicit_state: dict) -> None:
-    start = int(elicit_state["field_index"]) + 1
-    index = next((
-        i for i in range(start, len(FIELDS))
-        if elicit_state["fields"][FIELDS[i][0]]["status"] == "pending"
-    ), len(FIELDS))
-    elicit_state["field_index"] = index
-    elicit_state["field_turns"] = 0
-    elicit_state["pending_value"] = None
-    elicit_state["pending_source_turn_ids"] = []
-    elicit_state["reset_used"] = False
-    elicit_state["phase"] = "completed" if index == len(FIELDS) else "asking"
+def _turn_id(state: ChatState) -> str:
+    value = state.get("request_id")
+    return str(value) if value else "turn-unknown"
 
 
 def _is_yes(message: str) -> bool:
-    return message.strip().lower() in {"네", "예", "응", "맞아", "맞아요", "확인", "좋아요", "yes", "y"}
+    return message.strip().lower() in {
+        "네", "예", "응", "맞아", "맞아요", "확인", "좋아요", "yes", "y",
+    }
 
 
 def _is_no(message: str) -> bool:
-    return message.strip().lower() in {"아니", "아니요", "틀려", "수정", "no", "n"}
+    return message.strip().lower() in {
+        "아니", "아니요", "틀려", "수정", "no", "n",
+    }
 
 
-async def _run(state: ChatState) -> dict:
-    action = state.get("elicit_action")
-    existing = state.get("elicit_state")
-    if action == "start":
-        elicit_state = _initial_state(state)
-        if elicit_state["phase"] == "completed":
-            response = "이미 여섯 가지 재무 관점 정보가 모두 입력되어 있습니다."
-        else:
-            response = (
-                "재무계획에 담을 고객님의 기준을 정확히 이해하기 위해 여섯 항목을 "
-                "하나씩 여쭙고, 매 항목마다 정리한 내용을 확인받겠습니다. "
-                + _question(elicit_state)
-            )
-        return {"output": _output(state, response), "elicit_state": elicit_state}
+def _touch(context: dict[str, Any]) -> None:
+    context["updated_at"] = _updated_at()
 
-    if not _valid_existing(state, existing):
-        return {
-            "output": _output(
-                state,
-                "정성정보 대화는 이 단계의 ‘정성정보 대화 시작’ 버튼에서 동의한 뒤 시작할 수 있습니다.",
-            )
-        }
-    elicit_state = deepcopy(existing)
-    if action == "resume":
-        if elicit_state["phase"] != "paused":
-            raise ValueError("Elicit is not paused")
-        elicit_state["phase"] = elicit_state.get("paused_from", "asking")
-        elicit_state.pop("paused_from", None)
-        if elicit_state["phase"] == "confirming":
-            field_id = FIELDS[elicit_state["field_index"]][0]
-            response = f"{FIELD_LABELS[field_id]} 항목을 ‘{elicit_state['pending_value']}’로 정리해도 될까요?"
-        else:
-            response = _question(elicit_state)
-        return {"output": _output(state, response), "elicit_state": elicit_state}
 
-    if elicit_state["phase"] in {"completed", "stopped", "paused"}:
-        raise ValueError("Elicit continuation is not active")
-    if elicit_state["phase"] == "confirming" and _is_yes(state["message"]):
-        index = elicit_state["field_index"]
-        field_id = FIELDS[index][0]
-        value = elicit_state["pending_value"]
-        elicit_state["fields"][field_id] = {
-            "status": "confirmed",
-            "value": value,
-            "source_turn_ids": list(elicit_state.get("pending_source_turn_ids", [])),
-        }
+def _ask_new(
+    state: ChatState,
+    store: dict[str, Any],
+    field_id: str,
+) -> dict[str, Any]:
+    is_first_elicit_turn = not any(
+        item["updated_at"] is not None
+        for item in store["contexts"].values()
+    )
+    context = store["contexts"][field_id]
+    context.update({
+        "pending_candidate": None,
+        "open_question": FIELD_QUESTIONS[field_id],
+        "confirmation_status": "not_requested",
+        "status": "open",
+        "turn_count": 0,
+        "reset_count": 0,
+    })
+    _touch(context)
+    prefix = ""
+    if is_first_elicit_turn:
+        prefix = (
+            "재무계획에 담을 고객님의 기준을 정확히 이해하기 위해 한 항목씩 "
+            "여쭙고, 정리한 내용은 확인받겠습니다. "
+        )
+    return _result(state, store, prefix + context["open_question"])
+
+
+def _confirm_candidate(
+    state: ChatState,
+    store: dict[str, Any],
+    field_id: str,
+) -> dict[str, Any]:
+    context = store["contexts"][field_id]
+    if context["status"] != "awaiting_confirmation":
+        raise ValueError("Elicit confirmation has no pending candidate")
+    if _is_yes(state["message"]):
+        value = context["pending_candidate"]
+        source_turns = list(context["source_turns"])
+        confirmation_turn = _turn_id(state)
+        if confirmation_turn not in source_turns:
+            source_turns.append(confirmation_turn)
+        context.update({
+            "confirmed_summary": value,
+            "pending_candidate": None,
+            "open_question": None,
+            "source_turns": source_turns,
+            "confirmation_status": "confirmed",
+            "status": "completed",
+        })
+        _touch(context)
         change = {
             "section": "financial_mindset",
             "path": field_id,
             "operation": "set",
             "value": value,
             "reason": "Elicit 대화에서 사용자가 항목별로 확인한 표현",
-            "source_turn_ids": list(elicit_state.get("pending_source_turn_ids", [])),
+            "source_turn_ids": source_turns,
         }
-        _advance(elicit_state)
-        response = (
-            "확인한 내용을 입력 제안으로 만들었습니다. " + _question(elicit_state)
-            if elicit_state["phase"] == "asking"
-            else "여섯 가지 재무 관점 확인을 마쳤습니다. 각 제안을 확인해 폼에 반영해 주세요."
+        return _result(
+            state,
+            store,
+            "확인한 내용을 입력 제안으로 만들었습니다. 다른 질문을 하거나 "
+            "나중에 다른 항목을 이어서 말씀하셔도 됩니다.",
+            change=change,
         )
-        return {
-            "output": _output(state, response, change=change),
-            "elicit_state": elicit_state,
-        }
-    if elicit_state["phase"] == "confirming" and _is_no(state["message"]):
-        elicit_state["phase"] = "asking"
-        elicit_state["pending_value"] = None
-        elicit_state["pending_source_turn_ids"] = []
-        return {
-            "output": _output(state, "알겠습니다. 고객님의 표현으로 다시 말씀해 주세요."),
-            "elicit_state": elicit_state,
-        }
+    if _is_no(state["message"]):
+        source_turns = list(context["source_turns"])
+        if source_turns:
+            source_turns.pop()
+        context.update({
+            "pending_candidate": None,
+            "open_question": "고객님의 표현으로 다시 말씀해 주시겠어요?",
+            "source_turns": source_turns,
+            "confirmation_status": "rejected",
+            "status": "open",
+        })
+        _touch(context)
+        return _result(state, store, "알겠습니다. " + context["open_question"])
+    return _result(
+        state,
+        store,
+        "정리한 내용이 맞으면 ‘네’, 다시 말하려면 ‘아니요’라고 알려 주세요.",
+    )
 
-    elicit_state["total_turns"] += 1
-    elicit_state["field_turns"] += 1
-    if elicit_state["total_turns"] > MAX_TOTAL_TURNS:
-        elicit_state["phase"] = "stopped"
-        return {
-            "output": _output(state, "정성정보 수집의 전체 대화 한도에 도달해 여기서 마치겠습니다. 현재 폼은 그대로 유지됩니다."),
-            "elicit_state": elicit_state,
-        }
-    if elicit_state["field_turns"] > MAX_FIELD_TURNS:
-        field_id = FIELDS[elicit_state["field_index"]][0]
-        elicit_state["fields"][field_id]["status"] = "skipped"
-        _advance(elicit_state)
-        response = (
-            "이 항목은 대화 한도에 도달해 비워 두겠습니다. " + _question(elicit_state)
-            if elicit_state["phase"] == "asking"
-            else "정성정보 확인을 마쳤습니다. 확인되지 않은 값은 비워 두었습니다."
+
+async def _analyze_field_turn(
+    state: ChatState,
+    store: dict[str, Any],
+    field_id: str,
+    turn_kind: str,
+) -> dict[str, Any]:
+    context = store["contexts"][field_id]
+    context["turn_count"] += 1
+    _touch(context)
+    if context["turn_count"] > MAX_FIELD_TURNS:
+        context.update({
+            "pending_candidate": None,
+            "open_question": None,
+            "confirmation_status": "not_requested",
+            "status": "skipped",
+        })
+        return _result(
+            state,
+            store,
+            "이 항목은 대화 한도에 도달해 비워 두겠습니다. 다른 대화는 그대로 이어갈 수 있습니다.",
         )
-        return {"output": _output(state, response), "elicit_state": elicit_state}
 
     result = await secure_ainvoke(
         _analysis_chain,
         [
             SystemMessage(content=ANALYZE_PROMPT),
             HumanMessage(content=(
-                f"현재 필드: {FIELDS[elicit_state['field_index']][0]}\n"
-                f"현재 질문: {_question(elicit_state)}\n"
-                f"사용자 답변: {state['message']}"
+                f"대상 필드: {field_id}\n"
+                f"발화 종류: {turn_kind}\n"
+                f"기존 확인 내용: {context['confirmed_summary']}\n"
+                f"보류 후보: {context['pending_candidate']}\n"
+                f"열린 질문: {context['open_question'] or FIELD_QUESTIONS[field_id]}\n"
+                f"사용자 발화: {state['message']}"
             )),
         ],
         purpose=ModelPurpose.ELICIT,
@@ -304,49 +219,78 @@ async def _run(state: ChatState) -> dict:
     )
     response_class = result.response_class
     if response_class == "stop":
-        elicit_state["phase"] = "stopped"
-        response = "정성정보 수집을 중단했습니다. 확인되지 않은 값은 폼에 제안하지 않습니다."
+        context.update({
+            "pending_candidate": None,
+            "open_question": None,
+            "confirmation_status": "not_requested",
+            "status": "deferred",
+        })
+        response = "이 항목에 관한 질문을 더 이어가지 않겠습니다. 원하실 때 다시 말씀해 주세요."
     elif response_class in {"skip", "refusal"}:
-        field_id = FIELDS[elicit_state["field_index"]][0]
-        elicit_state["fields"][field_id]["status"] = "skipped"
-        _advance(elicit_state)
-        response = (
-            "현재 항목은 비워 두겠습니다. " + _question(elicit_state)
-            if elicit_state["phase"] == "asking"
-            else "답변 가능한 항목의 확인을 마쳤습니다. 건너뛴 값은 비워 두었습니다."
-        )
+        context.update({
+            "pending_candidate": None,
+            "open_question": None,
+            "confirmation_status": "not_requested",
+            "status": "refused" if response_class == "refusal" else "skipped",
+        })
+        response = "이 항목은 비워 두겠습니다. 다른 질문이나 작업은 계속하실 수 있습니다."
     elif response_class == "reset":
-        if elicit_state["reset_used"]:
-            response = "현재 항목은 이미 한 번 다시 시작했습니다. 답을 정리해 말씀하거나 이 항목을 건너뛰어 주세요."
+        if context["reset_count"] >= MAX_FIELD_RESETS:
+            response = "이 항목은 이미 한 번 다시 시작했습니다. 답을 정리해 말씀하거나 건너뛰어 주세요."
         else:
-            elicit_state["reset_used"] = True
-            elicit_state["phase"] = "asking"
-            elicit_state["pending_value"] = None
-            elicit_state["pending_source_turn_ids"] = []
-            elicit_state["field_turns"] = 0
-            response = "현재 항목을 처음부터 다시 묻겠습니다. " + _question(elicit_state)
+            context.update({
+                "pending_candidate": None,
+                "open_question": FIELD_QUESTIONS[field_id],
+                "confirmation_status": "not_requested",
+                "status": "open",
+                "turn_count": 0,
+                "reset_count": context["reset_count"] + 1,
+            })
+            response = "이 항목을 처음부터 다시 여쭙겠습니다. " + context["open_question"]
     elif response_class == "uncertain" or not result.captured_text:
-        if elicit_state["field_turns"] >= MAX_FIELD_TURNS:
-            field_id = FIELDS[elicit_state["field_index"]][0]
-            elicit_state["fields"][field_id]["status"] = "skipped"
-            _advance(elicit_state)
-            response = (
-                "이 항목은 대화 한도에 도달해 비워 두겠습니다. " + _question(elicit_state)
-                if elicit_state["phase"] == "asking"
-                else "정성정보 확인을 마쳤습니다. 확인되지 않은 값은 비워 두었습니다."
-            )
-        else:
-            response = "정답은 없습니다. 최근 돈을 쓸 때 가장 먼저 떠올린 기준부터 한 문장으로 말씀해 보시겠어요?"
+        context.update({
+            "pending_candidate": None,
+            "open_question": None,
+            "confirmation_status": "not_requested",
+            "status": "deferred",
+        })
+        response = "지금 정하지 않아도 괜찮습니다. 생각이 정리되면 이 항목을 다시 말씀해 주세요."
     else:
-        elicit_state["pending_value"] = result.captured_text.strip()
-        elicit_state["pending_source_turn_ids"] = [str(state.get("request_id", "turn-unknown"))]
-        elicit_state["phase"] = "confirming"
-        label = FIELD_LABELS[FIELDS[elicit_state["field_index"]][0]]
-        response = f"{label} 항목을 ‘{elicit_state['pending_value']}’로 정리해도 될까요?"
-    return {"output": _output(state, response), "elicit_state": elicit_state}
+        candidate = result.captured_text.strip()
+        source_turns = list(context["source_turns"])
+        current_turn = _turn_id(state)
+        if current_turn not in source_turns:
+            source_turns.append(current_turn)
+        question = f"{FIELD_LABELS[field_id]} 항목을 ‘{candidate}’로 정리해도 될까요?"
+        context.update({
+            "pending_candidate": candidate,
+            "open_question": question,
+            "source_turns": source_turns,
+            "confirmation_status": "pending",
+            "status": "awaiting_confirmation",
+        })
+        response = question
+    _touch(context)
+    return _result(state, store, response)
 
 
-def _output(state: ChatState, response: str, *, change: dict | None = None) -> dict:
+async def _run(state: ChatState) -> dict[str, Any]:
+    field_id, turn_kind = _routing(state)
+    store = load_elicit_contexts(state)
+    if turn_kind == "new":
+        return _ask_new(state, store, field_id)
+    if turn_kind == "confirmation":
+        return _confirm_candidate(state, store, field_id)
+    return await _analyze_field_turn(state, store, field_id, turn_kind)
+
+
+def _result(
+    state: ChatState,
+    store: dict[str, Any],
+    response: str,
+    *,
+    change: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     output = {"response": response, "step_id": state["step_id"], "action": None}
     if change is not None:
         output["elicit_capture"] = {
@@ -356,7 +300,8 @@ def _output(state: ChatState, response: str, *, change: dict | None = None) -> d
             "confidence": 1.0,
             "changes": [change],
         }
-    return output
+    return {"output": output, "elicit_contexts": store}
+
 
 def _build():
     graph_builder = StateGraph(ChatState)

@@ -265,7 +265,10 @@ def _planner_view(plan: Any) -> Any:
             if key not in ROUTED_TASK_METADATA_FIELDS
             and not (key == "arguments" and "fixed_arguments" in contract)
         })
-    return {"tasks": projected}
+    planner_view = {"tasks": projected}
+    if "elicit_routing" in plan:
+        planner_view["elicit_routing"] = deepcopy(plan["elicit_routing"])
+    return planner_view
 
 
 def _compare_trusted_field(

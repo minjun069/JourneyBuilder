@@ -23,6 +23,7 @@ from core.observability_masking import (
     masked_exception_fields,
 )
 from core.step_registry import load_step_candidates
+from graph.elicit_context import ELICIT_TURN_KINDS, FIELD_ID_SET
 from graph.router import TaskClassifier, select_route
 from tools.financial_policy import REFERENCE_VALUE_INPUT_SCHEMA
 from tools.registry import validate_json_schema
@@ -234,7 +235,8 @@ FORBIDDEN_PLANNER_FIELDS = {
 
 PLANNER_PROMPT = secure_system_prompt("""\
 사용자 메시지를 실행 가능한 task plan으로 분해하세요.
-지정된 구조화 출력 스키마에 맞는 {{"tasks": [...]}} object를 반환하세요.
+지정된 구조화 출력 스키마에 맞는
+{{"elicit_routing": {{...}}, "tasks": [...]}} object를 반환하세요.
 
 제약:
 - task는 1개 이상 {max_tasks}개 이하
@@ -247,6 +249,16 @@ PLANNER_PROMPT = secure_system_prompt("""\
 - 용어의 뜻·기준·기간·선택지 설명만 묻는 요청은 answer_question 하나로 계획
 - 예: "단기 지향이면 어느정도 기간을 말하지?", "안정추구란 정확히 뭘 말하는거야?"
   는 모두 answer_question 하나이며 입력 변경 task가 아님
+- 제한된 대화 문맥의 elicit_context_index를 보고 현재 발화가 정성정보 수집과
+  관련되는지, 대상 field, new|answer|correction|confirmation 발화 종류, 판단
+  신뢰도가 충분한지를 elicit_routing에 항상 명시
+- 정성정보와 무관하면 is_related=false, field=null, turn_kind=null,
+  confidence_sufficient=false
+- 관련되지만 대상이나 발화 종류가 불확실하면 is_related=true,
+  field 또는 turn_kind를 null로 둘 수 있으며 confidence_sufficient=false로 두고
+  collect_qualitative_info task를 만들지 않음
+- is_related=true이고 confidence_sufficient=true일 때만 대상 field 하나에 대한
+  collect_qualitative_info task를 정확히 하나 생성
 
 각 task의 허용 field:
 - id: plan 안에서만 쓰는 고유 문자열
@@ -257,7 +269,7 @@ PLANNER_PROMPT = secure_system_prompt("""\
 - arguments: lookup_reference_value에만 필요한 object. reference_id, age 정수, period(monthly|annual|current), population을 정확히 지정
 
 의존 요청 예시:
-{{"tasks": [
+{{"elicit_routing": {{"is_related": false, "field": null, "turn_kind": null, "confidence_sufficient": false}}, "tasks": [
   {{"id": "lookup", "type": "lookup_reference_value", "description": "승인된 기준값 조회", "depends_on": [], "bindings": {{}}, "arguments": {{"reference_id": "debt_service_ratio_max", "age": 40, "period": "annual", "population": "retirewise_kr_households"}}}},
   {{"id": "fill", "type": "propose_form_change", "description": "사용자가 요청한 조회 값으로 기존 빈 항목 변경안 제안", "depends_on": ["lookup"], "bindings": {{"reference_id": {{"task_id": "lookup", "path": "reference_id"}}, "age": {{"task_id": "lookup", "path": "age"}}, "value": {{"task_id": "lookup", "path": "value"}}, "unit": {{"task_id": "lookup", "path": "unit"}}, "period": {{"task_id": "lookup", "path": "period"}}, "population": {{"task_id": "lookup", "path": "population"}}, "comparator": {{"task_id": "lookup", "path": "comparator"}}, "source_id": {{"task_id": "lookup", "path": "source_id"}}, "source_version": {{"task_id": "lookup", "path": "source_version"}}, "as_of": {{"task_id": "lookup", "path": "as_of"}}, "calculation_policy_version": {{"task_id": "lookup", "path": "calculation_policy_version"}}}}}}
 ]}}
@@ -286,17 +298,34 @@ class PlannerTaskOutput(BaseModel):
     arguments: dict[str, Any] | None = None
 
 
+class PlannerElicitRoutingOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_related: bool
+    field: str | None = None
+    turn_kind: str | None = None
+    confidence_sufficient: bool
+
+
 class PlannerModelOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    elicit_routing: PlannerElicitRoutingOutput = Field(
+        default_factory=lambda: PlannerElicitRoutingOutput(
+            is_related=False,
+            field=None,
+            turn_kind=None,
+            confidence_sufficient=False,
+        )
+    )
     tasks: list[PlannerTaskOutput]
 
     def to_route_plan(self) -> dict[str, Any]:
         """Remove provider-added empty optionals before policy validation."""
 
-        payload = self.model_dump(mode="json", exclude_none=True)
+        payload = self.model_dump(mode="json")
         for task in payload["tasks"]:
-            if task.get("arguments") == {}:
+            if task.get("arguments") in ({}, None):
                 task.pop("arguments")
         return payload
 
@@ -342,14 +371,18 @@ def validate_route_plan(
         return _invalid_plan(
             [_issue("INVALID_PLAN", "plan", "route plan은 object여야 합니다.")]
         )
-    if set(raw_plan) != {"tasks"}:
+    if set(raw_plan) - {"tasks", "elicit_routing"}:
         issues.append(
             _issue(
                 "INVALID_PLAN_FIELDS",
                 "plan",
-                "route plan root에는 tasks만 허용됩니다.",
+                "route plan root에는 tasks와 elicit_routing만 허용됩니다.",
             )
         )
+    normalized_elicit_routing = _validate_elicit_routing(
+        raw_plan.get("elicit_routing"),
+        issues,
+    )
 
     raw_tasks = raw_plan.get("tasks")
     if not isinstance(raw_tasks, list) or not 1 <= len(raw_tasks) <= MAX_PLAN_TASKS:
@@ -632,13 +665,105 @@ def validate_route_plan(
             normalized["arguments"] = normalized_arguments or {}
         normalized_tasks.append(normalized)
 
+    collect_task_count = sum(
+        task.get("type") == "collect_qualitative_info"
+        for task in normalized_tasks
+    )
+    executable_elicit = bool(
+        normalized_elicit_routing
+        and normalized_elicit_routing["is_related"]
+        and normalized_elicit_routing["confidence_sufficient"]
+    )
+    if collect_task_count and not executable_elicit:
+        issues.append(_issue(
+            "ELICIT_ROUTING_REQUIRED",
+            "plan.elicit_routing",
+            "정성정보 task에는 신뢰도 충분한 대상 field와 발화 종류가 필요합니다.",
+        ))
+    if executable_elicit and collect_task_count != 1:
+        issues.append(_issue(
+            "ELICIT_TASK_MISMATCH",
+            "plan.tasks",
+            "실행 가능한 Elicit 판단에는 정성정보 task가 정확히 하나 필요합니다.",
+        ))
+
     if issues:
         return _invalid_plan(issues)
+    normalized_plan = {
+        "schema_version": PLAN_SCHEMA_VERSION,
+        "tasks": normalized_tasks,
+    }
+    if normalized_elicit_routing is not None:
+        normalized_plan["elicit_routing"] = normalized_elicit_routing
     return RoutePlanValidation(
         valid=True,
-        plan={"schema_version": PLAN_SCHEMA_VERSION, "tasks": normalized_tasks},
+        plan=normalized_plan,
         issues=(),
     )
+
+
+def _validate_elicit_routing(
+    raw: Any,
+    issues: list[PlanIssue],
+) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    path = "plan.elicit_routing"
+    required = {
+        "is_related",
+        "field",
+        "turn_kind",
+        "confidence_sufficient",
+    }
+    if not isinstance(raw, Mapping) or set(raw) != required:
+        issues.append(_issue(
+            "INVALID_ELICIT_ROUTING",
+            path,
+            "elicit_routing은 관련성·field·발화 종류·신뢰도 충분 여부만 포함해야 합니다.",
+        ))
+        return None
+    is_related = raw.get("is_related")
+    confidence_sufficient = raw.get("confidence_sufficient")
+    field_id = raw.get("field")
+    turn_kind = raw.get("turn_kind")
+    if not isinstance(is_related, bool) or not isinstance(confidence_sufficient, bool):
+        issues.append(_issue(
+            "INVALID_ELICIT_ROUTING_FLAGS",
+            path,
+            "Elicit 관련성과 신뢰도 충분 여부는 boolean이어야 합니다.",
+        ))
+        return None
+    if not is_related:
+        if field_id is not None or turn_kind is not None or confidence_sufficient:
+            issues.append(_issue(
+                "INCONSISTENT_ELICIT_ROUTING",
+                path,
+                "무관한 발화에는 Elicit 대상·발화 종류·충분 신뢰도를 지정할 수 없습니다.",
+            ))
+            return None
+    else:
+        field_is_valid = field_id is None or field_id in FIELD_ID_SET
+        turn_kind_is_valid = turn_kind is None or turn_kind in ELICIT_TURN_KINDS
+        if not field_is_valid or not turn_kind_is_valid:
+            issues.append(_issue(
+                "UNKNOWN_ELICIT_TARGET",
+                path,
+                "Elicit 대상과 발화 종류는 null 또는 허용된 값이어야 합니다.",
+            ))
+            return None
+        if confidence_sufficient and (field_id is None or turn_kind is None):
+            issues.append(_issue(
+                "INCOMPLETE_ELICIT_TARGET",
+                path,
+                "충분한 신뢰도에는 대상 field와 발화 종류가 모두 필요합니다.",
+            ))
+            return None
+    return {
+        "is_related": is_related,
+        "field": field_id,
+        "turn_kind": turn_kind,
+        "confidence_sufficient": confidence_sufficient,
+    }
 
 
 def _raw_reference_id(task: Any) -> str:
@@ -661,10 +786,12 @@ def create_route_plan(
     step_candidates: Mapping[str, Sequence[str]] | None = None,
     registered_tool_capabilities: Sequence[str] = (),
     plan_id: str | None = None,
+    elicit_context_index: Mapping[str, Any] | None = None,
 ) -> RoutePlanValidation:
     """Plan with bounded context, validate, then route every canonical task."""
 
     context = context_window_payload(context_window)
+    context["elicit_context_index"] = deepcopy(dict(elicit_context_index or {}))
     diagnostics: list[dict[str, str]] = []
     try:
         raw_plan = planner(message=message, step_id=step_id, context=context)
