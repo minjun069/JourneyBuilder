@@ -1,3 +1,5 @@
+import { toRaw } from 'vue'
+
 const COMPLETION_TO_STEP = {
   basic_info: 'basic-info',
   financial_mindset: 'financial-mindset',
@@ -145,8 +147,12 @@ export function resolveResumeStep(session) {
   return 'balance-sheet'
 }
 
+export function cloneFormState(source) {
+  return structuredClone(toRaw(source))
+}
+
 export function replaceFormState(target, source) {
   if (!target || !source) return
   for (const key of Object.keys(target)) delete target[key]
-  Object.assign(target, structuredClone(source))
+  Object.assign(target, cloneFormState(source))
 }

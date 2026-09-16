@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { isReactive, reactive } from 'vue'
 
 import {
+  cloneFormState,
   completedStepsForSession,
   mapStoredForm,
   replaceFormState,
@@ -42,8 +44,22 @@ test('section completion 기준으로 실제 재개 단계와 완료 상태를 �
   assert.equal(resolveResumeStep({ status: 'completed' }), 'balance-sheet')
 })
 
-test('반응형 폼 객체의 오래된 키를 제거한 뒤 복원한다', () => {
-  const target = { stale: true, assets: [] }
-  replaceFormState(target, { assets: [{ id: 1 }] })
+test('Vue 반응형 폼을 일반 객체 snapshot으로 복제한다', () => {
+  const source = reactive({ assets: [{ id: 1, value: 100 }] })
+  const snapshot = cloneFormState(source)
+
+  assert.equal(isReactive(snapshot), false)
+  assert.deepEqual(snapshot, { assets: [{ id: 1, value: 100 }] })
+
+  source.assets[0].value = 200
+  assert.equal(snapshot.assets[0].value, 100)
+})
+
+test('반응형 폼 객체의 오래된 키를 제거한 뒤 반응형 source를 복원한다', () => {
+  const target = reactive({ stale: true, assets: [] })
+  const source = reactive({ assets: [{ id: 1 }] })
+
+  replaceFormState(target, source)
+
   assert.deepEqual(target, { assets: [{ id: 1 }] })
 })

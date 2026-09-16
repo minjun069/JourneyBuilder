@@ -23,6 +23,30 @@ test('폼 저장은 결정론적 검증 뒤 save Error Review만 호출한다', 
   assert.match(store, /reviewTrigger: 'save'/)
 })
 
+test('Error Review 처리 상태와 오류를 스크롤 밖의 현재 화면에 표시한다', () => {
+  const chatListEnd = view.indexOf('<div v-if="reviewLoading" class="chat-operation-status"')
+  const composerStart = view.indexOf('<div v-if="hasActiveSession" class="composer">')
+
+  assert.match(view, /role="status" aria-live="polite"/)
+  assert.match(view, /입력값의 이상 여부를 검토하고 있습니다\./)
+  assert.ok(chatListEnd > view.indexOf('ref="chatSpacerRef"'))
+  assert.ok(chatListEnd < composerStart)
+  assert.match(view.slice(chatListEnd, composerStart), /class="chat-error" role="alert"/)
+})
+
+test('서버 저장 성공 뒤 화면 snapshot 실패는 저장 실패로 처리하지 않는다', () => {
+  const persist = view.slice(
+    view.indexOf('async function persistFormAndAdvance'),
+    view.indexOf('// ─── 프레젠테이션 슬라이드'),
+  )
+  const saveFailure = persist.indexOf("'입력값을 저장하지 못했습니다. 내용을 확인한 뒤 다시 시도해주세요.'")
+  const snapshotCapture = persist.indexOf('captureActiveFormDraft()', saveFailure)
+
+  assert.ok(saveFailure >= 0)
+  assert.ok(snapshotCapture > saveFailure)
+  assert.match(persist, /입력값은 서버에 저장됐지만 화면 임시본을 만들지 못했습니다/)
+})
+
 test('상담 이어하기는 세션 진행 상태와 저장 폼을 복원한다', () => {
   assert.match(view, /restoreConsultationProcess/)
   assert.match(view, /resolveResumeStep/)
