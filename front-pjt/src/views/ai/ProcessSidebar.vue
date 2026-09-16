@@ -5,6 +5,9 @@ import { PROCESS_STEPS, STEP_IDS } from '@/views/ai/data/processSteps.js'
 const props = defineProps({
   currentStepId: { type: String, required: true },
   visitedStepIds: { default: () => new Set() },
+  completedStepIds: { default: () => new Set() },
+  skippedStepIds: { default: () => new Set() },
+  disabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['step-click'])
@@ -27,7 +30,9 @@ function isVisible(step) {
 
 function getStatus(step) {
   if (STEP_IDS.indexOf(step.id) === currentIndex.value) return 'active'
-  if (props.visitedStepIds.has(step.id)) return 'done'
+  if (props.completedStepIds.has(step.id)) return 'done'
+  if (props.skippedStepIds.has(step.id)) return 'skipped'
+  if (props.visitedStepIds.has(step.id)) return 'visited'
   return 'pending'
 }
 
@@ -46,6 +51,7 @@ function handleClick(step) {
           class="step-item"
           :class="[`depth-${step.depth}`, `status-${getStatus(step)}`]"
           type="button"
+          :disabled="disabled || step.depth === 0"
           @click="handleClick(step)"
         >
           <span class="step-indicator">
@@ -56,6 +62,10 @@ function handleClick(step) {
             <svg v-else-if="getStatus(step) === 'active'" viewBox="0 0 10 10" fill="none">
               <circle cx="5" cy="5" r="4.5" fill="#ffffff" />
               <circle cx="5" cy="5" r="2.5" fill="#5e5ce6" />
+            </svg>
+            <svg v-else-if="getStatus(step) === 'skipped'" viewBox="0 0 10 10" fill="none">
+              <circle cx="5" cy="5" r="4" stroke="#d19a4a" stroke-width="1.5" />
+              <path d="M3 5h4" stroke="#d19a4a" stroke-width="1.4" stroke-linecap="round" />
             </svg>
             <svg v-else viewBox="0 0 10 10" fill="none">
               <circle cx="5" cy="5" r="4" stroke="#4b5563" stroke-width="1.5" />
@@ -111,6 +121,8 @@ function handleClick(step) {
 }
 
 .step-item:hover { background: #1f2937; }
+.step-item:disabled { cursor: default; }
+.step-item:disabled:hover { background: none; }
 
 .depth-0 {
   padding: 7px 16px;
@@ -165,8 +177,17 @@ function handleClick(step) {
 .status-done .step-label    { color: #6b7280; }
 .status-active .step-label  { color: #f9fafb; font-weight: 700; }
 .status-pending .step-label { color: #9ca3af; }
+.status-visited .step-label { color: #8b93a3; }
+.status-skipped .step-label { color: #d19a4a; }
 
 /* depth-0은 항상 눈에 띄게 */
 .depth-0.status-done .step-label    { color: #6b7280; font-weight: 700; }
 .depth-0.status-pending .step-label { color: #9ca3af; font-weight: 700; }
+
+@media (max-width: 1100px) {
+  .process-sidebar {
+    width: 100%;
+    max-height: 180px;
+  }
+}
 </style>

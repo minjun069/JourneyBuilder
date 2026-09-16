@@ -299,7 +299,8 @@ export async function continueSaveAfterOptionalReview(requestReview, persist) {
   let needsDecision
   try {
     needsDecision = await requestReview()
-  } catch {
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error
     needsDecision = false
   }
   if (needsDecision) return 'review_required'

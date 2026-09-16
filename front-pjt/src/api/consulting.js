@@ -1,4 +1,4 @@
-import { consultingApi } from '@/api'
+import { consultingApi, refreshAccessToken } from '@/api'
 import { toCanonicalMoney as money } from '@/utils/canonicalMoney'
 import { readSSEStream, validateV2SSEEvents } from '@/api/sse'
 import { mapMonthlyIncome, wrapCurrentListForm } from './consultingMapping.js'
@@ -32,12 +32,18 @@ export async function* streamMessagesV2(
   }
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const response = await fetch(`${V2_BASE_URL}/consultations/${sid}/messages/stream/`, {
+  const requestURL = `${V2_BASE_URL}/consultations/${sid}/messages/stream/`
+  const requestInit = {
     method: 'POST',
     headers,
     body: JSON.stringify({ ...body, contract_version: AI_CONTRACT_VERSION }),
     signal,
-  })
+  }
+  let response = await fetch(requestURL, requestInit)
+  if (response.status === 401 && !signal?.aborted) {
+    headers.Authorization = `Bearer ${await refreshAccessToken()}`
+    response = await fetch(requestURL, requestInit)
+  }
   if (!response.ok) {
     let publicError = null
     try {

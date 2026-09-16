@@ -30,6 +30,8 @@ test('Frontend는 인증과 멱등 키가 필요한 v2 SSE endpoint를 사용한
   assert.ok(contract.required_browser_headers.includes('Authorization'))
   assert.ok(contract.required_browser_headers.includes('Idempotency-Key'))
   assert.equal(contract.timeouts_seconds.stream_read_idle, 120)
+  assert.match(consultingApiSource, /refreshAccessToken/)
+  assert.match(consultingApiSource, /response\.status === 401/)
 })
 
 test('Frontend 정상 이벤트는 start, done 순서다', () => {
@@ -64,7 +66,7 @@ test('Planner가 라우팅한 Elicit 턴은 일반 채팅과 같은 v2 SSE를 �
   assert.doesNotMatch(consultationStoreSource, /elicit_action|elicitAction/)
 })
 
-test('Error Review 저장·명시 요청은 구조화된 done을 v2 SSE로 받는다', () => {
+test('Error Review 계약은 두 trigger를 지원하지만 Frontend 제품 경로는 저장 시에만 호출한다', () => {
   assert.deepEqual(contract.channel_policy.error_review, {
     save: 'sse',
     user_request: 'sse',
@@ -76,9 +78,12 @@ test('Error Review 저장·명시 요청은 구조화된 done을 v2 SSE로 받�
   )
   assert.match(reviewForm, /streamMessageV2/)
   assert.match(reviewForm, /requestMode: 'error_review'/)
-  assert.match(reviewForm, /reviewTrigger: trigger/)
+  assert.match(reviewForm, /reviewTrigger: 'save'/)
   assert.match(reviewForm, /event === 'done'/)
   assert.doesNotMatch(reviewForm, /poll|sendMessage/)
+  assert.doesNotMatch(reviewForm, /user_request/)
+  assert.doesNotMatch(aiChatViewSource, /requestErrorReview\(['"]user_request/)
+  assert.doesNotMatch(aiChatViewSource, />입력값 검토</)
 })
 
 test('Frontend 제품 경로에는 callback polling helper가 남지 않는다', () => {
