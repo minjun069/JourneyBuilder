@@ -11,6 +11,14 @@ class PostManager(models.Manager):
 
 
 class Post(models.Model):
+    class Category(models.TextChoices):
+        FINANCIAL_PLAN = '재무계획', '재무계획'
+        INVESTMENT     = '투자', '투자'
+        RETIREMENT     = '은퇴준비', '은퇴준비'
+        SAVING         = '절약/지출', '절약/지출'
+        DEBT           = '대출/부채', '대출/부채'
+        ETC            = '기타', '기타'
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -18,6 +26,11 @@ class Post(models.Model):
     )
     title        = models.CharField(max_length=200)
     content      = models.TextField()
+    category     = models.CharField(
+        max_length=20,
+        choices=Category.choices,
+        default=Category.ETC,
+    )
     is_anonymous = models.BooleanField(default=False)
     like_count   = models.PositiveIntegerField(default=0)
     view_count   = models.PositiveIntegerField(default=0)

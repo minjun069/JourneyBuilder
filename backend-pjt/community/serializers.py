@@ -10,7 +10,7 @@ class PostListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ['id', 'author', 'title', 'like_count', 'view_count', 'created_at']
+        fields = ['id', 'author', 'title', 'category', 'like_count', 'view_count', 'created_at']
 
     def get_author(self, obj):
         if obj.is_anonymous:
@@ -24,7 +24,7 @@ class PostDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'id', 'author', 'title', 'content', 'is_anonymous',
+            'id', 'author', 'title', 'content', 'category', 'is_anonymous',
             'like_count', 'view_count', 'created_at', 'updated_at',
         ]
         read_only_fields = ['like_count', 'view_count', 'created_at', 'updated_at']
@@ -38,4 +38,4 @@ class PostDetailSerializer(serializers.ModelSerializer):
 class PostCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
-        fields = ['title', 'content', 'is_anonymous']
+        fields = ['title', 'content', 'category', 'is_anonymous']
