@@ -439,7 +439,7 @@ class AdapterMatchesModuleTests(unittest.TestCase):
         들어오면 아래 대조 테스트가 그 자리에서 깨진다). 모듈이 받아주더라도 지금
         통과시키면 사용자는 자기 자산이 계산에서 빠진 줄 모른 채 결과를 본다.
         **화면에 제외 안내가 붙을 때까지만** BE 가 앞에서 막는다
-        (ai-pjt/retirement_simulation/docs/be-integration-checklist.md 미결 항목).
+        (backend-pjt/packages/retirement_simulation/docs/be-integration-checklist.md 미결 항목).
 
         여기서 모듈을 돌려 대조하지 않는 이유: 결과가 이미지에 설치된 모듈 버전에
         따라 갈린다(0.1.1 거부 / 0.1.2 통과). 모듈 쪽 동작은 모듈 테스트가 지키고,

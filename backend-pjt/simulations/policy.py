@@ -4,9 +4,10 @@ reports/policy.py 와 같은 패턴이다. 별도 파일인 이유는 두 정책
 때문이다 — 공통 재무 정책은 보고서 계산 전체가 쓰고, 이 정책은 몬테카를로 가정
 다섯 개만 담는다. 하나로 합치면 시뮬레이션 가정을 바꿀 때마다 보고서 계약이 흔들린다.
 
-원본은 ai-pjt/retirement_simulation/docs/simulation-policy.json 이고 여기 값은 그
-사본이다. 어긋나면 contract_tests/test_simulation_policy_contract.py 가 CI 에서 막는다.
-모듈 wheel 에는 정책 JSON 이 없으므로 서버가 이 값을 명시적으로 전달해야 한다.
+`contract-fixtures/simulation/v1/policy.json`이 runtime 값과 승인 상태의
+기계 단일 원천이다. 패키지 문서는 근거와 과거 인수인계 기록이며
+runtime 정책 값을 중복 소유하지 않는다. 모듈 wheel 에는 정책 JSON 이 없으므로
+서버가 fixture를 fail-closed로 읽어 값을 명시적으로 전달한다.
 """
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ def load_simulation_policy() -> dict[str, Any]:
         "policy_version",
         "status",
         "approved_at",
-        "source_policy",
+        "rationale_document",
         "assumption_values",
         "max_comparison_scenarios",
     }

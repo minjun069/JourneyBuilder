@@ -44,7 +44,6 @@ docker run --rm \
   -e AI_SERVICE_BEARER_TOKEN -e AI_MASKING_PSEUDONYM_KEY \
   -e GOOGLE_API_KEY -e DATABASE_URL \
   "$f14_ai_image" sh -c "
-    python -m unittest discover -s retirement_simulation/tests -t . -q &&
     python -m unittest discover -s tests -q &&
     python -m unittest discover -s rag/tests -q &&
     python -m unittest discover -s tools/tests -q &&
@@ -57,6 +56,7 @@ docker compose -p "$f14_project" -f "$f14_root/docker-compose.yml" run \
   --volume "$f14_root:/src:ro" \
   --workdir /src/backend-pjt \
   backend sh -c "
+    python -m unittest discover -s packages/retirement_simulation/tests -t packages -q &&
     python -m unittest discover -s tests -q &&
     python -m unittest discover -s contract_tests -q &&
     python manage.py test --verbosity 1

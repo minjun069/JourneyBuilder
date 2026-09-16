@@ -1,12 +1,8 @@
-"""시뮬레이션 정책 사본이 모듈 원본과 어긋나지 않게 막는다 (S15P21B109-135).
+"""시뮬레이션 runtime 정책 소유·값·패키지 호환 계약을 검증한다.
 
-BE 는 contract-fixtures/simulation/v1/policy.json 을 읽어 모듈에 가정 다섯 개를
-전달한다. 원본은 ai-pjt/retirement_simulation/docs/simulation-policy.json 이다.
-사본을 두는 이유는 reports/policy.py 와 같은 선례를 따르기 위해서다 — BE 가 자기
-schema_version 과 status 를 소유해야 fail-closed 검증을 걸 수 있고, 모듈 docs 는
-sdist 자료라 안정 계약 경로가 아니다.
-
-사본이 두 벌이면 반드시 어긋나므로 여기서 대조한다.
+BE 는 `contract-fixtures/simulation/v1/policy.json`을 기계 단일 원천으로 읽어
+모듈에 가정 다섯 개를 전달한다. 패키지 문서는 근거와 과거 인수인계
+기록이지 runtime 정책 사본이 아니다.
 """
 
 from __future__ import annotations
@@ -30,37 +26,18 @@ from simulations.policy import (  # noqa: E402
     simulation_assumption_values,
 )
 
-MODULE_POLICY_PATH = (
-    REPOSITORY_ROOT / "ai-pjt/retirement_simulation/docs/simulation-policy.json"
+POLICY_RATIONALE_PATH = (
+    REPOSITORY_ROOT / "backend-pjt/packages/retirement_simulation/docs/simulation-policy.md"
 )
 
 
-def _module_policy() -> dict:
-    return json.loads(MODULE_POLICY_PATH.read_text(encoding="utf-8"))
-
-
-class SimulationPolicyDriftTests(unittest.TestCase):
-    def test_assumption_values_match_the_module_policy(self) -> None:
-        module = _module_policy()["assumption_values"]
-        server = simulation_assumption_values()
-        self.assertEqual(set(server), set(ASSUMPTION_FIELDS))
-        self.assertEqual(server, module)
-
-    def test_policy_version_matches_the_module_policy(self) -> None:
+class SimulationPolicyOwnershipTests(unittest.TestCase):
+    def test_runtime_fixture_records_the_human_rationale(self) -> None:
+        rationale = load_simulation_policy()["rationale_document"]
         self.assertEqual(
-            active_simulation_policy_version(), _module_policy()["policy_version"]
+            (REPOSITORY_ROOT / rationale).resolve(), POLICY_RATIONALE_PATH.resolve()
         )
-
-    def test_comparison_limit_matches_the_module_policy(self) -> None:
-        self.assertEqual(
-            max_comparison_scenarios(), _module_policy()["max_comparison_scenarios"]
-        )
-
-    def test_server_fixture_records_the_module_policy_as_its_source(self) -> None:
-        source = load_simulation_policy()["source_policy"]
-        self.assertEqual(
-            (REPOSITORY_ROOT / source).resolve(), MODULE_POLICY_PATH.resolve()
-        )
+        self.assertTrue(POLICY_RATIONALE_PATH.is_file())
 
 
 class SimulationPolicyContractTests(unittest.TestCase):

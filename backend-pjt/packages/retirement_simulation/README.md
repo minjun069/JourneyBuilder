@@ -1,0 +1,486 @@
+# 은퇴 시뮬레이션
+
+상태: **Backend 소유의 독립 계산 패키지. 내부 모델·입력 검증, 연 단위 현금흐름 엔진·경계 조건 테스트·계산 샘플 구현.
+몬테카를로 경로 생성·계산·확률 및 분위수 집계·기본 및 확대 경계 검증·전용 샘플 CLI 완료.
+What-if 시나리오 생성·공통 경로 비교 계산·입력 검증·기본 및 확대 경계 테스트·전용 샘플 CLI 완료.
+저장형 입력 어댑터·명시적 가정 변환·범위 안내·기본 및 확대 경계 검증·연동 샘플 CLI 완료.
+통합 분석 호출·입출력 규격 문서화 및 What-if 변경 입력 어댑터 구현·검증 완료.
+통합 실행 함수·불변 결과 묶음·실행 오류 및 결과/오류 JSON 변환 구현·검증 완료.
+합성 입력의 실행/변환/인코딩 시간·메모리 측정 및 초기 연동 후보 한도 문서화 완료.
+통합 분석 CLI·확대 통합 회귀·사용/BE 인수인계 문서 완료.
+패키징·격리 설치 검증, Backend 이미지 wheel 설치, Django 시뮬레이션 API,
+Frontend 보고서·프레젠테이션 화면 연결 완료. AI FastAPI는 계산 실행 경로에 포함되지 않음.**
+
+Runtime 시뮬레이션 정책의 기계 단일 원천은
+[`contract-fixtures/simulation/v1/policy.json`](../../../contract-fixtures/simulation/v1/policy.json)이다.
+[정책 근거](docs/simulation-policy.md)와 [과거 인수인계 JSON](docs/simulation-policy.json)은
+결정 맥락과 검증 기록을 설명하지만 runtime 값의 사본으로 사용하지 않는다.
+
+2026-09-11 **0.1.1 당시 기록**: 금융자산 `기타`는 자산·월 적립 합산에서 제외하고 원본 행 위치의
+`other_financial_asset_not_modeled` 안내를 남긴다. 기존 5종 계산과 미지원 문자열 오류는 유지한다.
+처리 규칙은 [입력 매핑 규격](docs/input-mapping-rules.md), 적용 전 확인 사항은
+[BE 인수인계](docs/be-handoff.md)에 정리한다. 이 수정의 패키지 버전은 **`0.1.1`**이며,
+기존 `0.1.0` 설치본에 자동 반영되지 않는다. 빌드/설치 결과는 [설치 검증 기록](docs/installation-validation.md)과
+구분해 확인하며 실제 BE 설치·API 적용은 별도 작업이다.
+[이번 수정의 검증 기록](docs/input-adapter-validation.md): 기존 668개에 회귀 12개를 추가했고,
+일반·`-S` 전체 소스 테스트가 각각 680개 통과했다.
+후속 0.1.1 패키징에서는 버전/구버전 거절 검사 2개를 추가해 소스 **682개**, 별도 격리 설치 **17개**를 검증했다.
+최종 전달 파일의 소스 커밋·버전·해시는 [설치 가이드](docs/package-installation.md)대로 별도 기록한다.
+
+후속 **0.1.2 입력 보완**: 모델링 5종 밖의 비어 있지 않은 분류 문자열을 행 단위로 제외한다.
+`기타`·직접 입력·오타를 추정/치환하지 않고 자산·월 적립액을 모두 제외하며 기존 notice에 원본 행 위치를
+남긴다. null/공백은 `missing_value`, 비문자열은 `invalid_type`, 키 누락은 `missing_field`다.
+[확정 규칙·BE 테스트 호환성](docs/unmodeled-financial-assets.md)을 참고한다. BE 임시 차단은 화면에서
+제외 안내를 보여줄 수 있을 때까지 유지한다. 소스 **685개**와 별도 격리 설치 **18개**를 검증했다.
+sdist→wheel 빌드/파일·해시 검사 결과는 [0.1.2 설치 검증](docs/installation-validation.md)에 기록했다.
+후속 BE MR !80 병합(`master=a2f8650`) 후 rebase하고 BE 패키지·어댑터 **46개 전부 통과**를 확인했다.
+기존 자유 입력 오류 기대값 충돌은 해결됐으며 과거 실패 기록과 [후속 검증](docs/installation-validation.md)을
+구분한다. 이 브랜치에서 BE/FE 파일·임시 차단을 수정하지 않았고 서비스 연결 완료로 해석하지 않는다.
+
+전달 자료는 [담당별 묶음·다음 작업 순서](docs/handoff-next-steps.md)에서 시작한다.
+[BE 설치/호출 안내](docs/be-handoff.md), [FE 화면 연결 안내](docs/fe-handoff.md),
+[기술 확인서](docs/be-integration-checklist.md), [MVP 가정 검증·샘플](docs/handoff-validation.md)을 준비했다.
+확정 가정의 소스 회귀 668개·진단 37회와 별도 격리 설치 14개를 확인했다. 실제 전달/합의·BE/FE 연결은 미완료다.
+
+몬테카를로와 What-if가 공통으로 사용할 독립 Python 모듈이다. 이 문서는 모듈의
+내부 구현 명세이며, 팀의 기존 Agent·업무 데이터·HTTP 계약을 변경하거나 새 제품
+기능의 배포 완료를 선언하지 않는다. 보고서 버튼 기반 연결의 논리 입출력·배치 선택과
+협의 항목은 [서비스 연결 설계 초안](docs/service-integration-design.md)에 정리했다.
+실행 위치는 **BE에서 독립 Python 패키지를 직접 호출**하는 방식으로 구현돼 있다.
+AI 서버 진입점은 추가하지 않으며 Django가 인증·세션·입력 snapshot·정책·실행 한도를 소유한다.
+
+패키지 이름은 `retirement_simulation`이다. 이전 `retirement` import/CLI의 변경 방법과
+계산 불변 검증은 [패키지 이름 변경 안내](docs/package-rename.md)를 참고한다.
+
+현금흐름 브랜치의 구현 기준은 [현금흐름 계산 규칙](docs/cashflow-rules.md)이다.
+연간 계산 순서·물가 기준·고갈 후 처리와 손계산 기대값을 정의한다.
+호출 방법과 결과 필드는 [현금흐름 엔진 가이드](docs/cashflow-engine.md)를 참고한다.
+요구사항별 테스트와 검증 범위는 [검증 기록](docs/cashflow-validation.md)에 정리한다.
+처음 읽는 팀원은 이 README → 엔진 가이드 → 계산 규칙 → 검증 기록 순서로 보면 된다.
+몬테카를로의 구현 기준인 [계산 규칙](docs/monte-carlo-rules.md)에는 수익률 분포,
+난수 재현성, 성공·고갈 판정, 분위수 집계와 손계산 기대값을 정의한다.
+현재 구현된 경로 생성기의 호출 규격·현금흐름 전달 예시·검증 범위는
+[수익률 경로 생성기 가이드](docs/return-paths.md)를 참고한다.
+확률·고갈·분위수 결과와 실제 호출 방법은
+[몬테카를로 엔진 가이드](docs/monte-carlo-engine.md)에 정리한다.
+조합형 독립 검산·상한·수치 오류·재현성의 검사 범위와 재실행 방법은
+[몬테카를로 검증 기록](docs/monte-carlo-validation.md)을 참고한다.
+명령어·옵션·출력 예시와 브랜치 완료 범위는
+[몬테카를로 샘플 가이드](docs/monte-carlo-samples.md)에 정리한다.
+What-if의 구현 기준은 [계산·비교 규칙](docs/what-if-rules.md)이다.
+변경 가능한 조건·생활비 전체 일정 교체·공통 경로·차이 단위와 검산 기대값을 정의하며,
+구현된 변경 모델·프로필 생성 함수·기본 테스트는
+[시나리오 생성 가이드](docs/what-if-scenarios.md)에 정리한다.
+공통 경로의 배치 비교·결과 필드·실행 출처·오류·사용 예시는
+[What-if 비교 계산 가이드](docs/what-if-engine.md)를 참고한다.
+독립 검산·일정/수치 경계·재현성·상한의 검사 범위와 재실행 방법은
+[What-if 검증 기록](docs/what-if-validation.md)에 정리한다.
+실행 명령·합성 변경안·실제 출력 예시·검증 및 완료 범위는
+[What-if 샘플 가이드](docs/what-if-samples.md)를 참고한다.
+
+서비스 연결을 검토하는 팀원은 [화면 흐름·입출력·연결 범위](docs/service-integration-design.md)를
+먼저 참고한다. BE 직접 실행의 경계, 준비자금 계산과 고정값 준비율 화면의 차이,
+다른 영역 확인 사항·서비스 완료 기준을 구분한다. 입력 어댑터의 구현 기준은
+[저장 입력 매핑 규격](docs/input-mapping-rules.md), 공개 함수·범위 안내·오류·호출 예시는
+[입력 어댑터 가이드](docs/input-adapter.md)에 있다. 저장형 객체 변환은 Django
+`simulations` adapter가 실제 상담 snapshot에 적용하고 인증된 API와 보고서 화면이 결과를 소비한다.
+입력 조합·수치/기간 경계·상태 격리와 검증 결과는
+[입력 어댑터 검증 기록](docs/input-adapter-validation.md)을 참고한다.
+저장형 합성 입력을 실제 어댑터→MC/What-if로 실행하는 명령·출력·한계는
+[입력 연동 샘플 가이드](docs/input-samples.md)에 정리했다.
+통합 분석 브랜치의 공개 함수·변경 dict·결과/오류 JSON·단위·버전·검산 기준은
+[통합 호출·입출력 규격](docs/analysis-contract.md)에 있다. `map_what_if_scenarios()`는
+구현했으며 입력 규칙·오류·검증·기존 엔진 호출 예시는
+[What-if 변경 입력 가이드](docs/what-if-adapter.md)에 있다.
+`analyze_retirement()`·불변 결과·실행 오류는 구현했으며
+[통합 실행 가이드](docs/analysis-execution.md)에 사용 예시·검증·책임 경계를 정리했다.
+`analysis_to_dict()`·`analysis_error_to_dict()`와 출력 전용 오류도 구현했으며
+[결과·오류 JSON 변환 가이드](docs/analysis-output.md)에 숫자/정합성 규칙·사용 예시·검증을 정리했다.
+[성능 검증 기록](docs/analysis-performance.md)에 합성 측정 도구·원시 결과·환경·후보 한도와 한계를 정리했다.
+[통합 샘플 가이드](docs/analysis-samples.md)에 저장 입력→통합 실행→성공/오류 JSON CLI와 확대 검증을,
+[BE 인수인계](docs/be-handoff.md)에 직접 호출 방법·입력 책임·남은 연결 작업을 정리했다.
+이 Python 인터페이스는 외부 HTTP 계약이 아니며, 운영 자원·성능 확인은 Backend 배포 검증으로 분리한다.
+통합 분석은 MR !48로 병합됐다. 다음 [패키징 규격](docs/packaging-contract.md)과
+[BE 전달용 설치·호출 확인서](docs/be-integration-checklist.md)는 `master=d0194e7`을 확인해 작성했다.
+패키징 당시 소스 회귀는 643개였고 이번 인수인계 검증 25개를 더해 668개다.
+로컬 wheel/sdist 검사·새 venv의 설치 검증 14개는 소스 검증과 별도로 완료했다.
+[설치 경계 검증](docs/installation-validation.md)에 소스 회귀와의 구분·재실행 방법을 기록했다.
+[모듈 설치 가이드](docs/package-installation.md)에 Miniforge 기준 빌드·해시 확인·일반 설치·공개 호출 예시를 정리했다.
+BE/FE 전달·이미지 설치·API·화면 연결은 현재 코드에 반영돼 있다.
+
+## 작업 경계
+
+- 이 모듈의 작업은 `backend-pjt/packages/retirement_simulation/` 안으로 제한한다.
+- Agent·라우터·컨텍스트·재무상담 매뉴얼·RAG·공용 도구 등록은 수정하지 않는다.
+- 패키지 코드는 Django·DB·네트워크를 import하지 않고, Backend 연결 책임은 `backend-pjt/simulations/`에 둔다.
+- DB, 네트워크, LLM, 환경변수, 실제 고객 정보 없이 실행한다.
+- 기존 `retirement_simulation.samples` CLI는 합성 입력의 고정 현금흐름만 출력한다.
+  `retirement_simulation.monte_carlo_samples`는 몬테카를로 전용 합성 실행기다.
+  `retirement_simulation.what_if_samples`는 공통 시장 경로의 What-if 비교 합성 실행기다.
+  `retirement_simulation.input_samples`는 저장형 합성 dict를 실제 입력 어댑터에 전달한다.
+  `retirement_simulation.analysis_samples`는 통합 함수를 거쳐 계약의 성공/오류 JSON 1개를 출력한다.
+  모두 실제 고객 보고서나 기존 BE 준비율을 생성하지 않는다.
+- `get_retirement_scenario`는 기존 조회 도구로 유지한다. 여기에서 같은 도구나
+  Agent를 추가하지 않는다.
+
+## 실행
+
+계산 코드는 Python 표준 라이브러리만 사용한다. 프로젝트의 Python 3.13 계열에서
+소스로 실행할 때 추가 설치, API key, Django 설정 또는 PostgreSQL 기동이 필요 없다.
+패키지 빌드 도구는 별도 임시 환경에서만 사용하며 런타임 의존성과 구분한다.
+빌드 설정·재실행 방법·산출물 검증 범위는 [패키징 규격](docs/packaging-contract.md)에 있다.
+현재 패키지 배포 버전은 `0.1.2`, import 이름은 기존 `retirement_simulation`이다.
+별도 설치 검증은 [설치 검증 runner](tests/run_installation_checks.py)가 새 venv를 만들어 수행한다.
+기존 환경에는 설치하지 않으며 빌드한 wheel 경로와 기록된 SHA-256을 명시해야 한다.
+처음 wheel을 빌드/설치하는 경우 [모듈 설치 가이드](docs/package-installation.md)를 따른다.
+아래 소스 실행 명령과 달리 설치된 패키지는 저장소 밖에서 `-I -B`로 확인하며 `-S`는 쓰지 않는다.
+
+저장소 루트에서 테스트:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s backend-pjt/packages/retirement_simulation/tests \
+  -t backend-pjt/packages -v
+```
+
+`backend-pjt/packages/`에서 고정 현금흐름 합성 샘플 계산:
+
+```bash
+python3 -B -m retirement_simulation.samples
+```
+
+연도별 수익·적립·연금·생활비·잔액 상세 내역:
+
+```bash
+python3 -B -m retirement_simulation.samples --details
+```
+
+샘플은 은퇴 전·기간별 생활비, 이미 은퇴·연금 없음, 연금 개시 공백·유한 수령기간의
+세 가지다. 가정의 수익률·변동성·물가는 모두 0인 테스트 설정이다. 시장 전망이나
+권장 가정이 아니다. 공용 `make g1-check`의 `g1-backend`가 이 패키지 회귀를 포함한다.
+
+요약에는 최종 계산 잔액·미충당 부족액·최초 고갈 나이를 표시한다. 음수 잔액은
+실제 대출이나 순자산이 아니며 표시용 반올림은 내부 계산·고갈 판정에 영향을 주지 않는다.
+예상 출력과 해석은 [샘플 사용법](docs/cashflow-engine.md#6-합성-샘플-실행)을 참고한다.
+
+같은 `backend-pjt/packages/` 디렉터리에서 **실제 몬테카를로 샘플**을 실행하려면 다음 명령을 쓴다.
+
+```bash
+conda run -n retirewise-ai python -S -B -m retirement_simulation.monte_carlo_samples
+conda run -n retirewise-ai python -S -B -m retirement_simulation.monte_carlo_samples --case working_with_phased_expenses --details
+```
+
+기본은 사례별 1,000개 경로·시드 42이며, 평균 0.05·변동성 0.10·물가 0.02는
+이 CLI에만 지정된 시연 가정이다. `--num-paths`, `--seed`, `--case`, `--details`를
+지원한다. 출력 해석과 오류 종료 코드는 [전용 가이드](docs/monte-carlo-samples.md)를 참고한다.
+
+같은 `backend-pjt/packages/` 디렉터리에서 **What-if 비교 샘플**을 실행한다.
+
+```bash
+conda run -n retirewise-ai python -S -B -m retirement_simulation.what_if_samples
+conda run -n retirewise-ai python -S -B -m retirement_simulation.what_if_samples --case working_with_phased_expenses --details
+```
+
+기본은 합성 사례 3개·변경안 총 11개, 사례별 공통 경로 1,000개·시드 42다.
+기준/변경 후 입력과 각 결과·pp/KRW 차이를 출력한다. 기존과 같은 `--case`,
+`--num-paths`, `--seed`, `--details` 옵션을 지원하며 자동 추천은 하지 않는다.
+시연 가정·출력·오류·한계는 [What-if 샘플 가이드](docs/what-if-samples.md)에 있다.
+
+같은 `backend-pjt/packages/`에서 **저장 입력 어댑터를 거치는 MC·What-if 샘플**을 실행한다.
+
+```bash
+conda run -n retirewise-ai python -S -B -m retirement_simulation.input_samples
+conda run -n retirewise-ai python -S -B -m retirement_simulation.input_samples --mode monte-carlo
+conda run -n retirewise-ai python -S -B -m retirement_simulation.input_samples --case saved_working --details
+```
+
+기본은 저장형 합성 사례 3개·What-if 변경안 총 10개, 사례별 공통 경로 1,000개·시드 42다.
+기준 MC만 볼 때는 `--mode monte-carlo`를 사용한다. 실제 매핑된 입력·매핑 버전·누락된
+재무 범위 안내·계산 출처와 결과를 함께 출력한다. 실제 고객 파일·DB·API는 읽지 않는다.
+시연 가정·사례별 조건·검증 결과는 [입력 연동 샘플 가이드](docs/input-samples.md)를 참고한다.
+
+같은 `backend-pjt/packages/`에서 **통합 호출·출력 규격을 그대로 사용하는 JSON 샘플**을 실행한다.
+
+```bash
+conda run --no-capture-output -n retirewise-ai python -S -B -m retirement_simulation.analysis_samples
+conda run --no-capture-output -n retirewise-ai python -S -B -m retirement_simulation.analysis_samples --case hand_check --num-paths 2 --seed 7 --pretty
+```
+
+기본은 합성 재직 사례 하나·1,000경로·시드 42·적립/은퇴 나이/생활비 변경안 3개다.
+stdout은 성공 또는 알려진 오류 JSON 하나, stderr는 합성 시연 안내다. 종료 코드는 성공 0,
+알려진 분석/출력 오류 1, 잘못된 인자 2다. `--case unconfirmed_pension`은 오류 시연용이다.
+`--mode monte-carlo`로 기준 MC만 실행할 수 있다. 이 CLI의 경로 상한 1,000은 엔진/운영 상한이 아니다.
+전체 옵션·손계산·확대 검증은 [통합 샘플 가이드](docs/analysis-samples.md)를 참고한다.
+
+## 최소 내부 모델
+
+| 모델 | 목적 | 주요 값 |
+|---|---|---|
+| `RetirementProfile` | 계산에 필요한 고객 입력만 보관 | 나이, 유동 금융자산, 월 적립액, 생활비 구간, 연금 현금흐름 |
+| `RetirementExpensePeriod` | 한 연령 구간의 총 월 생활비 | `from_age`, `to_age`, `monthly_amount` |
+| `PensionIncome` | 이미 입력된 연금 수령 일정 | `start_age`, `end_age`, `monthly_amount` |
+| `SimulationAssumptions` | 고객 정보와 구분되는 계산 가정 | 연 수익률 평균·변동성·물가, 반복 수, 난수 시드 |
+| `ProfileMappingResult`, `InputMappingNotice` | 저장 입력 매핑 결과와 반영 범위 | 불변 프로필·안내 코드/안전한 경로·매핑 버전 |
+| `WhatIfChanges` | 원본 프로필에 적용할 불변 변경 조건 | 월 적립 총액·은퇴 나이·전체 생활비 일정, 생략/None은 유지 |
+| `WhatIfScenario` | 배치 비교의 변경안 | 고유 기술 식별자·불변 변경 조건 |
+| `AssetPoint` | 계산기의 최소 출력 단위 | 연도말 나이별 계산 잔액, 음수는 미충당 부족액 |
+| `CashflowYear` | 한 해의 계산 내역 | 기초·기말 잔액, 수익률·투자손익, 적립·연금·생활비 |
+| `CashflowResult` | 단일 경로와 요약 | 연도별 내역, 자산 경로, 최종 잔액·부족액, 최초 고갈 나이 |
+| `MonteCarloMetadata` | 실행 가정과 출처 | 기간·반복 수·가정, 생성/직접 지정 구분, 모델·RNG·Python 정보 |
+| `AmountPercentiles`, `AssetPercentiles` | 금액 분포 요약 | P10·P50·P90, 연말 나이별 잔액 분위수 |
+| `FirstDepletionCount` | 최초 고갈 히스토그램 | 나이·해당 나이에 처음 고갈된 경로 수 |
+| `MonteCarloResult` | 전체 경로의 집계 | 성공·고갈 개수·확률, 나이별·최종 잔액과 최종 부족액 분위수 |
+| `AmountPercentileDelta`, `AssetPercentileDelta`, `FirstDepletionDelta` | 기준 대비 차이 | 명목 KRW 분위수 차이·나이별 잔액 차이·부호 있는 최초 고갈 개수 차이 |
+| `WhatIfScenarioResult`, `WhatIfResult` | 변경안별 비교와 공통 실행 결과 | 공통 기준·각 변경안 집계·pp/KRW 차이·실제 공통 경로 출처 |
+
+모델은 keyword 인자를 사용하는 frozen dataclass다. 생활비·연금 목록은 list나
+tuple을 받아 tuple로 복사하고, 구간 모델 자체도 수정할 수 없다. 원본 데이터의
+제자리 수정이나 What-if 가정을 대화 컨텍스트에 저장하는 동작은 없다.
+
+필수 필드 누락은 Python 생성자의 `TypeError`, 잘못된 값은
+`ModelValidationError(field_name, message)`로 거부한다. 오류에 입력 원문을 넣지
+않는다. 금액 문자열의 파싱·단위 추측은 하지 않는다. 저장형 snapshot 변환은 모델
+생성자와 분리한 `map_retirement_profile()`이 담당하며 `InputMappingError`로 실패를 알린다.
+
+## 단위·기간·판정 기준
+
+1. **금액:** 입력은 원 단위 정수이며 0을 보존한다. `None`, boolean, 문자열,
+   소수 입력을 임의의 금액으로 변환하지 않는다. 내부 자산 출력은 유한한 실수
+   KRW를 허용한다. JSON 변환은 별도 출력 어댑터에서 범위를 검증하며, 표시용 반올림은 하지 않는다.
+2. **나이:** 현재·은퇴 나이는 18~100, 계획 종료 나이는 18~120이다. 종료 나이가
+   현재·은퇴 나이보다 빠르면 오류다. 이미 은퇴한 사용자는 허용한다.
+3. **연 단위:** 현재 나이는 최초 계산 연도의 시작 시점, 종료 나이는 마지막
+   계산 연도의 나이다. 두 끝을 포함한다. 현재 나이와 종료 나이가 같으면 해당
+   연도 한 번을 계산한다. `AssetPoint(age=60)`은 60세 연도의 말 잔액을 뜻한다.
+   최초 입력 잔액을 해당 연도 말 잔액으로 중복 취급하지 않는다.
+4. **생활비:** 구간 양 끝을 포함하고 금액은 현재가치 기준 월 총액이다. 입력
+   구간을 시작 나이 순으로 정렬하되 금액을 평균 내지 않는다. 현재 이후의 모든
+   은퇴 연도가 정확히 한 구간에 포함돼야 한다. 누락 연도를 0이나 마지막 금액으로
+   채우지 않는다. 실제 0원은 금액 0의 명시적 구간으로 표현한다.
+5. **저축:** `monthly_savings`는 은퇴 전 유동 금융자산에 적립할 월 **총액**이다.
+   기존 대비 증액이 아니다. 소득-지출 잉여를 다시 더하지 않고, 연금 계좌 납입금도
+   자동 합산하지 않는다. 은퇴하는 해부터 적립을 0으로 처리한다.
+6. **연금:** 월 수령액은 입력된 명목 금액이며 수령 나이 양 끝을 포함한다.
+   여러 연금의 수령기간 중첩은 허용한다. 연금 없음은 명시적 빈 tuple로 입력한다.
+   입력 어댑터는 종신·명확한 N년 수령기간을 이 일정으로 변환한다.
+   수령액 추정·일시금·계좌 인출은 지원하지 않는다.
+7. **비율:** 내부 연간 비율은 decimal fraction이다. `0.05`는 5%이고 `5`는
+   500%다. percent 원천이 필요하면 향후 설정 연결부가 단위를 명시해 변환해야 한다.
+   현재 가정 어댑터는 fraction만 검증하고 크기로 단위를 추측하지 않는다. 평균은 단순 연수익률의 산술 평균,
+   변동성은 같은 수익률의 연 표준편차다. 3단계의 확률분포는 총수익 배수 `1+r`의
+   로그정규분포이며 변환식·경로 생성·확률 및 분위수 집계를 구현했다.
+8. **가정 검증:** 시장 관련 세 가정은 필수이며 기본 시장값을 주입하지 않는다.
+   유한한 수익률·물가만 허용하고 두 값은 -1 초과, 변동성은 0 이상이다. 반복 수는
+   1~100,000, 시드는 0 이상 정수다. 반복 상한은 임시 자원 보호 기준이며 성능
+   보장이 아니다. 시드만으로 환경·알고리즘 버전 간 동일 결과를 보장하지 않는다.
+9. **고갈:** 금융자산이 음수인 시점은 고갈로 본다. 잔액 0 자체는 고갈이 아니며
+   부동산·순자산으로 금융자산 부족을 상쇄하지 않는다. 경로 판정은 중간
+   고갈을 마지막 잔액으로 취소하지 않는다. `AssetPoint.is_depleted`는 한 시점의
+   판정만 제공하며 경로 성공·확률은 몬테카를로 엔진에서 집계한다.
+
+연간 수익 적용 순서와 고갈 후 잔액 갱신은
+[현금흐름 계산 규칙](docs/cashflow-rules.md)에 정의한다. 연말 순현금흐름을 반영하는
+단순화 모델이며, 연중 모든 시점의 지급 가능성을 검증한 것처럼 표시하지 않는다.
+
+## 기존 프로젝트 입력과의 대응
+
+아래는 **구현한 순수 입력 adapter의 매핑 기준**이지, 실제 BE 조회/API 연결이 아니다.
+누락·명시적 0·목록 확인·지원 자산·생활비 중복·연금 기간·가정 입력의 상세 규칙과
+합성 검산값은 [저장 입력 매핑 규격](docs/input-mapping-rules.md)을 따른다.
+기계 원천은 [BE 필드 레지스트리](../../consulting/field_registry.py),
+현재 계산 snapshot 생성은 [`reports/snapshots.py`](../../reports/snapshots.py)가 담당한다.
+
+| 내부 입력 | 기존 데이터 | 변환 시 주의점 |
+|---|---|---|
+| 나이 3개 | `basic_info.age/retirement_age/end_age` | 누락을 기본 나이로 대체하지 않음 |
+| `liquid_assets` | `financial_assets[].current_value` | 지원하는 금융자산 합산, 부동산·연금 계좌 잔액과 분리 |
+| `monthly_savings` | `financial_assets[].monthly_savings` | 금융자산 납입 총액, 연금 납입·소득 잉여 이중 반영 금지 |
+| 생활비 구간 | `goal_periods[phase=after]`와 `items[].amount` | 같은 기간 내부의 월 금액만 합산. 서로 다른 기간의 중복은 거절 |
+| 연금 수령 일정 | `pension_assets`의 수령방식·개시 나이·기간·예상액 | 연금형 지원 여부 확인, 종신은 계획 범위로 변환, 미입력과 연금 없음 구분 |
+
+실제 입력의 부동산, 부채, 일회성 목표, 연금 계좌 납입·인출 등 미지원 조건을
+adapter가 조용히 버려 전체 재무상태를 반영했다고 표시해서는 안 된다. 지원 범위
+안내 또는 계산 보류를 구분한다. 초기 내부 정책은 매핑 규격을 따르며, 어댑터는
+반영 범위 안내를 함께 반환한다. 실제 서비스의 부분 분석 허용 여부는 연결 전에 정한다.
+
+기준 입력은 저장된 snapshot을 우선 대상으로 한다. 미저장 `current_form`의 병합과
+확정 사실 선택은 여기에서 재구현하지 않는다. 서비스 연결은 공유 문서
+`docs/data/schema.md`, `docs/architecture/overview.md`, `docs/contracts/current-state.md`의
+소유권과 경계를 유지해야 한다.
+
+## 이후 단계
+
+1. 완료: 최소 모델·입력 검증·합성 샘플.
+2. 완료: 계산 규칙·고정 수익률 엔진·경계 검증·실제 계산 샘플과 사용 문서.
+3. 완료: 몬테카를로 경로 생성·현금흐름 반복 실행·성공·고갈·분위수 집계,
+   기본 및 확대 경계 검증·전용 샘플 실행. 시장·성능·서비스 통합 검증 완료를 뜻하지 않는다.
+4. 완료: 월 적립액·은퇴 나이·생활비 What-if와 공통 시장 경로 비교.
+   규칙·시나리오 생성·비교 계산·기본 및 확대 경계 테스트·전용 샘플 실행.
+
+계산 모듈 개발 1~4단계 이후의 서비스 작업은 아래 **별도의 1~7단계**로 진행한다.
+이전의 독립 MVP 성능 검증은 서비스 3단계에 포함한다.
+
+1. 문서화 완료: 보고서 시뮬레이션 화면 흐름·논리 입출력·연결 범위 초안.
+   팀의 외부 계약 동결/승인 또는 연결 구현 완료가 아니다.
+2. 모듈 범위 완료: 입력 매핑 규격·순수 어댑터·기본/확대 경계 검증·전용 연동 샘플.
+   안내를 유지한 부분 분석 허용은 확정했다. 실제 저장 정보 조회·없음 확인은 BE 연결에 남아 있다.
+3. 모듈 범위 완료: 규격·What-if 변경 입력·통합 실행/결과/오류·출력 JSON 변환,
+   합성 성능 측정·후보 한도·통합 CLI·확대 회귀·사용/BE 인수인계 문서 완료.
+   MVP 가정/범위는 확정했고 운영 환경 측정·기술 계약은 서비스 연결·배포 검증에 남아 있다.
+4. BE에서 패키지를 직접 실행하는 서비스 연결·단일 소스 패키지 배포.
+   모듈 내부 패키징의 0~4번 준비·규격·빌드·격리 설치·최종 검증/설치 가이드 완료. BE 연결은 미구현.
+5. 실제 준비율과 기본 몬테카를로 화면 연결.
+6. What-if 조건 변경·동일 기준 비교 화면 연결.
+7. 인증·세션·오류·timeout·원본 불변·배포 환경 통합 검증 및 사용/운영 문서.
+
+각 단계의 완료 기준·역할 경계·미확정 결정은
+[서비스 연결 설계](docs/service-integration-design.md)를 따른다. 연결 구현은 4단계지만
+다른 영역과의 입출력·담당 범위 확인은 1단계부터 진행할 수 있고 연결 전에 필요하다.
+
+실제 계산은 `calculate_cashflow()`와 `calculate_cashflow_path()`가 수행한다.
+`generate_return_paths()`는 전달 가능한 불변 수익률 경로만 생성한다. 집계는 하지 않는다.
+`calculate_monte_carlo()`와 `calculate_monte_carlo_paths()`가 각각 생성 경로와
+직접 지정한 경로를 공통 현금흐름 엔진으로 계산하고 전체 표본을 집계한다.
+`create_what_if_profile(profile, changes)`는 `WhatIfChanges`를 한 번에 적용한
+새 프로필을 반환한다. 원본 수정·계산·난수 생성은 하지 않는다.
+`calculate_what_if()`와 `calculate_what_if_paths()`는 각각 생성·직접 지정한 공통
+경로로 기준안과 1~10개 변경안을 비교한다. 전체 검증 후 기준안은 한 번만 계산한다.
+확률·비교 결과를 흉내 낸 stub은 없다. API endpoint, Agent·도구 연결, DB 저장,
+최적화 기능은 현재 미구현이며 이번 입력 어댑터 작업에서도 추가하지 않는다.
+
+## 이 모듈의 브랜치·커밋·MR 규칙
+
+기반 브랜치 `feat/ai-retirement-simulation-foundation`은 MR !16으로 병합됐다.
+현금흐름 브랜치 `feat/ai-retirement-cashflow`는 `c139054`에서 분기했고 MR !18로
+병합됐다. 몬테카를로 브랜치 `feat/ai-retirement-monte-carlo`는 `9afc694`에서
+분기했고 MR !34로 병합됐다(병합 커밋 `f0fe7ea`). What-if 브랜치는
+`feat/ai-retirement-what-if`이며 `f0fe7ea`에서 분기해 MR !35로 병합됐다
+(병합 커밋 `37b31aa`). 서비스 설계 문서 브랜치 `docs/ai-retirement-service-contract`는
+2026-09-09 로컬에서 확인한 `master`의 `8dd0f82`에서 분기했고, 최신 master 반영 후
+MR !41로 병합됐다(병합 커밋 `df723da`). 입력 어댑터 작업을 시작할 때 이미
+`feat/ai-retirement-input-adapter`가 체크아웃돼 있었으며, 원격 fetch 후 HEAD·로컬 master·
+`origin/master`가 모두 `cbc18d8`인 깨끗한 상태를 확인했다. 추가 분기나 rebase는 하지 않았다.
+입력 어댑터 브랜치는 MR !45로 병합됐다(병합 커밋 `e54d773`). 통합 분석 준비 시
+원격 fetch로 후속 팀 변경을 포함한 `origin/master=09554bd`를 확인하고 로컬 master를
+fast-forward했다. 해당 기준의 기존 테스트 404개를 일반·`-S`로 확인한 뒤
+`feat/ai-retirement-analysis`를 생성했다. 기존 브랜치 삭제·rebase·원격 쓰기는 하지 않았다.
+통합 분석은 MR !48로 병합됐다(병합 커밋 `14eb23c`). 2026-09-10 원격 fetch 후
+로컬 master와 `origin/master`가 모두 `d0194e7`인 깨끗한 상태에서 기준 테스트를 확인하고
+`feat/ai-retirement-packaging`을 생성했다. 추가 master 병합·rebase·브랜치 삭제는 하지 않았다.
+이 절의 규칙은 사용자 요청에 따른
+이 모듈의 작업 방식이며, 다른 팀원의 Git 관례나 저장소 설정을 변경하지 않는다.
+
+기능 하나를 브랜치 하나와 MR 하나로 묶고, 설명 가능한 변경 단위로 여러 커밋을
+구성한다. 구현과 관련 테스트는 함께 두며, 몬테카를로·What-if·연동은 후속 기능
+브랜치로 분리한다. 미커밋 변경을 둔 채 브랜치만 바꿔 작업을 섞지 않는다.
+
+제목은 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)의
+`type: 설명` 형식을 기본으로 한다. `feat`, `fix`, `docs`, `test`, `refactor`,
+`perf`, `build`, `chore` 등 실제 변경 성격에 맞는 타입을 사용한다. 이모지·날짜·작성자 이름·
+`[AI-...]` 식별자·`(완)`은 제목에 붙이지 않는다. 이슈 연결이나 상세 검증 내용은
+본문에 적고, 과거 커밋이나 이미 병합된 MR 제목은 소급 변경하지 않는다.
+
+완료된 현금흐름 브랜치의 커밋 구성은 다음과 같다.
+실제 커밋은 `git log --oneline c139054..bc288ce -- ai-pjt/retirement`에서 확인할 수 있다.
+이 명령의 경로는 해당 과거 커밋 당시 이름이며 현재 실행/테스트 경로와 구분한다.
+
+| 순서 | 작업 | 커밋 제목 |
+|---|---|---|
+| 1 | 계산 규칙·손계산 기대값 문서화 | `docs: 은퇴 현금흐름 계산 규칙 정의` |
+| 2 | 엔진·최소 결과 모델·기본 테스트 | `feat: 연 단위 은퇴 현금흐름 엔진 구현` |
+| 3 | 경계조건 검증 및 필요한 보완 | `test: 은퇴 현금흐름 경계 조건 검증` |
+| 4 | 실제 샘플 실행과 사용 가이드 | `feat: 은퇴 현금흐름 샘플 실행 기능 추가` |
+
+현금흐름의 0번 브랜치 준비부터 4번 샘플·문서화까지 구현·검증·병합을 마쳤다.
+몬테카를로는 다음 단위로 진행했으며 0번 브랜치 준비부터 5번 전용 샘플 실행까지
+완료했고 MR !34로 병합됐다. 푸시·MR 생성·병합은 별도 요청 시에만 수행한다.
+
+| 순서 | 작업 | 권장 커밋 제목 |
+|---|---|---|
+| 1 | 분포·재현성·판정·집계 규칙과 검산 예시 | `docs: 은퇴 몬테카를로 계산 규칙 정의` |
+| 2 | 수익률 경로 생성기·모수 변환·기본 테스트 | `feat: 은퇴 시뮬레이션 수익률 경로 생성` |
+| 3 | 기존 현금흐름 호출·결과 집계·기본 테스트 | `feat: 은퇴 몬테카를로 시뮬레이션 구현` |
+| 4 | 수치 범위·고갈·분위수·재현성 경계 검증 | `test: 은퇴 몬테카를로 경계 조건 검증` |
+| 5 | 합성 입력의 실제 확률 실행·사용 문서 | `feat: 은퇴 몬테카를로 샘플 실행 기능 추가` |
+
+What-if 브랜치는 아래 **0~5번 구현·검증·문서화까지 완료**하고 MR !35로 병합됐다.
+신규 샘플 24개를 포함한 전체 300개 테스트가 통과했다.
+
+| 순서 | 작업 | 권장 커밋 제목 |
+|---|---|---|
+| 0 | 최신 master 확인·기능 브랜치 준비(완료) | 별도 커밋 없음 |
+| 1 | 변경 조건·생활비·공통 경로·차이 규칙 문서화(완료) | `docs: 은퇴 What-if 계산 규칙 정의` |
+| 2 | 원본을 보존하는 시나리오 생성·입력 검증·기본 테스트(완료) | `feat: 은퇴 What-if 시나리오 생성` |
+| 3 | 공통 경로 기준/변경안 계산·결과 비교·기본 테스트(완료) | `feat: 은퇴 What-if 비교 계산 구현` |
+| 4 | 은퇴·생활비·재현성·수치 범위·고갈 경계 검증(완료) | `test: 은퇴 What-if 경계 조건 검증` |
+| 5 | 합성 입력의 실제 비교 실행·사용 가이드(완료) | `feat: 은퇴 What-if 샘플 실행 기능 추가` |
+
+입력 어댑터 브랜치는 아래 **0~4번 구현·검증·샘플·문서화까지 완료**하고 MR !45로 병합됐다.
+신규 샘플 테스트 23개를 포함한 전체 404개가 일반·`-S` 실행에서 통과했다.
+
+| 순서 | 작업 | 권장 커밋 제목 |
+|---|---|---|
+| 0 | master·기능 브랜치 상태 확인(완료) | 별도 커밋 없음 |
+| 1 | BE 직접 실행 결정·원천 매핑·누락/기간/가정 규격(완료) | `docs: 은퇴 시뮬레이션 입력 매핑 규격 정의` |
+| 2 | 순수 입력 어댑터·기본 테스트(완료) | `feat: 은퇴 시뮬레이션 입력 어댑터 구현` |
+| 3 | 누락·단위·중복·연금·미지원 경계 회귀 검증(완료) | `test: 은퇴 시뮬레이션 입력 매핑 경계 검증` |
+| 4 | 합성 저장 입력의 MC/What-if 실행 예제·사용 문서(완료) | `feat: 은퇴 시뮬레이션 입력 연동 샘플 추가` |
+
+통합 분석 브랜치 `feat/ai-retirement-analysis`의 **0번 준비·1번 규격 문서화·2번 변경 입력
+어댑터·3번 통합 실행·4번 결과/오류 JSON 변환·5번 합성 성능 검증·6번 통합 샘플/인수인계까지 완료**했다.
+실행/결과/출력·오류·전용 테스트·별도 성능 도구·통합 CLI와 확대 회귀를 추가했으며
+기존 계산 엔진은 변경하지 않았다. 상세 규격은 [통합 호출 규격](docs/analysis-contract.md),
+사용법·검증 결과는 [What-if 변경 입력 가이드](docs/what-if-adapter.md)와
+[통합 실행 가이드](docs/analysis-execution.md), [출력 변환 가이드](docs/analysis-output.md),
+[성능 검증 기록](docs/analysis-performance.md), [통합 샘플 가이드](docs/analysis-samples.md),
+[BE 인수인계](docs/be-handoff.md)를 따른다. 성능/샘플 도구는 공개 API로 export하지 않는다.
+
+| 순서 | 작업 | 권장 커밋 제목 |
+|---|---|---|
+| 0 | 최신 master·기준 테스트 확인·기능 브랜치 생성(완료) | 별도 커밋 없음 |
+| 1 | 통합 호출·변경 입력·결과/오류·단위/범위 문서화(완료) | `docs: 은퇴 시뮬레이션 통합 호출 규격 정의` |
+| 2 | What-if 변경 dict 매퍼·기본 테스트(완료) | `feat: 은퇴 What-if 변경 입력 어댑터 구현` |
+| 3 | 통합 실행·불변 결과 묶음·알려진 실행 오류 변환·기본 테스트(완료) | `feat: 은퇴 시뮬레이션 통합 실행 구현` |
+| 4 | 출력 JSON·오류 변환·파생 속성/숫자/격리 검증(완료) | `feat: 은퇴 시뮬레이션 출력 변환 구현` |
+| 5 | 합성 시간·메모리 측정·초기 연동 후보 한도 제안(완료) | `perf: 은퇴 시뮬레이션 실행 성능 검증` |
+| 6 | 통합 샘플·확대 회귀·사용/인수인계 문서(완료) | `feat: 은퇴 통합 분석 샘플 추가` |
+
+패키징 브랜치 `feat/ai-retirement-packaging`은 **0번 준비·1번 규격·2번 빌드·3번 설치 검증·4번 설치 가이드까지 완료**했다.
+구체적인 이름/버전·파일 포함·격리 설치 기준과 검증 기록은 [패키징 규격](docs/packaging-contract.md),
+다른 담당자가 확인할 항목은 [BE 연결 확인서](docs/be-integration-checklist.md)에 있다.
+2번은 모듈 내부 `pyproject.toml`·`MANIFEST.in`·빌드 ignore와 설정 테스트를 추가했다.
+로컬 wheel/sdist의 구성과 메타데이터를 검증했으며 기존 계산 코드는 변경하지 않았다.
+3번은 새 venv의 일반 설치·저장소 밖 import/공개 함수/CLI·오류 검증과 runner 방어 검사를 추가했다.
+4번은 전체 회귀·최종 산출물/설치 재검증과 [모듈 설치 가이드](docs/package-installation.md)를 마무리했다.
+BE 이미지 검증은 아직 아니다. BE 전달 문서는 이번에 수정하지 않았다.
+
+| 순서 | 작업 | 권장 커밋 제목 |
+|---|---|---|
+| 0 | 최신 master·기준 테스트·기능 브랜치 준비(완료) | 별도 커밋 없음 |
+| 1 | 패키징 규격·설치 검증 기준·BE 확인서(완료) | `docs: 은퇴 시뮬레이션 패키징 규격 정의` |
+| 2 | 메타데이터·포함 규칙·빌드 설정·기본 검증(완료) | `build: 은퇴 시뮬레이션 패키지 빌드 설정` |
+| 3 | 저장소 밖 wheel 설치·import·합성 실행·경계 검증(완료) | `test: 은퇴 시뮬레이션 설치 경계 검증` |
+| 4 | 전체 회귀·산출물 검사·모듈 설치 가이드 완료. BE/FE 전달 보완은 후속 인수인계 브랜치에서 완료 | `docs: 은퇴 시뮬레이션 패키지 설치 가이드` |
+| 5 | 최종 범위·master 충돌 확인 후 요청 시 푸시/MR | 필요한 변경만 별도 커밋 |
+
+각 단위에서 구현과 기본 테스트를 함께 검증하고, 통과한 변경을 해당 단위로 커밋한다.
+후속 검토에서 독립적인 버그 수정이 발견되면 관련 회귀 테스트와 함께 `fix: ...`
+커밋으로 나눈다. 푸시·MR 생성·병합은 별도 요청 시에만 진행한다.
+
+MR 제목에도 같은 형식을 적용한다. 병합된 몬테카를로 MR 제목은
+`feat: 은퇴 몬테카를로 시뮬레이션 구현`이다. What-if 기능 완료 후 전체 MR 제목은
+`feat: 은퇴 What-if 시뮬레이션 구현`을 권장한다. 문서만 제출하는 경우에는
+`docs: 은퇴 What-if 계산 규칙 정의`로 실제 범위를 드러낸다. 본문은 이지석이 작성한
+MR !18의 `개요 → 변경 내용 → 변경 범위 → 검증 → 문서 → 커밋 구성 → 후속 작업`
+구성을 따르며 미구현 항목도 명시한다. GitLab의 병합 설정은 임의 변경하지 않는다.
+
+커밋·푸시·MR 생성·병합은 사용자가 명시적으로 요청한 범위에서만 수행한다.
+사용자가 재확인한 작업 방식에 따라 **이 모듈에서 요청받아 진행하는 각 작업은
+완료·필요한 문서화·검증 후 해당 작업 단위의 커밋까지 포함**한다. 작업마다 별도의
+커밋 요청을 기다리지 않는다. 이는 남은 기능 전체를 즉시 구현하라는 뜻은 아니며,
+푸시·MR 생성·병합은 계속 별도 명시 요청 시에만 진행한다.
+
+MR 생성 전 인증 계정의 `username`이 `jiseok1015`인지 확인하고,
+프로젝트 봇이나 다른 계정이면 생성하지 않는다. 생성 후 작성자와 할당자가 모두
+이지석 계정인지 검증한다. 이 규칙을 맞추려고 기존 커밋의 작성자나 봇 이름을
+변경하지 않는다.
