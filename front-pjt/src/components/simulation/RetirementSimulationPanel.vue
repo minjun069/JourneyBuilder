@@ -119,7 +119,6 @@ async function recalculate() {
   <section class="simulation-panel" :class="{ compact }">
     <header class="panel-header">
       <div>
-        <p class="eyebrow">MONTE CARLO · 1,000 PATHS</p>
         <h2>은퇴 시뮬레이션</h2>
         <p class="subtitle">결과는 서버에 저장하지 않으며 화면을 새로 열 때 최신 정보로 다시 계산합니다.</p>
       </div>
@@ -245,17 +244,16 @@ async function recalculate() {
 <style scoped>
 .simulation-panel { display: flex; flex-direction: column; gap: 18px; color: #1a1f3c; }
 .panel-header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
-.panel-header h2 { margin: 2px 0 6px; font-size: 28px; }
-.eyebrow { margin: 0; color: #5e5ce6; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.panel-header h2 { margin: 2px 0 6px; font-size: 26px; font-weight: 800; letter-spacing: -0.4px; color: #1a1a2e; }
 .subtitle { margin: 0; color: #6b7280; font-size: 13px; }
 .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.result-card { border: 1px solid #e4e5ef; border-radius: 14px; padding: 16px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
-.result-card span, .result-card small { color: #6b7280; }
-.result-card strong { font-size: 28px; }
+.result-card { border: 1px solid #e9eaf2; border-radius: 12px; padding: 16px; background: #fff; box-shadow: 0 1px 3px rgba(20, 20, 43, 0.06); display: flex; flex-direction: column; gap: 6px; }
+.result-card span, .result-card small { color: #6b7280; font-size: 13px; font-weight: 600; }
+.result-card strong { font-size: 26px; font-weight: 800; letter-spacing: -0.3px; }
 .result-card.comparison { border-color: #c9c8ff; background: #f8f8ff; }
 .result-card.delta strong { color: #5e5ce6; }
 .result-card.empty strong { color: #9ca3af; }
-.controls { border: 1px solid #e4e5ef; border-radius: 14px; padding: 16px; background: #fff; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.controls { border: 1px solid #e9eaf2; border-radius: 12px; padding: 16px; background: #fff; box-shadow: 0 1px 3px rgba(20, 20, 43, 0.06); display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .controls label { display: grid; grid-template-columns: 1fr minmax(110px, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; font-weight: 700; }
 input { min-width: 0; border: 1px solid #d8dae6; border-radius: 7px; padding: 8px; }
 fieldset { grid-column: 1 / -1; border: 0; padding: 0; margin: 0; }

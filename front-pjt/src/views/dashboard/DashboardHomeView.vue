@@ -184,9 +184,10 @@ const groups = computed(() => {
 }
 
 .page-title {
-  font-size: 35px;
+  font-size: 26px;
   font-weight: 800;
-  color: #1a1a1a;
+  letter-spacing: -0.4px;
+  color: #1a1a2e;
   margin: 0;
 }
 
@@ -203,16 +204,16 @@ const groups = computed(() => {
 /* 공통 카드 */
 .card {
   background: #ffffff;
-  border: 1px solid #f0f0f0;
-  border-radius: 14px;
+  border: 1px solid #e9eaf2;
+  border-radius: 12px;
   padding: 20px 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px rgba(20, 20, 43, 0.06);
 }
 
 .card-title {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 700;
-  color: #333;
+  color: #1a1a2e;
   margin-bottom: 16px;
 }
 
@@ -241,17 +242,28 @@ const groups = computed(() => {
 }
 
 .section-label {
-  font-size: 30px;
-  font-weight: 700;
-  color: #5e5ce6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #1a1a2e;
   white-space: nowrap;
-  letter-spacing: 0.2px;
+  letter-spacing: -0.2px;
+}
+
+.section-label::before {
+  content: '';
+  width: 4px;
+  height: 17px;
+  border-radius: 2px;
+  background: #5e5ce6;
 }
 
 .section-rule {
   flex: 1;
   height: 1px;
-  background-color: #e4e4f0;
+  background-color: #eceef5;
 }
 
 .section-body {

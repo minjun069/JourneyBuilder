@@ -43,7 +43,7 @@
   width: 270px;
   flex-shrink: 0;
   background-color: #ffffff;
-  border-right: 1px solid #ebebeb;
+  border-right: 1px solid #e9eaf2;
   padding: 24px 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
@@ -53,15 +53,15 @@
 }
 
 .sidebar-header {
-  color: #1a1a1a;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  
-  padding: 50px 20px 16px 20px;
-  
-  /* 하단 경계선 */
-  border-bottom: 1px solid #f5f5f5;
+  color: #1a1a2e;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+
+  /* 본문 콘텐츠 상단(28px)과 시각적으로 정렬 */
+  padding: 30px 20px 14px 20px;
+
+  border-bottom: 1px solid #f0f1f7;
   margin-bottom: 16px;
 }
 
@@ -108,8 +108,9 @@
 .sidebar-item.child {
   color: #555;
   font-weight: 400;
-  padding-left: 36px;
+  padding-left: 33px;
   font-size: 13.5px;
+  border-left: 3px solid transparent;
 }
 
 .sidebar-item.child:hover {
@@ -120,7 +121,7 @@
 .sidebar-item.child.active {
   color: #5e5ce6;
   font-weight: 600;
-  background-color: #eeeeff;
-  border-right: 3px solid #5e5ce6;
+  background-color: #f0f0fd;
+  border-left-color: #5e5ce6;
 }
 </style>
