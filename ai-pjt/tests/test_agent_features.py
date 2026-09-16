@@ -300,6 +300,55 @@ class ErrorReviewManualTests(unittest.TestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_qualitative_choice_answers_do_not_invent_thresholds(self) -> None:
+        configure_runtime()
+        from agents import qa
+
+        cases = (
+            (
+                "단기 지향의 기간에 대해 설명",
+                "단기 지향 기간",
+                "고정된 연수 기준이 정의되어 있지 않",
+            ),
+            (
+                "안정추구의 정의에 대해 설명합니다.",
+                "안정 추구 정의",
+                "높은 수익보다 원금 손실 가능성",
+            ),
+        )
+        for message, query, expected in cases:
+            with self.subTest(message=message):
+                state = {
+                    "message": message,
+                    "current_query": query,
+                    "customer_info": {},
+                    "bound_inputs": {},
+                    "current_context": "",
+                    "current_answer": "",
+                    "need_retrieval": False,
+                    "retry_hint": "",
+                    "official_value_unavailable": False,
+                    "partial_answers": [],
+                    "query_index": 0,
+                    "retries": 0,
+                }
+                model = SimpleNamespace(ainvoke=AsyncMock())
+                judge_chain = SimpleNamespace(ainvoke=AsyncMock())
+                with (
+                    patch.object(qa, "llm", model),
+                    patch.object(qa, "_judge_chain", judge_chain),
+                ):
+                    generated = await qa._generate(state)
+                    judged = await qa._judge({
+                        **state,
+                        "current_answer": generated["current_answer"],
+                    })
+
+                self.assertIn(expected, generated["current_answer"])
+                self.assertEqual(judged["partial_answers"], [generated["current_answer"]])
+                model.ainvoke.assert_not_awaited()
+                judge_chain.ainvoke.assert_not_awaited()
+
     async def test_qualitative_choice_explanations_skip_official_value_rag(self) -> None:
         configure_runtime()
         from agents import qa
