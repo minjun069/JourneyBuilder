@@ -10,16 +10,16 @@ defineEmits(['close', 'confirm'])
 <template>
   <Teleport to="body">
     <div v-if="show" class="modal-backdrop" @click.self="$emit('close')">
-      <div class="warning-modal">
+      <div class="warning-modal" role="dialog" aria-modal="true" aria-labelledby="step-skip-title">
         <div class="modal-icon">⚠</div>
-        <h3 class="modal-title">미완료 단계 건너뛰기</h3>
+        <h3 id="step-skip-title" class="modal-title">미완료 단계 건너뛰기</h3>
         <p class="modal-desc">
-          <strong>{{ targetLabel }}</strong> 단계로 이동하면, 아직 처리되지 않은 이전 단계들은 기본값으로 처리됩니다.
+          <strong>{{ targetLabel }}</strong> 단계로 이동하면, 아직 처리되지 않은 이전 단계들은 건너뜀으로 표시됩니다.
         </p>
         <p class="modal-sub">일부 진단 결과가 부정확할 수 있습니다. 계속 진행하시겠습니까?</p>
         <div class="modal-actions">
           <button class="modal-btn cancel" @click="$emit('close')">취소</button>
-          <button class="modal-btn confirm" @click="$emit('confirm')">기본값으로 처리하고 이동</button>
+          <button class="modal-btn confirm" @click="$emit('confirm')">건너뛰고 이동</button>
         </div>
       </div>
     </div>

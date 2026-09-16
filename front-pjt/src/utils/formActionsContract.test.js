@@ -164,3 +164,17 @@ test('저장 시 Error Review 실패나 무경고 결과는 기존 저장을 막
   )
   assert.equal(saved, 2)
 })
+
+test('사용자가 취소한 Error Review 스트림은 저장으로 이어가지 않는다', async () => {
+  const abortError = new Error('cancelled')
+  abortError.name = 'AbortError'
+  let saved = false
+  await assert.rejects(
+    continueSaveAfterOptionalReview(
+      async () => { throw abortError },
+      async () => { saved = true },
+    ),
+    { name: 'AbortError' },
+  )
+  assert.equal(saved, false)
+})

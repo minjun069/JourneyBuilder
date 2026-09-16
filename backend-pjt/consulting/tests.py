@@ -1,13 +1,15 @@
 from collections import Counter
 from types import SimpleNamespace
 
-from django.test import SimpleTestCase
-from django.urls import Resolver404, resolve
-from rest_framework.test import APIRequestFactory, force_authenticate
+from django.test import SimpleTestCase, TestCase
+from django.urls import Resolver404, resolve, reverse
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from .field_registry import ALLOWED_OPERATIONS, FIELDS, SECTION_META
 from .form_actions import normalize_form_action
-from .models import BasicInfo
+from accounts.models import User
+
+from .models import BasicInfo, ConsultingSession, FinancialAsset
 from .serializers import (
     BasicInfoWriteSerializer,
     ExpenseSerializer,
@@ -15,7 +17,7 @@ from .serializers import (
     FinancialSatisfactionSerializer,
     parse_korean_money,
 )
-from .views import MessageListView
+from .views import FinancialAssetsView, MessageListView
 
 
 class CanonicalFieldRegistryTests(SimpleTestCase):
@@ -175,3 +177,86 @@ class AITransportAndDecisionRemovalTests(SimpleTestCase):
         ):
             with self.subTest(path=path), self.assertRaises(Resolver404):
                 resolve(path)
+
+
+class FinancialAssetsEmptyConfirmationTests(TestCase):
+    def setUp(self):
+        self.factory = APIRequestFactory()
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            email='no-assets@example.invalid',
+            password='test-only-password',
+            name='금융자산 없음 테스트',
+        )
+        self.session = ConsultingSession.objects.create(
+            user=self.user,
+            status=ConsultingSession.Status.IN_PROGRESS,
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_confirm_empty_removes_assets_and_completes_the_section(self):
+        FinancialAsset.objects.create(
+            session=self.session,
+            name='기존 예금',
+            current_value=1_000_000,
+        )
+        response = self.client.put(
+            reverse('financial-assets-confirm-empty', kwargs={'session_id': self.session.id}),
+            {},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.session.refresh_from_db()
+        self.assertFalse(self.session.financial_assets.exists())
+        self.assertTrue(self.session.financial_assets_confirmed_empty)
+        self.assertTrue(self.session.get_section_completion()['financial_assets'])
+        self.assertTrue(response.data['data']['financial_assets_confirmed_empty'])
+
+    def test_regular_asset_save_clears_empty_confirmation(self):
+        self.session.financial_assets_confirmed_empty = True
+        self.session.save(update_fields=['financial_assets_confirmed_empty'])
+        request = self.factory.put(
+            '/financial-assets/',
+            [{'name': '새 예금', 'current_value': 2_000_000}],
+            format='json',
+        )
+        force_authenticate(request, user=self.user)
+
+        response = FinancialAssetsView.as_view()(request, session_id=self.session.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.session.refresh_from_db()
+        self.assertFalse(self.session.financial_assets_confirmed_empty)
+        self.assertEqual(self.session.financial_assets.count(), 1)
+
+    def test_regular_empty_save_clears_confirmation_and_completion(self):
+        self.session.financial_assets_confirmed_empty = True
+        self.session.save(update_fields=['financial_assets_confirmed_empty'])
+        request = self.factory.put('/financial-assets/', [], format='json')
+        force_authenticate(request, user=self.user)
+
+        response = FinancialAssetsView.as_view()(request, session_id=self.session.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.session.refresh_from_db()
+        self.assertFalse(self.session.financial_assets_confirmed_empty)
+        self.assertFalse(self.session.get_section_completion()['financial_assets'])
+
+    def test_confirm_empty_hides_another_users_session(self):
+        other_user = User.objects.create_user(
+            email='other-no-assets@example.invalid',
+            password='test-only-password',
+            name='다른 사용자',
+        )
+        self.client.force_authenticate(user=other_user)
+
+        response = self.client.put(
+            reverse('financial-assets-confirm-empty', kwargs={'session_id': self.session.id}),
+            {},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.session.refresh_from_db()
+        self.assertFalse(self.session.financial_assets_confirmed_empty)

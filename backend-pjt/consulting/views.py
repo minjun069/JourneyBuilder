@@ -215,6 +215,9 @@ class BulkReplaceView(APIView):
     serializer_class   = None   # 서브클래스에서 지정
     related_name       = None   # session의 related_manager 이름
 
+    def after_replace(self, session):
+        pass
+
     def get(self, request, session_id):
         session = get_session_or_404(session_id, request.user)
         if not session:
@@ -272,6 +275,7 @@ class BulkReplaceView(APIView):
             stale_ids = set(existing) - kept_ids
             if stale_ids:
                 getattr(session, self.related_name).filter(id__in=stale_ids).delete()
+            self.after_replace(session)
             session.refresh_completion_status()
 
         return Response({'success': True, 'data': self.serializer_class(saved, many=True).data})
@@ -280,6 +284,31 @@ class BulkReplaceView(APIView):
 class FinancialAssetsView(BulkReplaceView):
     serializer_class = FinancialAssetSerializer
     related_name     = 'financial_assets'
+
+    def after_replace(self, session):
+        if session.financial_assets_confirmed_empty:
+            session.financial_assets_confirmed_empty = False
+            session.save(update_fields=['financial_assets_confirmed_empty'])
+
+
+class FinancialAssetsEmptyConfirmationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, session_id):
+        session = get_session_or_404(session_id, request.user)
+        if not session:
+            return session_not_found()
+
+        with transaction.atomic():
+            session.financial_assets.all().delete()
+            session.financial_assets_confirmed_empty = True
+            session.save(update_fields=['financial_assets_confirmed_empty'])
+            session.refresh_completion_status()
+
+        return Response({
+            'success': True,
+            'data': ConsultingSessionSerializer(session).data,
+        })
 
 
 class PensionAssetsView(BulkReplaceView):

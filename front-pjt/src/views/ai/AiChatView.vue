@@ -11,6 +11,13 @@ import {
   visibleErrorReviewItems,
 } from '@/utils/formChanges'
 import { decideFormChangeLocally } from '@/utils/formDecision'
+import { addSentenceLineBreaks, renderChatMarkdown } from '@/utils/chatMarkdown'
+import { validateConsultationForm } from '@/utils/formValidation'
+import {
+  completedStepsForSession,
+  replaceFormState,
+  resolveResumeStep,
+} from '@/utils/consultationState'
 import { PROCESS_STEPS, STEP_IDS } from './data/processSteps.js'
 import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.js'
 import BasicInfoForm from '@/components/forms/BasicInfoForm.vue'
@@ -74,6 +81,7 @@ function stopResize() {
 const currentStepId    = ref('intro')
 const visitedStepIds   = ref(new Set())
 const completedStepIds = ref(new Set())
+const skippedStepIds   = ref(new Set())
 
 const isPresentationPhase = computed(() => {
   const step = PROCESS_STEPS.find((s) => s.id === currentStepId.value)
@@ -91,13 +99,17 @@ function dismissNextStepAction() {
   }
 }
 
-function navigateToStep(stepId) {
+async function navigateToStep(stepId) {
   if (currentStepId.value === stepId) return
+  captureActiveFormDraft()
   dismissNextStepAction()
   const next = new Set(visitedStepIds.value)
   next.add(currentStepId.value)
   visitedStepIds.value = next
   currentStepId.value  = stepId
+  clearFormWarning()
+  await nextTick()
+  await hydrateActiveForm(stepId)
 
   const alreadyVisited = stepId === 'intro' || messages.value.some((m) => m.role === 'divider' && m.stepId === stepId)
   if (alreadyVisited) {
@@ -117,7 +129,7 @@ function navigateToStep(stepId) {
     const consentIdx  = guideMsgs.findIndex((m) => m.action?.type === 'consent')
     const preConsent  = consentIdx >= 0 ? guideMsgs.slice(0, consentIdx + 1) : guideMsgs
     const postConsent = consentIdx >= 0 ? guideMsgs.slice(consentIdx + 1) : []
-    streamAiMessages(preConsent)
+    void streamAiMessages(preConsent)
     if (postConsent.length > 0) pendingConsentMessages.value = postConsent
   } else {
     scrollToStepStart(stepId, true)
@@ -127,6 +139,7 @@ function navigateToStep(stepId) {
 const warningModal = reactive({ show: false, targetStepId: null, targetLabel: '' })
 
 function handleStepClick(step) {
+  if (isInteractionBusy.value || step.depth === 0) return
   const targetIdx          = STEP_IDS.indexOf(step.id)
   const currentIdx         = STEP_IDS.indexOf(currentStepId.value)
   const isNextStep         = targetIdx === currentIdx + 1
@@ -146,7 +159,18 @@ function closeWarning() {
 }
 
 function confirmStepJump() {
-  if (warningModal.targetStepId) navigateToStep(warningModal.targetStepId)
+  if (warningModal.targetStepId) {
+    const targetIdx = STEP_IDS.indexOf(warningModal.targetStepId)
+    const currentIdx = STEP_IDS.indexOf(currentStepId.value)
+    const skipped = new Set(skippedStepIds.value)
+    PROCESS_STEPS.slice(currentIdx + 1, targetIdx).forEach((step) => {
+      if (step.depth > 0 && step.phase === 'collection' && !completedStepIds.value.has(step.id)) {
+        skipped.add(step.id)
+      }
+    })
+    skippedStepIds.value = skipped
+    void navigateToStep(warningModal.targetStepId)
+  }
   closeWarning()
 }
 
@@ -158,9 +182,27 @@ const chatListRef            = ref(null)
 const chatSpacerRef          = ref(null)
 const chatInputRef           = ref(null)
 const isTyping               = ref(false)
+const isAnimatingResponse    = ref(false)
 const isStreamingResponse    = ref(false)
 const sessionLoading         = ref(false)
 const sessionError           = ref('')
+let animationGeneration = 0
+let animationQueue = Promise.resolve()
+const animationTimers = new Set()
+const hasOpenErrorReview = computed(() => messages.value.some(
+  (message) => message.action?.type === 'error-review',
+))
+
+const isInteractionBusy = computed(() => (
+  sessionLoading.value
+  || isTyping.value
+  || isAnimatingResponse.value
+  || isStreamingResponse.value
+  || consultationStore.streaming
+  || formSaving.value
+  || reviewLoading.value
+  || hasOpenErrorReview.value
+))
 
 function scrollToBottom(smooth = false, downOnly = false) {
   nextTick(() => {
@@ -190,74 +232,116 @@ function scrollToStepStart(stepId, smooth = false) {
   })
 }
 
-function streamAiMessages(bubbles, { typingDelay = 300, onDone } = {}) {
-  if (!bubbles.length) {
-    isTyping.value = false
-    onDone?.()
-    return
+function animationDelay(milliseconds, generation) {
+  return new Promise((resolve) => {
+    const record = { timer: null, resolve }
+    record.timer = setTimeout(() => {
+      animationTimers.delete(record)
+      resolve(generation === animationGeneration)
+    }, milliseconds)
+    animationTimers.add(record)
+  })
+}
+
+function cancelMessageAnimations() {
+  animationGeneration += 1
+  for (const record of animationTimers) {
+    clearTimeout(record.timer)
+    record.resolve(false)
   }
-  const [bubble, ...rest] = bubbles
-  isTyping.value = true
-  setTimeout(() => {
-    isTyping.value = false
-    messages.value.push({
-      role: 'ai',
-      text: bubble.text,
-      displayText: '',
-      streaming: true,
-      ...(bubble.action ? { action: bubble.action } : {}),
-    })
-    const msg   = messages.value[messages.value.length - 1]
-    let charIdx = 0
-    function typeNext() {
-      if (charIdx >= bubble.text.length) {
+  animationTimers.clear()
+  animationQueue = Promise.resolve()
+  isTyping.value = false
+  isAnimatingResponse.value = false
+}
+
+function streamAiMessages(bubbles, { typingDelay = 220, onDone } = {}) {
+  const queue = Array.isArray(bubbles) ? bubbles : []
+  const generation = animationGeneration
+  const run = async () => {
+    if (!queue.length || generation !== animationGeneration) return []
+    isAnimatingResponse.value = true
+    const emitted = []
+    try {
+      for (const bubble of queue) {
+        isTyping.value = true
+        if (!await animationDelay(typingDelay, generation)) return emitted
+        isTyping.value = false
+
+        const fullText = addSentenceLineBreaks(bubble.text)
+        const characters = Array.from(fullText)
+        const msg = reactive({
+          role: 'ai',
+          text: fullText,
+          displayText: '',
+          streaming: true,
+          ...(bubble.action ? { action: bubble.action } : {}),
+        })
+        messages.value.push(msg)
+        emitted.push(msg)
+
+        for (let index = 0; index < characters.length; index += 2) {
+          if (generation !== animationGeneration) return emitted
+          msg.displayText = characters.slice(0, index + 2).join('')
+          scrollToBottom(false, true)
+          const lastCharacter = characters[index + 1] ?? characters[index]
+          const delay = '.!?\n'.includes(lastCharacter) ? 45 : 12
+          if (!await animationDelay(delay, generation)) return emitted
+        }
+        msg.displayText = fullText
         msg.streaming = false
         if (bubble.autoAction) executeAutoAction(bubble.autoAction)
-        streamAiMessages(rest, { typingDelay, onDone })
-        return
       }
-      const char = bubble.text[charIdx++]
-      msg.displayText = bubble.text.slice(0, charIdx)
-      scrollToBottom(false, true)
-      let delay = 18 + Math.random() * 22
-      if ('.!?'.includes(char))  delay += 180 + Math.random() * 120
-      else if (char === ',')     delay += 80  + Math.random() * 60
-      else if (char === '\n')    delay += 200 + Math.random() * 100
-      setTimeout(typeNext, delay)
+      onDone?.()
+      return emitted
+    } finally {
+      if (generation === animationGeneration) {
+        isTyping.value = false
+        isAnimatingResponse.value = false
+      }
     }
-    typeNext()
-  }, typingDelay)
+  }
+  const queued = animationQueue.then(run, run)
+  animationQueue = queued.catch(() => {})
+  return queued
 }
 
 function resetConversationState() {
+  cancelMessageAnimations()
   currentStepId.value = 'intro'
   visitedStepIds.value = new Set()
   completedStepIds.value = new Set()
+  skippedStepIds.value = new Set()
   messages.value = []
   pendingConsentMessages.value = []
   draftMessage.value = ''
   resizeChatInput()
   basicInfoData.value = null
   isTyping.value = false
+  isAnimatingResponse.value = false
   isStreamingResponse.value = false
   leftWidth.value = 71.4
   rightWidth.value = 28.6
   reportStore.clearActiveReport()
+  isRestoredSession.value = false
+  Object.keys(formDrafts).forEach((key) => delete formDrafts[key])
+  emptyConfirmedStepIds.value = new Set()
+  clearFormWarning()
 }
 
 function showInitialMessages() {
   messages.value = []
-  streamAiMessages(initialMessages)
+  void streamAiMessages(initialMessages)
 }
 
-function toChatMessage(message) {
+function toChatMessage(message, { interactive = true } = {}) {
   const bubble = {
     role: message.role === 'assistant' ? 'ai' : message.role,
     text: message.content,
   }
   const action = message.extracted_data?.action
   if (
-    action?.type === 'form_change'
+    interactive && action?.type === 'form_change'
     && typeof action.action_id === 'string'
     && Array.isArray(action.changes)
     && action.changes.length > 0
@@ -269,7 +353,7 @@ function toChatMessage(message) {
     }
   }
   const review = message.extracted_data?.review
-  if (review?.type === 'error_review' && Array.isArray(review.items)) {
+  if (interactive && review?.type === 'error_review' && Array.isArray(review.items)) {
     const visibleItems = visibleErrorReviewItems(review.items)
     bubble.action = {
       type: 'error-review',
@@ -281,7 +365,9 @@ function toChatMessage(message) {
 }
 
 function restoreStoredMessages() {
-  messages.value = consultationStore.chatMessages.map(toChatMessage)
+  messages.value = consultationStore.chatMessages.map((message) => (
+    toChatMessage(message, { interactive: false })
+  ))
 }
 
 async function startNewConsultation() {
@@ -310,10 +396,14 @@ async function continueConsultation() {
     }
 
     await consultationStore.loadMessages()
-    if (consultationStore.chatMessages.length > 0) {
+    const hasStoredMessages = consultationStore.chatMessages.length > 0
+    if (hasStoredMessages) {
       restoreStoredMessages()
-    } else {
-      showInitialMessages()
+    }
+    const resumeStep = await restoreConsultationProcess(consultationStore.activeSession)
+    if (!hasStoredMessages) {
+      if (resumeStep === 'intro') showInitialMessages()
+      else void streamAiMessages([{ text: '저장된 상담 내용을 불러왔습니다. 마지막으로 완료하지 못한 단계부터 이어서 진행하겠습니다.' }])
     }
   } catch {
     sessionError.value = '기존 상담을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.'
@@ -333,10 +423,8 @@ async function streamAssistantMessage(text, options) {
     }
     if (event === 'done') {
       const finalMessage = toChatMessage(data.message)
-      isTyping.value = false
-      messages.value.push(finalMessage)
-      scrollToBottom(false, true)
-      return finalMessage
+      const [rendered] = await streamAiMessages([finalMessage], { typingDelay: 120 })
+      return rendered ?? finalMessage
     }
   }
   throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
@@ -344,7 +432,8 @@ async function streamAssistantMessage(text, options) {
 
 async function sendMessage() {
   const text = draftMessage.value.trim()
-  if (!text || isTyping.value || isStreamingResponse.value || !hasActiveSession.value) return
+  if (!text || isInteractionBusy.value || !hasActiveSession.value) return
+  sessionError.value = ''
   messages.value.push({ role: 'user', text })
   draftMessage.value = ''
   resizeChatInput()
@@ -359,11 +448,9 @@ async function sendMessage() {
     })
   } catch (error) {
     if (error?.name === 'AbortError') return
-    messages.value.push({
-      role: 'ai',
+    await streamAiMessages([{
       text: error?.message ?? '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',
-    })
-    scrollToBottom(false, true)
+    }], { typingDelay: 100 })
   } finally {
     isTyping.value = false
     isStreamingResponse.value = false
@@ -387,7 +474,8 @@ function resizeChatInput() {
 }
 
 async function executeAction(action) {
-  if (action.type === 'next-step') navigateToStep(action.stepId)
+  if (isInteractionBusy.value) return
+  if (action.type === 'next-step') await navigateToStep(action.stepId)
 }
 
 function dismissAction(msg) {
@@ -421,6 +509,22 @@ function decideFormChange(msg, change, decision) {
   }
 }
 
+function canApproveFormChange(action) {
+  return action.target !== 'draft_form'
+    || (action.step_id === currentStepId.value && Boolean(activeFormRef.value?.form))
+}
+
+function formatActionValue(value, unit = '') {
+  const formatted = value != null && typeof value === 'object'
+    ? JSON.stringify(value)
+    : String(value ?? '없음')
+  return unit && formatted !== '없음' ? `${formatted} ${unit}` : formatted
+}
+
+function hasPendingReviewItems(action) {
+  return action?.items?.some((item) => item.decision === 'pending') ?? false
+}
+
 const approveFormChange = (msg, change) => decideFormChange(msg, change, 'approved')
 const rejectFormChange = (msg, change) => decideFormChange(msg, change, 'rejected')
 
@@ -434,7 +538,7 @@ function handleConsent() {
   const msgs = pendingConsentMessages.value
   pendingConsentMessages.value = []
   if (!msgs.length) return
-  streamAiMessages(msgs)
+  void streamAiMessages(msgs)
 }
 
 // ─── 폼 ──────────────────────────────────────────────────
@@ -458,6 +562,16 @@ const activeFormRef       = ref(null)
 const basicInfoData       = ref(null)
 const formSaving          = ref(false)
 const reviewLoading       = ref(false)
+const restoringForm       = ref(false)
+const formDrafts          = reactive({})
+const emptyConfirmedStepIds = ref(new Set())
+const formWarning         = reactive({
+  code: null,
+  canConfirmEmpty: false,
+  confirmationLabel: null,
+  errors: [],
+})
+const isRestoredSession   = ref(false)
 const isFinancialInfoStep = computed(() => currentStepId.value === 'financial-info')
 const financialGoalProps  = computed(() => ({
   currentAge: Number(basicInfoData.value?.age) || 30,
@@ -472,6 +586,67 @@ const submitButtonLabel   = computed(() => {
   if (formSaving.value) return '저장 중...'
   return '작성 완료'
 })
+
+function clearFormWarning() {
+  formWarning.code = null
+  formWarning.canConfirmEmpty = false
+  formWarning.confirmationLabel = null
+  formWarning.errors = []
+}
+
+function captureActiveFormDraft() {
+  const form = activeFormRef.value?.form
+  if (!form || !STEP_FORM_MAP[currentStepId.value]) return
+  formDrafts[currentStepId.value] = structuredClone(form)
+}
+
+async function hydrateActiveForm(stepId) {
+  const form = activeFormRef.value?.form
+  if (!form || !STEP_FORM_MAP[stepId] || stepId === 'financial-info') return
+  let stored = formDrafts[stepId]
+  if (!stored && isRestoredSession.value) {
+    restoringForm.value = true
+    try {
+      stored = await consultationStore.loadFormData(stepId)
+      if (stored) formDrafts[stepId] = structuredClone(stored)
+    } catch {
+      sessionError.value = '저장된 입력값 일부를 불러오지 못했습니다. 현재 단계의 값을 확인해주세요.'
+    } finally {
+      restoringForm.value = false
+    }
+  }
+  if (stored) replaceFormState(form, stored)
+}
+
+async function restoreConsultationProcess(session) {
+  isRestoredSession.value = true
+  const completed = completedStepsForSession(session)
+  completedStepIds.value = completed
+  visitedStepIds.value = new Set(completed)
+  let resumeStep = resolveResumeStep(session)
+  if (resumeStep === 'income') {
+    try {
+      const liabilities = await consultationStore.loadFormData('liabilities')
+      if (liabilities?.assets?.length) formDrafts.liabilities = structuredClone(liabilities)
+      else resumeStep = 'liabilities'
+    } catch {
+      resumeStep = 'liabilities'
+    }
+  }
+  currentStepId.value = resumeStep
+  const step = PROCESS_STEPS.find((item) => item.id === resumeStep)
+  if (step && resumeStep !== 'intro') {
+    messages.value.push({
+      role: 'divider',
+      stepId: resumeStep,
+      label: `${step.label.replace('\n', ' ')} · 이어서 진행`,
+    })
+  }
+  await nextTick()
+  await hydrateActiveForm(resumeStep)
+  scrollToStepStart(resumeStep)
+  return resumeStep
+}
 
 function applyReviewSuggestion(item) {
   if (item.suggested_value == null || !activeFormRef.value?.form) return
@@ -494,30 +669,24 @@ function cancelReviewSuggestion(item) {
   cancelErrorReviewSuggestion(item)
 }
 
-async function requestErrorReview(trigger, nextStepId = null) {
+async function requestErrorReview(nextStepId = null) {
   if (reviewLoading.value || !activeFormRef.value?.form) return false
   reviewLoading.value = true
   try {
     const stored = await consultationStore.reviewForm(
       currentStepId.value,
       activeFormRef.value.form,
-      trigger,
     )
     const bubble = toChatMessage(stored)
     const items = bubble.action?.type === 'error-review' ? bubble.action.items : []
-    if (!items.length) {
-      if (trigger === 'user_request') messages.value.push(bubble)
-      return false
-    }
-    bubble.action.saveAfterReview = trigger === 'save'
+    if (!items.length) return false
+    bubble.action.saveAfterReview = true
     bubble.action.nextStepId = nextStepId
-    messages.value.push(bubble)
-    scrollToBottom(false, true)
+    await streamAiMessages([bubble], { typingDelay: 120 })
     return true
   } catch (error) {
-    if (trigger === 'user_request') {
-      messages.value.push({ role: 'ai', text: error?.message ?? '입력값 검토를 완료하지 못했습니다.' })
-    }
+    if (error?.name === 'AbortError') throw error
+    sessionError.value = 'AI 이상값 검토를 완료하지 못해 결정론적 검증 결과로 저장을 계속합니다.'
     return false
   } finally {
     reviewLoading.value = false
@@ -525,6 +694,7 @@ async function requestErrorReview(trigger, nextStepId = null) {
 }
 
 async function finishErrorReview(msg) {
+  if (hasPendingReviewItems(msg.action)) return
   const { saveAfterReview, nextStepId } = msg.action
   dismissAction(msg)
   if (saveAfterReview) await persistFormAndAdvance(nextStepId)
@@ -537,50 +707,109 @@ function executeAutoAction(action) {
 }
 
 async function submitForm() {
+  if (isInteractionBusy.value) return
+  sessionError.value = ''
   const currentIdx = STEP_IDS.indexOf(currentStepId.value)
-  const nextStepId = currentIdx >= 0 && currentIdx < STEP_IDS.length - 1 ? STEP_IDS[currentIdx + 1] : null
+  const nextStepId = currentStepId.value === 'financial-goals'
+    ? 'balance-sheet'
+    : currentIdx >= 0 && currentIdx < STEP_IDS.length - 1 ? STEP_IDS[currentIdx + 1] : null
   if (!nextStepId) return
 
   if (isFinancialInfoStep.value) {
-    completedStepIds.value.add(currentStepId.value)
+    completedStepIds.value = new Set(completedStepIds.value).add(currentStepId.value)
     dismissNextStepAction()
     navigateToStep(nextStepId)
     return
   }
 
-  await continueSaveAfterOptionalReview(
-    () => requestErrorReview('save', nextStepId),
-    () => persistFormAndAdvance(nextStepId),
+  const validation = validateConsultationForm(
+    currentStepId.value,
+    activeFormRef.value?.form,
+    { allowEmpty: emptyConfirmedStepIds.value.has(currentStepId.value) },
   )
+  if (!validation.valid) {
+    formWarning.code = validation.code
+    formWarning.canConfirmEmpty = validation.canConfirmEmpty
+    formWarning.confirmationLabel = validation.confirmationLabel ?? null
+    formWarning.errors = validation.errors
+    return
+  }
+  clearFormWarning()
+
+  try {
+    await continueSaveAfterOptionalReview(
+      () => requestErrorReview(nextStepId),
+      () => persistFormAndAdvance(nextStepId),
+    )
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      sessionError.value = error?.message ?? '입력값을 저장하지 못했습니다.'
+    }
+  }
 }
 
-async function persistFormAndAdvance(nextStepId) {
+async function confirmEmptyForm() {
+  if (isInteractionBusy.value) return
+  if (currentStepId.value === 'financial-assets') {
+    const currentIdx = STEP_IDS.indexOf(currentStepId.value)
+    const nextStepId = currentIdx >= 0 && currentIdx < STEP_IDS.length - 1
+      ? STEP_IDS[currentIdx + 1]
+      : null
+    if (!nextStepId) return
+    const saved = await persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets: true })
+    if (saved) clearFormWarning()
+    return
+  }
+
+  const confirmed = new Set(emptyConfirmedStepIds.value)
+  confirmed.add(currentStepId.value)
+  emptyConfirmedStepIds.value = confirmed
+  clearFormWarning()
+  await submitForm()
+}
+
+async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = false } = {}) {
   formSaving.value = true
+  const savedStepId = currentStepId.value
   try {
-    const response = await consultationStore.saveFormData(currentStepId.value, activeFormRef.value?.form ?? {})
-    if (currentStepId.value === 'basic-info') {
+    const response = confirmNoFinancialAssets
+      ? await consultationStore.confirmNoFinancialAssets()
+      : await consultationStore.saveFormData(savedStepId, activeFormRef.value?.form ?? {})
+    if (savedStepId === 'basic-info') {
       basicInfoData.value = response?.data?.data ?? null
     }
+    captureActiveFormDraft()
+  } catch (error) {
+    sessionError.value = error?.response?.data?.error?.message
+      ?? error?.message
+      ?? '입력값을 저장하지 못했습니다. 내용을 확인한 뒤 다시 시도해주세요.'
+    return false
   } finally {
     formSaving.value = false
   }
 
-  completedStepIds.value.add(currentStepId.value)
+  completedStepIds.value = new Set(completedStepIds.value).add(savedStepId)
+  const skipped = new Set(skippedStepIds.value)
+  skipped.delete(savedStepId)
+  skippedStepIds.value = skipped
   dismissNextStepAction()
 
-  if (currentStepId.value === 'financial-goals') {
+  if (savedStepId === 'financial-goals') {
     void reportStore.calculatePresentation(consultationStore.sessionId, { regenerateReports: true })
-    streamAiMessages([{
+    void streamAiMessages([{
       text: '모든 정보 입력이 완료되었습니다. 고생 많으셨어요!\n고객님의 데이터를 바탕으로 재무 종합 진단과 은퇴 시뮬레이션 계산을 시작했습니다.',
       action: { type: 'next-step', stepId: nextStepId, label: '진단 결과 보기' },
     }])
-    return
+    return true
   }
 
-  streamAiMessages([{
-    text: '입력하신 정보가 저장되었습니다. 다음 단계로 이동할 준비가 완료되었습니다.',
+  void streamAiMessages([{
+    text: confirmNoFinancialAssets
+      ? '보유 금융자산이 없는 것으로 확인했습니다. 다음 단계로 이동할 준비가 완료되었습니다.'
+      : '입력하신 정보가 저장되었습니다. 다음 단계로 이동할 준비가 완료되었습니다.',
     action: { type: 'next-step', stepId: nextStepId, label: '다음 단계로 이동 →' },
   }])
+  return true
 }
 
 // ─── 프레젠테이션 슬라이드 ────────────────────────────────
@@ -622,15 +851,36 @@ watch(isPresentationPhase, (val) => {
   }
 })
 
+async function restoreMountedConsultation() {
+  sessionLoading.value = true
+  sessionError.value = ''
+  try {
+    const session = await consultationStore.loadActiveSession()
+    await consultationStore.loadMessages()
+    const hasStoredMessages = consultationStore.chatMessages.length > 0
+    if (hasStoredMessages) restoreStoredMessages()
+    const resumeStep = await restoreConsultationProcess(session)
+    if (!hasStoredMessages) {
+      if (resumeStep === 'intro') showInitialMessages()
+      else void streamAiMessages([{ text: '저장된 상담 내용을 불러왔습니다. 마지막으로 완료하지 못한 단계부터 이어서 진행하겠습니다.' }])
+    }
+  } catch {
+    sessionError.value = '상담 진행 상태를 복원하지 못했습니다. 상담 이어하기를 다시 시도해주세요.'
+  } finally {
+    sessionLoading.value = false
+  }
+}
+
 onMounted(() => {
   window.addEventListener('mousemove', onResizeMove)
   window.addEventListener('mouseup', stopResize)
   if (hasActiveSession.value && messages.value.length === 0) {
-    showInitialMessages()
+    void restoreMountedConsultation()
   }
 })
 
 onBeforeUnmount(() => {
+  cancelMessageAnimations()
   consultationStore.cancelActiveStream()
   window.removeEventListener('mousemove', onResizeMove)
   window.removeEventListener('mouseup', stopResize)
@@ -642,7 +892,14 @@ onBeforeUnmount(() => {
   <section class="ai-page">
     <div class="ai-layout">
       <!-- ── 좌측: 프로세스 사이드바 ── -->
-      <ProcessSidebar :current-step-id="currentStepId" :visited-step-ids="visitedStepIds" @step-click="handleStepClick" />
+      <ProcessSidebar
+        :current-step-id="currentStepId"
+        :visited-step-ids="visitedStepIds"
+        :completed-step-ids="completedStepIds"
+        :skipped-step-ids="skippedStepIds"
+        :disabled="isInteractionBusy"
+        @step-click="handleStepClick"
+      />
 
       <!-- ── 우측: 메인 영역 ── -->
       <div
@@ -651,7 +908,7 @@ onBeforeUnmount(() => {
         :class="{ 'presentation-inline-mode': isPresentationPhase }"
       >
         <article class="chat-panel" :style="isIntroPhase ? { flex: '1' } : { flexBasis: `${isPresentationPhase ? rightWidth : leftWidth}%` }">
-            <div class="chat-list" ref="chatListRef">
+            <div class="chat-list" ref="chatListRef" role="log" aria-live="polite" aria-relevant="additions text">
               <div v-if="!hasActiveSession" class="session-start">
                 <div class="session-start-card">
                   <p class="session-eyebrow">AI 재무상담</p>
@@ -665,17 +922,25 @@ onBeforeUnmount(() => {
                       기존 상담 이어하기
                     </button>
                   </div>
-                  <p v-if="sessionError" class="session-error">{{ sessionError }}</p>
+                  <p v-if="sessionError" class="session-error" role="alert">{{ sessionError }}</p>
                 </div>
               </div>
-              <template v-else v-for="(msg, i) in messages" :key="i">
+              <p v-if="hasActiveSession && sessionError" class="chat-error" role="alert">{{ sessionError }}</p>
+              <template v-for="(msg, i) in messages" :key="i">
                 <div v-if="msg.role === 'divider'" class="step-divider" :data-step-id="msg.stepId">
                   <span class="divider-line"></span>
                   <span class="divider-label">{{ msg.label }}</span>
                   <span class="divider-line"></span>
                 </div>
                 <article v-else class="bubble" :class="msg.role === 'ai' ? 'ai-bubble' : 'user-bubble'">
-                  <p :class="{ streaming: msg.streaming }">{{ msg.displayText ?? msg.text }}</p>
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div
+                    v-if="msg.role === 'ai'"
+                    class="message-markdown"
+                    :class="{ streaming: msg.streaming }"
+                    v-html="renderChatMarkdown(msg.displayText ?? msg.text)"
+                  ></div>
+                  <p v-else>{{ msg.text }}</p>
                   <template v-if="msg.action && !msg.streaming">
                     <div v-if="msg.action.type === 'consent'" class="consent-card">
                       <p class="consent-title">개인정보 수집·이용 동의</p>
@@ -691,7 +956,8 @@ onBeforeUnmount(() => {
                       >
                         <div class="update-change-copy">
                           <strong>{{ change.label ?? `${change.section}.${change.path}` }}</strong>
-                          <span>{{ change.value }}</span>
+                          <span v-if="change.current_value !== undefined">현재 값: {{ formatActionValue(change.current_value, change.unit) }}</span>
+                          <span>제안 값: {{ formatActionValue(change.value, change.unit) }}</span>
                           <small v-if="change.reason">{{ change.reason }}</small>
                           <small v-if="change.assumption_level">{{ change.assumption_level }} · {{ change.source?.title ?? '승인 정책' }} · {{ change.source?.reference_period ?? '' }}<template v-if="change.policy_version"> · {{ change.policy_version }}</template></small>
                         </div>
@@ -704,8 +970,12 @@ onBeforeUnmount(() => {
                           <button
                             class="action-btn"
                             type="button"
+                            :disabled="!canApproveFormChange(msg.action)"
                             @click="approveFormChange(msg, change)"
                           >승인</button>
+                          <small v-if="!canApproveFormChange(msg.action)" class="update-unavailable">
+                            {{ msg.action.step_id }} 입력 단계에서 승인할 수 있습니다.
+                          </small>
                         </div>
                         <span v-else class="update-decision" :class="`update-decision--${change.decision_status}`">
                           {{ decisionStatusLabel(change.decision_status) }}
@@ -717,9 +987,9 @@ onBeforeUnmount(() => {
                       <div v-for="item in msg.action.items" :key="`${item.section}.${item.path}.${item.item_id ?? item.client_item_id ?? ''}`" class="update-change">
                         <div class="update-change-copy">
                           <strong>{{ `${item.section}.${item.path}` }}</strong>
-                          <span>현재 값: {{ item.current_value }}</span>
+                          <span>현재 값: {{ formatActionValue(item.current_value, item.unit) }}</span>
                           <small>{{ item.reason }} · 신뢰도 {{ item.confidence_level === 'high' ? '높음' : '보통' }}</small>
-                          <span v-if="item.suggested_value != null">수정 후보: {{ item.suggested_value }}</span>
+                          <span v-if="item.suggested_value != null">수정 후보: {{ formatActionValue(item.suggested_value, item.unit) }}</span>
                         </div>
                         <div v-if="item.decision === 'pending'" class="update-actions">
                           <button class="action-btn action-btn--secondary" type="button" @click="cancelReviewSuggestion(item)">현재 값 유지</button>
@@ -727,7 +997,9 @@ onBeforeUnmount(() => {
                         </div>
                         <span v-else class="update-decision">{{ item.decision === 'applied' ? '적용됨' : '유지함' }}</span>
                       </div>
-                      <button class="action-btn" type="button" @click="finishErrorReview(msg)">{{ msg.action.saveAfterReview ? '검토 완료하고 저장' : '닫기' }}</button>
+                      <button class="action-btn" type="button" :disabled="hasPendingReviewItems(msg.action)" @click="finishErrorReview(msg)">
+                        {{ hasPendingReviewItems(msg.action) ? '모든 항목을 결정해주세요' : '검토 완료하고 저장' }}
+                      </button>
                     </div>
                     <button v-else class="action-btn" type="button" @click="executeAction(msg.action)">
                       {{ msg.action.label }}
@@ -748,11 +1020,11 @@ onBeforeUnmount(() => {
                 class="chat-input"
                 rows="1"
                 :placeholder="isPresentationPhase ? 'AI에게 질문해보세요.' : 'AI에게 질문해보세요. 예: 은퇴 계획 세워줘'"
-                :disabled="isTyping || isStreamingResponse"
+                :disabled="isInteractionBusy"
                 @input="resizeChatInput"
                 @keydown="handleKeydown"
               ></textarea>
-              <button class="primary-button" type="button" :disabled="isTyping || isStreamingResponse" @click="sendMessage">전송</button>
+              <button class="primary-button" type="button" :disabled="isInteractionBusy" @click="sendMessage">전송</button>
             </div>
           </article>
 
@@ -790,11 +1062,25 @@ onBeforeUnmount(() => {
                     <h3 class="doc-title">{{ activeFormTitle }}</h3>
                     <div class="doc-rule"></div>
                   </div>
+                  <div v-if="formWarning.errors.length" class="form-warning" role="alert">
+                    <strong>입력 내용을 확인해주세요.</strong>
+                    <ul>
+                      <li v-for="error in formWarning.errors" :key="error">{{ error }}</li>
+                    </ul>
+                    <button
+                      v-if="formWarning.canConfirmEmpty"
+                      class="form-warning-confirm"
+                      type="button"
+                      :disabled="isInteractionBusy"
+                      @click="confirmEmptyForm"
+                    >{{ formWarning.confirmationLabel ?? '해당 없음으로 진행' }}</button>
+                  </div>
                   <component :is="activeFormComponent" ref="activeFormRef" v-bind="activeFormProps" />
                 </div>
                 <div class="form-footer">
-                  <button class="submit-form-btn submit-form-btn--secondary" type="button" :disabled="formSaving || reviewLoading" @click="requestErrorReview('user_request')">{{ reviewLoading ? '검토 중...' : '입력값 검토' }}</button>
-                  <button class="submit-form-btn" type="button" :disabled="formSaving || reviewLoading" @click="submitForm">{{ submitButtonLabel }}</button>
+                  <button class="submit-form-btn" type="button" :disabled="isInteractionBusy || restoringForm" @click="submitForm">
+                    {{ reviewLoading ? '이상값 검토 중...' : restoringForm ? '불러오는 중...' : submitButtonLabel }}
+                  </button>
                 </div>
               </template>
 

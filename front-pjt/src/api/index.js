@@ -11,18 +11,38 @@ export function buildDomainBaseURL(domain, version, root = API_ROOT) {
 
 // ── Request: access token 자동 첨부 ──────────────────────────
 // ── Response: 401 시 토큰 갱신 후 재시도 ─────────────────────
-let isRefreshing = false
-let pendingQueue = []   // { resolve, reject }[]
-
-function flushQueue(error, token) {
-  pendingQueue.forEach(p => error ? p.reject(error) : p.resolve(token))
-  pendingQueue = []
-}
+let accessRefreshPromise = null
 
 async function redirectToLogin() {
   const { useAuthStore } = await import('@/stores/auth')
   useAuthStore().clearTokens()
   window.location.href = '/login'
+}
+
+export async function refreshAccessToken() {
+  if (accessRefreshPromise) return accessRefreshPromise
+  const refresh = localStorage.getItem('refresh_token')
+  if (!refresh) {
+    await redirectToLogin()
+    throw new Error('로그인이 만료되었습니다.')
+  }
+
+  accessRefreshPromise = (async () => {
+    try {
+      const { data } = await axios.post(
+        `${buildDomainBaseURL('auth', 'v1')}/token/refresh/`,
+        { refresh },
+      )
+      localStorage.setItem('access_token', data.access)
+      return data.access
+    } catch (error) {
+      await redirectToLogin()
+      throw error
+    } finally {
+      accessRefreshPromise = null
+    }
+  })()
+  return accessRefreshPromise
 }
 
 function installAuthInterceptors(api) {
@@ -41,40 +61,13 @@ function installAuthInterceptors(api) {
         return Promise.reject(error)
       }
 
-      const refresh = localStorage.getItem('refresh_token')
-      if (!refresh) {
-        await redirectToLogin()
-        return Promise.reject(error)
-      }
-
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          pendingQueue.push({ resolve, reject })
-        }).then(token => {
-          original.headers.Authorization = `Bearer ${token}`
-          return api(original)
-        })
-      }
-
       original._retry = true
-      isRefreshing = true
-
       try {
-        const { data } = await axios.post(
-          `${buildDomainBaseURL('auth', 'v1')}/token/refresh/`,
-          { refresh },
-        )
-        const newAccess = data.access
-        localStorage.setItem('access_token', newAccess)
+        const newAccess = await refreshAccessToken()
         original.headers.Authorization = `Bearer ${newAccess}`
-        flushQueue(null, newAccess)
         return api(original)
       } catch (err) {
-        flushQueue(err, null)
-        await redirectToLogin()
         return Promise.reject(err)
-      } finally {
-        isRefreshing = false
       }
     },
   )

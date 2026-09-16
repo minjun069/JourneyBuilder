@@ -458,7 +458,8 @@ class ConsultingSessionListSerializer(serializers.ModelSerializer):
         model  = ConsultingSession
         fields = [
             'id', 'status', 'progress_pct', 'section_completion',
-            'is_ready_for_reports', 'completed_at', 'created_at',
+            'is_ready_for_reports', 'financial_assets_confirmed_empty',
+            'completed_at', 'created_at',
         ]
         read_only_fields = fields
 
@@ -481,7 +482,8 @@ class ConsultingSessionSerializer(serializers.ModelSerializer):
         model  = ConsultingSession
         fields = [
             'id', 'status', 'progress_pct', 'section_completion',
-            'is_ready_for_reports', 'completed_at', 'created_at',
+            'is_ready_for_reports', 'financial_assets_confirmed_empty',
+            'completed_at', 'created_at',
         ]
         read_only_fields = fields
 

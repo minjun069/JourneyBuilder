@@ -1,11 +1,14 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
-  getSessions, createSession,
+  getSessions, createSession, getSession,
   getMessages, streamMessagesV2,
-  getBasicInfo,
+  getBasicInfo, getFinancialMindset, getFinancialSatisfaction,
+  getFinancialAssets, getPensionAssets, getRealEstateAssets,
+  getLiabilities, getIncomes, getExpenses,
+  getGoalPeriods, getGoalMilestones,
   putBasicInfo, putFinancialMindset, putFinancialSatisfaction,
-  putFinancialAssets, putPensionAssets, putRealEstateAssets,
+  putFinancialAssets, confirmEmptyFinancialAssets, putPensionAssets, putRealEstateAssets,
   putLiabilities, putIncomes, putExpenses,
   putGoalPeriods, putGoalMilestones,
   mapBasicInfo, mapFinancialMindset, mapFinancialSatisfaction,
@@ -15,17 +18,23 @@ import {
   mapCurrentForm,
 } from '@/api/consulting'
 import { createIdempotencyKey } from '@/api/aiLifecycle'
+import { mapStoredForm } from '@/utils/consultationState'
+
+const STREAM_IDLE_TIMEOUT_MS = 120_000
 
 export const useConsultationStore = defineStore('consultation', () => {
   const sessionId = ref(null)
   const requestId = ref(null)
   const chatMessages = ref([])
   const sessions = ref([])
+  const activeSession = ref(null)
+  const streaming = ref(false)
   let activeStreamController = null
 
   function clearActiveSession() {
     cancelActiveStream()
     sessionId.value = null
+    activeSession.value = null
     requestId.value = null
     chatMessages.value = []
   }
@@ -35,7 +44,9 @@ export const useConsultationStore = defineStore('consultation', () => {
     clearActiveSession()
 
     const { data: createRes } = await createSession()
-    return (sessionId.value = createRes.data.id)
+    activeSession.value = createRes.data
+    sessionId.value = createRes.data.id
+    return sessionId.value
   }
 
   // 기존 상담 조회
@@ -48,12 +59,20 @@ export const useConsultationStore = defineStore('consultation', () => {
   // 기존 상담 이어하기: 최신 세션 선택
   async function continueLatestSession() {
     const list = await loadSessions()
-    const latest = list[0]
+    const latest = list.find((session) => ['onboarding', 'in_progress'].includes(session.status)) ?? list[0]
     clearActiveSession()
     if (!latest) return null
 
+    activeSession.value = latest
     sessionId.value = latest.id
     return latest.id
+  }
+
+  async function loadActiveSession() {
+    if (!sessionId.value) return null
+    const { data: response } = await getSession(sessionId.value)
+    activeSession.value = response.data
+    return activeSession.value
   }
 
   // 채팅 메시지 목록 로드
@@ -71,11 +90,26 @@ export const useConsultationStore = defineStore('consultation', () => {
     reviewTrigger = null,
   } = {}) {
     if (!sessionId.value) return
-    cancelActiveStream()
+    if (streaming.value || activeStreamController) {
+      const error = new Error('이전 AI 응답을 처리하고 있습니다. 잠시 후 다시 시도해주세요.')
+      error.code = 'AI_STREAM_IN_PROGRESS'
+      throw error
+    }
     const controller = new AbortController()
     activeStreamController = controller
+    streaming.value = true
+    let idleTimedOut = false
+    let idleTimer = null
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        idleTimedOut = true
+        controller.abort()
+      }, STREAM_IDLE_TIMEOUT_MS)
+    }
 
     try {
+      resetIdleTimer()
       const events = streamMessagesV2(
         sessionId.value,
         {
@@ -91,22 +125,33 @@ export const useConsultationStore = defineStore('consultation', () => {
         },
       )
       for await (const event of events) {
+        resetIdleTimer()
         if (event.data?.request_id) requestId.value = event.data.request_id
         yield event
       }
+    } catch (error) {
+      if (idleTimedOut) {
+        const timeoutError = new Error('AI 응답 대기 시간이 초과되었습니다. 다시 시도해주세요.')
+        timeoutError.code = 'AI_STREAM_IDLE_TIMEOUT'
+        timeoutError.retryable = true
+        throw timeoutError
+      }
+      throw error
     } finally {
+      clearTimeout(idleTimer)
       if (activeStreamController === controller) activeStreamController = null
+      streaming.value = false
     }
   }
 
-  async function reviewForm(stepId, form, trigger = 'user_request') {
+  async function reviewForm(stepId, form) {
     for await (const { event, data } of streamMessageV2(
       '현재 입력값을 검토해 주세요.',
       {
         stepId,
         form,
         requestMode: 'error_review',
-        reviewTrigger: trigger,
+        reviewTrigger: 'save',
       },
     )) {
       // Error Review는 구조화된 최종 결과만 화면에 반영한다.
@@ -173,7 +218,46 @@ export const useConsultationStore = defineStore('consultation', () => {
     if (!sessionId.value) return
     const handler = FORM_SAVE_MAP[stepId]
     if (!handler) return
-    return handler(sessionId.value, formData)
+    const response = await handler(sessionId.value, formData)
+    await loadActiveSession()
+    return response
+  }
+
+  async function confirmNoFinancialAssets() {
+    if (!sessionId.value) return
+    const response = await confirmEmptyFinancialAssets(sessionId.value)
+    activeSession.value = response.data?.data ?? activeSession.value
+    return response
+  }
+
+  const FORM_LOAD_MAP = {
+    'basic-info': getBasicInfo,
+    'financial-mindset': getFinancialMindset,
+    'financial-satisfaction': getFinancialSatisfaction,
+    'financial-assets': getFinancialAssets,
+    'pension-assets': getPensionAssets,
+    'real-estate': getRealEstateAssets,
+    liabilities: getLiabilities,
+    income: getIncomes,
+    expenses: getExpenses,
+  }
+
+  async function loadFormData(stepId) {
+    if (!sessionId.value) return null
+    if (stepId === 'financial-goals') {
+      const [periods, milestones] = await Promise.all([
+        getGoalPeriods(sessionId.value),
+        getGoalMilestones(sessionId.value),
+      ])
+      return mapStoredForm(stepId, {
+        periods: periods.data?.data ?? [],
+        milestones: milestones.data?.data ?? [],
+      })
+    }
+    const getter = FORM_LOAD_MAP[stepId]
+    if (!getter) return null
+    const { data: response } = await getter(sessionId.value)
+    return mapStoredForm(stepId, response.data)
   }
 
   async function loadBasicInfo() {
@@ -189,11 +273,13 @@ export const useConsultationStore = defineStore('consultation', () => {
 
   return {
     sessionId,
+    activeSession,
+    streaming,
     chatMessages,
     sessions,
-    initSession, loadSessions, continueLatestSession,
+    initSession, loadSessions, continueLatestSession, loadActiveSession,
     loadMessages, streamMessageV2, reviewForm, cancelActiveStream,
-    saveFormData, loadBasicInfo,
+    saveFormData, confirmNoFinancialAssets, loadFormData, loadBasicInfo,
     clearConsultation,
   }
 })
