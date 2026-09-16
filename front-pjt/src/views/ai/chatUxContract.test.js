@@ -5,6 +5,8 @@ import test from 'node:test'
 const view = readFileSync(new URL('./AiChatView.vue', import.meta.url), 'utf8')
 const guides = readFileSync(new URL('./data/stepGuideMessages.js', import.meta.url), 'utf8')
 const store = readFileSync(new URL('../../stores/consultation.js', import.meta.url), 'utf8')
+const validation = readFileSync(new URL('../../utils/formValidation.js', import.meta.url), 'utf8')
+const consultingApi = readFileSync(new URL('../../api/consulting.js', import.meta.url), 'utf8')
 
 test('새 AI 답변은 공통 애니메이션 큐와 안전한 Markdown 렌더러를 사용한다', () => {
   assert.match(view, /function streamAiMessages/)
@@ -36,6 +38,14 @@ test('재무정보 안내는 말풍선 안에도 다음 단계 action을 제공�
   )
   assert.match(financialInfo, /type: 'next-step'/)
   assert.match(financialInfo, /stepId: 'financial-assets'/)
+})
+
+test('빈 금융자산은 명시적인 없음 확인 API로 완료 처리한다', () => {
+  assert.match(validation, /보유 금융자산 없음/)
+  assert.match(view, /confirmNoFinancialAssets: true/)
+  assert.match(store, /async function confirmNoFinancialAssets/)
+  assert.match(store, /confirmEmptyFinancialAssets/)
+  assert.match(consultingApi, /data\/financial-assets\/confirm-empty\//)
 })
 
 test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 idle timeout을 둔다', () => {

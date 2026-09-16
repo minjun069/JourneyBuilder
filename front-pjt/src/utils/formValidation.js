@@ -38,12 +38,17 @@ function hasMeaningfulValue(value, ignoredKeys = new Set()) {
   return !blank(value)
 }
 
-function emptyFormResult(label, canConfirmEmpty = false) {
+function emptyFormResult(label, {
+  canConfirmEmpty = false,
+  message = `${label}에 입력된 내용이 없습니다.`,
+  confirmationLabel = null,
+} = {}) {
   return {
     valid: false,
     code: 'empty_form',
     canConfirmEmpty,
-    errors: [`${label}에 입력된 내용이 없습니다.`],
+    confirmationLabel,
+    errors: [message],
   }
 }
 
@@ -82,7 +87,16 @@ export function validateConsultationForm(stepId, form, { allowEmpty = false } = 
   if (LIST_STEPS.has(stepId)) {
     const rows = Array.isArray(value.assets) ? value.assets : []
     const hasInput = rows.some((row) => hasMeaningfulValue(row, new Set(['id', 'clientItemId'])))
-    if (!hasInput && !allowEmpty) return emptyFormResult('현재 단계', stepId === 'liabilities')
+    if (!hasInput && !allowEmpty) {
+      if (stepId === 'financial-assets') {
+        return emptyFormResult('금융자산', {
+          canConfirmEmpty: true,
+          message: '입력된 금융자산이 없습니다. 실제로 보유한 금융자산이 없다면 아래 버튼을 눌러 확인해주세요.',
+          confirmationLabel: '보유 금융자산 없음',
+        })
+      }
+      return emptyFormResult('현재 단계', { canConfirmEmpty: stepId === 'liabilities' })
+    }
     const amountFields = {
       'financial-assets': ['principal', 'value', 'monthly'],
       'pension-assets': ['value', 'monthly', 'expectedAmount'],

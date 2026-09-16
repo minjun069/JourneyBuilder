@@ -23,7 +23,7 @@ test('재무 만족도는 다섯 항목이 모두 있어야 한다', () => {
   }).valid, true)
 })
 
-test('빈 반복 폼은 경고 후 해당 없음 확인으로 진행할 수 있다', () => {
+test('빈 반복 폼은 경고 후 명시적인 해당 없음 확인으로 진행할 수 있다', () => {
   const warning = validateConsultationForm('liabilities', { assets: [] })
   assert.equal(warning.valid, false)
   assert.equal(warning.code, 'empty_form')
@@ -32,10 +32,10 @@ test('빈 반복 폼은 경고 후 해당 없음 확인으로 진행할 수 있�
     validateConsultationForm('liabilities', { assets: [] }, { allowEmpty: true }).valid,
     true,
   )
-  assert.equal(
-    validateConsultationForm('financial-assets', { assets: [] }).canConfirmEmpty,
-    false,
-  )
+  const financialAssets = validateConsultationForm('financial-assets', { assets: [] })
+  assert.equal(financialAssets.canConfirmEmpty, true)
+  assert.equal(financialAssets.confirmationLabel, '보유 금융자산 없음')
+  assert.match(financialAssets.errors.join(' '), /실제로 보유한 금융자산이 없다면/)
 })
 
 test('반복 폼의 음수 금액과 비정상 범위를 차단한다', () => {

@@ -21,6 +21,7 @@ class ConsultingSession(models.Model):
         choices=Status.choices,
         default=Status.ONBOARDING
     )
+    financial_assets_confirmed_empty = models.BooleanField(default=False)
     completed_at   = models.DateTimeField(null=True, blank=True)
     created_at     = models.DateTimeField(auto_now_add=True)
 
@@ -36,7 +37,10 @@ class ConsultingSession(models.Model):
             'basic_info': hasattr(self, 'basic_info'),
             'financial_mindset': hasattr(self, 'financial_mindset'),
             'financial_satisfaction': hasattr(self, 'financial_satisfaction'),
-            'financial_assets': self.financial_assets.exists(),
+            'financial_assets': (
+                self.financial_assets_confirmed_empty
+                or self.financial_assets.exists()
+            ),
             'pension_assets': self.pension_assets.exists(),
             'real_estate_assets': self.real_estate_assets.exists(),
             'incomes': self.incomes.exists(),

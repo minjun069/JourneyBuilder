@@ -81,6 +81,9 @@ export const putFinancialSatisfaction = (sid, data) => consultingApi.put(`/consu
 // ── 1:N Form data (Bulk Replace) ─────────────────────────────
 export const getFinancialAssets = (sid)       => consultingApi.get(`/consultations/${sid}/data/financial-assets/`)
 export const putFinancialAssets = (sid, data) => consultingApi.put(`/consultations/${sid}/data/financial-assets/`, data)
+export const confirmEmptyFinancialAssets = (sid) => (
+  consultingApi.put(`/consultations/${sid}/data/financial-assets/confirm-empty/`)
+)
 
 export const getPensionAssets = (sid)       => consultingApi.get(`/consultations/${sid}/data/pension-assets/`)
 export const putPensionAssets = (sid, data) => consultingApi.put(`/consultations/${sid}/data/pension-assets/`, data)

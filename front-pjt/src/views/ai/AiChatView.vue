@@ -565,7 +565,12 @@ const reviewLoading       = ref(false)
 const restoringForm       = ref(false)
 const formDrafts          = reactive({})
 const emptyConfirmedStepIds = ref(new Set())
-const formWarning         = reactive({ code: null, canConfirmEmpty: false, errors: [] })
+const formWarning         = reactive({
+  code: null,
+  canConfirmEmpty: false,
+  confirmationLabel: null,
+  errors: [],
+})
 const isRestoredSession   = ref(false)
 const isFinancialInfoStep = computed(() => currentStepId.value === 'financial-info')
 const financialGoalProps  = computed(() => ({
@@ -585,6 +590,7 @@ const submitButtonLabel   = computed(() => {
 function clearFormWarning() {
   formWarning.code = null
   formWarning.canConfirmEmpty = false
+  formWarning.confirmationLabel = null
   formWarning.errors = []
 }
 
@@ -724,6 +730,7 @@ async function submitForm() {
   if (!validation.valid) {
     formWarning.code = validation.code
     formWarning.canConfirmEmpty = validation.canConfirmEmpty
+    formWarning.confirmationLabel = validation.confirmationLabel ?? null
     formWarning.errors = validation.errors
     return
   }
@@ -742,6 +749,18 @@ async function submitForm() {
 }
 
 async function confirmEmptyForm() {
+  if (isInteractionBusy.value) return
+  if (currentStepId.value === 'financial-assets') {
+    const currentIdx = STEP_IDS.indexOf(currentStepId.value)
+    const nextStepId = currentIdx >= 0 && currentIdx < STEP_IDS.length - 1
+      ? STEP_IDS[currentIdx + 1]
+      : null
+    if (!nextStepId) return
+    const saved = await persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets: true })
+    if (saved) clearFormWarning()
+    return
+  }
+
   const confirmed = new Set(emptyConfirmedStepIds.value)
   confirmed.add(currentStepId.value)
   emptyConfirmedStepIds.value = confirmed
@@ -749,11 +768,14 @@ async function confirmEmptyForm() {
   await submitForm()
 }
 
-async function persistFormAndAdvance(nextStepId) {
+async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = false } = {}) {
   formSaving.value = true
+  const savedStepId = currentStepId.value
   try {
-    const response = await consultationStore.saveFormData(currentStepId.value, activeFormRef.value?.form ?? {})
-    if (currentStepId.value === 'basic-info') {
+    const response = confirmNoFinancialAssets
+      ? await consultationStore.confirmNoFinancialAssets()
+      : await consultationStore.saveFormData(savedStepId, activeFormRef.value?.form ?? {})
+    if (savedStepId === 'basic-info') {
       basicInfoData.value = response?.data?.data ?? null
     }
     captureActiveFormDraft()
@@ -766,13 +788,13 @@ async function persistFormAndAdvance(nextStepId) {
     formSaving.value = false
   }
 
-  completedStepIds.value = new Set(completedStepIds.value).add(currentStepId.value)
+  completedStepIds.value = new Set(completedStepIds.value).add(savedStepId)
   const skipped = new Set(skippedStepIds.value)
-  skipped.delete(currentStepId.value)
+  skipped.delete(savedStepId)
   skippedStepIds.value = skipped
   dismissNextStepAction()
 
-  if (currentStepId.value === 'financial-goals') {
+  if (savedStepId === 'financial-goals') {
     void reportStore.calculatePresentation(consultationStore.sessionId, { regenerateReports: true })
     void streamAiMessages([{
       text: '모든 정보 입력이 완료되었습니다. 고생 많으셨어요!\n고객님의 데이터를 바탕으로 재무 종합 진단과 은퇴 시뮬레이션 계산을 시작했습니다.',
@@ -782,7 +804,9 @@ async function persistFormAndAdvance(nextStepId) {
   }
 
   void streamAiMessages([{
-    text: '입력하신 정보가 저장되었습니다. 다음 단계로 이동할 준비가 완료되었습니다.',
+    text: confirmNoFinancialAssets
+      ? '보유 금융자산이 없는 것으로 확인했습니다. 다음 단계로 이동할 준비가 완료되었습니다.'
+      : '입력하신 정보가 저장되었습니다. 다음 단계로 이동할 준비가 완료되었습니다.',
     action: { type: 'next-step', stepId: nextStepId, label: '다음 단계로 이동 →' },
   }])
   return true
@@ -1047,8 +1071,9 @@ onBeforeUnmount(() => {
                       v-if="formWarning.canConfirmEmpty"
                       class="form-warning-confirm"
                       type="button"
+                      :disabled="isInteractionBusy"
                       @click="confirmEmptyForm"
-                    >해당 없음으로 진행</button>
+                    >{{ formWarning.confirmationLabel ?? '해당 없음으로 진행' }}</button>
                   </div>
                   <component :is="activeFormComponent" ref="activeFormRef" v-bind="activeFormProps" />
                 </div>

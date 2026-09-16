@@ -8,7 +8,7 @@ import {
   getLiabilities, getIncomes, getExpenses,
   getGoalPeriods, getGoalMilestones,
   putBasicInfo, putFinancialMindset, putFinancialSatisfaction,
-  putFinancialAssets, putPensionAssets, putRealEstateAssets,
+  putFinancialAssets, confirmEmptyFinancialAssets, putPensionAssets, putRealEstateAssets,
   putLiabilities, putIncomes, putExpenses,
   putGoalPeriods, putGoalMilestones,
   mapBasicInfo, mapFinancialMindset, mapFinancialSatisfaction,
@@ -223,6 +223,13 @@ export const useConsultationStore = defineStore('consultation', () => {
     return response
   }
 
+  async function confirmNoFinancialAssets() {
+    if (!sessionId.value) return
+    const response = await confirmEmptyFinancialAssets(sessionId.value)
+    activeSession.value = response.data?.data ?? activeSession.value
+    return response
+  }
+
   const FORM_LOAD_MAP = {
     'basic-info': getBasicInfo,
     'financial-mindset': getFinancialMindset,
@@ -272,7 +279,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     sessions,
     initSession, loadSessions, continueLatestSession, loadActiveSession,
     loadMessages, streamMessageV2, reviewForm, cancelActiveStream,
-    saveFormData, loadFormData, loadBasicInfo,
+    saveFormData, confirmNoFinancialAssets, loadFormData, loadBasicInfo,
     clearConsultation,
   }
 })
