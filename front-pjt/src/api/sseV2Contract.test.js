@@ -56,19 +56,12 @@ test('처리 중 중복은 새 요청을 만들지 않고 완료 결과만 재�
   )
 })
 
-test('Elicit start, resume, continuation은 모두 v2 SSE를 사용한다', () => {
+test('Planner가 라우팅한 Elicit 턴은 일반 채팅과 같은 v2 SSE를 사용한다', () => {
   assert.deepEqual(contract.channel_policy.elicit, {
-    start: 'sse',
-    resume: 'sse',
-    continuation: 'sse',
+    planner_routed_turn: 'sse',
   })
-
-  const elicitAction = aiChatViewSource.slice(
-    aiChatViewSource.indexOf('async function runElicitAction'),
-    aiChatViewSource.indexOf('function dismissAction'),
-  )
-  assert.match(elicitAction, /streamAssistantMessage\(text/)
-  assert.doesNotMatch(elicitAction, /consultationStore\.sendMessage/)
+  assert.doesNotMatch(aiChatViewSource, /runElicitAction|resume-elicit|elicit-consent/)
+  assert.doesNotMatch(consultationStoreSource, /elicit_action|elicitAction/)
 })
 
 test('Error Review 저장·명시 요청은 구조화된 done을 v2 SSE로 받는다', () => {

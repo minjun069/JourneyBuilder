@@ -234,8 +234,8 @@ async def execute_route_plan(
             "chart_payload": deepcopy(plan.get("chart_payload")),
             "request_mode": plan.get("request_mode", "chat"),
             "review_trigger": plan.get("review_trigger"),
-            "elicit_action": plan.get("elicit_action"),
-            "elicit_state": deepcopy(plan.get("elicit_state", {})),
+            "elicit_routing": deepcopy(plan.get("elicit_routing", {})),
+            "elicit_contexts": deepcopy(plan.get("elicit_contexts", {})),
             "context_scope": deepcopy(plan.get("context_scope", {})),
             "conversation_context": deepcopy(plan.get("conversation_context", {})),
         }
@@ -582,7 +582,6 @@ def aggregate_task_results(
     responses: list[str] = []
     form_changes: list[Mapping[str, Any]] = []
     reviews: list[dict[str, Any]] = []
-    ui_actions: list[dict[str, Any]] = []
 
     for task in tasks:
         if not isinstance(task, Mapping):
@@ -602,8 +601,6 @@ def aggregate_task_results(
 
         if isinstance(result.get("review"), Mapping):
             reviews.append(deepcopy(dict(result["review"])))
-        if isinstance(result.get("ui_action"), Mapping):
-            ui_actions.append(deepcopy(dict(result["ui_action"])))
 
         response = result.get("response")
         artifact = result.get("artifact")
@@ -642,8 +639,6 @@ def aggregate_task_results(
     }
     if len(reviews) == 1:
         output["review"] = reviews[0]
-    if len(ui_actions) == 1:
-        output["ui_action"] = ui_actions[0]
     validation = validate_form_update_contract({
         "step_id": step_id,
         "field_registry": field_registry,

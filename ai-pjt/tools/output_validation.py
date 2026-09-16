@@ -107,18 +107,11 @@ def validate_form_update_contract(
         issues.extend(_validate_error_review(review, expected_trigger=state.get("review_trigger")))
     ui_action = output.get("ui_action")
     if ui_action is not None:
-        if (
-            not isinstance(ui_action, dict)
-            or set(ui_action) != {"type", "label"}
-            or ui_action.get("type") != "resume_elicit"
-            or not isinstance(ui_action.get("label"), str)
-            or not ui_action["label"].strip()
-        ):
-            issues.append(_issue(
-                "INVALID_UI_ACTION",
-                "output.ui_action",
-                "지원하지 않는 UI action입니다.",
-            ))
+        issues.append(_issue(
+            "INVALID_UI_ACTION",
+            "output.ui_action",
+            "Elicit 재개 UI action은 더 이상 지원하지 않습니다.",
+        ))
 
     if issues:
         return _failed(issues, current_step_id)

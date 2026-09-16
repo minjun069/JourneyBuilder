@@ -133,7 +133,7 @@ def _graph_input(request: ChatV2Request) -> dict[str, Any]:
         "customer_info": customer_info,
         "field_registry": request.field_registry,
     }
-    for field in ("request_mode", "review_trigger", "elicit_action"):
+    for field in ("request_mode", "review_trigger"):
         value = getattr(request, field, None)
         if value is not None:
             payload[field] = value

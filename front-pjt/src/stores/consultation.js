@@ -69,7 +69,6 @@ export const useConsultationStore = defineStore('consultation', () => {
     form = null,
     requestMode = 'chat',
     reviewTrigger = null,
-    elicitAction = null,
   } = {}) {
     if (!sessionId.value) return
     cancelActiveStream()
@@ -85,7 +84,6 @@ export const useConsultationStore = defineStore('consultation', () => {
           form_data: mapCurrentForm(stepId, form ?? {}),
           request_mode: requestMode,
           ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
-          ...(elicitAction ? { elicit_action: elicitAction } : {}),
         },
         {
           idempotencyKey: createIdempotencyKey(),

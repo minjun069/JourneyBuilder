@@ -98,7 +98,7 @@ def validate_browser_message(payload):
         )
     allowed_fields = {
         'contract_version', 'content', 'step_id', 'form_data',
-        'request_mode', 'review_trigger', 'elicit_action',
+        'request_mode', 'review_trigger',
     }
     if set(payload) - allowed_fields:
         raise LifecycleError(400, 'REQUEST_INVALID', '지원하지 않는 요청 필드가 있습니다.')
@@ -119,7 +119,6 @@ def validate_browser_message(payload):
         raise LifecycleError(400, 'REQUEST_INVALID', 'form_data는 객체여야 합니다.')
     request_mode = payload.get('request_mode', 'chat')
     review_trigger = payload.get('review_trigger')
-    elicit_action = payload.get('elicit_action')
     if request_mode not in ('chat', 'error_review'):
         raise LifecycleError(400, 'REQUEST_INVALID', 'request_mode이 올바르지 않습니다.')
     if request_mode == 'error_review':
@@ -127,12 +126,6 @@ def validate_browser_message(payload):
             raise LifecycleError(400, 'REQUEST_INVALID', 'review_trigger가 필요합니다.')
     elif review_trigger is not None:
         raise LifecycleError(400, 'REQUEST_INVALID', 'chat 요청에는 review_trigger를 사용할 수 없습니다.')
-    if elicit_action not in (None, 'start', 'resume'):
-        raise LifecycleError(400, 'REQUEST_INVALID', 'elicit_action이 올바르지 않습니다.')
-    if elicit_action is not None and (
-        request_mode != 'chat' or step_id != 'financial-mindset'
-    ):
-        raise LifecycleError(400, 'REQUEST_INVALID', 'Elicit 동작은 경제 관념 단계에서만 가능합니다.')
     normalized = {
         'contract_version': CONTRACT_VERSION,
         'content': content,
@@ -143,8 +136,6 @@ def validate_browser_message(payload):
         normalized['request_mode'] = request_mode
     if review_trigger is not None:
         normalized['review_trigger'] = review_trigger
-    if elicit_action is not None:
-        normalized['elicit_action'] = elicit_action
     return normalized
 
 
@@ -196,7 +187,12 @@ def validate_terminal_payload(payload):
         if not isinstance(output, dict) or not isinstance(output.get('response'), str):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'completed output이 올바르지 않습니다.')
         _validate_error_review_output(output)
-        _validate_ui_action_output(output)
+        if 'ui_action' in output:
+            raise LifecycleError(
+                422,
+                'REQUEST_SCHEMA_INVALID',
+                'ui_action output은 더 이상 지원하지 않습니다.',
+            )
     else:
         error = payload.get('error')
         if not isinstance(error, dict):
@@ -248,20 +244,6 @@ def _validate_error_review_output(output):
         )
         if item.get('confidence_level') not in ('medium', 'high') or item.get('confidence_level') != expected_level:
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review confidence 등급이 올바르지 않습니다.')
-
-
-def _validate_ui_action_output(output):
-    ui_action = output.get('ui_action')
-    if ui_action is None:
-        return
-    if (
-        not isinstance(ui_action, dict)
-        or set(ui_action) != {'type', 'label'}
-        or ui_action.get('type') != 'resume_elicit'
-        or not isinstance(ui_action.get('label'), str)
-        or not ui_action['label'].strip()
-    ):
-        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'ui_action output이 올바르지 않습니다.')
 
 
 def _validate_error_review_fields(output, step_id):
@@ -358,7 +340,7 @@ class RedisLifecycleStore:
 
 def build_v2_ai_payload(
     *, request_id, session, user, message, step_id, form_data,
-    request_mode='chat', review_trigger=None, elicit_action=None, now=None,
+    request_mode='chat', review_trigger=None, now=None,
 ):
     current = now or utc_now()
     chart_result = build_chart_payload(
@@ -390,8 +372,6 @@ def build_v2_ai_payload(
         payload['request_mode'] = request_mode
     if review_trigger is not None:
         payload['review_trigger'] = review_trigger
-    if elicit_action is not None:
-        payload['elicit_action'] = elicit_action
     return payload
 
 
@@ -470,9 +450,6 @@ def create_v2_assistant_message(session, payload, step_id):
         extracted_changed = True
     if isinstance(output.get('review'), dict):
         extracted['review'] = output['review']
-        extracted_changed = True
-    if isinstance(output.get('ui_action'), dict):
-        extracted['ui_action'] = output['ui_action']
         extracted_changed = True
     if extracted_changed:
         message.extracted_data = extracted

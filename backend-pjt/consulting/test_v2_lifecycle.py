@@ -91,7 +91,7 @@ class BrowserMessageValidationTests(SimpleTestCase):
         self.assertEqual(captured.exception.status_code, 422)
         self.assertEqual(captured.exception.code, 'CONTRACT_VERSION_UNSUPPORTED')
 
-    def test_error_review_and_elicit_controls_are_explicitly_bound(self):
+    def test_error_review_control_is_bound_and_legacy_elicit_control_is_rejected(self):
         review = validate_browser_message({
             **self.valid_payload(),
             'request_mode': 'error_review',
@@ -103,13 +103,6 @@ class BrowserMessageValidationTests(SimpleTestCase):
             validate_browser_message({**self.valid_payload(), 'request_mode': 'error_review'})
         with self.assertRaises(LifecycleError):
             validate_browser_message({**self.valid_payload(), 'elicit_action': 'start'})
-
-        elicit = validate_browser_message({
-            **self.valid_payload(),
-            'step_id': 'financial-mindset',
-            'elicit_action': 'start',
-        })
-        self.assertEqual(elicit['elicit_action'], 'start')
 
 
 class RedisLifecycleStoreTests(SimpleTestCase):
@@ -264,6 +257,16 @@ class TerminalPayloadValidationTests(SimpleTestCase):
         )
         failed.pop('output')
         self.assertEqual(validate_terminal_payload(failed)['status'], 'failed')
+
+    def test_legacy_elicit_ui_action_is_rejected(self):
+        payload = completed_terminal()
+        payload['output']['ui_action'] = {
+            'type': 'resume_elicit',
+            'label': '이어서 계속',
+        }
+        with self.assertRaises(LifecycleError) as captured:
+            validate_terminal_payload(payload)
+        self.assertEqual(captured.exception.code, 'REQUEST_SCHEMA_INVALID')
 
     def test_missing_status_is_not_inferred(self):
         payload = completed_terminal()

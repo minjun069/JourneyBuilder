@@ -1,14 +1,18 @@
 {
   "fixture_kind": "elicit-policy",
   "schema_version": "1.0",
-  "state_schema_version": "1.0",
+  "state_schema_version": "2.0",
   "step_id": "financial-mindset",
   "confirmation_mode": "one_field_at_a_time",
   "capture_adapter": "deterministic_form_change_proposal",
   "limits": {
     "max_field_turns": 5,
-    "max_total_turns": 30,
     "max_resets_per_field": 1
+  },
+  "routing_contract": {
+    "owner": "planner",
+    "turn_kinds": ["new", "answer", "correction", "confirmation"],
+    "requires_sufficient_confidence": true
   },
   "field_order": [
     "values",

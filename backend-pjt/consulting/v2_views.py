@@ -133,7 +133,6 @@ class V2MessageStreamView(V2APIView):
                 form_data=body['form_data'],
                 request_mode=body.get('request_mode', 'chat'),
                 review_trigger=body.get('review_trigger'),
-                elicit_action=body.get('elicit_action'),
             )
             token_vault = ReferenceTokenVault(
                 user_id=request.user.id,
