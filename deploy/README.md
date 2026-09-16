@@ -170,7 +170,7 @@ ENV_FILE=.env deploy/deploy.sh         # 로컬 재현 (STATE_DIR 도 바꾸면 
 | 기동 | `compose build --pull` → `up -d --remove-orphans` → **`restart gateway`**. migrate one-shot → backend 순서는 compose `depends_on` 이 보장. gateway 재시작 배경: 원래 gateway nginx 의 upstream 이 고정(`server backend:8000`)이라 backend 가 재생성돼 IP 가 바뀌면 옛 IP 를 물고 `/api` 가 502 가 됐다(2026-09-08 첫 자동 배포에서 발생, S15P21B109-127). S15P21B109-128 에서 upstream 을 `resolve` 방식(10s 주기 재조회)으로 바꿔 배포 외 경로(수동 `up`, 크래시 후 재생성)에서도 자동 회복하도록 했고, 재시작은 즉시 반영용 안전망으로 유지한다. web 의 nginx 는 처음부터 `resolver` 방식 |
 | 헬스체크 | 최대 150s: `web`·`backend` 컨테이너 healthy **and** `GET http://127.0.0.1:8080/` 200 **and** `GET http://127.0.0.1:8080/api/consulting/v1/consultations/` 가 5xx·000 이 아님(host→web→gateway→backend 전 구간 검사. 로그인 필요 경로라 **401 이 정상**. `--api-health-url` 로 변경). **ai-pjt 는 `AI_REQUIRED=1`(운영 기본) 이면 같은 대기 조건에 포함하고, `0` 이면 상태만 경고**(`--ai-required` 로 필수 전환) |
 | 성공 | 방금 성공한 이미지에 `:last-good` 을 다시 붙인다(다음 롤백 대상). 태그가 옮겨가면 직전 세대는 dangling 이 되어 뒤따르는 `docker image prune -f` 가 정리한다 → 서비스당 한 세대만 남는다. `/srv/s15p21b109/state/last_good_images` 는 사람이 읽는 기록용이고 롤백은 이 파일을 읽지 않는다. exit 0 |
-| 실패 | backend 로그 20줄 출력 → `:last-good` 을 `:latest` 로 재태그 → `up -d --no-build` → `restart gateway` → 10s 뒤 롤백 후 상태(web·backend·ai-pjt·http·api) 로그 → exit 1 (파이프라인 failed). 롤백 대상이 없으면 컨테이너를 그대로 두고 중단만 한다 — 그때는 **방금 배포한 이미지가 운영에 남는다** |
+| 실패 | 비정상 `ai-pjt`의 컨테이너 상태·재시작 횟수·종료 코드·OOM 여부, 최근 Docker healthcheck 기록, 애플리케이션 로그 100줄과 backend 로그 20줄을 **롤백 전에** 출력 → `:last-good` 을 `:latest` 로 재태그 → `up -d --no-build` → `restart gateway` → 10s 뒤 롤백 후 상태(web·backend·ai-pjt·http·api) 로그 → exit 1 (파이프라인 failed). 환경변수와 Compose 렌더링 결과는 출력하지 않는다. 롤백 대상이 없으면 컨테이너를 그대로 두고 중단만 한다 — 그때는 **방금 배포한 이미지가 운영에 남는다** |
 
 - 하지 않는 것: 볼륨 삭제(`-v`), DB 스키마 롤백. 마이그레이션은 앞으로만 간다. 스키마를 되돌려야 하면 사람이 한다
 - 롤백은 "이미지" 롤백이다. 직전 배포와 이미지가 같으면(코드 변경 없는 재배포) 복원 로그가 없는 것이 정상
@@ -249,7 +249,7 @@ Git 증거는 `ai-pjt/evals/artifacts/f14-rollback-rehearsal.json`이 소유한�
 | 항목 | 내용 |
 |---|---|
 | 동작 | `AI_REQUIRED=1` 이면 `web`·`backend`·HTTP·API 와 **같은 대기 루프**에서 `ai-pjt` healthy 를 함께 기다린다. 최대 `TIMEOUT`(기본 150s) |
-| 실패 시 | 다른 대상과 동일 — backend 로그 20줄 → 직전 이미지로 롤백 → exit 1 |
+| 실패 시 | 롤백 전에 AI 컨테이너 상태·Docker healthcheck 최근 기록·AI 로그 100줄과 backend 로그 20줄을 남긴 뒤 직전 이미지로 롤백 → exit 1 |
 | 기본값 | 스크립트 자체 기본은 `0`(사람이 서버에서 직접 돌릴 때). **CI 잡만 `1`** |
 
 **끄는 법** (AI env 가 깨져 배포가 계속 실패하고 서빙 수정을 급히 내보내야 할 때)

@@ -19,7 +19,8 @@
 #      (API 프로브는 host→web→gateway→backend 전 구간을 검사한다. 인증 필요 경로라 401 이 정상 응답)
 #      ai-pjt 는 AI_REQUIRED=1 이면 healthy 까지 같은 루프에서 대기하고 판정에 포함한다(운영 기본).
 #      0 이면 상태만 로그에 남기고 판정에서 뺀다
-#   5. 실패 → :last-good 태그를 :latest 로 되돌려 up -d --no-build, exit 1 (파이프라인 failed)
+#   5. 실패 → 롤백 전에 비정상 AI 컨테이너의 상태·health 기록·최근 로그를 남긴 뒤
+#      :last-good 태그를 :latest 로 되돌려 up -d --no-build, exit 1 (파이프라인 failed)
 #      성공 → 지금 이미지에 :last-good 을 붙이고(다음 롤백 대상) last_good 기록, dangling 정리
 #
 # 하지 않는 것: 볼륨 삭제(-v), DB 스키마 롤백. 마이그레이션은 앞으로만 간다 — 되돌려야 하면 사람이 한다.
@@ -166,6 +167,29 @@ health_of() {  # 컨테이너 Health.Status (healthcheck 없으면 running 여�
   docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid"
 }
 
+# 롤백하면 실패한 컨테이너가 새 이미지로 교체되어 원래 예외와 healthcheck 기록이 사라진다.
+# 환경변수·compose config 는 출력하지 않고, 컨테이너 런타임 상태와 Docker가 보존한 최근
+# healthcheck 결과, 애플리케이션 로그의 제한된 tail만 롤백 전에 남긴다.
+diagnose_service() {
+  local svc="$1" cid
+  cid="$(compose ps -q "$svc" 2>/dev/null | head -1 || true)"
+  log "$svc 컨테이너 진단 (롤백 전):"
+  if [ -z "$cid" ]; then
+    log "  container=missing"
+    return
+  fi
+
+  docker inspect --format \
+    '  state={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} restart_count={{.RestartCount}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{json .State.Error}}' \
+    "$cid" 2>&1 || true
+  log "$svc healthcheck 최근 기록:"
+  docker inspect --format \
+    '{{if .State.Health}}{{range .State.Health.Log}}{{printf "  start=%s end=%s exit=%d output=%q\n" .Start .End .ExitCode .Output}}{{end}}{{else}}  healthcheck=none{{println}}{{end}}' \
+    "$cid" 2>&1 || true
+  log "$svc 최근 로그 100줄:"
+  compose logs --no-log-prefix --tail 100 "$svc" 2>&1 || true
+}
+
 # ai-pjt 의 판정 참여 여부. AI_REQUIRED=1 이면 healthy 를 "대기 조건" 에 포함한다.
 # 루프 밖에서 한 번만 읽으면 web·backend 가 이미 healthy 인 배포에서 루프가 즉시 탈출해
 # ai 의 HEALTHCHECK start-period(20s)를 기다리지 못하고 정상 배포를 실패로 판정한다 (S15P21B109-132).
@@ -215,6 +239,9 @@ if [ "$ok" = 1 ]; then
 fi
 
 log "배포 실패 — 롤백 시작"
+if [ "$a" != healthy ]; then
+  diagnose_service ai-pjt
+fi
 log "backend 최근 로그 20줄:"; compose logs --no-log-prefix --tail 20 backend 2>/dev/null || true
 if [ "${#ROLLBACK_READY[@]}" -eq 0 ]; then
   log "롤백 대상 없음. 컨테이너는 그대로 두고 실패로 종료 — 운영에는 방금 배포한 이미지가 그대로 남는다"
