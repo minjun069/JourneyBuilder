@@ -208,6 +208,7 @@ class RequestStateTransitionTests(SimpleTestCase):
             user_message_id=20,
             thread_id='user-3-session-12',
             step_id='basic-info',
+            payload_digest='a' * 64,
             now=NOW,
         )
 

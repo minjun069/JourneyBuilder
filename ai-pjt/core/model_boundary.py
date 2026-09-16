@@ -38,6 +38,7 @@ class ModelPurpose(str, Enum):
     ERROR_REVIEW = "error_review"
     CHART_INTERPRET = "chart_interpret"
     ELICIT = "elicit"
+    SUMMARY = "summary"
 
 
 class ModelOutputBlockedError(ValueError):
@@ -63,6 +64,7 @@ _ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
     ModelPurpose.ERROR_REVIEW: (("current_form",),),
     ModelPurpose.CHART_INTERPRET: (("chart_payload",),),
     ModelPurpose.ELICIT: (),
+    ModelPurpose.SUMMARY: (),
 }
 _DIRECT_TEXT_PATTERNS = (
     re.compile(

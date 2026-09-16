@@ -12,6 +12,7 @@ from core.context import (
     ConversationContext,
     ConversationTurn,
     ContextScope,
+    RetrievedMemory,
     advance_context,
     build_context_window,
     resolve_confirmed_facts,
@@ -32,7 +33,7 @@ from graph.elicit_context import (
     elicit_context_index,
     load_elicit_contexts,
 )
-from graph.planner import create_route_plan, plan_tasks_with_model
+from graph.planner import context_window_payload, create_route_plan, plan_tasks_with_model
 from graph.router import classify_task_with_model
 from graph.state import ChatState
 from graph.task_contracts import failed_task_result
@@ -56,6 +57,7 @@ def _direct_agent_plan(
     agent: str,
     state: Mapping[str, Any],
     reason_code: str = "trusted_route",
+    conversation_projection: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     produces = "text_response"
     task = {
@@ -83,7 +85,11 @@ def _direct_agent_plan(
         "review_trigger": state.get("review_trigger"),
         "elicit_contexts": deepcopy(state.get("elicit_contexts", {})),
         "context_scope": deepcopy(state.get("context_scope", {})),
-        "conversation_context": deepcopy(state.get("conversation_context", {})),
+        "conversation_context": deepcopy(
+            dict(conversation_projection)
+            if conversation_projection is not None
+            else state.get("conversation_context", {})
+        ),
     }
 
 
@@ -308,6 +314,13 @@ def build_graph(
             "request_mode": str(state.get("request_mode", "chat")),
             "customer_info": deepcopy(state.get("customer_info", {})),
             "field_registry": deepcopy(state.get("field_registry", [])),
+            "context": {
+                "conversation": deepcopy(state.get("conversation_context", {})),
+                "retrieved_memories": deepcopy(
+                    state.get("retrieved_memories", [])
+                ),
+                "elicit": deepcopy(state.get("elicit_contexts", {})),
+            },
         }
         planner_span = observed.start(
             RuntimeStage.PLANNER,
@@ -392,6 +405,11 @@ def build_graph(
             window = build_context_window(
                 context=context,
                 current_confirmed_facts=confirmed_facts,
+                retrieved_memories=tuple(
+                    RetrievedMemory.from_state(item)
+                    for item in state.get("retrieved_memories", [])
+                    if isinstance(item, Mapping)
+                ),
             )
             if state["step_id"] == ELICIT_STEP_ID:
                 elicit_contexts = load_elicit_contexts(state)
@@ -449,6 +467,7 @@ def build_graph(
                 description="현재 draft의 오기·단위 착오·문맥 불일치 검토",
                 agent="error_review",
                 state=state,
+                conversation_projection=context_window_payload(window),
             )
             decision = guard_plan(direct_plan)
             observed.succeed(planner_span, output=direct_plan)
@@ -575,7 +594,7 @@ def build_graph(
             "review_trigger": state.get("review_trigger"),
             "elicit_contexts": deepcopy(elicit_contexts),
             "context_scope": deepcopy(state.get("context_scope", {})),
-            "conversation_context": deepcopy(state.get("conversation_context", {})),
+            "conversation_context": context_window_payload(window),
         })
         decision = guard_plan(plan)
         planner_output = {
@@ -694,24 +713,12 @@ def build_graph(
         request_id = state.get("request_id")
         if not isinstance(request_id, str) or not request_id.strip():
             return {}
-        customer_info = state.get("customer_info", {})
-        registry = state.get("field_registry", [])
-        confirmed_facts = (
-            _flatten_customer_info(
-                customer_info,
-                field_registry=registry if isinstance(registry, list) else [],
-                step_id=state["step_id"],
-            )
-            if isinstance(customer_info, Mapping)
-            else {}
-        )
         updated = advance_context(
             context=context,
             new_turn=ConversationTurn(
                 turn_id=request_id,
                 user_message=state["message"],
                 assistant_message=response if isinstance(response, str) else "",
-                confirmed_facts=confirmed_facts,
             ),
         )
         return {"conversation_context": updated.to_state()}

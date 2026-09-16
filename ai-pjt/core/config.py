@@ -112,6 +112,27 @@ class Settings:
         self.redis_url = active_environ.get(
             "REDIS_URL", "redis://redis:6379"
         ).strip()
+        self.context_execution_ttl_seconds = _read_positive_int(
+            "AI_CONTEXT_EXECUTION_TTL_SECONDS", 600, active_environ
+        )
+        self.context_receipt_ttl_seconds = _read_positive_int(
+            "AI_CONTEXT_RECEIPT_TTL_SECONDS", 86_400, active_environ
+        )
+        self.context_closed_retention_seconds = _read_positive_int(
+            "AI_CONTEXT_CLOSED_RETENTION_SECONDS", 86_400, active_environ
+        )
+        self.context_cleanup_interval_seconds = _read_positive_int(
+            "AI_CONTEXT_CLEANUP_INTERVAL_SECONDS", 300, active_environ
+        )
+        self.context_memory_interval_seconds = _read_positive_int(
+            "AI_CONTEXT_MEMORY_INTERVAL_SECONDS", 5, active_environ
+        )
+        self.context_memory_top_k = _read_positive_int(
+            "AI_CONTEXT_MEMORY_TOP_K", 5, active_environ
+        )
+        self.context_embedding_batch_size = _read_positive_int(
+            "AI_CONTEXT_EMBEDDING_BATCH_SIZE", 8, active_environ
+        )
 
         self.rag_financial_collection = active_environ.get(
             "RAG_FINANCIAL_COLLECTION", "financial-knowledge"

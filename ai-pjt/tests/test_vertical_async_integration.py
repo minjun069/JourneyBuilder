@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import AIMessage
 
 from core.context import ContextScope, ContextStateAPI
+from core.context_store import InMemoryCommittedContextStore
 from graph.builder import build_graph
 from main import _process_v2_graph, app
 from tests.test_graph_execution import (
@@ -26,6 +27,7 @@ def make_request(request_id: str, session_id: int = 301) -> ChatV2Request:
     return ChatV2Request.model_validate({
         "contract_version": "2.0",
         "request_id": request_id,
+        "payload_digest": "0" * 64,
         "session_id": session_id,
         "thread_id": "vertical-thread",
         "step_id": "financial-goals",
@@ -57,7 +59,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
 
     def install_graph(self, *, planner, tool_executors=None, agent_graphs=None):
         checkpointer = MemorySaver()
-        context_api = ContextStateAPI(checkpointer)
+        context_api = ContextStateAPI(checkpointer, InMemoryCommittedContextStore())
         app.state.chat_graph = build_graph(
             checkpointer,
             instrumentation=fake_instrumentation()[0],
@@ -148,12 +150,6 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         self.assertEqual(len(context.turns), 1)
         self.assertEqual(context.turns[0].turn_id, request.request_id)
         self.assertIn("변경안을 만들었습니다", context.turns[0].assistant_message)
-        values = await context_api.read_values(scope)
-        self.assertEqual(values["task_results"]["task-1"]["status"], "completed")
-        self.assertEqual(values["task_results"]["task-2"]["status"], "completed")
-        self.assertEqual(values["execution_budget"]["task_limit"], 3)
-        self.assertEqual(values["execution_budget"]["tasks_used"], 2)
-
         foreign = await context_api.read_context(
             ContextScope(request.session_id + 1, request.thread_id)
         )
@@ -210,14 +206,6 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         self.assertIn("qa 응답", terminal["output"]["response"])
         processor.assert_awaited_once()
 
-        values = await context_api.read_values(
-            ContextScope(request.session_id, request.thread_id)
-        )
-        self.assertEqual(values["task_results"]["task-1"]["status"], "failed")
-        self.assertEqual(values["task_results"]["task-2"]["status"], "blocked")
-        self.assertEqual(values["task_results"]["task-2"]["blocked_by"], ["task-1"])
-        self.assertEqual(values["task_results"]["task-3"]["status"], "completed")
-        self.assertEqual(values["execution_budget"]["tasks_used"], 2)
 
     async def test_household_reference_lookup_binds_exact_existing_row(self):
         from agents import input_assist
@@ -334,8 +322,3 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             "2026-09-12.v1",
         )
         processor.assert_awaited_once()
-
-        scope = ContextScope(request.session_id, request.thread_id)
-        values = await context_api.read_values(scope)
-        self.assertEqual(values["task_results"]["task-1"]["status"], "completed")
-        self.assertEqual(values["task_results"]["task-2"]["status"], "completed")

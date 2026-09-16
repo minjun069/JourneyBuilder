@@ -1,6 +1,6 @@
 """Safe P11 observability contracts for the typed production exporter.
 
-Bounded input/output snapshots are accepted as typed event fields and must pass
+Input/output snapshots are accepted as typed event fields and must pass
 the masking sink before export. Raw LangChain callbacks remain disabled because
 they bypass that masking-safe boundary.
 """
@@ -15,8 +15,7 @@ from enum import Enum
 from math import isfinite
 from typing import Any, Protocol, TypeAlias
 
-OBSERVABILITY_CONTRACT_VERSION = "1.1"
-MAX_OBSERVATION_CONTENT_BYTES = 65_536
+OBSERVABILITY_CONTRACT_VERSION = "1.2"
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 _PSEUDONYMOUS_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -109,7 +108,7 @@ def _validate_observation_content(value: Any, field_name: str) -> None:
     if value is None:
         return
     try:
-        rendered = json.dumps(
+        json.dumps(
             value,
             ensure_ascii=False,
             allow_nan=False,
@@ -117,10 +116,6 @@ def _validate_observation_content(value: Any, field_name: str) -> None:
         )
     except (TypeError, ValueError) as error:
         raise ValueError(f"{field_name} must be JSON-serializable") from error
-    if len(rendered.encode("utf-8")) > MAX_OBSERVATION_CONTENT_BYTES:
-        raise ValueError(
-            f"{field_name} exceeds {MAX_OBSERVATION_CONTENT_BYTES} bytes"
-        )
 
 
 @dataclass(frozen=True, slots=True)

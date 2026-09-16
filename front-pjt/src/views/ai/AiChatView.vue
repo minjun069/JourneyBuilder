@@ -670,7 +670,11 @@ function cancelReviewSuggestion(item) {
 }
 
 async function requestErrorReview(nextStepId = null) {
-  if (reviewLoading.value || !activeFormRef.value?.form) return false
+  if (
+    reviewLoading.value
+    || consultationStore.isAiRequestActive
+    || !activeFormRef.value?.form
+  ) return false
   reviewLoading.value = true
   try {
     const stored = await consultationStore.reviewForm(

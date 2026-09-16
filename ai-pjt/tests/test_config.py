@@ -33,6 +33,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.rag_financial_collection, "financial-knowledge")
         self.assertEqual(settings.rag_interface_collection, "interface-guides")
         self.assertEqual(settings.embed_dim, 3072)
+        self.assertEqual(settings.context_memory_interval_seconds, 5)
+        self.assertEqual(settings.context_memory_top_k, 5)
+        self.assertEqual(settings.context_embedding_batch_size, 8)
         self.assertFalse(settings.langfuse_enabled)
         self.assertEqual(settings.langfuse_base_url, "")
         self.assertEqual(
@@ -90,6 +93,11 @@ class SettingsTests(unittest.TestCase):
             Settings({**BASE_ENV, "RAG_TOP_K": "5", "RAG_FETCH_K": "4"})
         with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_MIN_DENSE_SCORE"):
             Settings({**BASE_ENV, "RAG_MIN_DENSE_SCORE": "1.1"})
+        with self.assertRaisesRegex(
+            RuntimeConfigurationError,
+            "AI_CONTEXT_MEMORY_TOP_K",
+        ):
+            Settings({**BASE_ENV, "AI_CONTEXT_MEMORY_TOP_K": "0"})
 
     def test_langfuse_requires_complete_safe_configuration_when_enabled(self) -> None:
         enabled = {

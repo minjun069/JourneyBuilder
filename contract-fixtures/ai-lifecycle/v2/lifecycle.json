@@ -284,6 +284,7 @@
         "body": {
           "contract_version": "2.0",
           "request_id": "ai_req_fixture_001",
+          "payload_digest": "0616fe5c966adb0a23ba3fee68b265ea5e68c20293323aa96fa6ae4cd465b8a7",
           "session_id": 1,
           "thread_id": "user-3-session-1",
           "step_id": "basic-info",

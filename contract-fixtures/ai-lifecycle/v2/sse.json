@@ -39,6 +39,7 @@
   "ai_request": {
     "contract_version": "2.0",
     "request_id": "ai_req_fixture",
+    "payload_digest": "7ed8946315106b44aa0b1279db4bfc8c816fe878ae8d0d9e1ca4bdabb74a8cd5",
     "session_id": 1,
     "thread_id": "user-3-session-1",
     "step_id": "basic-info",

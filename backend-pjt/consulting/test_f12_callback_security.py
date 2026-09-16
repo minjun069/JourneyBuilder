@@ -9,7 +9,7 @@ from accounts.models import User
 
 from .ai_lifecycle import CONTRACT_VERSION, LifecycleError
 from .ai_security import finalize_terminal_result, recover_terminal_state
-from .models import AITerminalReceipt, ConsultingSession, Message
+from .models import AIRequestExecution, AITerminalReceipt, ConsultingSession, Message
 
 
 class F12TerminalReceiptSecurityTests(TransactionTestCase):
@@ -42,6 +42,16 @@ class F12TerminalReceiptSecurityTests(TransactionTestCase):
             role=Message.Role.USER,
             content="합성 요청 B",
         )
+        self.payload_digest = "a" * 64
+        AIRequestExecution.objects.create(
+            request_id="F12-SYNTHETIC-REQUEST-TRM-001",
+            session=self.session_a,
+            thread_id=f"user-{self.user_a.id}-session-{self.session_a.id}",
+            step_id="basic-info",
+            user_message=self.user_message_a,
+            payload_digest=self.payload_digest,
+            request_payload={"request_id": "F12-SYNTHETIC-REQUEST-TRM-001"},
+        )
 
     def state(self, **changes):
         state = {
@@ -53,6 +63,7 @@ class F12TerminalReceiptSecurityTests(TransactionTestCase):
             "user_message_id": self.user_message_a.id,
             "thread_id": f"user-{self.user_a.id}-session-{self.session_a.id}",
             "step_id": "basic-info",
+            "payload_digest": self.payload_digest,
         }
         state.update(changes)
         return state

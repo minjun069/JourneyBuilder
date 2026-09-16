@@ -6,6 +6,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from core.config import settings
 from core.context import ContextStateAPI
+from core.context_store import PostgresCommittedContextStore
 
 
 @asynccontextmanager
@@ -19,7 +20,17 @@ async def get_checkpointer():
     #     yield checkpointer
 
 
-def build_context_state_api(checkpointer) -> ContextStateAPI:
+def build_committed_context_store() -> PostgresCommittedContextStore:
+    return PostgresCommittedContextStore(
+        settings.db_url,
+        execution_ttl_seconds=settings.context_execution_ttl_seconds,
+        receipt_ttl_seconds=settings.context_receipt_ttl_seconds,
+        closed_retention_seconds=settings.context_closed_retention_seconds,
+        embedding_dimensions=settings.embed_dim,
+    )
+
+
+def build_context_state_api(checkpointer, committed) -> ContextStateAPI:
     """Expose the context boundary without coupling it to FastAPI transport."""
 
-    return ContextStateAPI(checkpointer)
+    return ContextStateAPI(checkpointer, committed)

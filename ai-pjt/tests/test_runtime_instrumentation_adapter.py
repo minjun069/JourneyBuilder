@@ -64,6 +64,13 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         observed.succeed(span)
         self.assertEqual(sink.discarded_count, 2)
 
+    def test_observation_content_has_no_fixed_byte_ceiling(self) -> None:
+        observed, sink = _bound_adapter()
+        large_context = {"context": {"conversation": "가" * 100_000}}
+        span = observed.start(RuntimeStage.PLANNER, input=large_context)
+        observed.succeed(span, output={"ok": True})
+        self.assertEqual(sink.runtime_events[0].input, large_context)
+
     def test_callback_adapter_emits_only_typed_terminal_operation(self) -> None:
         sink = FakeInstrumentationSink()
         adapter = RuntimeInstrumentationAdapter(InstrumentationPort(sink))

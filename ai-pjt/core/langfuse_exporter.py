@@ -35,7 +35,6 @@ _FORBIDDEN_CONTENT_FIELDS = frozenset(
     }
 )
 _OBSERVATION_CONTENT_FIELDS = frozenset({"input", "output"})
-_MAX_OBSERVATION_CONTENT_BYTES = 65_536
 _COMMON_FIELDS = frozenset(
     {
         "contract_version",
@@ -290,8 +289,6 @@ def _validate_observation_content(value: Any, name: str) -> None:
         raise ValueError(
             f"Langfuse exporter requires JSON-safe observation {name}"
         ) from error
-    if len(rendered.encode("utf-8")) > _MAX_OBSERVATION_CONTENT_BYTES:
-        raise ValueError(f"Langfuse exporter observation {name} is too large")
 
 
 def _event_action(payload: Mapping[str, Any]) -> str:

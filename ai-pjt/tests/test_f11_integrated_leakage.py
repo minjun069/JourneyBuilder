@@ -583,13 +583,42 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
     @patch("main.get_callbacks", return_value=[])
     async def test_sse_discards_unchecked_chunks_and_masks_terminal(self, _callbacks):
         class ContextAPI:
+            terminal = None
+
             async def read_context(self, _scope):
                 return {}
 
-            def state_channels(self, scope, _context):
+            async def read_terminal(self, _scope, _request_id, _payload_digest):
+                return self.terminal
+
+            async def begin_execution(self, _scope, _request_id):
+                return None
+
+            async def delete_execution(self, _scope, _request_id):
+                return None
+
+            async def commit(
+                self,
+                _scope,
+                _request_id,
+                _payload_digest,
+                _context,
+                terminal,
+                _completed_turn=None,
+            ):
+                self.terminal = terminal
+                return terminal
+
+            async def commit_terminal(
+                self, _scope, _request_id, _payload_digest, terminal
+            ):
+                self.terminal = terminal
+                return terminal
+
+            def state_channels(self, scope, _context, _retrieved_memories=()):
                 return {"context_scope": {"session_id": scope.session_id}}
 
-            def config_for(self, scope):
+            def config_for(self, scope, _request_id):
                 return {"configurable": {"thread_id": scope.thread_id}}
 
         class Graph:
@@ -602,11 +631,25 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                 yield {
                     "event": "on_chain_end",
                     "parent_ids": [],
-                    "data": {"output": {"output": {
-                        "response": "p13-user@example.invalid 010-0000-0000",
-                        "step_id": STEP_ID,
-                        "action": None,
-                    }}},
+                    "data": {"output": {
+                        "conversation_context": {
+                            "schema_version": "3.0",
+                            "summary": {},
+                            "structured_state": {
+                                "current_goal": None,
+                                "response_preferences": [],
+                                "decisions": [],
+                                "open_questions": [],
+                                "entities": [],
+                            },
+                            "turns": [],
+                        },
+                        "output": {
+                            "response": "p13-user@example.invalid 010-0000-0000",
+                            "step_id": STEP_ID,
+                            "action": None,
+                        },
+                    }},
                 }
 
         rendered = "".join([
@@ -628,6 +671,7 @@ def _request(request_id: str) -> ChatV2Request:
     return ChatV2Request.model_validate({
         "contract_version": "2.0",
         "request_id": request_id,
+        "payload_digest": "0" * 64,
         "session_id": 731,
         "thread_id": "thread-f11-t04",
         "step_id": STEP_ID,

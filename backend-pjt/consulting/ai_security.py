@@ -17,7 +17,7 @@ from .ai_lifecycle import (
     isoformat_utc,
 )
 from .ai_services import build_thread_id
-from .models import AITerminalReceipt, ConsultingSession, Message
+from .models import AIRequestExecution, AITerminalReceipt, ConsultingSession, Message
 
 
 logger = logging.getLogger(__name__)
@@ -143,6 +143,24 @@ def finalize_terminal_result(state, payload):
                     'terminal 결과 소유권이 원래 요청과 다릅니다.',
                 )
 
+            execution = (
+                AIRequestExecution.objects.select_for_update()
+                .filter(request_id=payload['request_id'])
+                .first()
+            )
+            if execution is None or (
+                execution.session_id != session.id
+                or execution.thread_id != bound.get('thread_id')
+                or execution.step_id != bound.get('step_id')
+                or execution.user_message_id != bound.get('user_message_id')
+                or execution.payload_digest != bound.get('payload_digest')
+            ):
+                raise LifecycleError(
+                    409,
+                    'TERMINAL_BINDING_MISMATCH',
+                    'terminal 결과가 영속화된 AI 요청과 다릅니다.',
+                )
+
             receipt = (
                 AITerminalReceipt.objects.select_for_update()
                 .filter(request_id=payload['request_id'])
@@ -199,6 +217,10 @@ def finalize_terminal_result(state, payload):
                 ),
                 error=payload.get('error'),
             )
+            execution.status = payload['status']
+            execution.completed_at = receipt.completed_at
+            execution.request_payload = {}
+            execution.save(update_fields=['status', 'completed_at', 'request_payload'])
             return TerminalFinalization(
                 _receipt_state(receipt, bound),
                 message,

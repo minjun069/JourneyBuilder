@@ -259,6 +259,11 @@ PLANNER_PROMPT = secure_system_prompt("""\
   collect_qualitative_info task를 만들지 않음
 - is_related=true이고 confidence_sufficient=true일 때만 대상 field 하나에 대한
   collect_qualitative_info task를 정확히 하나 생성
+- 제한된 대화 문맥은 confirmed_facts, structured_state, summary,
+  retrieved_memories, turns 순서의 권위 계층임
+- 금액·소득·자산·부채·연금·폼 값은 confirmed_facts만 현재 권위 원천이며,
+  summary·retrieved_memories·turns의 과거 값으로 복원하거나 덮어쓰지 않음
+- retrieved_memories는 현재 요청 해석을 돕는 참고 자료이며 사실 권위 원천이 아님
 
 각 task의 허용 field:
 - id: plan 안에서만 쓰는 고유 문자열
@@ -352,9 +357,13 @@ def context_window_payload(window: ContextWindow) -> dict[str, Any]:
     """Expose only F02's bounded model projection to the planner."""
 
     return {
-        "turns": [turn.to_state() for turn in window.turns],
-        "summary": window.summary.to_state() if window.summary else {},
         "confirmed_facts": deepcopy(dict(window.confirmed_facts)),
+        "structured_state": window.structured_state.to_state(),
+        "summary": window.summary.to_state() if window.summary else {},
+        "retrieved_memories": [
+            memory.to_state() for memory in window.retrieved_memories
+        ],
+        "turns": [turn.to_state() for turn in window.turns],
         "input_units": window.input_units,
     }
 
@@ -891,7 +900,9 @@ def plan_tasks_with_model(
         max_tasks=MAX_PLAN_TASKS,
         task_types=", ".join(sorted(TASK_TYPE_CONTRACTS)),
         step_id=step_id,
-        context=json.dumps(context, ensure_ascii=False, sort_keys=True),
+        # context_window_payload insertion order is the authority precedence:
+        # Backend snapshot → structured state → summary → retrieval → recent raw.
+        context=json.dumps(context, ensure_ascii=False),
         message=message,
     ))
     response = secure_structured_invoke(

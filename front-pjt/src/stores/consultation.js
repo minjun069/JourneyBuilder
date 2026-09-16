@@ -29,6 +29,7 @@ export const useConsultationStore = defineStore('consultation', () => {
   const sessions = ref([])
   const activeSession = ref(null)
   const streaming = ref(false)
+  const isAiRequestActive = ref(false)
   let activeStreamController = null
 
   function clearActiveSession() {
@@ -90,14 +91,16 @@ export const useConsultationStore = defineStore('consultation', () => {
     reviewTrigger = null,
   } = {}) {
     if (!sessionId.value) return
-    if (streaming.value || activeStreamController) {
-      const error = new Error('이전 AI 응답을 처리하고 있습니다. 잠시 후 다시 시도해주세요.')
+    if (streaming.value || isAiRequestActive.value || activeStreamController) {
+      const error = new Error('이 상담의 AI 응답이 아직 처리 중입니다.')
       error.code = 'AI_STREAM_IN_PROGRESS'
+      error.retryable = true
       throw error
     }
     const controller = new AbortController()
     activeStreamController = controller
     streaming.value = true
+    isAiRequestActive.value = true
     let idleTimedOut = false
     let idleTimer = null
     const resetIdleTimer = () => {
@@ -139,8 +142,11 @@ export const useConsultationStore = defineStore('consultation', () => {
       throw error
     } finally {
       clearTimeout(idleTimer)
-      if (activeStreamController === controller) activeStreamController = null
-      streaming.value = false
+      if (activeStreamController === controller) {
+        activeStreamController = null
+        streaming.value = false
+        isAiRequestActive.value = false
+      }
     }
   }
 
@@ -168,8 +174,11 @@ export const useConsultationStore = defineStore('consultation', () => {
   }
 
   function cancelActiveStream() {
-    activeStreamController?.abort()
+    const controller = activeStreamController
     activeStreamController = null
+    streaming.value = false
+    isAiRequestActive.value = false
+    controller?.abort()
   }
 
   function syncIds(sourceRows, savedRows) {
@@ -275,6 +284,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     sessionId,
     activeSession,
     streaming,
+    isAiRequestActive,
     chatMessages,
     sessions,
     initSession, loadSessions, continueLatestSession, loadActiveSession,

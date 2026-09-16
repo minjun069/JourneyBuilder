@@ -316,6 +316,12 @@ class RedisLifecycleStore:
             json.dumps(vault.to_record(), ensure_ascii=False, cls=DjangoJSONEncoder),
         )
 
+    def get_token_vault(self, request_id):
+        raw = self.client.get(self.token_vault_key(request_id))
+        if not raw:
+            return None
+        return ReferenceTokenVault.from_record(json.loads(raw))
+
     def delete_token_vault(self, request_id):
         self.client.delete(self.token_vault_key(request_id))
 
@@ -375,7 +381,10 @@ def build_v2_ai_payload(
     return payload
 
 
-def make_processing_state(*, request_id, session, user, user_message_id, thread_id, step_id, now=None):
+def make_processing_state(
+    *, request_id, session, user, user_message_id, thread_id, step_id,
+    payload_digest, now=None,
+):
     return {
         'contract_version': CONTRACT_VERSION,
         'request_id': request_id,
@@ -385,6 +394,7 @@ def make_processing_state(*, request_id, session, user, user_message_id, thread_
         'user_message_id': user_message_id,
         'thread_id': thread_id,
         'step_id': step_id,
+        'payload_digest': payload_digest,
     }
 
 

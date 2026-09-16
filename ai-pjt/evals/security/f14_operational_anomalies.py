@@ -130,6 +130,7 @@ def _request(request_id: str, *, deadline_at: datetime) -> ChatV2Request:
     return ChatV2Request.model_validate({
         "contract_version": "2.0",
         "request_id": request_id,
+        "payload_digest": "0" * 64,
         "session_id": 1404,
         "thread_id": f"thread-{request_id}",
         "step_id": "basic-info",
