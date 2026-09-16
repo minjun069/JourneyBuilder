@@ -31,10 +31,10 @@ function formatAmount(value) {
 <style scoped>
 .stat-card {
   background: #ffffff;
-  border: 1px solid #f0f0f0;
-  border-radius: 14px;
+  border: 1px solid #e9eaf2;
+  border-radius: 12px;
   padding: 20px 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 3px rgba(20, 20, 43, 0.06);
   display: flex;
   flex-direction: column;
 }
@@ -45,11 +45,10 @@ function formatAmount(value) {
 }
 
 .stat-label {
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 600;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: #6b7280;
+  letter-spacing: 0.2px;
   margin-bottom: 10px;
 }
 
@@ -60,9 +59,10 @@ function formatAmount(value) {
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 800;
   line-height: 1.1;
+  letter-spacing: -0.3px;
 }
 
 .stat-value.positive { color: #1a1a1a; }

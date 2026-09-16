@@ -47,18 +47,28 @@ onMounted(() => {
 }
 
 .page-title {
-  font-size: 32px;
+  font-size: 26px;
   font-weight: 800;
-  color: #1a1a1a;
+  letter-spacing: -0.4px;
+  color: #1a1a2e;
   margin: 0;
 }
 
 .report-panel {
   min-height: 560px;
-  border: 1px solid #ececf5;
-  border-radius: 8px;
+  border: 1px solid #e9eaf2;
+  border-radius: 12px;
   overflow: hidden;
   background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 20, 43, 0.06);
+  /* 슬라이드가 자체 배경색을 가지므로 패널 높이를 꽉 채우게 한다.
+     안 그러면 콘텐츠가 min-height보다 짧을 때 아래가 흰색으로 갈라져 보인다. */
+  display: flex;
+  flex-direction: column;
+}
+
+.report-panel :slotted(*) {
+  flex: 1 0 auto;
 }
 
 .state-card {
@@ -66,8 +76,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #ececf5;
-  border-radius: 8px;
+  border: 1px solid #e9eaf2;
+  border-radius: 12px;
   background: #fff;
   color: #777;
   font-size: 15px;

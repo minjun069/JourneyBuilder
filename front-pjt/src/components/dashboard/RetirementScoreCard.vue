@@ -36,9 +36,9 @@ const gradeClass = computed(() => {
 <style scoped>
 .card {
   background: #ffffff;
-  border: 1px solid #f0f0f0;
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e9eaf2;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(20, 20, 43, 0.06);
 }
 
 .score-card {
@@ -117,8 +117,8 @@ const gradeClass = computed(() => {
 }
 
 .ai-label {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   color: #5e5ce6;
   text-transform: uppercase;
   letter-spacing: 0.5px;
