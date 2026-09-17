@@ -147,6 +147,7 @@ class ModelBoundaryTests(unittest.TestCase):
                     HumanMessage(content=json.dumps(raw, ensure_ascii=False)),
                 ],
                 purpose=ModelPurpose.QA,
+                operation_name="qa.specify",
                 sensitive_payload=raw,
             )
 
@@ -154,6 +155,7 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         event = records[0]
         self.assertEqual(event["purpose"], "qa")
+        self.assertEqual(event["operation_name"], "qa.specify")
         self.assertEqual(event["status"], "succeeded")
         self.assertEqual(event["input"][0]["role"], "system")
         self.assertEqual(event["input"][1]["role"], "user")

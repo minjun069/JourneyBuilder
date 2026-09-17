@@ -99,6 +99,7 @@ evidence_quote도 source에서 그대로 복사해야 합니다. 근거가 없�
             runnable,
             [system, human],
             purpose=ModelPurpose.SUMMARY,
+            operation_name="summary.extract",
         )
         return result if isinstance(result, SummaryCandidate) else SummaryCandidate.model_validate(result)
 

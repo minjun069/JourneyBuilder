@@ -208,6 +208,7 @@ async def _classify(state: InputAssistState) -> dict:
             HumanMessage(content=state["message"]),
         ],
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.classify",
         sensitive_payload=_model_sensitive_payload(state),
     )
     return {
@@ -264,6 +265,7 @@ async def _identify(state: InputAssistState) -> dict:
             HumanMessage(content=state["message"]),
         ],
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.identify",
         sensitive_payload=_model_sensitive_payload(state),
     )
     return {
@@ -383,6 +385,7 @@ async def _resolve(state: InputAssistState) -> dict:
             HumanMessage(content=f"[사용자 입력]\n{item['excerpt']}"),
         ],
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.resolve",
         sensitive_payload=_model_sensitive_payload(state),
     )
     try:
@@ -484,6 +487,7 @@ async def _error_check_2(state: InputAssistState) -> dict:
             )),
         ],
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.validate",
         sensitive_payload=_model_sensitive_payload(state),
     )
     if result.error_type == "ok":
@@ -619,6 +623,7 @@ async def _merge(state: InputAssistState) -> dict:
             )),
         ],
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.merge",
         sensitive_payload=_model_sensitive_payload(state),
     )
     return {

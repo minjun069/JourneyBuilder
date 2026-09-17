@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import partial
 import logging
 from typing import Any
 
@@ -262,7 +263,12 @@ async def execute_route_plan(
             if executor_kind == "tool":
                 raw_result = await executor(execution_input)
             else:
-                with bind_model_call_recorder(instrumentation.record_model_call):
+                with bind_model_call_recorder(
+                    partial(
+                        instrumentation.record_model_call,
+                        task_id=task_id,
+                    )
+                ):
                     raw_result = await executor(execution_input)
         except Exception as error:
             # 이 except 는 사용자에게 executor_error 안내문만 남기므로, 여기서 기록하지
@@ -436,7 +442,12 @@ async def execute_route_plan(
                 },
             )
             try:
-                with bind_model_call_recorder(instrumentation.record_model_call):
+                with bind_model_call_recorder(
+                    partial(
+                        instrumentation.record_model_call,
+                        task_id=fallback_task["id"],
+                    )
+                ):
                     fallback_result = await fallback_executor(fallback_payload)
                 fallback_artifact_span = instrumentation.start(
                     RuntimeStage.ARTIFACT_VALIDATION,

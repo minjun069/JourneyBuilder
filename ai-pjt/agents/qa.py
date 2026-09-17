@@ -208,6 +208,7 @@ async def _specify(state: QAState) -> dict:
             HumanMessage(content=state["message"]),
         ],
         purpose=ModelPurpose.QA,
+        operation_name="qa.specify",
         sensitive_payload=_model_sensitive_payload(state),
     )
     return {"search_queries": result.queries or [state["message"]], "query_index": 0}
@@ -245,6 +246,7 @@ async def _decide(state: QAState) -> dict:
             )),
         ],
         purpose=ModelPurpose.QA,
+        operation_name="qa.decide",
         sensitive_payload=_model_sensitive_payload(state),
     )
     if getattr(decision, "requests_new_official_value", False):
@@ -306,6 +308,7 @@ async def _generate(state: QAState) -> dict:
             HumanMessage(content="\n\n".join(human_parts)),
         ],
         purpose=ModelPurpose.QA,
+        operation_name="qa.generate",
         sensitive_payload=_model_sensitive_payload(state),
     )
     return {**update, "current_answer": result.content}
@@ -339,6 +342,7 @@ async def _judge(state: QAState) -> dict:
             )),
         ],
         purpose=ModelPurpose.QA,
+        operation_name="qa.judge",
         sensitive_payload=_model_sensitive_payload(state),
     )
     if result.verdict == "good":
@@ -371,6 +375,7 @@ async def _judge(state: QAState) -> dict:
                 )),
             ],
             purpose=ModelPurpose.QA,
+            operation_name="qa.refine",
             sensitive_payload=_model_sensitive_payload(state),
         )
         query = refined.query.strip() or state["current_query"]
@@ -416,6 +421,7 @@ async def _merge(state: QAState) -> dict:
             )),
         ],
         purpose=ModelPurpose.QA,
+        operation_name="qa.merge",
         sensitive_payload=_model_sensitive_payload(state),
     )
     return {"output": {"response": result.content, "update": {}}}

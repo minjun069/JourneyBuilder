@@ -269,6 +269,7 @@ def classify_task_with_model(
             HumanMessage(content=str(task.get("description", ""))),
         ],
         purpose=ModelPurpose.ROUTER,
+        operation_name="router.classify",
         sensitive_payload={"task": dict(task)},
     )
     return result.model_dump(mode="json")

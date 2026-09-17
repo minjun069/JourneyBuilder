@@ -172,6 +172,7 @@ def secure_invoke(
     messages: Sequence[Any],
     *,
     purpose: ModelPurpose,
+    operation_name: str | None = None,
     sensitive_payload: Any | None = None,
 ) -> Any:
     safe_messages, policy = _prepare_call(
@@ -191,6 +192,7 @@ def secure_invoke(
     except Exception as error:
         _record_model_call(
             purpose=purpose,
+            operation_name=operation_name,
             status="failed",
             duration_ms=_elapsed_ms(started_at),
             input=observation_input,
@@ -200,6 +202,7 @@ def secure_invoke(
         raise
     _record_model_call(
         purpose=purpose,
+        operation_name=operation_name,
         status="succeeded",
         duration_ms=_elapsed_ms(started_at),
         input=observation_input,
@@ -218,6 +221,7 @@ def secure_structured_invoke(
     messages: Sequence[Any],
     *,
     purpose: ModelPurpose,
+    operation_name: str | None = None,
     sensitive_payload: Any | None = None,
     max_attempts: int = 2,
 ) -> StructuredModel:
@@ -251,6 +255,7 @@ def secure_structured_invoke(
                 runnable,
                 messages,
                 purpose=purpose,
+                operation_name=operation_name,
                 sensitive_payload=sensitive_payload,
             )
             if isinstance(result, schema):
@@ -269,6 +274,7 @@ async def secure_ainvoke(
     messages: Sequence[Any],
     *,
     purpose: ModelPurpose,
+    operation_name: str | None = None,
     sensitive_payload: Any | None = None,
 ) -> Any:
     safe_messages, policy = _prepare_call(
@@ -288,6 +294,7 @@ async def secure_ainvoke(
     except Exception as error:
         _record_model_call(
             purpose=purpose,
+            operation_name=operation_name,
             status="failed",
             duration_ms=_elapsed_ms(started_at),
             input=observation_input,
@@ -297,6 +304,7 @@ async def secure_ainvoke(
         raise
     _record_model_call(
         purpose=purpose,
+        operation_name=operation_name,
         status="succeeded",
         duration_ms=_elapsed_ms(started_at),
         input=observation_input,
@@ -439,6 +447,7 @@ def _observation_value(value: Any) -> Any:
 def _record_model_call(
     *,
     purpose: ModelPurpose,
+    operation_name: str | None,
     status: str,
     duration_ms: int,
     input: Any,
@@ -456,6 +465,7 @@ def _record_model_call(
             error_identity = exception_identity_fields(error)
         recorder(
             purpose=purpose.value,
+            operation_name=operation_name or f"{purpose.value}.generate",
             status=status,
             duration_ms=duration_ms,
             input=input,

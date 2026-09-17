@@ -54,6 +54,7 @@ async def _run(state: ChatState) -> dict:
             )),
         ],
         purpose=ModelPurpose.CHART_INTERPRET,
+        operation_name="chart_interpret.generate",
         sensitive_payload={
             "message": state["message"],
             "chart_payload": payload,

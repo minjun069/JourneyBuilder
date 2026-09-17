@@ -308,6 +308,7 @@ class BoundRuntimeInstrumentation:
         self,
         *,
         purpose: str,
+        operation_name: str | None = None,
         status: str,
         duration_ms: int,
         input: Any,
@@ -331,7 +332,7 @@ class BoundRuntimeInstrumentation:
         self.record_operation(
             stage=OperationStage.MODEL,
             status=operation_status,
-            operation_name=f"{purpose}.generate",
+            operation_name=operation_name or f"{purpose}.generate",
             duration_ms=duration_ms,
             task_id=task_id,
             agent=purpose,

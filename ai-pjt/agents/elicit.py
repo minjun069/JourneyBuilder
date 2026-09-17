@@ -215,6 +215,7 @@ async def _analyze_field_turn(
             )),
         ],
         purpose=ModelPurpose.ELICIT,
+        operation_name="elicit.analyze",
         sensitive_payload={"message": state["message"]},
     )
     response_class = result.response_class

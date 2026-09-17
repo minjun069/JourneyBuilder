@@ -100,8 +100,10 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         observed.record_model_call(  # type: ignore[attr-defined]
             purpose="qa",
+            operation_name="qa.judge",
             status="succeeded",
             duration_ms=12,
+            task_id="task-1",
             input=prompt,
             output=response,
         )
@@ -110,7 +112,8 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         event = sink.baseline_events[0]
         self.assertIsInstance(event, OperationTraceEvent)
         self.assertEqual(event.stage, OperationStage.MODEL)
-        self.assertEqual(event.operation_name, "qa.generate")
+        self.assertEqual(event.operation_name, "qa.judge")
+        self.assertEqual(event.task_id, "task-1")
         self.assertEqual(event.agent, "qa")
         self.assertEqual(event.input, prompt)
         self.assertEqual(event.output, response)

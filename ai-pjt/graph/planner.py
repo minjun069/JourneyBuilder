@@ -910,6 +910,7 @@ def plan_tasks_with_model(
         PlannerModelOutput,
         [system, HumanMessage(content=message)],
         purpose=ModelPurpose.PLANNER,
+        operation_name="planner.plan",
         sensitive_payload={"message": message, "context": dict(context)},
     )
     return response.to_route_plan()

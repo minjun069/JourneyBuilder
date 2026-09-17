@@ -87,6 +87,7 @@ async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, An
             )),
         ],
         purpose=ModelPurpose.ERROR_REVIEW,
+        operation_name="error_review.review",
         sensitive_payload={"current_form": current_form},
     )
     validated_items = [
