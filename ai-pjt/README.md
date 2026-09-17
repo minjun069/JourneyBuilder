@@ -85,11 +85,19 @@ docker compose run --rm --no-deps ai-pjt \
   python -c 'from langfuse import get_client; raise SystemExit(0 if get_client().auth_check() else 1)'
 ```
 
-연결 확인 뒤 AI 서비스를 기동하면 `retirewise.<event_family>.<stage>` observation에서
-가명 trace correlation, 단계·상태·지연, 모델 token·비용 metadata를 확인할 수 있다.
-prompt·response·고객 snapshot·도구 원문은 보내지 않는다. SDK는 이 exporter가 직접
-만든 span만 허용하므로 `langfuse.langchain.CallbackHandler`, `@observe`, 자동
-LangChain tracing을 production 경로에 추가하지 않는다.
+연결 확인 뒤 AI 서비스를 기동하면 요청마다 `retirewise.request` root observation이
+하나 생기고 그 아래에 `retirewise.<event_family>.<stage>` observation이 연결된다.
+runtime 단계의 `started`와 terminal event는 새 observation 두 개가 아니라 같은
+observation의 시작과 `update`/`end`로 기록된다. 요청·thread·plan·step correlation은
+root metadata에 한 번만 두고, 자식 metadata에는 task·executor·오류 식별자처럼 해당
+단계 진단에 필요한 값만 둔다.
+
+root와 단계 observation의 Input/Output에는 `MaskedInstrumentationSink`를 통과한 사용자
+질문, planner context와 실행 결과가 표시된다. 직접 식별정보·secret·허용 밖 금융값과
+raw 운영 ID는 마스킹 또는 가명화되며, 마스킹 전 prompt·response·고객 snapshot·도구
+원문은 보내지 않는다. SDK는 이 exporter가 직접 만든 span만 허용하므로
+`langfuse.langchain.CallbackHandler`, `@observe`, 자동 LangChain tracing을 production
+경로에 추가하지 않는다.
 
 Langfuse 전송은 비동기다. FastAPI lifespan 종료 시 SDK `shutdown()`으로 대기 event를
 flush하며, emit 또는 shutdown 장애는 AI 업무 응답을 실패시키지 않는다. Langfuse는

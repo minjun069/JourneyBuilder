@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from hashlib import sha256
 import json
 from math import isfinite
 import re
+from threading import RLock
 from typing import Any, Protocol
 
 
 class _LangfuseObservation(Protocol):
+    def start_observation(self, **kwargs: Any) -> "_LangfuseObservation": ...
+
+    def update(self, **kwargs: Any) -> object: ...
+
     def end(self) -> object: ...
 
 
@@ -35,6 +42,59 @@ _FORBIDDEN_CONTENT_FIELDS = frozenset(
     }
 )
 _OBSERVATION_CONTENT_FIELDS = frozenset({"input", "output"})
+_ROOT_METADATA_FIELDS = frozenset(
+    {"attempt_id", "plan_id", "request_id", "step_id", "thread_id"}
+)
+_OBSERVATION_METADATA_FIELDS_BY_FAMILY = {
+    "operation": frozenset(
+        {
+            "agent",
+            "error_code",
+            "error_fingerprint",
+            "error_type",
+            "index_version",
+            "model_provider",
+            "operation_name",
+            "prompt_version",
+            "resource_ids",
+            "result_count",
+            "scores",
+            "tool_version",
+        }
+    ),
+    "attempt": frozenset({"assistance_mode", "transition_reason"}),
+    "proposal_decision": frozenset({"proposal_id"}),
+    "change": frozenset({"change_id", "rollback_reason"}),
+    "survey": frozenset({"effort_reduction", "helpfulness", "trust"}),
+    "runtime": frozenset(
+        {
+            "artifact_id",
+            "artifact_type",
+            "blocked_by",
+            "depends_on",
+            "error_fingerprint",
+            "error_type",
+            "executor_kind",
+            "executor_name",
+            "producer_task_id",
+            "reason_code",
+            "response_owner",
+            "task_id",
+        }
+    ),
+    "security_decision": frozenset(
+        {
+            "actor_kind",
+            "actor_name",
+            "argument_classes",
+            "call_source",
+            "reason_code",
+            "target_name",
+            "target_version",
+            "task_id",
+        }
+    ),
+}
 _COMMON_FIELDS = frozenset(
     {
         "contract_version",
@@ -130,17 +190,35 @@ _ALLOWED_FIELDS_BY_FAMILY = {
 _TOKEN_LIST_FIELDS = frozenset(
     {"argument_classes", "blocked_by", "depends_on", "resource_ids"}
 )
+_MAX_RETAINED_TRACES = 1_024
+
+
+@dataclass(slots=True)
+class _OpenObservation:
+    observation: _LangfuseObservation
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class _TraceState:
+    root: _LangfuseObservation
+    root_metadata: dict[str, Any]
+    observations: dict[tuple[str, ...], _OpenObservation] = field(
+        default_factory=dict
+    )
+    ended: bool = False
 
 
 class LangfuseInstrumentationExporter:
-    """Create Langfuse observations from masked mappings only.
+    """Create one request-rooted Langfuse lifecycle from masked mappings.
 
     ``MaskedInstrumentationSink`` is the only production caller. Input and
     output are accepted only inside a payload carrying that sink's explicit
-    masking marker; raw model callbacks remain unsupported.
+    masking marker; raw model callbacks remain unsupported. Runtime start and
+    terminal events update the same child observation instead of creating two.
     """
 
-    __slots__ = ("_client",)
+    __slots__ = ("_client", "_lock", "_traces")
 
     def __init__(self, client: _LangfuseClient) -> None:
         if not callable(getattr(client, "start_observation", None)):
@@ -148,6 +226,8 @@ class LangfuseInstrumentationExporter:
         if not callable(getattr(client, "shutdown", None)):
             raise TypeError("Langfuse client must provide shutdown")
         self._client = client
+        self._lock = RLock()
+        self._traces: OrderedDict[str, _TraceState] = OrderedDict()
 
     def emit(self, payload: Mapping[str, Any]) -> None:
         if not isinstance(payload, Mapping):
@@ -167,35 +247,183 @@ class LangfuseInstrumentationExporter:
         event_family = _required_token(payload, "event_family")
         contract_version = _required_token(payload, "contract_version")
         _validate_metadata_payload(payload, event_family)
-        action = _event_action(payload)
-        status = payload.get("status")
-        decision = payload.get("decision")
+        otel_trace_id = _otel_trace_id(trace_id)
+        with self._lock:
+            state = self._trace_state(
+                otel_trace_id=otel_trace_id,
+                payload=payload,
+                contract_version=contract_version,
+            )
+            self._traces.move_to_end(otel_trace_id)
+            self._merge_root_metadata(state, payload)
 
-        observation_args: dict[str, Any] = {
-            "trace_context": {"trace_id": _otel_trace_id(trace_id)},
-            "name": f"retirewise.{event_family}.{action}",
-            "as_type": "span",
-            "metadata": {
-                name: value
-                for name, value in payload.items()
-                if name not in _OBSERVATION_CONTENT_FIELDS
-            },
-            "version": contract_version,
-        }
-        for field_name in _OBSERVATION_CONTENT_FIELDS:
-            if field_name in payload:
-                observation_args[field_name] = payload[field_name]
-        if status in {"failed", "timeout", "blocked"} or decision == "denied":
-            observation_args["level"] = "ERROR"
+            if _is_request_lifecycle(payload):
+                self._update_request_root(state, payload)
+                self._evict_closed_traces()
+                return
 
-        if event_family == "operation" and payload.get("stage") == "model":
-            observation_args.update(_generation_args(payload))
+            lifecycle_key = _runtime_lifecycle_key(payload)
+            if lifecycle_key is not None and payload.get("status") == "started":
+                self._start_runtime_observation(
+                    state,
+                    lifecycle_key,
+                    payload,
+                    contract_version,
+                )
+                self._evict_closed_traces()
+                return
 
-        observation = self._client.start_observation(**observation_args)
-        observation.end()
+            if lifecycle_key is not None and lifecycle_key in state.observations:
+                self._finish_runtime_observation(
+                    state,
+                    lifecycle_key,
+                    payload,
+                )
+                self._evict_closed_traces()
+                return
+
+            observation = state.root.start_observation(
+                **_observation_args(payload, contract_version)
+            )
+            observation.end()
+            self._evict_closed_traces()
 
     def shutdown(self) -> None:
-        self._client.shutdown()
+        failure: Exception | None = None
+        with self._lock:
+            for state in self._traces.values():
+                for open_observation in state.observations.values():
+                    try:
+                        open_observation.observation.end()
+                    except Exception as error:  # noqa: BLE001 - flush all spans
+                        failure = failure or error
+                if not state.ended:
+                    try:
+                        state.root.end()
+                    except Exception as error:  # noqa: BLE001 - still stop client
+                        failure = failure or error
+            self._traces.clear()
+        try:
+            self._client.shutdown()
+        except Exception as error:  # noqa: BLE001 - preserve first lifecycle error
+            failure = failure or error
+        if failure is not None:
+            raise failure
+
+    def _trace_state(
+        self,
+        *,
+        otel_trace_id: str,
+        payload: Mapping[str, Any],
+        contract_version: str,
+    ) -> _TraceState:
+        existing = self._traces.get(otel_trace_id)
+        if existing is not None:
+            return existing
+
+        root_metadata = _root_metadata(payload)
+        root_args: dict[str, Any] = {
+            "trace_context": {"trace_id": otel_trace_id},
+            "name": "retirewise.request",
+            "as_type": "span",
+            "metadata": root_metadata,
+            "version": contract_version,
+        }
+        if "input" in payload:
+            root_args["input"] = payload["input"]
+        root = self._client.start_observation(**root_args)
+        state = _TraceState(root=root, root_metadata=root_metadata)
+        self._traces[otel_trace_id] = state
+        return state
+
+    def _merge_root_metadata(
+        self,
+        state: _TraceState,
+        payload: Mapping[str, Any],
+    ) -> None:
+        if state.ended:
+            return
+        metadata = {**state.root_metadata, **_root_metadata(payload)}
+        if metadata == state.root_metadata:
+            return
+        state.root.update(metadata=metadata)
+        state.root_metadata = metadata
+
+    def _update_request_root(
+        self,
+        state: _TraceState,
+        payload: Mapping[str, Any],
+    ) -> None:
+        if state.ended:
+            return
+        metadata = {**state.root_metadata, **_root_metadata(payload)}
+        update_args = _content_update_args(payload, metadata=metadata)
+        state.root.update(**update_args)
+        state.root_metadata = metadata
+        if payload.get("status") == "started":
+            return
+
+        for open_observation in state.observations.values():
+            open_observation.observation.end()
+        state.observations.clear()
+        state.root.end()
+        state.ended = True
+
+    def _start_runtime_observation(
+        self,
+        state: _TraceState,
+        lifecycle_key: tuple[str, ...],
+        payload: Mapping[str, Any],
+        contract_version: str,
+    ) -> None:
+        existing = state.observations.get(lifecycle_key)
+        if existing is not None:
+            metadata = {
+                **existing.metadata,
+                **_observation_metadata(payload),
+            }
+            existing.observation.update(
+                **_content_update_args(
+                    payload,
+                    metadata=metadata,
+                )
+            )
+            existing.metadata = metadata
+            return
+        metadata = _observation_metadata(payload)
+        observation = state.root.start_observation(
+            **_observation_args(payload, contract_version, metadata=metadata)
+        )
+        state.observations[lifecycle_key] = _OpenObservation(
+            observation=observation,
+            metadata=metadata,
+        )
+
+    def _finish_runtime_observation(
+        self,
+        state: _TraceState,
+        lifecycle_key: tuple[str, ...],
+        payload: Mapping[str, Any],
+    ) -> None:
+        open_observation = state.observations[lifecycle_key]
+        metadata = {
+            **open_observation.metadata,
+            **_observation_metadata(payload),
+        }
+        open_observation.observation.update(
+            **_content_update_args(payload, metadata=metadata)
+        )
+        open_observation.observation.end()
+        del state.observations[lifecycle_key]
+
+    def _evict_closed_traces(self) -> None:
+        if len(self._traces) <= _MAX_RETAINED_TRACES:
+            return
+        for trace_id, state in tuple(self._traces.items()):
+            if state.ended:
+                del self._traces[trace_id]
+                if len(self._traces) <= _MAX_RETAINED_TRACES:
+                    return
 
 
 def build_langfuse_instrumentation_exporter(
@@ -289,6 +517,100 @@ def _validate_observation_content(value: Any, name: str) -> None:
         raise ValueError(
             f"Langfuse exporter requires JSON-safe observation {name}"
         ) from error
+
+
+def _root_metadata(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        name: payload[name]
+        for name in _ROOT_METADATA_FIELDS
+        if name in payload
+    }
+
+
+def _observation_metadata(payload: Mapping[str, Any]) -> dict[str, Any]:
+    fields = _OBSERVATION_METADATA_FIELDS_BY_FAMILY[
+        str(payload["event_family"])
+    ]
+    return {name: payload[name] for name in fields if name in payload}
+
+
+def _failure_args(payload: Mapping[str, Any]) -> dict[str, str]:
+    if (
+        payload.get("status") not in {"failed", "timeout", "blocked"}
+        and payload.get("decision") != "denied"
+    ):
+        return {}
+    args = {"level": "ERROR"}
+    for name in ("reason_code", "error_code", "status", "decision"):
+        value = payload.get(name)
+        if isinstance(value, str) and value:
+            args["status_message"] = value
+            break
+    return args
+
+
+def _content_update_args(
+    payload: Mapping[str, Any],
+    *,
+    metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    args: dict[str, Any] = {"metadata": dict(metadata)}
+    for field_name in _OBSERVATION_CONTENT_FIELDS:
+        if field_name in payload:
+            args[field_name] = payload[field_name]
+    args.update(_failure_args(payload))
+    return args
+
+
+def _observation_args(
+    payload: Mapping[str, Any],
+    contract_version: str,
+    *,
+    metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    event_family = str(payload["event_family"])
+    args: dict[str, Any] = {
+        "name": f"retirewise.{event_family}.{_event_action(payload)}",
+        "as_type": "span",
+        "metadata": dict(
+            _observation_metadata(payload) if metadata is None else metadata
+        ),
+        "version": contract_version,
+    }
+    for field_name in _OBSERVATION_CONTENT_FIELDS:
+        if field_name in payload:
+            args[field_name] = payload[field_name]
+    args.update(_failure_args(payload))
+    if event_family == "operation" and payload.get("stage") == "model":
+        args.update(_generation_args(payload))
+    return args
+
+
+def _is_request_lifecycle(payload: Mapping[str, Any]) -> bool:
+    return (
+        payload.get("event_family") == "runtime"
+        and payload.get("stage") == "request_processing"
+    )
+
+
+def _runtime_lifecycle_key(
+    payload: Mapping[str, Any],
+) -> tuple[str, ...] | None:
+    if payload.get("event_family") != "runtime":
+        return None
+    stage = payload.get("stage")
+    if not isinstance(stage, str) or stage == "dependency_block":
+        return None
+    return tuple(
+        str(payload.get(name) or "")
+        for name in (
+            "stage",
+            "task_id",
+            "executor_kind",
+            "executor_name",
+            "artifact_id",
+        )
+    )
 
 
 def _event_action(payload: Mapping[str, Any]) -> str:

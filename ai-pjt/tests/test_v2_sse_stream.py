@@ -8,7 +8,8 @@ from unittest.mock import patch
 import httpx
 
 from main import app, _stream_v2_chat_events
-from tests.instrumentation import fake_callback_masker
+from core.runtime_instrumentation import RuntimeStage, RuntimeStatus
+from tests.instrumentation import fake_callback_masker, fake_instrumentation
 from transport.contracts import ChatV2Request
 
 
@@ -213,6 +214,34 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertIn("completed_at", frames[-1][1])
 
     @patch("main.get_callbacks", return_value=[])
+    async def test_stream_emits_one_request_root_lifecycle_with_io(self, _callbacks):
+        instrumentation, sink = fake_instrumentation()
+
+        frames = [
+            parse_frame(frame)
+            async for frame in _stream_v2_chat_events(
+                FakeV2Graph(),
+                FakeContextAPI(),
+                v2_request(),
+                fake_callback_masker(),
+                instrumentation=instrumentation,
+            )
+        ]
+
+        self.assertEqual([name for name, _ in frames], ["start", "done"])
+        request_events = [
+            event
+            for event in sink.runtime_events
+            if event.stage is RuntimeStage.REQUEST_PROCESSING
+        ]
+        self.assertEqual(
+            [event.status for event in request_events],
+            [RuntimeStatus.STARTED, RuntimeStatus.SUCCEEDED],
+        )
+        self.assertEqual(request_events[0].input["message"], "은퇴 준비를 알려줘")
+        self.assertEqual(request_events[1].output["response"], "안녕하세요")
+
+    @patch("main.get_callbacks", return_value=[])
     async def test_failure_returns_safe_v2_terminal_error(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -268,6 +297,7 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         app.state.chat_graph = FakeV2Graph()
         app.state.context_api = FakeContextAPI()
         app.state.callback_masker = fake_callback_masker()
+        app.state.instrumentation = fake_instrumentation()[0]
 
     async def _post(self, payload, authorization=None, *, sign=True):
         if sign and isinstance(payload, dict) and payload:
