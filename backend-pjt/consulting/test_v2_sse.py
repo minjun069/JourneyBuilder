@@ -359,6 +359,64 @@ class V2MessageStreamViewTests(SimpleTestCase):
     @patch('consulting.v2_views.transaction.atomic')
     @patch('consulting.v2_views.AIRequestExecution.objects')
     @patch('consulting.v2_views.ConsultingSession.objects')
+    def test_completed_session_accepts_presentation_entry_and_marks_system_event(
+        self,
+        session_objects,
+        execution_objects,
+        _atomic,
+        get_session,
+        store_class,
+        create_user_message,
+        _new_request_id,
+        build_payload,
+        _make_state,
+        proxy_stream,
+    ):
+        session = SimpleNamespace(id=12, status='completed')
+        get_session.return_value = session
+        session_objects.select_for_update.return_value.filter.return_value.first.return_value = session
+        execution_objects.filter.return_value.exists.return_value = False
+        create_user_message.return_value = SimpleNamespace(id=41, content='최초 안내')
+        store_class.return_value.get_idempotency.return_value = None
+        proxy_stream.return_value = async_items([
+            'event: start\ndata: {"contract_version":"2.0","request_id":"ai_req_v2_stream"}\n\n'
+        ])
+        body = {
+            **browser_body(),
+            'content': '이 보고서의 핵심을 먼저 안내해 주세요.',
+            'step_id': 'lifetime-cashflow',
+            'request_mode': 'presentation_entry',
+        }
+
+        response = V2MessageStreamView.as_view()(self.request(body), session_id=12)
+        b''.join(asyncio.run(collect_async(response.streaming_content)))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(build_payload.call_args.kwargs['request_mode'], 'presentation_entry')
+        self.assertEqual(
+            create_user_message.call_args.kwargs['extracted_data'],
+            {'system_event': 'presentation_entry', 'step_id': 'lifetime-cashflow'},
+        )
+
+    @patch('consulting.v2_views.get_owned_session')
+    def test_completed_session_rejects_non_presentation_step(self, get_session):
+        get_session.return_value = SimpleNamespace(id=12, status='completed')
+
+        response = V2MessageStreamView.as_view()(self.request(), session_id=12)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['error']['code'], 'SESSION_CLOSED')
+
+    @patch('consulting.v2_views.proxy_v2_ai_stream')
+    @patch('consulting.v2_views.make_processing_state', return_value=processing_state())
+    @patch('consulting.v2_views.build_v2_ai_payload', return_value=ai_payload())
+    @patch('consulting.v2_views.new_request_id', return_value='ai_req_v2_stream')
+    @patch('consulting.v2_views.Message.objects.create')
+    @patch('consulting.v2_views.RedisLifecycleStore')
+    @patch('consulting.v2_views.get_owned_session')
+    @patch('consulting.v2_views.transaction.atomic')
+    @patch('consulting.v2_views.AIRequestExecution.objects')
+    @patch('consulting.v2_views.ConsultingSession.objects')
     def test_new_request_saves_state_and_returns_async_sse(
         self,
         session_objects,

@@ -4,6 +4,7 @@ import importlib.util
 import os
 import unittest
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -300,6 +301,55 @@ class ErrorReviewManualTests(unittest.TestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retrieval_records_only_safe_result_metadata(self) -> None:
+        configure_runtime()
+        from agents import qa
+        from core.operation_observation import bind_operation_recorder
+        from langchain_core.messages import AIMessage
+
+        records: list[dict] = []
+        results = [SimpleNamespace(
+            chunk=SimpleNamespace(
+                metadata=SimpleNamespace(source_id="approved-pension-guide")
+            ),
+            score=0.91,
+        )]
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=results))
+        model = SimpleNamespace(
+            ainvoke=AsyncMock(return_value=AIMessage(content="승인 근거 답변"))
+        )
+        state = {
+            "message": "연금 제도를 설명해줘",
+            "step_id": "pension",
+            "customer_info": {},
+            "bound_inputs": {},
+            "current_query": "연금 제도 승인 근거",
+            "current_context": "",
+            "need_retrieval": True,
+            "retry_hint": "",
+            "official_value_unavailable": False,
+        }
+
+        with (
+            bind_operation_recorder(
+                lambda **event: records.append(dict(event))
+            ),
+            patch.object(qa, "get_retriever", return_value=retriever),
+            patch.object(qa, "format_docs", return_value="승인 문서 context"),
+            patch.object(qa, "llm", model),
+        ):
+            result = await qa._generate(state)
+
+        self.assertEqual(result["current_answer"], "승인 근거 답변")
+        self.assertEqual(len(records), 1)
+        event = records[0]
+        self.assertEqual(event["operation_name"], "qa.search")
+        self.assertEqual(event["resource_ids"], ("approved-pension-guide",))
+        self.assertEqual(event["scores"], (0.91,))
+        self.assertEqual(event["result_count"], 1)
+        self.assertNotIn("query", repr(event).lower())
+        self.assertNotIn("연금 제도 승인 근거", repr(event))
+
     async def test_product_term_explanation_uses_specify_model(self) -> None:
         configure_runtime()
         from agents import qa
@@ -323,9 +373,9 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[object()]))
         state = {
-            "step_id": "basic-info",
-            "message": "유동성이 뭐야?",
-            "current_query": "유동성 정의",
+            "step_id": "financial-mindset",
+            "message": "안정 추구가 정확히 뭐야?",
+            "current_query": "안정 추구 정의",
             "customer_info": {},
             "bound_inputs": {},
             "current_context": "",
@@ -334,7 +384,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
             "retry_hint": "",
             "official_value_unavailable": False,
         }
-        answer = "필요할 때 현금으로 바꾸기 쉬운 정도입니다."
+        answer = "손실 가능성과 자산 가치 변동을 낮추는 것을 우선한다는 뜻입니다."
         generated_with_source = (
             f"{answer}\n\n출처:\n"
             "- RetireWise 제품 용어 설명 "
@@ -345,14 +395,14 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         )
         with (
             patch.object(qa, "get_retriever", return_value=retriever),
-            patch.object(qa, "format_docs", return_value="승인된 유동성 용어 절"),
+            patch.object(qa, "format_docs", return_value="승인된 안정 추구 용어 절"),
             patch.object(qa, "secure_ainvoke", invoke),
         ):
             generated = await qa._generate(state)
 
-        retriever.aretrieve.assert_awaited_once_with("유동성 정의")
+        retriever.aretrieve.assert_awaited_once_with("안정 추구 정의")
         invoke.assert_awaited_once()
-        self.assertEqual(generated["current_context"], "승인된 유동성 용어 절")
+        self.assertEqual(generated["current_context"], "승인된 안정 추구 용어 절")
         self.assertEqual(generated["current_answer"], answer)
         self.assertNotIn("출처", generated["current_answer"])
         self.assertNotIn("product-terms.md", generated["current_answer"])
@@ -375,6 +425,26 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(answer, "핵심 설명입니다.")
 
+    def test_qa_contains_no_fixed_product_term_answer_path(self) -> None:
+        configure_runtime()
+        from agents import qa
+
+        source = Path(qa.__file__).read_text(encoding="utf-8")
+        forbidden = (
+            "_QUALITATIVE_CHOICE_ANSWERS",
+            "_TERM_EXPLANATION_CUES",
+            "_qualitative_choice_answer",
+            "_is_qualitative_choice_explanation",
+            "안정추구",
+            "균형추구",
+            "위험감수",
+            "단기지향",
+            "장기지향",
+        )
+        for token in forbidden:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
     async def test_product_term_explanation_is_classified_for_retrieval(self) -> None:
         configure_runtime()
         from agents import qa
@@ -384,8 +454,8 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         )))
         with patch.object(qa, "_decision_chain", decision_chain):
             decision = await qa._decide({
-                "message": "유동성이 뭐야?",
-                "current_query": "유동성 정의",
+                "message": "안정추구가 정확히 뭐야?",
+                "current_query": "안정 추구 정의",
                 "customer_info": {},
                 "bound_inputs": {},
             })
@@ -451,7 +521,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
-    async def test_chart_without_verified_payload_explains_readiness_without_model(self) -> None:
+    async def test_chart_without_contract_is_treated_as_unsupported_without_model(self) -> None:
         configure_runtime()
         from agents import chart_interpret
 
@@ -460,7 +530,7 @@ class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
             "step_id": "lifetime-cashflow",
             "chart_payload": None,
         })
-        self.assertIn("준비되지", result["output"]["response"])
+        self.assertIn("설명 대상이 아닙니다", result["output"]["response"])
         self.assertIsNone(result["output"]["action"])
 
     async def test_fallback_accepts_only_four_categories(self) -> None:

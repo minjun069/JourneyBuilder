@@ -3,6 +3,8 @@
   "schema_version": "1.0",
   "quality_disposition": "baseline_only",
   "quality_acceptance_thresholds": null,
+  "chart_quality_status": "historical_superseded",
+  "chart_quality_superseded_by": "presentation-chart-quality-baseline.json",
   "generated_at": "2026-09-10T08:25:23.672723+00:00",
   "source_revision": "76c0283b681836b7ffd63647dfd57c8a1b38a0eb",
   "runtime": {

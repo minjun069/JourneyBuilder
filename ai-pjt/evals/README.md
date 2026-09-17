@@ -119,3 +119,42 @@ PYTHONPATH=. python -m evals.agent_baseline \
   --prior-model-calls 0 \
   --output evals/artifacts/f07-f08-production-model-baseline.json
 ```
+
+## Prompt release candidate gate
+
+`agent_baseline.py` 결과의 `runtime`에는 실행한 prompt release, registry manifest와
+model provider·name·temperature가 포함된다. 실제 모델·보안·라우터 평가 결과를 아래
+정규화된 비교 artifact로 모은 뒤, 같은 corpus와 model 설정으로 실행한
+current/previous release를 다음 명령으로 판정한다.
+
+```json
+{
+  "corpus_id": "prompt-candidate-v1",
+  "model_config": {"provider": "gemini", "name": "...", "temperature": 0.0},
+  "prompt_release": "2026-09-17.2",
+  "prompt_manifest": {
+    "release": "2026-09-17.2",
+    "prompts": [{"id": "planner.plan", "version": "1.0.0", "sha256": "..."}]
+  },
+  "quality_metrics": {
+    "router_accuracy": 0.95,
+    "critical_safety_pass_rate": 1.0,
+    "grounded_answer_rate": 0.0,
+    "form_action_exact_rate": 0.0,
+    "error_review_false_positive_rate": 0.0,
+    "average_model_calls": 0.0
+  }
+}
+```
+
+```bash
+PYTHONPATH=. python evals/prompt_release_gate.py \
+  --baseline evals/artifacts/prompt-baseline.json \
+  --candidate evals/artifacts/prompt-candidate.json
+```
+
+두 artifact의 release는 서로 달라야 하며 manifest가 빠지면 실패한다. 보안 차단은
+100%, router 정확도는 95% 이상이어야 하고 grounded answer는 2%p 초과 하락할 수 없다.
+form field/value exact match와 false positive는 악화되면 안 되며, provider call budget은
+baseline보다 최대 1회 또는 25% 중 큰 값까지만 허용한다. 실패한 candidate는 활성
+`PROMPT_RELEASE`로 승격하지 않는다.

@@ -19,13 +19,9 @@ import sys
 from time import monotonic
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
-
 AI_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = AI_ROOT.parent
 DEFAULT_FIXTURE = AI_ROOT / "evals" / "fixtures" / "f07-f08-model-baseline.json"
-CHART_FIXTURE = REPOSITORY_ROOT / "contract-fixtures" / "ai-lifecycle" / "v2" / "chart-payloads.json"
 EXPECTED_ACTIVE_INDEXES = {
     "financial-knowledge": "financial-knowledge__official-catalog-2-1-0",
     "interface-guides": "interface-guides__official-catalog-2-1-0",
@@ -188,6 +184,8 @@ def load_fixture(path: Path = DEFAULT_FIXTURE) -> dict[str, Any]:
         raise ValueError("model_call_limit must be between 1 and 200")
     if payload.get("quality_disposition") != "baseline_only":
         raise ValueError("model quality must remain baseline_only")
+    if payload.get("chart_quality_disposition") != "quality_gate":
+        raise ValueError("chart quality must use explicit acceptance thresholds")
     return payload
 
 
@@ -562,37 +560,46 @@ def _normalized_numeric_token(value: str | int | float) -> str:
 
 async def _run_chart_cases(cases: list[dict[str, Any]], budget: ModelCallBudget) -> dict[str, Any]:
     from agents import chart_interpret
+    from evals.chart_quality import (
+        build_evaluation_payload,
+        evaluate_chart_response,
+        evaluation_case_index,
+        load_chart_evaluation_fixture,
+        summarize_chart_quality,
+    )
 
-    chart_fixture = json.loads(CHART_FIXTURE.read_text(encoding="utf-8"))
+    chart_fixture = load_chart_evaluation_fixture()
+    indexed_cases = evaluation_case_index(chart_fixture)
     results = []
     for case in cases:
-        payload = deepcopy(
-            chart_fixture["cases"][case["fixture_case"]]["django_ai_request_fragment"]["chart_payload"]
-        )
+        evaluation_case = indexed_cases[case["evaluation_case"]]
+        payload = build_evaluation_payload(evaluation_case)
         started_calls = budget.used
         try:
             state = await chart_interpret.graph.ainvoke({
-                "message": case["message"],
-                "step_id": "lifetime-cashflow",
+                "message": evaluation_case["message"],
+                "step_id": evaluation_case["step_id"],
+                "request_mode": evaluation_case.get("request_mode", "chat"),
                 "chart_payload": payload,
+                "customer_info": deepcopy(evaluation_case.get("customer_info", {
+                    "saved_data": {},
+                    "current_form": {},
+                })),
             })
             output = state.get("output", {})
             response = str(output.get("response", ""))
-            source_numbers = _numeric_lexemes(payload)
-            response_numbers = {
-                _normalized_numeric_token(token)
-                for token in re.findall(r"-?\d+(?:\.\d+)?", response.replace(",", ""))
-            }
+            observations = evaluate_chart_response(
+                case=evaluation_case,
+                payload=payload,
+                response=response,
+                action=output.get("action"),
+            )
             results.append({
                 "id": case["id"],
                 "status": "completed",
                 "model_calls": budget.used - started_calls,
                 "response": response,
-                "observations": {
-                    "action_absent": output.get("action") is None,
-                    "numeric_claims": sorted(response_numbers),
-                    "numeric_claims_not_in_payload": sorted(response_numbers - source_numbers),
-                },
+                "observations": observations,
             })
         except Exception as exc:
             results.append({
@@ -601,20 +608,31 @@ async def _run_chart_cases(cases: list[dict[str, Any]], budget: ModelCallBudget)
                 "model_calls": budget.used - started_calls,
                 **_error_payload(exc),
             })
-    return {"quality_disposition": "baseline_only", "cases": results}
+    return summarize_chart_quality(results, chart_fixture)
 
 
 async def _run_elicit_cases(cases: list[dict[str, Any]], budget: ModelCallBudget) -> dict[str, Any]:
     from agents import elicit
+    from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 
     results = []
     for case in cases:
         started_calls = budget.used
         try:
-            result = await elicit._analysis_chain.ainvoke([
-                SystemMessage(content=elicit.ANALYZE_PROMPT),
-                HumanMessage(content=case["message"]),
-            ])
+            result = await secure_ainvoke(
+                elicit._analysis_chain,
+                prompt_messages(elicit.ANALYZE_PROMPT, {
+                    "target_field": "life_goal",
+                    "turn_kind": "answer",
+                    "confirmed_summary": None,
+                    "pending_candidate": None,
+                    "open_question": "삶에서 가장 중요한 것은 무엇인가요?",
+                    "user_message": case["message"],
+                }),
+                purpose=ModelPurpose.ELICIT,
+                sensitive_payload={"message": case["message"]},
+                prompt=elicit.ANALYZE_PROMPT,
+            )
             results.append({
                 "id": case["id"],
                 "status": "completed",
@@ -694,6 +712,8 @@ async def build_baseline(
         chart = await _run_chart_cases(fixture["chart_cases"], budget)
         elicit = await _run_elicit_cases(fixture["elicit_classification_cases"], budget)
 
+    from prompts import get_prompt_manifest
+
     return {
         "report_kind": "f07-f08-production-model-baseline",
         "schema_version": "1.0",
@@ -704,6 +724,9 @@ async def build_baseline(
         "runtime": {
             "llm_provider": settings.llm_provider,
             "llm_model": settings.llm_model,
+            "llm_temperature": settings.llm_temperature,
+            "prompt_release": settings.prompt_release,
+            "prompt_manifest": get_prompt_manifest(release=settings.prompt_release),
             "embedding_provider": settings.embedding_provider,
             "embedding_model": settings.embedding_model,
             "rag_min_dense_score": settings.rag_min_dense_score,

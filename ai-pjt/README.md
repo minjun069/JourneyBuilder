@@ -45,13 +45,16 @@ uv pip compile \
 | 필수 | `DATABASE_URL` | AI startup과 readiness가 사용하는 PostgreSQL DSN |
 | 현재 필수 | `GOOGLE_API_KEY` | Compose가 고정한 Gemini embedding과 기본 Gemini LLM에 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
+| 모델 선택 | `LLM_PROVIDER`, `LLM_MODEL`, `LLM_TEMPERATURE` | provider·model과 재현 가능한 0~1 temperature. 기본 temperature는 `0` |
+| prompt release | `PROMPT_RELEASE` | AI 이미지에 함께 포함된 활성/직전 prompt release 중 하나. 미지원 값은 startup에서 거부 |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/api/ai/v2/chat/stream` request bearer로 사용 |
 | startup 필수 | `AI_MASKING_PSEUDONYM_KEY` | 서비스 token과 다른 32바이트 이상 가명화 secret |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
 | 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.54 |
 | 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM` | retired 인덱스 30일 보관, embedding 차원 |
 | Langfuse 조건부 필수 | `LANGFUSE_ENABLED`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | 활성화할 때 세 연결값을 모두 명시하며 URL credential을 금지 |
-| Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT`, `LANGFUSE_RELEASE` | 환경 분리와 배포 SHA·버전 표시 |
+| Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT` | 환경 분리 |
+| 이미지 빌드 | `APP_RELEASE` | 기본 `local`. Dockerfile이 `LANGFUSE_RELEASE`와 OCI revision label로 고정하는 Git SHA·버전 |
 | readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/api/system/v1/health`, 2초 |
 | 미래 선택 | `REDIS_URL` | 현재 AI runtime과 readiness는 사용하지 않음 |
 | 운영 선택 | `LOG_LEVEL`, `RAG_SOURCE_REVISION` | 로그 수준과 indexing provenance 재정의 |
@@ -72,7 +75,6 @@ LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_TRACING_ENVIRONMENT=development
-LANGFUSE_RELEASE=<git-sha-or-release>
 LANGCHAIN_TRACING_V2=false
 ```
 
@@ -85,9 +87,21 @@ docker compose run --rm --no-deps ai-pjt \
   python -c 'from langfuse import get_client; raise SystemExit(0 if get_client().auth_check() else 1)'
 ```
 
-연결 확인 뒤 AI 서비스를 기동하면 `retirewise.<event_family>.<stage>` observation에서
-가명 trace correlation, 단계·상태·지연, 모델 token·비용 metadata를 확인할 수 있다.
-prompt·response·고객 snapshot·도구 원문은 보내지 않는다. SDK는 이 exporter가 직접
+연결 확인 뒤 AI 서비스를 기동하면 요청마다 `retirewise.request` root observation이
+하나 생기고 그 아래에 `retirewise.<event_family>.<stage>` observation이 연결된다.
+runtime 단계의 `started`와 terminal event는 새 observation 두 개가 아니라 같은
+observation의 시작과 `update`/`end`로 기록된다. 요청·thread·plan·step correlation은
+root metadata에 한 번만 두고, 자식 metadata에는 task·executor·오류 식별자처럼 해당
+단계 진단에 필요한 값만 둔다.
+
+root와 단계 observation의 Input/Output에는 `MaskedInstrumentationSink`를 통과한 사용자
+질문, planner context와 실행 결과가 표시된다. 직접 식별정보·secret·허용 밖 금융값과
+raw 운영 ID는 마스킹 또는 가명화되며, 마스킹 전 prompt·response·고객 snapshot·도구
+원문은 보내지 않는다. 모델 generation에는 마스킹된 실제 prompt·response와 함께
+prompt ID·version·hash·release·policy version, model provider·name·temperature를 같은
+observation에 기록한다. 별도의 prompt metadata observation을 중복 생성하지 않는다.
+
+SDK는 이 exporter가 직접
 만든 span만 허용하므로 `langfuse.langchain.CallbackHandler`, `@observe`, 자동
 LangChain tracing을 production 경로에 추가하지 않는다.
 
@@ -95,13 +109,28 @@ Langfuse 전송은 비동기다. FastAPI lifespan 종료 시 SDK `shutdown()`으
 flush하며, emit 또는 shutdown 장애는 AI 업무 응답을 실패시키지 않는다. Langfuse는
 readiness dependency가 아니므로 장애 여부는 exporter 지표와 별도 smoke에서 확인한다.
 
+Langfuse release는 실행 시 `.env`로 주입하지 않는다. `APP_RELEASE` build arg를
+Dockerfile이 `LANGFUSE_RELEASE`와 `org.opencontainers.image.revision`에 함께 기록하고,
+SDK 생성자에도 그 값을 명시적으로 전달한다. `deploy/deploy.sh`는 새 이미지를 빌드하기
+전에 `CI_COMMIT_SHA` 또는 현재 Git SHA를 선택하고 미커밋 변경이 있으면 `-dirty`를
+붙인다. 따라서 `--no-build` 롤백은 과거 이미지에 저장된 과거 SHA를 유지하며, 서버
+`.env`에 남은 `LANGFUSE_RELEASE` 값은 Compose가 전달하지 않는다.
+
 ## Container build와 실행
 
 공용 step registry를 image에 포함하기 위해 저장소 루트를 build context로 사용한다.
 
 ```bash
-docker build -f ai-pjt/Dockerfile -t retirewise-ai:g1 .
+docker build \
+  --build-arg APP_RELEASE="$(git rev-parse HEAD)" \
+  -f ai-pjt/Dockerfile \
+  -t retirewise-ai:g1 \
+  .
 ```
+
+Compose로 로컬 이미지를 한 번 빌드할 때도 런타임 `LANGFUSE_RELEASE` 대신
+`APP_RELEASE="$(git rev-parse HEAD)" docker compose build ai-pjt`를 사용한다. build arg를
+생략하면 두 이미지 메타데이터 모두 `local`이 된다.
 
 기본 배포에서는 AI 포트를 host에 공개하지 않고 Backend가 Compose 내부 주소 `http://ai-pjt:8001`로 호출한다. 로컬에서 직접 smoke test할 때만 loopback에 임시 공개한다.
 

@@ -14,6 +14,7 @@ cat > "$fake_bin/docker" <<'SH'
 set -euo pipefail
 
 if [ "$1" = compose ]; then
+  printf '%s\n' "${APP_RELEASE:-missing}" >> "$APP_RELEASE_LOG"
   shift
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -112,6 +113,11 @@ env_file="$tmp/app.env"
 printf 'GOOGLE_API_KEY=%s\n' "$secret_sentinel" > "$env_file"
 
 deploy_log="$tmp/deploy.log"
+export APP_RELEASE_LOG="$tmp/app-release.log"
+expected_release="$(git -C "$repo_root" rev-parse HEAD)"
+if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then
+  expected_release="${expected_release}-dirty"
+fi
 set +e
 PATH="$fake_bin:$PATH" \
   ENV_FILE="$env_file" \
@@ -123,6 +129,7 @@ status=$?
 set -e
 
 test "$status" -eq 1
+test "$(sort -u "$APP_RELEASE_LOG")" = "$expected_release"
 grep -q 'ai-pjt 컨테이너 진단 (롤백 전)' "$deploy_log"
 grep -q 'state=restarting.*restart_count=4.*exit_code=1.*oom_killed=false' "$deploy_log"
 grep -q 'ai-pjt healthcheck 최근 기록' "$deploy_log"

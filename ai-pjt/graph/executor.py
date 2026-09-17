@@ -5,10 +5,14 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import partial
 import logging
 from typing import Any
 
+from core.model_boundary import bind_model_call_recorder
 from core.monitoring import OperationStage, OperationStatus
+from core.operation_observation import bind_operation_recorder
+from core.prompt_registry import bind_prompt_trace_sink
 from core.observability_masking import (
     exception_identity_fields,
     masked_exception_fields,
@@ -101,6 +105,27 @@ async def execute_route_plan(
         dependencies = task.get("depends_on", [])
         if not isinstance(dependencies, list):
             dependencies = []
+        route = task.get("route")
+        executor_kind = (
+            route.get("executor_kind") if isinstance(route, Mapping) else None
+        )
+        executor_name = (
+            route.get("executor") if isinstance(route, Mapping) else None
+        )
+        task_span = instrumentation.start(
+            RuntimeStage.TASK_EXECUTION,
+            task_id=task_id,
+            depends_on=tuple(str(item) for item in dependencies),
+            executor_kind=str(executor_kind or "unknown"),
+            executor_name=str(executor_name or "unknown"),
+            input={
+                "task_type": str(task.get("type", "unknown")),
+                "dependency_count": len(dependencies),
+                "message": str(task.get("description", "")),
+                "step_id": step_id,
+                "customer_info": deepcopy(dict(customer_info)),
+            },
+        )
 
         blockers = [
             dependency
@@ -113,6 +138,11 @@ async def execute_route_plan(
                 task_id=task_id,
                 depends_on=tuple(str(item) for item in dependencies),
                 blocked_by=tuple(str(item) for item in blockers),
+            )
+            instrumentation.fail(
+                task_span,
+                reason_code="dependency_blocked",
+                output=task_results[task_id],
             )
             continue
 
@@ -144,25 +174,22 @@ async def execute_route_plan(
                     task_id,
                     "binding_resolution_failed",
                 )
+            instrumentation.fail(
+                task_span,
+                reason_code=exc.code.lower(),
+                output=task_results[task_id],
+            )
             continue
         instrumentation.succeed(binding_span)
 
-        route = task.get("route")
         if not isinstance(route, Mapping):
             task_results[task_id] = failed_task_result(
                 task_id,
                 "route_missing",
             )
-            task_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=task_id,
-                depends_on=tuple(str(item) for item in dependencies),
-            )
             instrumentation.fail(task_span, reason_code="route_missing")
             continue
 
-        executor_kind = route.get("executor_kind")
-        executor_name = route.get("executor")
         if (
             executor_kind == "tool"
             and route.get("reason_code") == "capability_unavailable"
@@ -170,13 +197,6 @@ async def execute_route_plan(
             task_results[task_id] = failed_task_result(
                 task_id,
                 "capability_unavailable",
-            )
-            task_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=task_id,
-                depends_on=tuple(str(item) for item in dependencies),
-                executor_kind="tool",
-                executor_name=str(executor_name or "unavailable"),
             )
             instrumentation.fail(task_span, reason_code="capability_unavailable")
             continue
@@ -188,13 +208,6 @@ async def execute_route_plan(
                 task_id,
                 "executor_unavailable",
             )
-            task_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=task_id,
-                depends_on=tuple(str(item) for item in dependencies),
-                executor_kind=str(executor_kind or "agent"),
-                executor_name=str(executor_name or "unavailable"),
-            )
             instrumentation.fail(task_span, reason_code="executor_unavailable")
             continue
 
@@ -202,13 +215,6 @@ async def execute_route_plan(
             task_results[task_id] = failed_task_result(
                 task_id,
                 "task_budget_exhausted",
-            )
-            task_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=task_id,
-                depends_on=tuple(str(item) for item in dependencies),
-                executor_kind=str(executor_kind),
-                executor_name=str(executor_name),
             )
             instrumentation.fail(task_span, reason_code="task_budget_exhausted")
             continue
@@ -248,17 +254,30 @@ async def execute_route_plan(
         }
         if executor_kind == "tool":
             execution_input["tool_audit_sink"] = instrumentation.record_tool_audit
-        task_span = instrumentation.start(
-            RuntimeStage.TASK_EXECUTION,
-            task_id=task_id,
-            depends_on=tuple(str(item) for item in dependencies),
-            executor_kind=str(executor_kind),
-            executor_name=str(executor_name),
-            input=observable_execution_input,
-        )
         operation_started = instrumentation.elapsed_ms(task_span)
         try:
-            raw_result = await executor(execution_input)
+            if executor_kind == "tool":
+                with bind_prompt_trace_sink(
+                    instrumentation.record_prompt_invocation
+                ):
+                    raw_result = await executor(execution_input)
+            else:
+                with bind_operation_recorder(
+                    partial(
+                        instrumentation.record_operation,
+                        task_id=task_id,
+                    )
+                ):
+                    with bind_model_call_recorder(
+                        partial(
+                            instrumentation.record_model_call,
+                            task_id=task_id,
+                        )
+                    ):
+                        with bind_prompt_trace_sink(
+                            instrumentation.record_prompt_invocation
+                        ):
+                            raw_result = await executor(execution_input)
         except Exception as error:
             # 이 except 는 사용자에게 executor_error 안내문만 남기므로, 여기서 기록하지
             # 않으면 배포본에서 원인을 되짚을 수 있는 흔적이 전혀 남지 않는다.
@@ -286,21 +305,18 @@ async def execute_route_plan(
                 0,
                 instrumentation.elapsed_ms(task_span) - operation_started,
             )
-            instrumentation.record_operation(
-                stage=(
-                    OperationStage.TOOL
-                    if executor_kind == "tool"
-                    else OperationStage.MODEL
-                ),
-                status=OperationStatus.FAILED,
-                operation_name=str(executor_name),
-                duration_ms=operation_duration,
-                agent=str(executor_name) if executor_kind != "tool" else None,
-                error_code="executor_error",
-                input=observable_execution_input,
-                output=failure_output,
-                **error_identity,
-            )
+            if executor_kind == "tool":
+                instrumentation.record_operation(
+                    stage=OperationStage.TOOL,
+                    status=OperationStatus.FAILED,
+                    operation_name=str(executor_name),
+                    duration_ms=operation_duration,
+                    task_id=task_id,
+                    error_code="executor_error",
+                    input=observable_execution_input,
+                    output=failure_output,
+                    **error_identity,
+                )
             task_results[task_id] = failed_task_result(
                 task_id,
                 "executor_error",
@@ -317,19 +333,16 @@ async def execute_route_plan(
             0,
             instrumentation.elapsed_ms(task_span) - operation_started,
         )
-        instrumentation.record_operation(
-            stage=(
-                OperationStage.TOOL
-                if executor_kind == "tool"
-                else OperationStage.MODEL
-            ),
-            status=OperationStatus.SUCCEEDED,
-            operation_name=str(executor_name),
-            duration_ms=operation_duration,
-            agent=str(executor_name) if executor_kind != "tool" else None,
-            input=observable_execution_input,
-            output=raw_result,
-        )
+        if executor_kind == "tool":
+            instrumentation.record_operation(
+                stage=OperationStage.TOOL,
+                status=OperationStatus.SUCCEEDED,
+                operation_name=str(executor_name),
+                duration_ms=operation_duration,
+                task_id=task_id,
+                input=observable_execution_input,
+                output=raw_result,
+            )
 
         artifact_type = str(task.get("produces", "unknown"))
         artifact_span = instrumentation.start(
@@ -439,21 +452,24 @@ async def execute_route_plan(
                 },
             )
             try:
-                operation_started = instrumentation.elapsed_ms(fallback_span)
-                fallback_result = await fallback_executor(fallback_payload)
-                operation_duration = max(
-                    0,
-                    instrumentation.elapsed_ms(fallback_span) - operation_started,
-                )
-                instrumentation.record_operation(
-                    stage=OperationStage.MODEL,
-                    status=OperationStatus.SUCCEEDED,
-                    operation_name="fallback",
-                    duration_ms=operation_duration,
-                    agent="fallback",
-                    input={"message": fallback_payload["message"]},
-                    output=fallback_result,
-                )
+                with bind_operation_recorder(
+                    partial(
+                        instrumentation.record_operation,
+                        task_id=fallback_task["id"],
+                    )
+                ):
+                    with bind_model_call_recorder(
+                        partial(
+                            instrumentation.record_model_call,
+                            task_id=fallback_task["id"],
+                        )
+                    ):
+                        with bind_prompt_trace_sink(
+                            instrumentation.record_prompt_invocation
+                        ):
+                            fallback_result = await fallback_executor(
+                                fallback_payload
+                            )
                 fallback_artifact_span = instrumentation.start(
                     RuntimeStage.ARTIFACT_VALIDATION,
                     task_id=fallback_task["id"],
@@ -511,21 +527,6 @@ async def execute_route_plan(
                     "status": "failed",
                     "reason_code": "executor_error",
                 }
-                operation_duration = max(
-                    0,
-                    instrumentation.elapsed_ms(fallback_span) - operation_started,
-                )
-                instrumentation.record_operation(
-                    stage=OperationStage.MODEL,
-                    status=OperationStatus.FAILED,
-                    operation_name="fallback",
-                    duration_ms=operation_duration,
-                    agent="fallback",
-                    error_code="executor_error",
-                    input={"message": fallback_payload["message"]},
-                    output=failure_output,
-                    **error_identity,
-                )
                 instrumentation.fail(
                     fallback_span,
                     reason_code="executor_error",

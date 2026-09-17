@@ -7,6 +7,7 @@ const guides = readFileSync(new URL('./data/stepGuideMessages.js', import.meta.u
 const store = readFileSync(new URL('../../stores/consultation.js', import.meta.url), 'utf8')
 const validation = readFileSync(new URL('../../utils/formValidation.js', import.meta.url), 'utf8')
 const consultingApi = readFileSync(new URL('../../api/consulting.js', import.meta.url), 'utf8')
+const reportStore = readFileSync(new URL('../../stores/report.js', import.meta.url), 'utf8')
 
 test('새 AI 답변은 공통 애니메이션 큐와 안전한 Markdown 렌더러를 사용한다', () => {
   assert.match(view, /function streamAiMessages/)
@@ -80,4 +81,31 @@ test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 i
   assert.match(stream, /AI_STREAM_IN_PROGRESS/)
   assert.doesNotMatch(stream, /cancelActiveStream\(\)/)
   assert.match(store, /STREAM_IDLE_TIMEOUT_MS = 120_000/)
+})
+
+test('Presentation 최초 진입은 보고서 버전별 자동 안내를 한 번만 요청한다', () => {
+  const entry = view.slice(
+    view.indexOf('async function maybeSendPresentationEntryGuide'),
+    view.indexOf('async function sendMessage'),
+  )
+
+  assert.match(entry, /presentationGuideInFlight/)
+  assert.match(entry, /wasPresentationGuideConsumed/)
+  assert.match(entry, /createPresentationEntryIdempotencyKey/)
+  assert.match(entry, /requestMode: 'presentation_entry'/)
+  assert.match(view, /system_event === 'presentation_entry'/)
+  assert.match(view, /presentationReportVersion/)
+})
+
+test('열 개 Presentation 단계는 보고서 또는 기준 시뮬레이션 버전에 연결된다', () => {
+  for (const stepId of [
+    'balance-sheet', 'cash-flow', 'financial-indicators',
+    'financial-goal-result', 'retirement-fund', 'retirement-readiness',
+    'retirement-simulation', 'pension-schedule', 'lifetime-cashflow',
+    'required-savings',
+  ]) {
+    assert.match(reportStore, new RegExp(`['"]${stepId}['"]`))
+  }
+  assert.match(reportStore, /_report_meta/)
+  assert.match(reportStore, /simulation\.value\?\.baselineKey/)
 })

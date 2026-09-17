@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from enum import Enum
+import json
+import logging
 import re
+from time import perf_counter
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -15,6 +20,11 @@ from core.masking import (
     MaskingSink,
     is_reference_token,
     mask_payload,
+)
+from core.prompt_registry import (
+    PromptInvocationRecord,
+    PromptSpec,
+    emit_prompt_invocation,
 )
 
 
@@ -54,6 +64,14 @@ class StructuredModelOutputError(RuntimeError):
 
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
+ModelCallRecorder = Callable[..., None]
+
+
+_MODEL_CALL_RECORDER: ContextVar[ModelCallRecorder | None] = ContextVar(
+    "model_call_recorder",
+    default=None,
+)
+logger = logging.getLogger(__name__)
 
 
 _ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
@@ -116,6 +134,25 @@ def secure_system_prompt(role_prompt: str) -> str:
     return f"{DATA_HANDLING_PROMPT}\n{role_prompt.strip()}"
 
 
+def prompt_messages(prompt: PromptSpec, payload: Mapping[str, Any]) -> list[Any]:
+    """Render a static System message and a schema-checked JSON Human payload."""
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    validated = prompt.validate_payload(payload)
+    human_content = json.dumps(
+        {"runtime_payload": validated},
+        ensure_ascii=False,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return [
+        SystemMessage(content=secure_system_prompt(prompt.system_text)),
+        HumanMessage(content=human_content),
+    ]
+
+
 def mask_model_payload(
     payload: Any,
     *,
@@ -142,20 +179,72 @@ def mask_model_payload(
     )
 
 
+@contextmanager
+def bind_model_call_recorder(
+    recorder: ModelCallRecorder | None,
+) -> Iterator[None]:
+    """Bind request-scoped observation without coupling agents to Langfuse."""
+
+    if recorder is not None and not callable(recorder):
+        raise TypeError("model call recorder must be callable")
+    token = _MODEL_CALL_RECORDER.set(recorder)
+    try:
+        yield
+    finally:
+        _MODEL_CALL_RECORDER.reset(token)
+
+
 def secure_invoke(
     runnable: Any,
     messages: Sequence[Any],
     *,
     purpose: ModelPurpose,
+    operation_name: str | None = None,
     sensitive_payload: Any | None = None,
+    prompt: PromptSpec | None = None,
 ) -> Any:
-    safe_messages, _ = _prepare_call(
+    safe_messages, policy = _prepare_call(
         messages,
         purpose=purpose,
         sensitive_payload=sensitive_payload,
+        prompt=prompt,
     )
-    result = runnable.invoke(safe_messages)
-    _block_forbidden_output(result)
+    trace_replacements, observation_input = _prepare_observation_input(
+        safe_messages,
+        sensitive_payload=sensitive_payload,
+        policy=policy,
+    )
+    started = perf_counter()
+    try:
+        result = runnable.invoke(safe_messages)
+        _block_forbidden_output(result)
+    except Exception as error:
+        _record_model_call(
+            purpose=purpose,
+            operation_name=operation_name,
+            status="failed",
+            duration_ms=_elapsed_ms(started),
+            input=observation_input,
+            output={"status": "failed"},
+            prompt=prompt,
+            error=error,
+        )
+        _emit_prompt_invocation(prompt, purpose, started, error=error)
+        raise
+    _record_model_call(
+        purpose=purpose,
+        operation_name=operation_name,
+        status="succeeded",
+        duration_ms=_elapsed_ms(started),
+        input=observation_input,
+        output=_safe_output_observation_value(
+            result,
+            replacements=trace_replacements,
+            policy=policy,
+        ),
+        prompt=prompt,
+    )
+    _emit_prompt_invocation(prompt, purpose, started)
     return result
 
 
@@ -165,8 +254,10 @@ def secure_structured_invoke(
     messages: Sequence[Any],
     *,
     purpose: ModelPurpose,
+    operation_name: str | None = None,
     sensitive_payload: Any | None = None,
     max_attempts: int = 2,
+    prompt: PromptSpec | None = None,
 ) -> StructuredModel:
     """Invoke a provider-enforced schema with one bounded retry by default.
 
@@ -198,7 +289,9 @@ def secure_structured_invoke(
                 runnable,
                 messages,
                 purpose=purpose,
+                operation_name=operation_name,
                 sensitive_payload=sensitive_payload,
+                prompt=prompt,
             )
             if isinstance(result, schema):
                 return result
@@ -216,16 +309,235 @@ async def secure_ainvoke(
     messages: Sequence[Any],
     *,
     purpose: ModelPurpose,
+    operation_name: str | None = None,
     sensitive_payload: Any | None = None,
+    prompt: PromptSpec | None = None,
 ) -> Any:
-    safe_messages, _ = _prepare_call(
+    safe_messages, policy = _prepare_call(
         messages,
         purpose=purpose,
         sensitive_payload=sensitive_payload,
+        prompt=prompt,
     )
-    result = await runnable.ainvoke(safe_messages)
-    _block_forbidden_output(result)
+    trace_replacements, observation_input = _prepare_observation_input(
+        safe_messages,
+        sensitive_payload=sensitive_payload,
+        policy=policy,
+    )
+    started = perf_counter()
+    try:
+        result = await runnable.ainvoke(safe_messages)
+        _block_forbidden_output(result)
+    except Exception as error:
+        _record_model_call(
+            purpose=purpose,
+            operation_name=operation_name,
+            status="failed",
+            duration_ms=_elapsed_ms(started),
+            input=observation_input,
+            output={"status": "failed"},
+            prompt=prompt,
+            error=error,
+        )
+        _emit_prompt_invocation(prompt, purpose, started, error=error)
+        raise
+    _record_model_call(
+        purpose=purpose,
+        operation_name=operation_name,
+        status="succeeded",
+        duration_ms=_elapsed_ms(started),
+        input=observation_input,
+        output=_safe_output_observation_value(
+            result,
+            replacements=trace_replacements,
+            policy=policy,
+        ),
+        prompt=prompt,
+    )
+    _emit_prompt_invocation(prompt, purpose, started)
     return result
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(0, int((perf_counter() - started_at) * 1000))
+
+
+def _prepare_observation_input(
+    messages: Sequence[Any],
+    *,
+    sensitive_payload: Any | None,
+    policy: MaskingPolicy,
+) -> tuple[tuple[tuple[str, str], ...], Any]:
+    try:
+        replacements = _trace_observation_replacements(
+            sensitive_payload,
+            policy=policy,
+        )
+        return replacements, _message_observation_input(
+            messages,
+            replacements=replacements,
+            policy=policy,
+        )
+    except Exception:
+        return (), {"status": "observation_unavailable"}
+
+
+def _message_observation_input(
+    messages: Sequence[Any],
+    *,
+    replacements: tuple[tuple[str, str], ...],
+    policy: MaskingPolicy,
+) -> list[dict[str, Any]]:
+    role_aliases = {
+        "ai": "assistant",
+        "human": "user",
+    }
+    captured: list[dict[str, Any]] = []
+    for message in messages:
+        raw_role = getattr(message, "type", "message")
+        role = role_aliases.get(raw_role, raw_role)
+        if role not in {"assistant", "system", "tool", "user"}:
+            role = "message"
+        content = _replace_literals(
+            getattr(message, "content", None),
+            replacements,
+        )
+        content = mask_payload(
+            {"content": content},
+            sink=MaskingSink.TRACE_EXPORT,
+            policy=policy,
+        )["content"]
+        captured.append({
+            "role": role,
+            "content": _observation_value(content),
+        })
+    return captured
+
+
+def _trace_observation_replacements(
+    sensitive_payload: Any | None,
+    *,
+    policy: MaskingPolicy,
+) -> tuple[tuple[str, str], ...]:
+    if sensitive_payload is None:
+        return ()
+    trace_safe_payload = mask_payload(
+        sensitive_payload,
+        sink=MaskingSink.TRACE_EXPORT,
+        policy=policy,
+    )
+    return _replacement_pairs(sensitive_payload, trace_safe_payload)
+
+
+def _output_observation_value(
+    result: Any,
+    *,
+    replacements: tuple[tuple[str, str], ...],
+    policy: MaskingPolicy,
+) -> Any:
+    if hasattr(result, "content"):
+        output: Any = {
+            "role": "assistant",
+            "content": _observation_value(getattr(result, "content", None)),
+        }
+    else:
+        output = _observation_value(result)
+    output = _replace_literals(output, replacements)
+    return mask_payload(
+        {"content": output},
+        sink=MaskingSink.TRACE_EXPORT,
+        policy=policy,
+    )["content"]
+
+
+def _safe_output_observation_value(
+    result: Any,
+    *,
+    replacements: tuple[tuple[str, str], ...],
+    policy: MaskingPolicy,
+) -> Any:
+    try:
+        return _output_observation_value(
+            result,
+            replacements=replacements,
+            policy=policy,
+        )
+    except Exception:
+        return {"status": "observation_unavailable"}
+
+
+def _observation_value(value: Any) -> Any:
+    """Return only JSON-shaped values; never fall back to arbitrary repr/str."""
+
+    if isinstance(value, BaseModel):
+        return _observation_value(value.model_dump(mode="json"))
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, Mapping):
+        return {
+            str(key): _observation_value(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, Sequence):
+        return [_observation_value(child) for child in value]
+    return {"type": "unsupported"}
+
+
+def _record_model_call(
+    *,
+    purpose: ModelPurpose,
+    operation_name: str | None,
+    status: str,
+    duration_ms: int,
+    input: Any,
+    output: Any,
+    prompt: PromptSpec | None,
+    error: BaseException | None = None,
+) -> None:
+    recorder = _MODEL_CALL_RECORDER.get()
+    if recorder is None:
+        return
+    try:
+        from core.config import settings
+
+        error_identity: dict[str, str] = {}
+        if error is not None:
+            from core.observability_masking import exception_identity_fields
+
+            error_identity = exception_identity_fields(error)
+        prompt_metadata: dict[str, Any] = {
+            "model_provider": settings.llm_provider,
+            "model_name": settings.llm_model,
+            "model_temperature": float(
+                getattr(settings, "llm_temperature", 0.0)
+            ),
+            "prompt_policy_version": prompt_policy_version,
+        }
+        if prompt is not None:
+            from prompts.catalog import selected_prompt_release
+
+            prompt_metadata.update({
+                "prompt_id": prompt.prompt_id,
+                "prompt_version": prompt.version,
+                "prompt_hash": prompt.content_hash,
+                "prompt_release": selected_prompt_release(),
+            })
+        recorder(
+            purpose=purpose.value,
+            operation_name=operation_name or f"{purpose.value}.generate",
+            status=status,
+            duration_ms=duration_ms,
+            input=input,
+            output=output,
+            error_code=(type(error).__name__ if error is not None else None),
+            **prompt_metadata,
+            **error_identity,
+        )
+    except Exception:
+        # Telemetry must never alter model-call behavior.
+        return
 
 
 def _prepare_call(
@@ -233,6 +545,7 @@ def _prepare_call(
     *,
     purpose: ModelPurpose,
     sensitive_payload: Any | None,
+    prompt: PromptSpec | None,
 ) -> tuple[list[Any], MaskingPolicy]:
     if not isinstance(purpose, ModelPurpose):
         raise ValueError("purpose must be a ModelPurpose")
@@ -244,6 +557,11 @@ def _prepare_call(
     system_content = getattr(message_list[0], "content", None)
     if not isinstance(system_content, str) or DATA_HANDLING_PROMPT not in system_content:
         raise ValueError("model call is missing DATA_HANDLING_PROMPT")
+    if prompt is not None:
+        if prompt.purpose != purpose.value:
+            raise ValueError("prompt purpose does not match model purpose")
+        if system_content != secure_system_prompt(prompt.system_text):
+            raise ValueError("System message must be the static registered prompt")
 
     key = _runtime_key()
     policy = MaskingPolicy(pseudonym_key=key)
@@ -266,6 +584,58 @@ def _prepare_call(
         )
         for message in message_list
     ], policy
+
+
+def _emit_prompt_invocation(
+    prompt: PromptSpec | None,
+    purpose: ModelPurpose,
+    started: float,
+    *,
+    error: Exception | None = None,
+) -> None:
+    if prompt is None:
+        return
+    if _MODEL_CALL_RECORDER.get() is not None:
+        # The model recorder already emits content and prompt metadata together.
+        return
+    from core.config import settings
+    from prompts.catalog import selected_prompt_release
+
+    record = PromptInvocationRecord(
+        prompt_id=prompt.prompt_id,
+        prompt_version=prompt.version,
+        prompt_hash=prompt.content_hash,
+        prompt_release=selected_prompt_release(),
+        prompt_policy_version=prompt_policy_version,
+        purpose=purpose.value,
+        model_provider=settings.llm_provider,
+        model_name=settings.llm_model,
+        model_temperature=float(getattr(settings, "llm_temperature", 0.0)),
+        status="failed" if error is not None else "succeeded",
+        duration_ms=max(0, int((perf_counter() - started) * 1000)),
+        error_code=(type(error).__name__ if error is not None else None),
+    )
+    if emit_prompt_invocation(record):
+        return
+    logger.info(
+        "unbound prompt invocation",
+        extra={
+            "prompt_invocation": {
+                "prompt_id": record.prompt_id,
+                "prompt_version": record.prompt_version,
+                "prompt_hash": record.prompt_hash,
+                "prompt_release": record.prompt_release,
+                "prompt_policy_version": record.prompt_policy_version,
+                "purpose": record.purpose,
+                "model_provider": record.model_provider,
+                "model_name": record.model_name,
+                "model_temperature": record.model_temperature,
+                "status": record.status,
+                "duration_ms": record.duration_ms,
+                "error_code": record.error_code,
+            }
+        },
+    )
 
 
 def _runtime_key() -> bytes:

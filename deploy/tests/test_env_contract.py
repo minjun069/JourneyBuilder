@@ -8,6 +8,7 @@ from deploy.check_env_contract import (
     REPOSITORY_ROOT,
     parse_compose_variables,
     read_env_example,
+    validate_release_identity,
     validate_repository,
 )
 
@@ -15,6 +16,9 @@ from deploy.check_env_contract import (
 class EnvironmentContractTests(unittest.TestCase):
     def test_repository_contract_is_synchronized(self) -> None:
         self.assertEqual(validate_repository(REPOSITORY_ROOT), [])
+
+    def test_release_identity_is_baked_into_the_ai_image(self) -> None:
+        self.assertEqual(validate_release_identity(REPOSITORY_ROOT), [])
 
     def test_compose_parser_classifies_and_ignores_container_expansion(self) -> None:
         variables, errors = parse_compose_variables(

@@ -37,7 +37,9 @@ workspace에 기록한다.
 
 `financial-knowledge/product-terms.md`는 제품 화면과 상담에서 노출하는 용어의 정의,
 별칭, 사용 맥락과 주의사항을 Markdown으로 소유한다. 각 용어 절은 별도 청크로 색인되며
-별도의 용어 JSON이나 QA 고정 답변을 사용하지 않는다.
+별도의 용어 JSON이나 QA 고정 답변을 사용하지 않는다. `안정 추구`·`균형 추구`·
+`위험 감수`·`단기 지향`·`장기 지향` 같은 정성 선택지도 기존 retriever와 모델
+경로로만 설명하며, 용어별 키워드 분기로 검색이나 모델 호출을 우회하지 않는다.
 
 운영 adapter는 catalog의 승인·출처·버전·적용 범위·라이선스·민감도와 파일
 SHA-256을 `DocumentMetadata`로 변환한다. 경로가 collection pattern을 벗어나거나

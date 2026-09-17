@@ -30,6 +30,9 @@ SERVICE_COMPOSE_FILES = (*ROOT_COMPOSE_FILES, Path("docker-compose.e2e.yml"))
 DYNAMIC_PYTHON_ENV = {
     "ai-pjt": {"LANGCHAIN_TRACING_V2", "LANGSMITH_TRACING"},
 }
+IMAGE_BAKED_ENV = {
+    "ai-pjt": {"LANGFUSE_RELEASE"},
+}
 
 
 def read_env_example(
@@ -256,8 +259,48 @@ def _compare_exact(
     return errors
 
 
+def validate_release_identity(repository_root: Path) -> list[str]:
+    """Keep release identity build-baked so image rollback preserves provenance."""
+
+    dockerfile = (repository_root / "ai-pjt/Dockerfile").read_text(encoding="utf-8")
+    compose = (repository_root / "docker-compose.yml").read_text(encoding="utf-8")
+    deploy = (repository_root / "deploy/deploy.sh").read_text(encoding="utf-8")
+    errors: list[str] = []
+
+    required_snippets = {
+        "ai-pjt/Dockerfile": (
+            "ARG APP_RELEASE=local",
+            "ENV LANGFUSE_RELEASE=${APP_RELEASE}",
+            "LABEL org.opencontainers.image.revision=${APP_RELEASE}",
+        ),
+        "docker-compose.yml": ('APP_RELEASE: "${APP_RELEASE:-local}"',),
+        "deploy/deploy.sh": (
+            'APP_RELEASE="${CI_COMMIT_SHA:-$(git rev-parse HEAD)}"',
+            'APP_RELEASE="${APP_RELEASE}-dirty"',
+            "export APP_RELEASE",
+        ),
+    }
+    contents = {
+        "ai-pjt/Dockerfile": dockerfile,
+        "docker-compose.yml": compose,
+        "deploy/deploy.sh": deploy,
+    }
+    for source, snippets in required_snippets.items():
+        for snippet in snippets:
+            if snippet not in contents[source]:
+                errors.append(f"{source}: missing release contract {snippet}")
+
+    if re.search(r"^\s+LANGFUSE_RELEASE:", compose, flags=re.MULTILINE):
+        errors.append(
+            "docker-compose.yml: LANGFUSE_RELEASE must come from the image, "
+            "not runtime environment"
+        )
+    return errors
+
+
 def validate_repository(repository_root: Path = REPOSITORY_ROOT) -> list[str]:
     errors: list[str] = []
+    errors.extend(validate_release_identity(repository_root))
 
     root_example, example_errors = read_env_example(
         repository_root / ".env.example",
@@ -290,8 +333,11 @@ def validate_repository(repository_root: Path = REPOSITORY_ROOT) -> list[str]:
     expected_service_keys = {
         "backend-pjt": scan_python_environment(repository_root, "backend-pjt")
         | compose_service_keys["backend-pjt"],
-        "ai-pjt": scan_python_environment(repository_root, "ai-pjt")
-        | compose_service_keys["ai-pjt"],
+        "ai-pjt": (
+            scan_python_environment(repository_root, "ai-pjt")
+            | compose_service_keys["ai-pjt"]
+        )
+        - IMAGE_BAKED_ENV["ai-pjt"],
         "front-pjt": scan_front_environment(repository_root)
         | compose_service_keys["front-pjt"],
     }

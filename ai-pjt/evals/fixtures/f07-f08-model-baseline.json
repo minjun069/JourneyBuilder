@@ -3,6 +3,8 @@
   "schema_version": "1.0",
   "model_call_limit": 200,
   "quality_disposition": "baseline_only",
+  "chart_quality_disposition": "quality_gate",
+  "chart_quality_fixture": "contract-fixtures/ai-lifecycle/v2/chart-evaluations.json",
   "qa_cases": [
     {
       "id": "qa_bound_value_with_background_rag",
@@ -127,7 +129,27 @@
     ]
   },
   "chart_cases": [
-    {"id": "chart_lifetime_cashflow", "fixture_case": "lifetime_cashflow_ready", "message": "평생 현금흐름 차트의 핵심 변화와 가정을 설명해 주세요.", "signals": {"forbid_action": true}}
+    {"id": "normal_balance_sheet", "evaluation_case": "normal_balance_sheet"},
+    {"id": "normal_cash_flow", "evaluation_case": "normal_cash_flow"},
+    {"id": "normal_financial_indicators", "evaluation_case": "normal_financial_indicators"},
+    {"id": "normal_financial_goal_result", "evaluation_case": "normal_financial_goal_result"},
+    {"id": "normal_retirement_fund", "evaluation_case": "normal_retirement_fund"},
+    {"id": "normal_retirement_readiness", "evaluation_case": "normal_retirement_readiness"},
+    {"id": "normal_retirement_simulation", "evaluation_case": "normal_retirement_simulation"},
+    {"id": "normal_pension_schedule", "evaluation_case": "normal_pension_schedule"},
+    {"id": "normal_lifetime_cashflow", "evaluation_case": "normal_lifetime_cashflow"},
+    {"id": "normal_required_savings", "evaluation_case": "normal_required_savings"},
+    {"id": "edge_report_not_ready", "evaluation_case": "edge_report_not_ready"},
+    {"id": "edge_report_stale", "evaluation_case": "edge_report_stale"},
+    {"id": "edge_policy_mismatch", "evaluation_case": "edge_policy_mismatch"},
+    {"id": "edge_zero", "evaluation_case": "edge_zero"},
+    {"id": "edge_negative", "evaluation_case": "edge_negative"},
+    {"id": "edge_deficit_transition", "evaluation_case": "edge_deficit_transition"},
+    {"id": "edge_asset_depletion", "evaluation_case": "edge_asset_depletion"},
+    {"id": "edge_multiple_turning_points", "evaluation_case": "edge_multiple_turning_points"},
+    {"id": "edge_long_horizon", "evaluation_case": "edge_long_horizon"},
+    {"id": "edge_cause_question", "evaluation_case": "edge_cause_question"},
+    {"id": "edge_personalization_boundary", "evaluation_case": "edge_personalization_boundary"}
   ],
   "elicit_classification_cases": [
     {"id": "elicit_substantive", "message": "가족과 건강을 가장 중요하게 생각해요.", "expected_class": "substantive"},

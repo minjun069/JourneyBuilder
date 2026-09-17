@@ -36,9 +36,15 @@ class AgentEvaluationContractTests(unittest.TestCase):
         self.assertTrue(policy["contract_fixture_exact_match_required"])
         self.assertEqual(policy["production_model_quality"], "baseline_only")
         self.assertIsNone(policy["production_model_quality_thresholds"])
+        self.assertEqual(policy["chart_agent_quality"], "quality_gate")
+        self.assertEqual(
+            policy["chart_agent_quality_thresholds"]["maximum_unsupported_numeric_claims"],
+            0,
+        )
         self.assertIsNone(policy["error_review_false_positive_threshold"])
         self.assertEqual(policy["maximum_total_model_calls"], 200)
         self.assertEqual(load_fixture()["model_call_limit"], 200)
+        self.assertEqual(load_fixture()["chart_quality_disposition"], "quality_gate")
 
     def test_confidence_fixture_matches_runtime_and_low_is_hidden(self) -> None:
         from agents.error_review_confidence import confidence_level, visible_review_items
@@ -87,12 +93,12 @@ class AgentEvaluationContractTests(unittest.TestCase):
         from evals.agent_baseline import _numeric_lexemes
 
         lexemes = _numeric_lexemes({
-            "inflation_rate": 0.026,
+            "inflation_rate": 0.03,
             "investment_rate": 0.04,
             "wage_growth_rate": 0.03,
         })
 
-        self.assertTrue({"2.6", "4", "3"}.issubset(lexemes))
+        self.assertTrue({"3", "4"}.issubset(lexemes))
 
     def test_false_positive_is_measured_by_field_and_confidence(self) -> None:
         summary = summarize_false_positives([{

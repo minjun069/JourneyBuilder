@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -15,18 +15,21 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.context import ContextWindow
 from core.model_boundary import (
     ModelPurpose,
+    prompt_messages,
     secure_structured_invoke,
-    secure_system_prompt,
 )
+from core.monitoring import OperationStage, OperationStatus
 from core.observability_masking import (
     exception_identity_fields,
     masked_exception_fields,
 )
+from core.operation_observation import record_operation_observation
 from core.step_registry import load_step_candidates
 from graph.elicit_context import ELICIT_TURN_KINDS, FIELD_ID_SET
 from graph.router import TaskClassifier, select_route
 from tools.financial_policy import REFERENCE_VALUE_INPUT_SCHEMA
 from tools.registry import validate_json_schema
+from prompts import get_prompt
 
 
 MAX_PLAN_TASKS = 3
@@ -233,56 +236,7 @@ FORBIDDEN_PLANNER_FIELDS = {
 }
 
 
-PLANNER_PROMPT = secure_system_prompt("""\
-사용자 메시지를 실행 가능한 task plan으로 분해하세요.
-지정된 구조화 출력 스키마에 맞는
-{{"elicit_routing": {{...}}, "tasks": [...]}} object를 반환하세요.
-
-제약:
-- task는 1개 이상 {max_tasks}개 이하
-- 원문에 나타난 독립적인 사용자 목표만 task로 작성
-- task type은 다음 중 하나만 사용: {task_types}
-- task id는 plan 안에서 참조할 임시 이름이며 중복 금지
-- depends_on은 반드시 앞에 선언한 task만 참조
-- 선행 결과 사용은 bindings의 task_id와 path로 명시
-- 실행 결과 값, Agent 이름, 도구 handler 이름은 생성하지 않음
-- 용어의 뜻·기준·기간·선택지 설명만 묻는 요청은 answer_question 하나로 계획
-- 예: "단기 지향이면 어느정도 기간을 말하지?", "안정추구란 정확히 뭘 말하는거야?"
-  는 모두 answer_question 하나이며 입력 변경 task가 아님
-- 제한된 대화 문맥의 elicit_context_index를 보고 현재 발화가 정성정보 수집과
-  관련되는지, 대상 field, new|answer|correction|confirmation 발화 종류, 판단
-  신뢰도가 충분한지를 elicit_routing에 항상 명시
-- 정성정보와 무관하면 is_related=false, field=null, turn_kind=null,
-  confidence_sufficient=false
-- 관련되지만 대상이나 발화 종류가 불확실하면 is_related=true,
-  field 또는 turn_kind를 null로 둘 수 있으며 confidence_sufficient=false로 두고
-  collect_qualitative_info task를 만들지 않음
-- is_related=true이고 confidence_sufficient=true일 때만 대상 field 하나에 대한
-  collect_qualitative_info task를 정확히 하나 생성
-- 제한된 대화 문맥은 confirmed_facts, structured_state, summary,
-  retrieved_memories, turns 순서의 권위 계층임
-- 금액·소득·자산·부채·연금·폼 값은 confirmed_facts만 현재 권위 원천이며,
-  summary·retrieved_memories·turns의 과거 값으로 복원하거나 덮어쓰지 않음
-- retrieved_memories는 현재 요청 해석을 돕는 참고 자료이며 사실 권위 원천이 아님
-
-각 task의 허용 field:
-- id: plan 안에서만 쓰는 고유 문자열
-- type: 허용 task type 중 하나
-- description: 원문 중 이 task가 수행할 구체적인 요청
-- depends_on: 앞서 선언한 task id 문자열 배열
-- bindings: 입력 이름을 {{"task_id": "선행 id", "path": "artifact field"}}에 연결한 object
-- arguments: lookup_reference_value에만 필요한 object. reference_id, age 정수, period(monthly|annual|current), population을 정확히 지정
-
-의존 요청 예시:
-{{"elicit_routing": {{"is_related": false, "field": null, "turn_kind": null, "confidence_sufficient": false}}, "tasks": [
-  {{"id": "lookup", "type": "lookup_reference_value", "description": "승인된 기준값 조회", "depends_on": [], "bindings": {{}}, "arguments": {{"reference_id": "debt_service_ratio_max", "age": 40, "period": "annual", "population": "retirewise_kr_households"}}}},
-  {{"id": "fill", "type": "propose_form_change", "description": "사용자가 요청한 조회 값으로 기존 빈 항목 변경안 제안", "depends_on": ["lookup"], "bindings": {{"reference_id": {{"task_id": "lookup", "path": "reference_id"}}, "age": {{"task_id": "lookup", "path": "age"}}, "value": {{"task_id": "lookup", "path": "value"}}, "unit": {{"task_id": "lookup", "path": "unit"}}, "period": {{"task_id": "lookup", "path": "period"}}, "population": {{"task_id": "lookup", "path": "population"}}, "comparator": {{"task_id": "lookup", "path": "comparator"}}, "source_id": {{"task_id": "lookup", "path": "source_id"}}, "source_version": {{"task_id": "lookup", "path": "source_version"}}, "as_of": {{"task_id": "lookup", "path": "as_of"}}, "calculation_policy_version": {{"task_id": "lookup", "path": "calculation_policy_version"}}}}}}
-]}}
-
-현재 단계: {step_id}
-제한된 대화 문맥: {context}
-사용자 메시지: {message}
-""")
+PLANNER_PROMPT = get_prompt("planner.plan")
 
 
 class PlannerBindingOutput(BaseModel):
@@ -868,13 +822,44 @@ def create_route_plan(
                 **dict(diagnostic),
             })
 
-        task["route"] = select_route(
-            task=task,
-            step_id=step_id,
-            step_candidates=active_candidates,
-            classifier=classifier,
-            registered_tool_capabilities=registered_tool_capabilities,
-            diagnostic_sink=collect_router_diagnostic,
+        route_started = monotonic()
+        try:
+            route = select_route(
+                task=task,
+                step_id=step_id,
+                step_candidates=active_candidates,
+                classifier=classifier,
+                registered_tool_capabilities=registered_tool_capabilities,
+                diagnostic_sink=collect_router_diagnostic,
+            )
+        except Exception as error:
+            record_operation_observation(
+                stage=OperationStage.ROUTE,
+                status=OperationStatus.FAILED,
+                operation_name="router.select",
+                duration_ms=max(0, int((monotonic() - route_started) * 1000)),
+                task_id=task_id,
+                agent="router",
+                error_code="route_selection_failed",
+                input={"task_type": task.get("type")},
+                output={"routed": False},
+                **exception_identity_fields(error),
+            )
+            raise
+        task["route"] = route
+        record_operation_observation(
+            stage=OperationStage.ROUTE,
+            status=OperationStatus.SUCCEEDED,
+            operation_name="router.select",
+            duration_ms=max(0, int((monotonic() - route_started) * 1000)),
+            task_id=task_id,
+            agent="router",
+            input={"task_type": task.get("type")},
+            output={
+                "executor_kind": route.get("executor_kind"),
+                "executor": route.get("executor"),
+                "reason_code": route.get("reason_code"),
+            },
         )
     return RoutePlanValidation(
         valid=True,
@@ -892,25 +877,25 @@ def plan_tasks_with_model(
 ) -> Mapping[str, Any]:
     """Production planner adapter; deterministic validation remains separate."""
 
-    from langchain_core.messages import HumanMessage, SystemMessage
-
     from core.llm import llm
 
-    system = SystemMessage(content=PLANNER_PROMPT.format(
-        max_tasks=MAX_PLAN_TASKS,
-        task_types=", ".join(sorted(TASK_TYPE_CONTRACTS)),
-        step_id=step_id,
+    messages = prompt_messages(PLANNER_PROMPT, {
+        "max_tasks": MAX_PLAN_TASKS,
+        "task_types": sorted(TASK_TYPE_CONTRACTS),
+        "step_id": step_id,
         # context_window_payload insertion order is the authority precedence:
         # Backend snapshot → structured state → summary → retrieval → recent raw.
-        context=json.dumps(context, ensure_ascii=False),
-        message=message,
-    ))
+        "context": dict(context),
+        "message": message,
+    })
     response = secure_structured_invoke(
         llm,
         PlannerModelOutput,
-        [system, HumanMessage(content=message)],
+        messages,
         purpose=ModelPurpose.PLANNER,
+        operation_name="planner.plan",
         sensitive_payload={"message": message, "context": dict(context)},
+        prompt=PLANNER_PROMPT,
     )
     return response.to_route_plan()
 

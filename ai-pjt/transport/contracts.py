@@ -150,7 +150,7 @@ class ChatV2Request(BaseModel):
     field_registry: list[dict[str, Any]]
     tool_context: ToolContextSnapshot | None = None
     chart_payload: dict[str, Any] | None = None
-    request_mode: Literal["chat", "error_review"] = "chat"
+    request_mode: Literal["chat", "error_review", "presentation_entry"] = "chat"
     review_trigger: Literal["save", "user_request"] | None = None
 
     @model_validator(mode="after")
@@ -162,7 +162,7 @@ class ChatV2Request(BaseModel):
             raise ValueError("tool_context request binding mismatch")
         if self.request_mode == "error_review" and self.review_trigger is None:
             raise ValueError("error review requires review_trigger")
-        if self.request_mode == "chat" and self.review_trigger is not None:
+        if self.request_mode != "error_review" and self.review_trigger is not None:
             raise ValueError("review_trigger is only valid for error review")
         return self
 

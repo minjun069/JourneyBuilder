@@ -119,13 +119,13 @@ def validate_browser_message(payload):
         raise LifecycleError(400, 'REQUEST_INVALID', 'form_data는 객체여야 합니다.')
     request_mode = payload.get('request_mode', 'chat')
     review_trigger = payload.get('review_trigger')
-    if request_mode not in ('chat', 'error_review'):
+    if request_mode not in ('chat', 'error_review', 'presentation_entry'):
         raise LifecycleError(400, 'REQUEST_INVALID', 'request_mode이 올바르지 않습니다.')
     if request_mode == 'error_review':
         if review_trigger not in ('save', 'user_request'):
             raise LifecycleError(400, 'REQUEST_INVALID', 'review_trigger가 필요합니다.')
     elif review_trigger is not None:
-        raise LifecycleError(400, 'REQUEST_INVALID', 'chat 요청에는 review_trigger를 사용할 수 없습니다.')
+        raise LifecycleError(400, 'REQUEST_INVALID', '이 요청에는 review_trigger를 사용할 수 없습니다.')
     normalized = {
         'contract_version': CONTRACT_VERSION,
         'content': content,

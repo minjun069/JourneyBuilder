@@ -28,6 +28,8 @@ from core.observability_masking import (
     build_masked_runtime_instrumentation,
     masked_exception_fields,
 )
+from core.runtime_instrumentation import RuntimeStage
+from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 from graph.builder import build_graph
 from tools.graph_adapter import build_graph_tool_executors
 from tools.runtime import build_production_tool_runtime
@@ -84,6 +86,7 @@ async def lifespan(app: FastAPI):
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,
             base_url=settings.langfuse_base_url,
+            release=settings.langfuse_release,
         )
     else:
         instrumentation_exporter = StructuredLogInstrumentationExporter(
@@ -118,7 +121,10 @@ async def lifespan(app: FastAPI):
             app.state.context_memory = ConversationMemoryManager(
                 app.state.context_api,
                 embedding_model=embed_model,
-                summary_generator=ModelSummaryGenerator(llm),
+                summary_generator=ModelSummaryGenerator(
+                    llm,
+                    instrumentation=instrumentation,
+                ),
                 retrieval_limit=settings.context_memory_top_k,
                 embedding_batch_size=settings.context_embedding_batch_size,
             )
@@ -320,6 +326,7 @@ async def _stream_v2_chat_events(
     request: ChatV2Request,
     callback_masker: CallbackPayloadMasker,
     memory_manager: ConversationMemoryManager | None = None,
+    instrumentation: RuntimeInstrumentationAdapter | None = None,
 ) -> AsyncIterator[str]:
     identity = {
         "contract_version": "2.0",
@@ -332,6 +339,8 @@ async def _stream_v2_chat_events(
     final_state: dict[str, Any] = {}
     scope = ContextScope(request.session_id, request.thread_id)
     execution_started = False
+    observed = None
+    request_span = None
     try:
         replay = await context_api.read_terminal(
             scope,
@@ -342,6 +351,23 @@ async def _stream_v2_chat_events(
             event = "done" if replay.get("status") == "completed" else "error"
             yield _encode_sse(event, dict(replay))
             return
+
+        if instrumentation is not None:
+            observed = instrumentation.bind(
+                request_id=request.request_id,
+                thread_id=request.thread_id,
+                plan_id=f"plan-{request.request_id}",
+                step_id=request.step_id,
+            )
+            request_input = {
+                "message": request.message,
+                "step_id": request.step_id,
+                "request_mode": request.request_mode,
+            }
+            request_span = observed.start(
+                RuntimeStage.REQUEST_PROCESSING,
+                input=request_input,
+            )
 
         budget = ExecutionBudget.from_request(request)
         budget.require_time()
@@ -411,11 +437,24 @@ async def _stream_v2_chat_events(
                 assistant_message=response,
             ),
         )
+        if observed is not None and request_span is not None:
+            observed.succeed(request_span, output=output)
+            request_span = None
         yield _encode_sse("done", dict(committed_terminal))
     except asyncio.CancelledError:
+        if observed is not None and request_span is not None:
+            observed.fail(request_span, reason_code="client_disconnected")
+            request_span = None
         logger.info("AI v2 stream 연결 종료")
         raise
     except (TimeoutError, asyncio.TimeoutError):
+        if observed is not None and request_span is not None:
+            observed.fail(
+                request_span,
+                reason_code="request_timeout",
+                output={"error_code": "LLM_TIMEOUT"},
+            )
+            request_span = None
         terminal = callback_masker.mask(
             FailedCallback(
                 request_id=request.request_id,
@@ -440,6 +479,13 @@ async def _stream_v2_chat_events(
             logger.exception("terminal_receipt_commit_failed")
         yield _encode_sse("error", terminal)
     except Exception as error:
+        if observed is not None and request_span is not None:
+            observed.fail(
+                request_span,
+                reason_code="request_processing_failed",
+                output={"error_code": "INTERNAL_ERROR"},
+            )
+            request_span = None
         logger.error(
             "AI v2 stream 처리 실패",
             extra={
@@ -500,6 +546,7 @@ async def chat_v2_stream(
             request,
             app.state.callback_masker,
             getattr(app.state, "context_memory", None),
+            instrumentation=app.state.instrumentation,
         ),
         media_type="text/event-stream",
         headers={

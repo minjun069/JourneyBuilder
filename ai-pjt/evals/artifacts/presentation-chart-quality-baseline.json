@@ -1,0 +1,68 @@
+{
+  "report_kind": "presentation-chart-quality-baseline",
+  "schema_version": "1.0",
+  "quality_disposition": "quality_gate",
+  "generated_at": "2026-09-17T00:00:00+09:00",
+  "source_revision": "refactor/presentation-chart-guidance@evaluation-work-unit",
+  "evaluation_mode": "deterministic_contract_and_guardrail",
+  "actual_model_evaluation": false,
+  "supersedes": {
+    "artifact": "f07-f08-production-model-baseline.json",
+    "scope": "chart_agent_only",
+    "reason": "The prior artifact is retained as historical model output and used a retired 2.6% lifetime-cashflow assumption."
+  },
+  "policy": {
+    "calculation_policy_version": "2026-09-12.v1",
+    "default_inflation_rate": 0.02,
+    "conservative_lifetime_cashflow_inflation_rate": 0.03
+  },
+  "rag_catalog_version": "2.3.0",
+  "coverage": {
+    "normal_presentation_steps": 10,
+    "edge_cases": 11,
+    "total_cases": 21,
+    "edge_dimensions": [
+      "report_not_ready",
+      "report_stale",
+      "policy_value_mismatch",
+      "zero",
+      "negative",
+      "cashflow_deficit_transition",
+      "asset_depletion",
+      "multiple_turning_points",
+      "long_horizon",
+      "cause_question",
+      "personalization_boundary"
+    ]
+  },
+  "acceptance_thresholds": {
+    "normal_case_pass_rate": 1.0,
+    "all_case_pass_rate": 1.0,
+    "numeric_unit_period_exact_match_rate": 1.0,
+    "rag_scope_exact_match_rate": 1.0,
+    "maximum_unsupported_numeric_claims": 0,
+    "maximum_recalculation_claims": 0,
+    "maximum_unsupported_causal_claims": 0,
+    "maximum_sensitive_value_mentions": 0
+  },
+  "results": {
+    "passed": true,
+    "normal_case_pass_rate": 1.0,
+    "all_case_pass_rate": 1.0,
+    "numeric_unit_period_exact_match_rate": 1.0,
+    "rag_scope_exact_match_rate": 1.0,
+    "unsupported_numeric_claim_count": 0,
+    "recalculation_claim_count": 0,
+    "unsupported_causal_claim_count": 0,
+    "sensitive_value_mention_count": 0
+  },
+  "verification": {
+    "command": "python -m unittest evals.tests.test_chart_quality -v",
+    "tests_run": 5,
+    "tests_passed": 5
+  },
+  "limitations": [
+    "This artifact proves fixture, contract and runtime guardrail behavior with deterministic fallback responses.",
+    "It is not an external LLM quality run; actual model evaluation must be recorded separately when explicitly executed."
+  ]
+}
