@@ -479,7 +479,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
-    async def test_chart_without_verified_payload_explains_readiness_without_model(self) -> None:
+    async def test_chart_without_contract_is_treated_as_unsupported_without_model(self) -> None:
         configure_runtime()
         from agents import chart_interpret
 
@@ -488,7 +488,7 @@ class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
             "step_id": "lifetime-cashflow",
             "chart_payload": None,
         })
-        self.assertIn("준비되지", result["output"]["response"])
+        self.assertIn("설명 대상이 아닙니다", result["output"]["response"])
         self.assertIsNone(result["output"]["action"])
 
     async def test_fallback_accepts_only_four_categories(self) -> None:

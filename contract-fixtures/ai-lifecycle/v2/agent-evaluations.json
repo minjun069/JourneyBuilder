@@ -6,6 +6,17 @@
     "contract_fixture_exact_match_required": true,
     "production_model_quality": "baseline_only",
     "production_model_quality_thresholds": null,
+    "chart_agent_quality": "quality_gate",
+    "chart_agent_quality_thresholds": {
+      "normal_case_pass_rate": 1.0,
+      "all_case_pass_rate": 1.0,
+      "numeric_unit_period_exact_match_rate": 1.0,
+      "rag_scope_exact_match_rate": 1.0,
+      "maximum_unsupported_numeric_claims": 0,
+      "maximum_recalculation_claims": 0,
+      "maximum_unsupported_causal_claims": 0,
+      "maximum_sensitive_value_mentions": 0
+    },
     "error_review_false_positive_threshold": null,
     "maximum_total_model_calls": 200
   },
@@ -25,7 +36,7 @@
   },
   "required_shared_fixture_cases": {
     "error-reviews.json": ["save_suspicious_income", "user_review_no_suspicion", "save_agent_failure"],
-    "chart-payloads.json": ["lifetime_cashflow_ready", "lifetime_cashflow_not_ready"],
+    "chart-payloads.json": ["lifetime_cashflow_ready", "lifetime_cashflow_guidance_only"],
     "elicit-policy.json": ["field_order", "limits"]
   }
 }

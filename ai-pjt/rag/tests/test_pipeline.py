@@ -316,7 +316,7 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
             repository_root=repository_root,
         )
 
-        self.assertEqual(catalog.catalog_version, "2.1.0")
+        self.assertEqual(catalog.catalog_version, "2.3.0")
         self.assertEqual(len(catalog.for_collection("interface-guides")), 10)
         self.assertEqual(len(catalog.for_collection("financial-knowledge")), 14)
         self.assertTrue(
@@ -403,13 +403,13 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
             interface = json.loads(
                 (
                     Path(directory)
-                    / "interface-guides__experiment-catalog-2-1-0-report.json"
+                    / "interface-guides__experiment-catalog-2-3-0-report.json"
                 ).read_text(encoding="utf-8")
             )
             financial = json.loads(
                 (
                     Path(directory)
-                    / "financial-knowledge__experiment-catalog-2-1-0-report.json"
+                    / "financial-knowledge__experiment-catalog-2-3-0-report.json"
                 ).read_text(encoding="utf-8")
             )
             self.assertEqual(interface["evaluation"]["query_count"], 20)

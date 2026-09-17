@@ -1,0 +1,182 @@
+{
+  "fixture_kind": "presentation-chart-evaluations",
+  "schema_version": "1.0",
+  "quality_disposition": "quality_gate",
+  "acceptance_thresholds": {
+    "normal_case_pass_rate": 1.0,
+    "all_case_pass_rate": 1.0,
+    "numeric_unit_period_exact_match_rate": 1.0,
+    "rag_scope_exact_match_rate": 1.0,
+    "maximum_unsupported_numeric_claims": 0,
+    "maximum_recalculation_claims": 0,
+    "maximum_unsupported_causal_claims": 0,
+    "maximum_sensitive_value_mentions": 0
+  },
+  "normal_cases": [
+    {
+      "id": "normal_balance_sheet",
+      "step_id": "balance-sheet",
+      "title": "자산·부채 현황",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "snapshot", "unit": "current"},
+      "facts": [
+        {"label": "총자산", "value": 500000000, "unit": "KRW", "display": "500,000,000원"},
+        {"label": "총부채", "value": 180000000, "unit": "KRW", "display": "180,000,000원"},
+        {"label": "순자산", "value": 320000000, "unit": "KRW", "display": "320,000,000원"}
+      ],
+      "warnings": []
+    },
+    {
+      "id": "normal_cash_flow",
+      "step_id": "cash-flow",
+      "title": "현금흐름",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "month", "unit": "month"},
+      "facts": [
+        {"label": "월 총유입", "value": 5000000, "unit": "KRW/month", "display": "5,000,000원/월"},
+        {"label": "월 총유출", "value": 4000000, "unit": "KRW/month", "display": "4,000,000원/월"},
+        {"label": "월 순현금흐름", "value": 1000000, "unit": "KRW/month", "display": "1,000,000원/월"}
+      ],
+      "warnings": []
+    },
+    {
+      "id": "normal_financial_indicators",
+      "step_id": "financial-indicators",
+      "title": "가계재무지표",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "snapshot", "unit": "current"},
+      "facts": [
+        {"label": "가계수지지표", "value": 20, "unit": "percent", "display": "20%"},
+        {"label": "비상예비금지표", "value": 6, "unit": "month", "display": "6개월"},
+        {"label": "총부채상환지표", "value": 28, "unit": "percent", "display": "28%"}
+      ],
+      "warnings": []
+    },
+    {
+      "id": "normal_financial_goal_result",
+      "step_id": "financial-goal-result",
+      "title": "재무목표 결과",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "age", "from": 45, "to": 70, "unit": "year"},
+      "facts": [
+        {"label": "시점형 재무목표", "value": 2, "unit": "count", "display": "2개"},
+        {"label": "첫 목표 연령", "value": 55, "unit": "age", "display": "55세"}
+      ],
+      "events": [
+        {"type": "goal", "label": "은퇴 전 재무목표", "age": 55, "reason_code": "reported_goal_timing"}
+      ],
+      "warnings": []
+    },
+    {
+      "id": "normal_retirement_fund",
+      "step_id": "retirement-fund",
+      "title": "은퇴 필요자금",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "retirement_phase", "unit": "year"},
+      "facts": [
+        {"label": "총 필요자금", "value": 900000000, "unit": "KRW", "display": "900,000,000원"},
+        {"label": "확인된 준비자금", "value": 800000000, "unit": "KRW", "display": "800,000,000원"},
+        {"label": "부족액", "value": 100000000, "unit": "KRW", "display": "100,000,000원"}
+      ],
+      "warnings": [{"code": "retirement_shortfall", "message": "은퇴 필요자금 대비 부족액이 있습니다."}]
+    },
+    {
+      "id": "normal_retirement_readiness",
+      "step_id": "retirement-readiness",
+      "title": "은퇴 준비도",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "age", "from": 45, "to": 60, "interval": 1, "unit": "year"},
+      "facts": [
+        {"label": "은퇴 시작 연령", "value": 60, "unit": "age", "display": "60세"},
+        {"label": "은퇴 시점 예상자산", "value": 800000000, "unit": "KRW", "display": "800,000,000원"},
+        {"label": "현재 대비 자산 변화", "value": 300000000, "unit": "KRW", "display": "300,000,000원"}
+      ],
+      "events": [{"type": "retirement_start", "label": "은퇴 시작", "age": 60, "reason_code": "reported_retirement_age"}],
+      "warnings": []
+    },
+    {
+      "id": "normal_retirement_simulation",
+      "step_id": "retirement-simulation",
+      "title": "은퇴 시뮬레이션",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "age", "from": 60, "to": 90, "interval": 1, "unit": "year"},
+      "facts": [
+        {"label": "계획 성공확률", "value": 0.75, "unit": "fraction", "display": "75.0%"},
+        {"label": "마지막 연령 자산 중앙값", "value": 500000000, "unit": "KRW", "display": "500,000,000원"},
+        {"label": "마지막 연령 부족액 중앙값", "value": 0, "unit": "KRW", "display": "0원"}
+      ],
+      "warnings": [{"code": "simulation_not_guarantee", "message": "확률 시뮬레이션 결과는 미래를 보장하지 않습니다."}]
+    },
+    {
+      "id": "normal_pension_schedule",
+      "step_id": "pension-schedule",
+      "title": "연금 수령 일정",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "age", "from": 65, "to": 90, "interval": 1, "unit": "year"},
+      "facts": [
+        {"label": "연금 개시 연령", "value": 65, "unit": "age", "display": "65세"},
+        {"label": "월 예상 연금", "value": 1000000, "unit": "KRW/month", "display": "1,000,000원/월"}
+      ],
+      "events": [{"type": "pension_start", "label": "연금 수령 개시", "age": 65, "reason_code": "reported_pension_start"}],
+      "warnings": []
+    },
+    {
+      "id": "normal_lifetime_cashflow",
+      "step_id": "lifetime-cashflow",
+      "title": "생애 현금흐름",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "age", "from": 60, "to": 90, "interval": 1, "unit": "year"},
+      "facts": [
+        {"label": "마지막 연령의 순자산", "value": 713000000, "unit": "KRW", "display": "713,000,000원"},
+        {"label": "마지막 연령의 유동자산", "value": 95000000, "unit": "KRW", "display": "95,000,000원"},
+        {"label": "첫 적자 전환 연령", "value": 61, "unit": "age", "display": "61세"}
+      ],
+      "events": [
+        {"type": "retirement_start", "label": "은퇴 시작", "age": 60, "reason_code": "reported_calculation_event"},
+        {"type": "cashflow_deficit_start", "label": "현금흐름 적자 전환", "age": 61, "reason_code": "verified_sign_transition"},
+        {"type": "pension_start", "label": "연금 개시", "age": 65, "reason_code": "reported_calculation_event"}
+      ],
+      "details": {"cashflow_components": [{"label": "연금소득"}, {"label": "은퇴 생활비"}]},
+      "connections": [
+        {"step_id": "cash-flow", "title": "현금흐름", "compatibility": {"latest": true, "status": "ready", "input_snapshot_digest": "evaluation-snapshot", "calculation_policy_version": "2026-09-12.v1"}, "highlights": [{"label": "월 순현금흐름", "display": "1,000,000원/월"}], "events": []}
+      ],
+      "warnings": [{"code": "long_horizon", "message": "장기 결과는 적용 가정에 민감합니다."}]
+    },
+    {
+      "id": "normal_required_savings",
+      "step_id": "required-savings",
+      "title": "필요저축액",
+      "message": "처음 보는 사용자를 위해 핵심을 안내해 주세요.",
+      "request_mode": "presentation_entry",
+      "period": {"dimension": "age", "from": 45, "to": 60, "unit": "year"},
+      "facts": [
+        {"label": "현재 월 저축액", "value": 1000000, "unit": "KRW/month", "display": "1,000,000원/월"},
+        {"label": "목표 월 저축액", "value": 1500000, "unit": "KRW/month", "display": "1,500,000원/월"},
+        {"label": "추가 필요 월 저축액", "value": 500000, "unit": "KRW/month", "display": "500,000원/월"}
+      ],
+      "warnings": [{"code": "additional_savings_required", "message": "현재 저축액 외 추가 저축액이 필요합니다."}]
+    }
+  ],
+  "edge_cases": [
+    {"id": "edge_report_not_ready", "step_id": "lifetime-cashflow", "title": "생애 현금흐름", "message": "처음 안내해 주세요.", "request_mode": "presentation_entry", "status": "guidance_only", "reason": "report_not_found"},
+    {"id": "edge_report_stale", "step_id": "cash-flow", "title": "현금흐름", "message": "현재 값을 설명해 주세요.", "status": "guidance_only", "reason": "report_stale"},
+    {"id": "edge_policy_mismatch", "step_id": "retirement-fund", "title": "은퇴 필요자금", "message": "현재 값을 설명해 주세요.", "status": "guidance_only", "reason": "policy_value_mismatch"},
+    {"id": "edge_zero", "step_id": "cash-flow", "title": "현금흐름", "message": "영 값도 그대로 설명해 주세요.", "facts": [{"label": "월 순현금흐름", "value": 0, "unit": "KRW/month", "display": "0원/월"}], "warnings": [{"code": "zero_inflow", "message": "확인된 월 현금유입이 없습니다."}]},
+    {"id": "edge_negative", "step_id": "balance-sheet", "title": "자산·부채 현황", "message": "음수 결과를 설명해 주세요.", "facts": [{"label": "순자산", "value": -50000000, "unit": "KRW", "display": "-50,000,000원"}], "warnings": [{"code": "negative_net_worth", "message": "순자산이 음수입니다."}]},
+    {"id": "edge_deficit_transition", "step_id": "lifetime-cashflow", "title": "생애 현금흐름", "message": "적자 전환을 설명해 주세요.", "facts": [{"label": "첫 적자 전환 연령", "value": 61, "unit": "age", "display": "61세"}], "events": [{"type": "cashflow_deficit_start", "label": "현금흐름 적자 전환", "age": 61, "reason_code": "verified_sign_transition"}]},
+    {"id": "edge_asset_depletion", "step_id": "lifetime-cashflow", "title": "생애 현금흐름", "message": "자산 고갈을 설명해 주세요.", "facts": [{"label": "유동자산 고갈 연령", "value": 82, "unit": "age", "display": "82세"}], "events": [{"type": "asset_depletion", "label": "유동자산 고갈", "age": 82, "reason_code": "verified_negative_liquid_assets"}], "warnings": [{"code": "asset_depletion", "message": "유동자산 고갈 시점이 있습니다."}]},
+    {"id": "edge_multiple_turning_points", "step_id": "lifetime-cashflow", "title": "생애 현금흐름", "message": "여러 변곡점을 순서대로 설명해 주세요.", "facts": [{"label": "은퇴 시작 연령", "value": 60, "unit": "age", "display": "60세"}], "events": [{"type": "retirement_start", "label": "은퇴 시작", "age": 60, "reason_code": "reported_calculation_event"}, {"type": "pension_start", "label": "연금 개시", "age": 65, "reason_code": "reported_calculation_event"}, {"type": "expense_phase_change", "label": "생활비 단계 변경", "age": 75, "reason_code": "reported_calculation_event"}]},
+    {"id": "edge_long_horizon", "step_id": "lifetime-cashflow", "title": "생애 현금흐름", "message": "긴 기간의 한계를 설명해 주세요.", "period": {"dimension": "age", "from": 45, "to": 100, "interval": 1, "unit": "year"}, "facts": [{"label": "마지막 연령", "value": 100, "unit": "age", "display": "100세"}], "warnings": [{"code": "long_horizon", "message": "장기 결과는 적용 가정에 민감합니다."}]},
+    {"id": "edge_cause_question", "step_id": "lifetime-cashflow", "title": "생애 현금흐름", "message": "왜 적자로 전환됐나요?", "facts": [{"label": "첫 적자 전환 연령", "value": 61, "unit": "age", "display": "61세"}], "events": [{"type": "retirement_start", "label": "은퇴 시작", "age": 60, "reason_code": "reported_calculation_event"}, {"type": "cashflow_deficit_start", "label": "현금흐름 적자 전환", "age": 61, "reason_code": "verified_sign_transition"}], "details": {"cashflow_components": [{"label": "근로소득 종료"}, {"label": "은퇴 생활비"}]}},
+    {"id": "edge_personalization_boundary", "step_id": "required-savings", "title": "필요저축액", "message": "제 상황에 맞춰 설명해 주세요.", "facts": [{"label": "추가 필요 월 저축액", "value": 500000, "unit": "KRW/month", "display": "500,000원/월"}], "customer_info": {"saved_data": {"email": "sensitive@example.com"}, "current_form": {"name": "민감이름"}}, "forbidden_response_values": ["sensitive@example.com", "민감이름"]}
+  ]
+}
