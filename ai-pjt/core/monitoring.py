@@ -140,7 +140,12 @@ class OperationTraceEvent:
     error_code: str | None = None
     model_provider: str | None = None
     model_name: str | None = None
+    model_temperature: float | None = None
+    prompt_id: str | None = None
     prompt_version: str | None = None
+    prompt_hash: str | None = None
+    prompt_release: str | None = None
+    prompt_policy_version: str | None = None
     index_version: str | None = None
     tool_version: str | None = None
     input_tokens: int | None = None
@@ -175,11 +180,23 @@ class OperationTraceEvent:
             "error_code",
             "model_provider",
             "model_name",
+            "prompt_id",
             "prompt_version",
+            "prompt_hash",
+            "prompt_release",
+            "prompt_policy_version",
             "index_version",
             "tool_version",
         ):
             _validate_safe_token(getattr(self, field_name), field_name)
+        if self.model_temperature is not None and (
+            isinstance(self.model_temperature, bool)
+            or not isinstance(self.model_temperature, (int, float))
+            or not isfinite(self.model_temperature)
+            or self.model_temperature < 0
+            or self.model_temperature > 1
+        ):
+            raise ValueError("model_temperature must be between 0 and 1")
         for resource_id in self.resource_ids:
             _validate_safe_token(resource_id, "resource_id")
         if any(
@@ -196,9 +213,18 @@ class OperationTraceEvent:
         ):
             raise ValueError("search result metadata is allowed only for search events")
         if self.stage is not OperationStage.MODEL and (
-            self.input_tokens is not None or self.output_tokens is not None
+            self.input_tokens is not None
+            or self.output_tokens is not None
+            or self.model_provider is not None
+            or self.model_name is not None
+            or self.model_temperature is not None
+            or self.prompt_id is not None
+            or self.prompt_version is not None
+            or self.prompt_hash is not None
+            or self.prompt_release is not None
+            or self.prompt_policy_version is not None
         ):
-            raise ValueError("token counts are allowed only for model events")
+            raise ValueError("model metadata is allowed only for model events")
         if self.status is OperationStatus.SUCCEEDED and self.error_code is not None:
             raise ValueError("succeeded events cannot contain error_code")
         if self.status is not OperationStatus.SUCCEEDED and self.error_code is None:
@@ -235,7 +261,12 @@ class OperationTraceEvent:
             "error_code",
             "model_provider",
             "model_name",
+            "model_temperature",
+            "prompt_id",
             "prompt_version",
+            "prompt_hash",
+            "prompt_release",
+            "prompt_policy_version",
             "index_version",
             "tool_version",
             "input_tokens",

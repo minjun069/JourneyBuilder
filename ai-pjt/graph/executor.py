@@ -12,6 +12,7 @@ from typing import Any
 from core.model_boundary import bind_model_call_recorder
 from core.monitoring import OperationStage, OperationStatus
 from core.operation_observation import bind_operation_recorder
+from core.prompt_registry import bind_prompt_trace_sink
 from core.observability_masking import (
     exception_identity_fields,
     masked_exception_fields,
@@ -256,7 +257,10 @@ async def execute_route_plan(
         operation_started = instrumentation.elapsed_ms(task_span)
         try:
             if executor_kind == "tool":
-                raw_result = await executor(execution_input)
+                with bind_prompt_trace_sink(
+                    instrumentation.record_prompt_invocation
+                ):
+                    raw_result = await executor(execution_input)
             else:
                 with bind_operation_recorder(
                     partial(
@@ -270,7 +274,10 @@ async def execute_route_plan(
                             task_id=task_id,
                         )
                     ):
-                        raw_result = await executor(execution_input)
+                        with bind_prompt_trace_sink(
+                            instrumentation.record_prompt_invocation
+                        ):
+                            raw_result = await executor(execution_input)
         except Exception as error:
             # 이 except 는 사용자에게 executor_error 안내문만 남기므로, 여기서 기록하지
             # 않으면 배포본에서 원인을 되짚을 수 있는 흔적이 전혀 남지 않는다.
@@ -294,11 +301,11 @@ async def execute_route_plan(
                 "status": "failed",
                 "reason_code": "executor_error",
             }
+            operation_duration = max(
+                0,
+                instrumentation.elapsed_ms(task_span) - operation_started,
+            )
             if executor_kind == "tool":
-                operation_duration = max(
-                    0,
-                    instrumentation.elapsed_ms(task_span) - operation_started,
-                )
                 instrumentation.record_operation(
                     stage=OperationStage.TOOL,
                     status=OperationStatus.FAILED,
@@ -322,11 +329,11 @@ async def execute_route_plan(
             )
             continue
 
+        operation_duration = max(
+            0,
+            instrumentation.elapsed_ms(task_span) - operation_started,
+        )
         if executor_kind == "tool":
-            operation_duration = max(
-                0,
-                instrumentation.elapsed_ms(task_span) - operation_started,
-            )
             instrumentation.record_operation(
                 stage=OperationStage.TOOL,
                 status=OperationStatus.SUCCEEDED,
@@ -457,7 +464,12 @@ async def execute_route_plan(
                             task_id=fallback_task["id"],
                         )
                     ):
-                        fallback_result = await fallback_executor(fallback_payload)
+                        with bind_prompt_trace_sink(
+                            instrumentation.record_prompt_invocation
+                        ):
+                            fallback_result = await fallback_executor(
+                                fallback_payload
+                            )
                 fallback_artifact_span = instrumentation.start(
                     RuntimeStage.ARTIFACT_VALIDATION,
                     task_id=fallback_task["id"],

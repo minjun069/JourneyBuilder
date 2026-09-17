@@ -2,32 +2,19 @@
 
 from __future__ import annotations
 
-import json
-
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
 from core.llm import llm
 from core.model_boundary import (
     ModelPurpose,
+    prompt_messages,
     secure_ainvoke,
-    secure_system_prompt,
 )
 from graph.state import ChatState
+from prompts import get_prompt
 
 
-SYSTEM_PROMPT = secure_system_prompt("""\
-당신은 은퇴 설계 차트 설명 전용 상담사입니다.
-아래 JSON은 Backend가 원본 보고서와 대조해 검증한 구조화 payload입니다.
-
-[절대 규칙]
-- payload의 주요 수치, 변화가 큰 구간, 적용 가정과 사용자가 주의할 점만 설명합니다.
-- schema·ID·version·단위·기간을 다시 검증하지 않습니다.
-- 값을 재계산하거나 수정하지 않습니다.
-- payload에 없는 수치나 사실을 생성하지 않습니다.
-- 입력 변경안이나 FormChangeAction을 만들지 않습니다.
-- 수치를 언급할 때 payload의 단위를 그대로 표시합니다.
-""")
+CHART_PROMPT = get_prompt("chart_interpret.explain")
 
 
 async def _run(state: ChatState) -> dict:
@@ -45,20 +32,17 @@ async def _run(state: ChatState) -> dict:
         }
     result = await secure_ainvoke(
         llm,
-        [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=(
-                f"사용자 요청: {state['message']}\n\n"
-                "검증된 chart_payload:\n"
-                + json.dumps(payload, ensure_ascii=False, sort_keys=True)
-            )),
-        ],
+        prompt_messages(CHART_PROMPT, {
+            "user_request": state["message"],
+            "chart_payload": payload,
+        }),
         purpose=ModelPurpose.CHART_INTERPRET,
         operation_name="chart_interpret.generate",
         sensitive_payload={
             "message": state["message"],
             "chart_payload": payload,
         },
+        prompt=CHART_PROMPT,
     )
     return {
         "output": {

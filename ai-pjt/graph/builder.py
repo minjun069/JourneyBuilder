@@ -23,6 +23,7 @@ from core.observability_masking import (
     exception_identity_fields,
     masked_exception_fields,
 )
+from core.prompt_registry import bind_prompt_trace_sink
 from core.runtime_instrumentation import RuntimeStage, SecurityDecision
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 from graph.executor import (
@@ -490,16 +491,19 @@ def build_graph(
         try:
             with bind_operation_recorder(observed.record_operation):
                 with bind_model_call_recorder(observed.record_model_call):
-                    validation = create_route_plan(
-                        message=state["message"],
-                        step_id=state["step_id"],
-                        context_window=window,
-                        planner=planner,
-                        classifier=classifier,
-                        registered_tool_capabilities=tuple(active_tools),
-                        plan_id=plan_id,
-                        elicit_context_index=planner_elicit_index,
-                    )
+                    with bind_prompt_trace_sink(
+                        observed.record_prompt_invocation
+                    ):
+                        validation = create_route_plan(
+                            message=state["message"],
+                            step_id=state["step_id"],
+                            context_window=window,
+                            planner=planner,
+                            classifier=classifier,
+                            registered_tool_capabilities=tuple(active_tools),
+                            plan_id=plan_id,
+                            elicit_context_index=planner_elicit_index,
+                        )
         except Exception as error:
             error_identity = exception_identity_fields(error)
             logger.error(

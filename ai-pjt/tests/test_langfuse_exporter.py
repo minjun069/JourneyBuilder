@@ -441,8 +441,14 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
 
         observed.record_model_call(
             purpose="qa",
+            operation_name="qa.generate",
             status="succeeded",
             duration_ms=15,
+            prompt_id="qa.answer_direct",
+            prompt_version="1.0.0",
+            prompt_hash="a" * 64,
+            prompt_release="2026-09-17.1",
+            prompt_policy_version="1.1",
             input=[
                 {"role": "system", "content": "QA 실제 시스템 프롬프트"},
                 {
@@ -456,6 +462,16 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertEqual(len(client.calls), 2)
         args, _generation = client.calls[1]
         self.assertEqual(args["as_type"], "generation")
+        self.assertEqual(args["name"], "retirewise.model.qa.generate")
+        self.assertEqual(args["metadata"]["prompt_id"], "qa.answer_direct")
+        self.assertEqual(args["metadata"]["prompt_version"], "1.0.0")
+        self.assertEqual(args["metadata"]["prompt_hash"], "a" * 64)
+        self.assertEqual(
+            args["metadata"]["prompt_release"],
+            "2026-09-17.1",
+        )
+        self.assertEqual(args["metadata"]["prompt_policy_version"], "1.1")
+        self.assertEqual(args["metadata"]["model_temperature"], 0.0)
         self.assertEqual(args["input"][0], {
             "role": "system",
             "content": "QA 실제 시스템 프롬프트",

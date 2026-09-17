@@ -91,6 +91,12 @@ class Settings:
         self.llm_model = active_environ.get(
             "LLM_MODEL", "gemini-2.5-flash-lite"
         ).strip()
+        self.llm_temperature = _read_unit_float(
+            "LLM_TEMPERATURE", 0.0, active_environ
+        )
+        self.prompt_release = active_environ.get(
+            "PROMPT_RELEASE", "2026-09-17.1"
+        ).strip()
         self.embedding_model = active_environ.get(
             "EMBEDDING_MODEL", "gemini-embedding-2"
         ).strip()
@@ -200,6 +206,12 @@ class Settings:
             raise RuntimeConfigurationError("EMBEDDING_PROVIDER is unsupported")
         if not self.llm_model:
             raise RuntimeConfigurationError("LLM_MODEL is required")
+        from prompts import SUPPORTED_PROMPT_RELEASES
+
+        if self.prompt_release not in SUPPORTED_PROMPT_RELEASES:
+            raise RuntimeConfigurationError(
+                "PROMPT_RELEASE is not bundled in this AI image"
+            )
         if not self.embedding_model:
             raise RuntimeConfigurationError("EMBEDDING_MODEL is required")
         if self.rag_financial_collection != "financial-knowledge":

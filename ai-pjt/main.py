@@ -121,7 +121,10 @@ async def lifespan(app: FastAPI):
             app.state.context_memory = ConversationMemoryManager(
                 app.state.context_api,
                 embedding_model=embed_model,
-                summary_generator=ModelSummaryGenerator(llm),
+                summary_generator=ModelSummaryGenerator(
+                    llm,
+                    instrumentation=instrumentation,
+                ),
                 retrieval_limit=settings.context_memory_top_k,
                 embedding_batch_size=settings.context_embedding_batch_size,
             )

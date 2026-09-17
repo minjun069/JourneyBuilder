@@ -54,7 +54,12 @@ _OBSERVATION_METADATA_FIELDS_BY_FAMILY = {
             "error_type",
             "index_version",
             "model_provider",
+            "model_temperature",
             "operation_name",
+            "prompt_hash",
+            "prompt_id",
+            "prompt_policy_version",
+            "prompt_release",
             "prompt_version",
             "resource_ids",
             "result_count",
@@ -120,9 +125,14 @@ _ALLOWED_FIELDS_BY_FAMILY = {
         "input_tokens",
         "model_name",
         "model_provider",
+        "model_temperature",
         "operation_name",
         "output",
         "output_tokens",
+        "prompt_hash",
+        "prompt_id",
+        "prompt_policy_version",
+        "prompt_release",
         "prompt_version",
         "resource_ids",
         "result_count",
@@ -518,6 +528,13 @@ def _validate_metadata_payload(
                 raise ValueError(
                     f"Langfuse exporter requires non-negative metadata: {name}"
                 )
+            continue
+        if (
+            name == "model_temperature"
+            and isinstance(value, float)
+            and isfinite(value)
+            and 0 <= value <= 1
+        ):
             continue
         if isinstance(value, list):
             if name in _TOKEN_LIST_FIELDS and all(

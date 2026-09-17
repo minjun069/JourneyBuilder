@@ -2,7 +2,6 @@ import asyncio
 
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from core.config import RuntimeConfigurationError, settings
@@ -77,6 +76,7 @@ def _create_llm() -> BaseChatModel:
         )
         return model_class(
             model=settings.llm_model,
+            temperature=settings.llm_temperature,
             google_api_key=settings.gemini_api_key,
             streaming=True,
             # LangGraph astream_events installs a streaming callback, which
@@ -90,6 +90,7 @@ def _create_llm() -> BaseChatModel:
     # "openai" or "opensource" — vLLM 등 OpenAI 호환 엔드포인트 모두 처리
     return ChatOpenAI(
         model=settings.llm_model,
+        temperature=settings.llm_temperature,
         base_url=settings.llm_base_url or None,
         api_key=settings.openai_api_key or "not-needed",
         streaming=True,
@@ -138,9 +139,3 @@ llm: BaseChatModel = _create_llm()
 
 embed_model: BaseEmbedding = _create_llamaindex_embedding()
 # Settings.embed_model = _create_llamaindex_embedding()
-
-
-def call_llm(state, system_prompt: str) -> dict:
-    system = SystemMessage(content=system_prompt)
-    response = llm.invoke([system, HumanMessage(content=state["message"])])
-    return {"output": {"response": response.content, "update": {}}}

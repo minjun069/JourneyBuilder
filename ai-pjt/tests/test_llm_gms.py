@@ -21,6 +21,7 @@ class GMSAsyncAdapterTests(unittest.IsolatedAsyncioTestCase):
         fake_settings = SimpleNamespace(
             llm_provider="gemini",
             llm_model="gemini-test",
+            llm_temperature=0.0,
             gemini_api_key="test-key",
             gemini_base_url="https://gms.example.com/gemini",
         )
@@ -35,6 +36,7 @@ class GMSAsyncAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIs(captured["disable_streaming"], True)
         self.assertIs(captured["streaming"], True)
+        self.assertEqual(captured["temperature"], 0.0)
         self.assertEqual(captured["transport"], "rest")
 
     def test_agent_tool_schemas_do_not_expose_unbounded_any_value_unions(self) -> None:

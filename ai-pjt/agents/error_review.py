@@ -6,7 +6,6 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
@@ -15,11 +14,12 @@ from agents.error_review_manuals import load_error_review_manual
 from core.llm import llm
 from core.model_boundary import (
     ModelPurpose,
+    prompt_messages,
     secure_ainvoke,
-    secure_system_prompt,
 )
 from graph.state import ChatState
 from tools.output_validation import validate_form_update_contract
+from prompts import get_prompt
 
 
 class ReviewItem(BaseModel):
@@ -41,26 +41,7 @@ class ReviewResult(BaseModel):
 
 _review_chain = llm.with_structured_output(ReviewResult)
 
-SYSTEM_PROMPT = secure_system_prompt("""\
-당신은 저장을 막지 않는 입력값 검토 자문 Agent입니다.
-Frontend의 필수값·자료형·범위 검증을 이미 통과한 현재 draft만 검토합니다.
-
-[역할]
-- 형식상 유효하지만 오기, 단위 착오, 다른 필드와의 문맥 불일치가 의심되는 값만 반환합니다.
-- 정상값 또는 단순히 드문 값이라는 이유만으로 경고하지 않습니다.
-- section/path는 canonical registry에 있는 현재 단계 field만 사용합니다.
-- current_value_json은 현재 draft 값을 JSON으로 직렬화한 문자열입니다.
-- suggested_value_json은 한 가지 수정 후보가 명확할 때만 그 값을 JSON
-  문자열로 넣고, 추측이면 null로 둡니다.
-- 반복 항목에는 현재 draft의 id 또는 client_item_id를 반드시 그대로 넣습니다.
-- 중첩 목표 항목에는 부모 identity도 그대로 넣습니다.
-- 결정론적 필수값·자료형·범위 오류를 다시 설명하지 않습니다.
-- 매뉴얼에 없는 규칙이나 값을 만들지 않습니다.
-- confidence는 다음 의미로 보수적으로 부여합니다.
-  - low: 단지 가능성만 있거나 드문 값이라는 점 외에 근거가 부족함
-  - medium: 현재 폼이나 매뉴얼과 구체적인 불일치가 있으나 수정값은 확정하기 어려움
-  - high: 단위 착오 또는 다른 입력과의 직접 모순이 명확함
-""")
+REVIEW_PROMPT = get_prompt("error_review.analyze")
 
 
 async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, Any]]]:
@@ -75,20 +56,19 @@ async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, An
     ]
     result = await secure_ainvoke(
         _review_chain,
-        [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=(
-                f"검토 trigger: {state.get('review_trigger', 'user_request')}\n"
-                f"step_id: {state['step_id']}\n"
-                f"canonical registry: {json.dumps(registry, ensure_ascii=False)}\n"
-                f"현재 draft: {json.dumps(current_form, ensure_ascii=False)}\n\n"
-                f"직접 매핑된 승인 매뉴얼 [{manual.document_id}@{manual.version}]\n"
-                f"{manual.text}"
-            )),
-        ],
+        prompt_messages(REVIEW_PROMPT, {
+            "trigger": state.get("review_trigger", "user_request"),
+            "step_id": state["step_id"],
+            "field_registry": registry,
+            "current_form": current_form,
+            "manual_id": manual.document_id,
+            "manual_version": manual.version,
+            "manual_text": manual.text,
+        }),
         purpose=ModelPurpose.ERROR_REVIEW,
         operation_name="error_review.review",
         sensitive_payload={"current_form": current_form},
+        prompt=REVIEW_PROMPT,
     )
     validated_items = [
         item for raw in result.items

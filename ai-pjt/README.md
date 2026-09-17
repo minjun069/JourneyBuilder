@@ -45,6 +45,8 @@ uv pip compile \
 | 필수 | `DATABASE_URL` | AI startup과 readiness가 사용하는 PostgreSQL DSN |
 | 현재 필수 | `GOOGLE_API_KEY` | Compose가 고정한 Gemini embedding과 기본 Gemini LLM에 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
+| 모델 선택 | `LLM_PROVIDER`, `LLM_MODEL`, `LLM_TEMPERATURE` | provider·model과 재현 가능한 0~1 temperature. 기본 temperature는 `0` |
+| prompt release | `PROMPT_RELEASE` | AI 이미지에 함께 포함된 활성/직전 prompt release 중 하나. 미지원 값은 startup에서 거부 |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/api/ai/v2/chat/stream` request bearer로 사용 |
 | startup 필수 | `AI_MASKING_PSEUDONYM_KEY` | 서비스 token과 다른 32바이트 이상 가명화 secret |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
@@ -95,9 +97,13 @@ root metadata에 한 번만 두고, 자식 metadata에는 task·executor·오류
 root와 단계 observation의 Input/Output에는 `MaskedInstrumentationSink`를 통과한 사용자
 질문, planner context와 실행 결과가 표시된다. 직접 식별정보·secret·허용 밖 금융값과
 raw 운영 ID는 마스킹 또는 가명화되며, 마스킹 전 prompt·response·고객 snapshot·도구
-원문은 보내지 않는다. SDK는 이 exporter가 직접 만든 span만 허용하므로
-`langfuse.langchain.CallbackHandler`, `@observe`, 자동 LangChain tracing을 production
-경로에 추가하지 않는다.
+원문은 보내지 않는다. 모델 generation에는 마스킹된 실제 prompt·response와 함께
+prompt ID·version·hash·release·policy version, model provider·name·temperature를 같은
+observation에 기록한다. 별도의 prompt metadata observation을 중복 생성하지 않는다.
+
+SDK는 이 exporter가 직접
+만든 span만 허용하므로 `langfuse.langchain.CallbackHandler`, `@observe`, 자동
+LangChain tracing을 production 경로에 추가하지 않는다.
 
 Langfuse 전송은 비동기다. FastAPI lifespan 종료 시 SDK `shutdown()`으로 대기 event를
 flush하며, emit 또는 shutdown 장애는 AI 업무 응답을 실패시키지 않는다. Langfuse는
