@@ -136,7 +136,10 @@ def _init(_: InputAssistState) -> dict:
 async def _classify(state: InputAssistState) -> dict:
     result = await secure_ainvoke(
         _classify_chain,
-        prompt_messages(_CLASSIFY_PROMPT, {"message": state["message"]}),
+        prompt_messages(_CLASSIFY_PROMPT, {
+            "step_id": state["step_id"],
+            "message": state["message"],
+        }),
         purpose=ModelPurpose.INPUT_ASSIST,
         operation_name="input_assist.classify",
         sensitive_payload=_model_sensitive_payload(state),
@@ -189,9 +192,12 @@ async def _identify(state: InputAssistState) -> dict:
     result = await secure_ainvoke(
         _identify_chain,
         prompt_messages(_IDENTIFY_PROMPT, {
+            "step_id": state["step_id"],
             "field_registry": writable_registry,
             "current_form": current_form,
             "message": state["message"],
+            "classification": state["classification"],
+            "user_requested_change": state["user_requested_change"],
         }),
         purpose=ModelPurpose.INPUT_ASSIST,
         operation_name="input_assist.identify",
@@ -312,6 +318,7 @@ async def _resolve(state: InputAssistState) -> dict:
             ),
             "field_spec": field_spec,
             "hint": hint,
+            "operation": item["operation"],
             "user_excerpt": item["excerpt"],
         }),
         purpose=ModelPurpose.INPUT_ASSIST,
@@ -409,7 +416,10 @@ async def _error_check_2(state: InputAssistState) -> dict:
     result = await secure_ainvoke(
         _error_check_2_chain,
         prompt_messages(_ERROR_CHECK_2_PROMPT, {
+            "classification": state["classification"],
             "field_spec": state["field_spec"],
+            "operation": item["operation"],
+            "resolution_confidence": state.get("resolution_confidence", 0),
             "user_input": item["excerpt"],
             "resolution": state["resolution"],
         }),
@@ -544,8 +554,10 @@ async def _merge(state: InputAssistState) -> dict:
     result = await secure_ainvoke(
         llm,
         prompt_messages(_MERGE_PROMPT, {
+            "step_id": state["step_id"],
             "message": state["message"],
             "results": parts,
+            "user_requested_change": state["user_requested_change"],
         }),
         purpose=ModelPurpose.INPUT_ASSIST,
         operation_name="input_assist.merge",

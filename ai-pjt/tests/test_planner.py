@@ -10,8 +10,10 @@ from core.context import (
 from graph.planner import (
     PlannerModelOutput,
     create_route_plan,
+    planner_route_constraints,
     validate_route_plan,
 )
+from core.step_registry import load_step_candidates
 
 
 def task(
@@ -396,6 +398,69 @@ class RoutePlanValidationTests(unittest.TestCase):
 
 
 class ContextAwarePlanningTests(unittest.TestCase):
+    def test_every_registered_step_has_an_exact_agent_derived_task_menu(self) -> None:
+        candidates = load_step_candidates()
+        tasks_by_agent = {
+            "qa": {"answer_question"},
+            "input_assist": {"propose_form_change"},
+            "error_review": {"review_validation_error"},
+            "chart_interpret": {"interpret_chart"},
+            "elicit": {"collect_qualitative_info"},
+            "fallback": {"fallback"},
+        }
+
+        self.assertEqual(len(candidates), 24)
+        for step_id, allowed_agents in candidates.items():
+            with self.subTest(step_id=step_id):
+                constraints = planner_route_constraints(
+                    step_id=step_id,
+                    step_candidates=candidates,
+                )
+                expected = sorted({
+                    task_type
+                    for agent in allowed_agents
+                    for task_type in tasks_by_agent[agent]
+                })
+                self.assertEqual(constraints["allowed_task_types"], expected)
+                self.assertEqual(
+                    constraints["elicit_enabled"],
+                    step_id == "financial-mindset",
+                )
+
+    def test_task_menu_changes_with_step_and_runtime_capabilities(self) -> None:
+        candidates = load_step_candidates()
+
+        intro = planner_route_constraints(
+            step_id="intro",
+            step_candidates=candidates,
+        )
+        form = planner_route_constraints(
+            step_id="basic-info",
+            step_candidates=candidates,
+            registered_tool_capabilities=("lookup_reference_value",),
+        )
+        mindset = planner_route_constraints(
+            step_id="financial-mindset",
+            step_candidates=candidates,
+        )
+        chart = planner_route_constraints(
+            step_id="balance-sheet",
+            step_candidates=candidates,
+        )
+
+        self.assertEqual(
+            intro["allowed_task_types"],
+            ["answer_question", "fallback"],
+        )
+        self.assertIn("propose_form_change", form["allowed_task_types"])
+        self.assertIn("review_validation_error", form["allowed_task_types"])
+        self.assertIn("lookup_reference_value", form["allowed_task_types"])
+        self.assertNotIn("collect_qualitative_info", form["allowed_task_types"])
+        self.assertTrue(mindset["elicit_enabled"])
+        self.assertIn("collect_qualitative_info", mindset["allowed_task_types"])
+        self.assertIn("interpret_chart", chart["allowed_task_types"])
+        self.assertNotIn("propose_form_change", chart["allowed_task_types"])
+
     def test_planner_receives_only_bounded_context_and_every_task_is_routed(self) -> None:
         planner = FakePlanner({
             "tasks": [
@@ -429,6 +494,7 @@ class ContextAwarePlanningTests(unittest.TestCase):
             context_window=window,
             planner=planner,
             classifier=FakeClassifier(),
+            registered_tool_capabilities=("lookup_reference_value",),
             elicit_context_index={
                 "schema_version": "2.0",
                 "fields": [{"field": "future_goals", "status": "open"}],
@@ -444,10 +510,41 @@ class ContextAwarePlanningTests(unittest.TestCase):
             planner.calls[0]["context"]["elicit_context_index"]["fields"][0],
             {"field": "future_goals", "status": "open"},
         )
+        self.assertIn(
+            "lookup_reference_value",
+            planner.calls[0]["context"]["route_constraints"]["allowed_task_types"],
+        )
         lookup, fill = validation.plan["tasks"]
-        self.assertEqual(lookup["route"]["reason_code"], "capability_unavailable")
+        self.assertEqual(lookup["route"]["reason_code"], "capability_match")
         self.assertEqual(fill["route"]["executor"], "input_assist")
         self.assertEqual(fill["route"]["reason_code"], "intent_match")
+
+    def test_plan_using_task_outside_current_step_menu_is_rejected(self) -> None:
+        planner = FakePlanner({
+            "tasks": [task("chart", "interpret_chart", "차트 설명")],
+        })
+        window = ContextWindow(
+            turns=(),
+            confirmed_facts={},
+            structured_state=StructuredConversationState(),
+            summary=None,
+            retrieved_memories=(),
+            input_units=0,
+        )
+
+        validation = create_route_plan(
+            message="이 차트를 설명해줘",
+            step_id="basic-info",
+            context_window=window,
+            planner=planner,
+            classifier=FakeClassifier(),
+        )
+
+        self.assertFalse(validation.valid)
+        self.assertEqual(
+            validation.issues[0].code,
+            "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
+        )
 
     def test_explanation_questions_recover_to_single_qa_plan(self) -> None:
         def unavailable_planner(**_kwargs: object) -> dict:

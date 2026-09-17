@@ -66,11 +66,34 @@ class PromptRegistryTests(unittest.TestCase):
 
     def test_prompt_payload_contract_rejects_missing_and_unknown_fields(self) -> None:
         prompt = get_prompt("qa.specify")
-        self.assertEqual(prompt.validate_payload({"message": "질문"}), {"message": "질문"})
+        payload = {
+            "step_id": "basic-info",
+            "message": "질문",
+            "bound_inputs": {},
+        }
+        self.assertEqual(prompt.validate_payload(payload), payload)
         with self.assertRaisesRegex(ValueError, "missing keys"):
             prompt.validate_payload({})
         with self.assertRaisesRegex(ValueError, "unknown keys"):
-            prompt.validate_payload({"message": "질문", "extra": True})
+            prompt.validate_payload({**payload, "extra": True})
+
+    def test_role_prompts_encode_authority_and_action_boundaries(self) -> None:
+        planner = get_prompt("planner.plan").system_text
+        qa = get_prompt("qa.answer_with_evidence").system_text
+        input_resolver = get_prompt("input_assist.resolve").system_text
+        elicit = get_prompt("elicit.analyze").system_text
+        chart = get_prompt("chart_interpret.explain").system_text
+
+        self.assertIn("route_constraints", planner)
+        self.assertIn("현재 step", planner)
+        self.assertIn("Agent·executor·handler를 직접 선택하거나 출력하지 않습니다", planner)
+        self.assertIn("source_id", qa)
+        self.assertIn("사용자 답변에 노출하지 않습니다", qa)
+        self.assertIn("경계값으로 자르거나 보정하지 않습니다", input_resolver)
+        self.assertIn("state transition", elicit)
+        self.assertIn("결정하지", elicit)
+        self.assertIn("재계산", chart)
+        self.assertIn("입력 변경안", chart)
 
     def test_invocation_metadata_rejects_incomplete_failed_records(self) -> None:
         with self.assertRaisesRegex(ValueError, "error_code"):
