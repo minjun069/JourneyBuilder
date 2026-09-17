@@ -89,6 +89,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     form = null,
     requestMode = 'chat',
     reviewTrigger = null,
+    idempotencyKey = null,
   } = {}) {
     if (!sessionId.value) return
     if (streaming.value || isAiRequestActive.value || activeStreamController) {
@@ -123,7 +124,7 @@ export const useConsultationStore = defineStore('consultation', () => {
           ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
         },
         {
-          idempotencyKey: createIdempotencyKey(),
+          idempotencyKey: idempotencyKey ?? createIdempotencyKey(),
           signal: controller.signal,
         },
       )
