@@ -80,6 +80,7 @@ class FinancialPolicyContractTests(SimpleTestCase):
         self.assertEqual(DEFAULT_ASSUMPTIONS, policy["assumptions"])
         self.assertEqual(DEFAULT_ASSUMPTIONS["conservative_inflation_rate"], 0.03)
         self.assertEqual(DEFAULT_ASSUMPTIONS["real_estate_appreciation_rate"], 0.02)
+        self.assertEqual(DEFAULT_ASSUMPTIONS["financial_return_rate"], 0.04)
         self.assertEqual(PENSION_ASSUMPTIONS["min_income"], 410_000)
         self.assertEqual(PENSION_ASSUMPTIONS["max_income"], 6_590_000)
         self.assertEqual(DSR_GOOD_UNDER["50s"], 20)

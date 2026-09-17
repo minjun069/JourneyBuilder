@@ -680,6 +680,7 @@ def calculate_retirement_readiness(
     income_growth_rate = _resolve_rate(income_growth_rate, 'wage_growth_rate')
     rent_increase_rate = _resolve_rate(rent_increase_rate, 'rent_growth_rate')
     vacancy_rate = _resolve_rate(vacancy_rate, 'vacancy_rate')
+    pension_default_return_rate = _resolve_rate(None, 'financial_return_rate')
     current_age = basic_info.age or 30
     retirement_age = basic_info.retirement_age or 60
     years_to_retire = max(0, retirement_age - current_age)
@@ -716,7 +717,12 @@ def calculate_retirement_readiness(
         
         # [연금자산] 현재가치 및 납입액의 t년 후 가치
         pen_val = sum(
-            _fv(asset.current_value, asset.monthly_savings, _normalize_rate(asset.expected_return_rate, 0.04), t)
+            _fv(
+                asset.current_value,
+                asset.monthly_savings,
+                _normalize_rate(asset.expected_return_rate, pension_default_return_rate),
+                t,
+            )
             for asset in session.pension_assets.all()
             if '국민' not in (asset.type or '') # 국민연금은 자산 축적분에서 일시 제외 (수령액으로 별도 계산)
         )
@@ -786,6 +792,7 @@ def calculate_retirement_readiness(
         'retirement_age': retirement_age,
         'assumptions': _assumptions_payload(
             financial_return_rate=fin_return_rate,
+            pension_default_return_rate=pension_default_return_rate,
             real_estate_appreciation_rate=re_appreciation_rate,
             wage_growth_rate=income_growth_rate,
             rent_growth_rate=rent_increase_rate,
@@ -793,6 +800,7 @@ def calculate_retirement_readiness(
         ),
         'rates_applied': {
             'financial_return': fin_return_rate,
+            'pension_default_return': pension_default_return_rate,
             'real_estate_appreciation': re_appreciation_rate,
         },
         'current_composition': {
@@ -1015,7 +1023,23 @@ def calculate_lifetime_cashflow(
 
     # 4. 연도별 시뮬레이션 루프 (Age-by-Age)
     yearly_data = []
+    explanation_components = []
     depletion_age = None
+
+    explanation_events = ([{
+        'type': 'retirement_start',
+        'age': retirement_age,
+    }] if current_age <= retirement_age <= end_age else [])
+    explanation_events.extend({
+        'type': 'pension_start',
+        'age': pension['start_age'],
+        'annual_amount': pension['annual_amount'],
+    } for pension in pensions if current_age <= pension['start_age'] <= end_age)
+    explanation_events.extend({
+        'type': 'expense_phase_change',
+        'age': phase['from_age'],
+        'annual_expense': phase['annual_expense'],
+    } for phase in retirement_phases if current_age <= phase['from_age'] <= end_age)
 
     for age in range(current_age, end_age + 1):
         t_from_now = age - current_age
@@ -1025,16 +1049,23 @@ def calculate_lifetime_cashflow(
             # 은퇴 전: 근로/사업 소득 + 현재 생활비 (각각 상승률/물가 반영)
             inflow = int(base_annual_income * ((1 + wage_growth_rate) ** t_from_now))
             outflow = int(base_annual_expense * ((1 + inflation_rate) ** t_from_now))
+            inflow_components = {'earned_and_other_income': inflow}
+            outflow_components = {'living_expenses': outflow}
         else:
             # 은퇴 후: 연금 + 임대소득 / 은퇴기별 생활비
             t_from_retire = age - retirement_age
             pension_in = _get_pension_income(age) # 연금은 이미 물가 반영된 스케줄로 가정하거나 고정
             rental_in = int(base_annual_rental * ((1 + inflation_rate) ** t_from_retire))
             inflow = pension_in + rental_in
+            inflow_components = {
+                'pension_income': pension_in,
+                'rental_income': rental_in,
+            }
             
             # 은퇴 후 생활비는 현재가치로 입력되었으므로 물가상승률 반영
             base_expense = _get_retirement_expense(age)
             outflow = int(base_expense * ((1 + inflation_rate) ** t_from_now))
+            outflow_components = {'retirement_living_expenses': outflow}
             
         net_flow = inflow - outflow
 
@@ -1069,6 +1100,11 @@ def calculate_lifetime_cashflow(
             'liabilities': liability_balance,
             'total_net_worth': total_net_worth # Orange Line
         })
+        explanation_components.append({
+            'age': age,
+            'cash_inflow': inflow_components,
+            'cash_outflow': outflow_components,
+        })
 
     # 90세(혹은 end_age) 시점의 최종 부족 자금 (음수일 경우 양수로 변환하여 저장)
     if not yearly_data:
@@ -1093,7 +1129,11 @@ def calculate_lifetime_cashflow(
             'final_deficit': final_deficit,   # Age 90 Deficit (image_6f75e4)
             'final_net_worth': yearly_data[-1]['total_net_worth']
         },
-        'chart_data': yearly_data
+        'chart_data': yearly_data,
+        'explanation_data': {
+            'events': explanation_events,
+            'components_by_age': explanation_components,
+        },
     }
 
 
