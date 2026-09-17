@@ -359,7 +359,11 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         )))
         message = "유동성 중시에서 유동성이 뭐야?"
         with patch.object(qa, "_specify_chain", specify_chain):
-            specified = await qa._specify({"message": message})
+            specified = await qa._specify({
+                "step_id": "financial-mindset",
+                "message": message,
+                "bound_inputs": {},
+            })
 
         self.assertEqual(
             specified,
@@ -455,6 +459,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(qa, "_decision_chain", decision_chain):
             decision = await qa._decide({
                 "message": "안정추구가 정확히 뭐야?",
+                "step_id": "financial-mindset",
                 "current_query": "안정 추구 정의",
                 "customer_info": {},
                 "bound_inputs": {},
@@ -474,6 +479,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(qa, "_decision_chain", decision_chain):
             decision = await qa._decide({
                 "message": "연금저축 공식 한도는 얼마인가요?",
+                "step_id": "basic-info",
                 "current_query": "연금저축 공식 한도",
                 "customer_info": {},
                 "bound_inputs": {

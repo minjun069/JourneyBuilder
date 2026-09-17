@@ -116,7 +116,11 @@ def _init(_: QAState) -> dict:
 async def _specify(state: QAState) -> dict:
     result = await secure_ainvoke(
         _specify_chain,
-        prompt_messages(_SPECIFY_PROMPT, {"message": state["message"]}),
+        prompt_messages(_SPECIFY_PROMPT, {
+            "step_id": state["step_id"],
+            "message": state["message"],
+            "bound_inputs": state.get("bound_inputs", {}),
+        }),
         purpose=ModelPurpose.QA,
         operation_name="qa.specify",
         sensitive_payload=_model_sensitive_payload(state),
@@ -147,6 +151,7 @@ async def _decide(state: QAState) -> dict:
     decision = await secure_ainvoke(
         _decision_chain,
         prompt_messages(_DECIDE_PROMPT, {
+            "step_id": state["step_id"],
             "customer_info": state.get("customer_info", {}),
             "bound_inputs": state.get("bound_inputs", {}),
             "current_query": state["current_query"],

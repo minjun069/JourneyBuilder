@@ -131,9 +131,9 @@ current/previous release를 다음 명령으로 판정한다.
 {
   "corpus_id": "prompt-candidate-v1",
   "model_config": {"provider": "gemini", "name": "...", "temperature": 0.0},
-  "prompt_release": "2026-09-17.2",
+  "prompt_release": "2026-09-17.3",
   "prompt_manifest": {
-    "release": "2026-09-17.2",
+    "release": "2026-09-17.3",
     "prompts": [{"id": "planner.plan", "version": "1.0.0", "sha256": "..."}]
   },
   "quality_metrics": {

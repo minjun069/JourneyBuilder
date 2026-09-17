@@ -26,7 +26,7 @@ from core.observability_masking import (
 from core.operation_observation import record_operation_observation
 from core.step_registry import load_step_candidates
 from graph.elicit_context import ELICIT_TURN_KINDS, FIELD_ID_SET
-from graph.router import TaskClassifier, select_route
+from graph.router import TASK_TYPE_DEFAULT_AGENTS, TaskClassifier, select_route
 from tools.financial_policy import REFERENCE_VALUE_INPUT_SCHEMA
 from tools.registry import validate_json_schema
 from prompts import get_prompt
@@ -223,6 +223,18 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
             },
         },
     },
+}
+
+TASK_PLANNING_GUIDANCE: dict[str, str] = {
+    "answer_question": "현재 화면·용어·제도·선택지 또는 확인된 값의 의미를 설명한다.",
+    "propose_form_change": "사용자가 명시적으로 요청한 draft 입력 변경안만 만든다.",
+    "review_validation_error": "유효한 draft의 오기·단위 착오·문맥 불일치를 자문한다.",
+    "interpret_chart": "Backend가 검증한 Presentation chart payload만 설명한다.",
+    "collect_qualitative_info": "financial-mindset의 정성 필드 하나를 이어서 수집한다.",
+    "fallback": "요청이 모호하거나 현재 step의 역할 범위를 벗어났음을 안전하게 알린다.",
+    "lookup_reference_value": "승인된 공식 기준값이 필요한 경우에만 등록된 조회 도구를 호출한다.",
+    "lookup_retirement_gap": "검증된 최신 보고서의 은퇴 부족액을 등록된 도구로 조회한다.",
+    "answer_dashboard_metric": "도구가 반환한 dashboard metric을 값 변경 없이 설명한다.",
 }
 
 TASK_FIELDS = {"id", "type", "description", "depends_on", "bindings", "arguments"}
@@ -753,8 +765,15 @@ def create_route_plan(
 ) -> RoutePlanValidation:
     """Plan with bounded context, validate, then route every canonical task."""
 
+    active_candidates = step_candidates or load_step_candidates()
+    route_constraints = planner_route_constraints(
+        step_id=step_id,
+        step_candidates=active_candidates,
+        registered_tool_capabilities=registered_tool_capabilities,
+    )
     context = context_window_payload(context_window)
     context["elicit_context_index"] = deepcopy(dict(elicit_context_index or {}))
+    context["route_constraints"] = route_constraints
     diagnostics: list[dict[str, str]] = []
     try:
         raw_plan = planner(message=message, step_id=step_id, context=context)
@@ -805,7 +824,22 @@ def create_route_plan(
             diagnostics=tuple(diagnostics),
         )
 
-    active_candidates = step_candidates or load_step_candidates()
+    allowed_task_types = set(route_constraints["allowed_task_types"])
+    disallowed_tasks = [
+        (index, task.get("type"))
+        for index, task in enumerate(validation.plan["tasks"])
+        if task.get("type") not in allowed_task_types
+    ]
+    if disallowed_tasks:
+        return _invalid_plan([
+            _issue(
+                "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
+                f"plan.tasks[{index}].type",
+                f"현재 step과 runtime capability에서 허용되지 않은 task type입니다: {task_type}",
+            )
+            for index, task_type in disallowed_tasks
+        ], diagnostics=tuple(diagnostics))
+
     planned = deepcopy(validation.plan)
     planned["plan_id"] = plan_id or f"plan-{uuid4()}"
     for task in planned["tasks"]:
@@ -879,9 +913,17 @@ def plan_tasks_with_model(
 
     from core.llm import llm
 
+    route_constraints = context.get("route_constraints")
+    if not isinstance(route_constraints, Mapping):
+        raise ValueError("planner route_constraints are required")
+    allowed_task_types = route_constraints.get("allowed_task_types")
+    if not isinstance(allowed_task_types, list) or not allowed_task_types:
+        raise ValueError("planner allowed_task_types are required")
+
     messages = prompt_messages(PLANNER_PROMPT, {
         "max_tasks": MAX_PLAN_TASKS,
-        "task_types": sorted(TASK_TYPE_CONTRACTS),
+        "task_types": list(allowed_task_types),
+        "route_constraints": deepcopy(dict(route_constraints)),
         "step_id": step_id,
         # context_window_payload insertion order is the authority precedence:
         # Backend snapshot → structured state → summary → retrieval → recent raw.
@@ -898,6 +940,49 @@ def plan_tasks_with_model(
         prompt=PLANNER_PROMPT,
     )
     return response.to_route_plan()
+
+
+def planner_route_constraints(
+    *,
+    step_id: str,
+    step_candidates: Mapping[str, Sequence[str]],
+    registered_tool_capabilities: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Build the authoritative task menu for the current step and runtime."""
+
+    allowed_agents = tuple(step_candidates.get(step_id, ()))
+    active_tools = set(registered_tool_capabilities)
+    allowed_task_types = {
+        task_type
+        for task_type, agent in TASK_TYPE_DEFAULT_AGENTS.items()
+        if agent in allowed_agents
+    }
+    for task_type, contract in TASK_TYPE_CONTRACTS.items():
+        if contract["executor_kind"] != "tool":
+            continue
+        if (
+            contract["authorized_agent"] in allowed_agents
+            and contract["capability"] in active_tools
+        ):
+            allowed_task_types.add(task_type)
+
+    # A dashboard answer is meaningful only when its bound metric can be
+    # produced in this runtime. Generic QA remains available independently.
+    if "get_dashboard_metric" not in active_tools:
+        allowed_task_types.discard("answer_dashboard_metric")
+
+    ordered_task_types = sorted(allowed_task_types)
+    return {
+        "step_id": step_id,
+        "allowed_agents": list(allowed_agents),
+        "available_tool_capabilities": sorted(active_tools),
+        "allowed_task_types": ordered_task_types,
+        "task_type_guidance": {
+            task_type: TASK_PLANNING_GUIDANCE[task_type]
+            for task_type in ordered_task_types
+        },
+        "elicit_enabled": "collect_qualitative_info" in allowed_task_types,
+    }
 
 
 def binding_expectations_for(task: Mapping[str, Any]) -> Mapping[str, Mapping[str, Any]]:

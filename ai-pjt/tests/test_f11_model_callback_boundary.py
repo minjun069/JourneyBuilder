@@ -87,7 +87,11 @@ class ModelBoundaryTests(unittest.TestCase):
 
     def test_registered_prompt_keeps_runtime_payload_out_of_system_message(self) -> None:
         prompt = get_prompt("qa.specify")
-        messages = prompt_messages(prompt, {"message": "사용자 런타임 입력"})
+        messages = prompt_messages(prompt, {
+            "step_id": "basic-info",
+            "message": "사용자 런타임 입력",
+            "bound_inputs": {},
+        })
 
         self.assertNotIn("사용자 런타임 입력", messages[0].content)
         self.assertIn("사용자 런타임 입력", messages[1].content)
@@ -98,14 +102,18 @@ class ModelBoundaryTests(unittest.TestCase):
         with bind_prompt_trace_sink(records.append):
             secure_invoke(
                 FakeModel("정상 응답"),
-                prompt_messages(prompt, {"message": "질문"}),
+                prompt_messages(prompt, {
+                    "step_id": "basic-info",
+                    "message": "질문",
+                    "bound_inputs": {},
+                }),
                 purpose=ModelPurpose.QA,
                 prompt=prompt,
             )
 
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0].prompt_id, "qa.specify")
-        self.assertEqual(records[0].prompt_version, "1.1.0")
+        self.assertEqual(records[0].prompt_version, "2.0.0")
         self.assertEqual(len(records[0].prompt_hash), 64)
         self.assertEqual(records[0].prompt_policy_version, "1.1")
 
@@ -120,7 +128,11 @@ class ModelBoundaryTests(unittest.TestCase):
             with bind_prompt_trace_sink(prompt_events.append):
                 secure_invoke(
                     FakeModel("정상 응답"),
-                    prompt_messages(prompt, {"message": "질문"}),
+                    prompt_messages(prompt, {
+                        "step_id": "basic-info",
+                        "message": "질문",
+                        "bound_inputs": {},
+                    }),
                     purpose=ModelPurpose.QA,
                     operation_name="qa.specify",
                     prompt=prompt,
@@ -130,7 +142,7 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(prompt_events, [])
         event = model_events[0]
         self.assertEqual(event["prompt_id"], "qa.specify")
-        self.assertEqual(event["prompt_version"], "1.1.0")
+        self.assertEqual(event["prompt_version"], "2.0.0")
         self.assertEqual(len(event["prompt_hash"]), 64)
         self.assertTrue(event["prompt_release"])
         self.assertEqual(event["prompt_policy_version"], "1.1")

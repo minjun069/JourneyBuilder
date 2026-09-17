@@ -108,6 +108,7 @@ class QABindingTests(unittest.IsolatedAsyncioTestCase):
         ):
             decision = await qa._decide({
                 "message": "이 기준값의 의미와 배경을 설명해줘",
+                "step_id": "financial-goals",
                 "current_query": "기준값 의미와 배경",
                 "customer_info": {},
                 "bound_inputs": {
