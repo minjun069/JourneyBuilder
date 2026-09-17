@@ -300,6 +300,21 @@ class ErrorReviewManualTests(unittest.TestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_product_glossary_explanation_skips_specify_model(self) -> None:
+        configure_runtime()
+        from agents import qa
+
+        specify_chain = SimpleNamespace(ainvoke=AsyncMock())
+        message = "유동성 중시에서 유동성이 뭐야?"
+        with patch.object(qa, "_specify_chain", specify_chain):
+            specified = await qa._specify({"message": message})
+
+        self.assertEqual(
+            specified,
+            {"search_queries": [message], "query_index": 0},
+        )
+        specify_chain.ainvoke.assert_not_awaited()
+
     async def test_qualitative_choice_answers_do_not_invent_thresholds(self) -> None:
         configure_runtime()
         from agents import qa
@@ -314,6 +329,16 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
                 "안정추구의 정의에 대해 설명합니다.",
                 "안정 추구 정의",
                 "높은 수익보다 원금 손실 가능성",
+            ),
+            (
+                "유동성 중시에서 유동성이 뭐야?",
+                "유동성 중시 의미",
+                "빠르게 현금으로 바꾸어",
+            ),
+            (
+                "총부채상환지표(DSR)가 뭐야?",
+                "총부채상환지표 의미",
+                "1년 동안 갚아야 하는 대출 원금과 이자",
             ),
         )
         for message, query, expected in cases:
@@ -358,6 +383,8 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
             ("안정추구란 정확히 뭘 말하는거야?", "안정 추구 의미"),
             ("단기 지향의 기간에 대해 설명", "단기 지향 기간"),
             ("안정추구의 정의에 대해 설명합니다.", "안정 추구 정의"),
+            ("유동성 중시에서 유동성이 뭐야?", "유동성 중시 의미"),
+            ("총부채상환지표(DSR)가 뭐야?", "총부채상환지표 의미"),
         ):
             with self.subTest(message=message):
                 decision_chain = SimpleNamespace(ainvoke=AsyncMock())

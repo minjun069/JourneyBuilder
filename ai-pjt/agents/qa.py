@@ -13,6 +13,7 @@ from core.model_boundary import (
     secure_ainvoke,
     secure_system_prompt,
 )
+from core.product_glossary import answer_product_term_question
 from rag.retriever import format_docs, get_retriever
 
 MAX_RETRIES = 2
@@ -74,49 +75,6 @@ _specify_chain = llm.with_structured_output(SpecifyResult)
 _decision_chain = llm.with_structured_output(RetrievalDecision)
 _judge_chain = llm.with_structured_output(JudgeResult)
 _refine_chain = llm.with_structured_output(RefineResult)
-
-_QUALITATIVE_CHOICE_ANSWERS = {
-    "안정추구": (
-        "이 화면에서 ‘안정 추구’는 높은 수익보다 원금 손실 가능성과 자산 가치의 "
-        "변동을 낮추는 것을 우선한다는 뜻입니다. 손실이 전혀 없거나 특정 예금·채권·"
-        "상품을 자동으로 추천한다는 의미는 아닙니다."
-    ),
-    "균형추구": (
-        "이 화면에서 ‘균형 추구’는 안정성과 수익 가능성 중 어느 한쪽만 우선하지 않고 "
-        "감당 가능한 변동 범위에서 둘의 균형을 고려한다는 뜻입니다. 특정 상품 비중을 "
-        "자동으로 결정한다는 의미는 아닙니다."
-    ),
-    "위험감수": (
-        "이 화면에서 ‘위험 감수’는 더 높은 수익 가능성을 기대하며 일정 수준의 가격 "
-        "변동과 손실 가능성을 받아들일 수 있다는 뜻입니다. 실제 감내 가능 수준이나 "
-        "상품 적합성을 진단한 결과는 아닙니다."
-    ),
-    "단기지향": (
-        "이 화면에서 ‘단기 지향’은 장기 지향과 비교해 가까운 시점에 사용할 자금이나 "
-        "목표를 더 중요하게 본다는 뜻입니다. 현재 화면에는 ‘1년 이하’처럼 고정된 "
-        "연수 기준이 정의되어 있지 않으므로 특정 기간으로 단정하지 않습니다. 실제 "
-        "자금 사용 예정 시점을 기준으로 선택해 주세요."
-    ),
-    "장기지향": (
-        "이 화면에서 ‘장기 지향’은 가까운 시점의 사용보다 오랜 기간 뒤의 목표를 더 "
-        "중요하게 본다는 뜻입니다. 현재 화면에는 고정된 연수 기준이 정의되어 있지 "
-        "않으므로 실제 목표 시점을 기준으로 선택해 주세요."
-    ),
-}
-_TERM_EXPLANATION_CUES = (
-    "뜻",
-    "의미",
-    "정의",
-    "설명",
-    "정확히",
-    "뭐",
-    "무엇",
-    "말하",
-    "기간",
-    "어느정도",
-    "기준",
-)
-
 
 # ---------------------------------------------------------------------------
 # 프롬프트
@@ -201,6 +159,8 @@ def _init(_: QAState) -> dict:
 
 
 async def _specify(state: QAState) -> dict:
+    if answer_product_term_question(state["message"], state["message"]) is not None:
+        return {"search_queries": [state["message"]], "query_index": 0}
     result = await secure_ainvoke(
         _specify_chain,
         [
@@ -232,7 +192,7 @@ async def _decide(state: QAState) -> dict:
             "need_retrieval": False,
             "official_value_unavailable": True,
         }
-    if _is_qualitative_choice_explanation(state):
+    if _is_product_term_explanation(state):
         return {"need_retrieval": False}
     decision = await secure_ainvoke(
         _decision_chain,
@@ -256,9 +216,9 @@ async def _decide(state: QAState) -> dict:
 
 
 async def _generate(state: QAState) -> dict:
-    qualitative_answer = _qualitative_choice_answer(state)
-    if qualitative_answer is not None:
-        return {"current_answer": qualitative_answer}
+    glossary_answer = _product_term_answer(state)
+    if glossary_answer is not None:
+        return {"current_answer": glossary_answer}
     if state.get("official_value_unavailable"):
         return {
             "current_answer": (
@@ -312,7 +272,7 @@ async def _generate(state: QAState) -> dict:
 
 
 async def _judge(state: QAState) -> dict:
-    if _qualitative_choice_answer(state) is not None:
+    if _product_term_answer(state) is not None:
         return {
             "partial_answers": state["partial_answers"] + [state["current_answer"]],
             "query_index": state["query_index"] + 1,
@@ -434,25 +394,19 @@ def _requests_unbound_official_value(state: QAState) -> bool:
     )
 
 
-def _is_qualitative_choice_explanation(state: QAState) -> bool:
-    """Keep UI choice definitions out of the official-value/RAG path."""
+def _is_product_term_explanation(state: QAState) -> bool:
+    """Keep product-owned terminology out of the official-value/RAG path."""
 
-    return _qualitative_choice_answer(state) is not None
+    return _product_term_answer(state) is not None
 
 
-def _qualitative_choice_answer(state: QAState) -> str | None:
-    """Return the product-owned meaning without inventing numeric thresholds."""
+def _product_term_answer(state: QAState) -> str | None:
+    """Return the validated product meaning without model or retrieval drift."""
 
-    text = f"{state.get('message', '')} {state.get('current_query', '')}".replace(
-        " ",
-        "",
+    return answer_product_term_question(
+        state.get("message", ""),
+        state.get("current_query", ""),
     )
-    if not any(cue in text for cue in _TERM_EXPLANATION_CUES):
-        return None
-    for term, answer in _QUALITATIVE_CHOICE_ANSWERS.items():
-        if term in text:
-            return answer
-    return None
 
 
 def _model_sensitive_payload(state: QAState) -> dict[str, Any]:

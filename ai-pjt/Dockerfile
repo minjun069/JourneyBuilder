@@ -17,6 +17,7 @@ COPY --chown=app:app ai-pjt/ .
 COPY --chown=app:app contract-fixtures/ai-lifecycle/v2/step-registry.json \
     contract-fixtures/ai-lifecycle/v2/elicit-policy.json \
     contract-fixtures/ai-lifecycle/v2/input-assist-default-values.json \
+    contract-fixtures/ai-lifecycle/v2/product-glossary.json \
     contract-fixtures/ai-lifecycle/v2/reference-tokenization.json \
     ./contract-fixtures/ai-lifecycle/v2/
 COPY --chown=app:app contract-fixtures/financial-calculation/v1/policy.json \
