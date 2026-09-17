@@ -14,7 +14,6 @@ from graph.builder import build_graph
 from main import _process_v2_graph, app
 from tests.test_graph_execution import (
     FIELD_SPEC,
-    FakeClassifier,
     FakePlanner,
     all_agent_graphs,
 )
@@ -64,9 +63,9 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             checkpointer,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
-            classifier=FakeClassifier(),
             agent_graphs=agent_graphs or all_agent_graphs(),
             tool_executors=tool_executors,
+            response_composer=None,
         )
         app.state.context_api = context_api
         return context_api

@@ -66,10 +66,9 @@ test('Planner가 라우팅한 Elicit 턴은 일반 채팅과 같은 v2 SSE를 �
   assert.doesNotMatch(consultationStoreSource, /elicit_action|elicitAction/)
 })
 
-test('Error Review 계약은 두 trigger를 지원하지만 Frontend 제품 경로는 저장 시에만 호출한다', () => {
+test('Error Review 계약은 저장 경로만 지원한다', () => {
   assert.deepEqual(contract.channel_policy.error_review, {
     save: 'sse',
-    user_request: 'sse',
   })
 
   const reviewForm = consultationStoreSource.slice(
@@ -78,7 +77,7 @@ test('Error Review 계약은 두 trigger를 지원하지만 Frontend 제품 경�
   )
   assert.match(reviewForm, /streamMessageV2/)
   assert.match(reviewForm, /requestMode: 'error_review'/)
-  assert.match(reviewForm, /reviewTrigger: 'save'/)
+  assert.doesNotMatch(reviewForm, /reviewTrigger|review_trigger/)
   assert.match(reviewForm, /event === 'done'/)
   assert.doesNotMatch(reviewForm, /poll|sendMessage/)
   assert.doesNotMatch(reviewForm, /user_request/)

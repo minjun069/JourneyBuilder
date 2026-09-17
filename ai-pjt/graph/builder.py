@@ -27,8 +27,11 @@ from core.prompt_registry import bind_prompt_trace_sink
 from core.runtime_instrumentation import RuntimeStage, SecurityDecision
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 from graph.executor import (
+    AggregateComposer,
     RuntimeExecutor,
+    compose_aggregate_response,
     execute_route_plan,
+    failure_response,
     validate_agent_executor_registry,
 )
 from graph.elicit_context import (
@@ -37,7 +40,7 @@ from graph.elicit_context import (
     load_elicit_contexts,
 )
 from graph.planner import context_window_payload, create_route_plan, plan_tasks_with_model
-from graph.router import classify_task_with_model
+from graph.router import allowed_task_types_for, enrich_route_plan
 from graph.state import ChatState
 from graph.task_contracts import failed_task_result
 from guardrails.boundary_policy import (
@@ -52,47 +55,20 @@ from tools.runtime import ToolCallBudget
 logger = logging.getLogger(__name__)
 
 
-def _direct_agent_plan(
+def _direct_planner_output(
     *,
-    request_id: str,
     task_type: str,
     description: str,
-    agent: str,
-    state: Mapping[str, Any],
-    reason_code: str = "trusted_route",
-    conversation_projection: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    produces = "text_response"
-    task = {
-        "id": "task-1",
+    return {
+        "status": "executable",
+        "tasks": [{
+        "id": "direct",
         "type": task_type,
         "description": description,
         "depends_on": [],
         "bindings": {},
-        "executor_kind": "agent",
-        "produces": produces,
-        "step_id": state["step_id"],
-        "route": {
-            "task_id": "task-1",
-            "executor_kind": "agent",
-            "executor": agent,
-            "reason_code": reason_code,
-        },
-    }
-    return {
-        "schema_version": "1.0",
-        "plan_id": f"plan-{request_id}",
-        "tasks": [task],
-        "chart_payload": deepcopy(state.get("chart_payload")),
-        "request_mode": state.get("request_mode", "chat"),
-        "review_trigger": state.get("review_trigger"),
-        "elicit_contexts": deepcopy(state.get("elicit_contexts", {})),
-        "context_scope": deepcopy(state.get("context_scope", {})),
-        "conversation_context": deepcopy(
-            dict(conversation_projection)
-            if conversation_projection is not None
-            else state.get("conversation_context", {})
-        ),
+        }],
     }
 
 
@@ -122,9 +98,47 @@ def _policy_blocked_result(
     }
 
 
+def _plan_failure_result(
+    *,
+    state: Mapping[str, Any],
+    plan_id: str,
+    issues: list[dict[str, str]],
+) -> dict[str, Any]:
+    return {
+        "route_plan": {
+            "schema_version": "1.0",
+            "plan_id": plan_id,
+            "tasks": [],
+        },
+        "plan_issues": issues,
+        "output": {
+            "response": failure_response(
+                "plan_invalid",
+                detail_codes=[issue.get("code", "") for issue in issues],
+            ),
+            "step_id": str(state.get("step_id", "step-unknown")),
+            "action": None,
+        },
+    }
+
+
+def _planner_budget_update(
+    state: Mapping[str, Any],
+    *,
+    retries_used: int,
+) -> dict[str, Any]:
+    current = state.get("execution_budget")
+    budget = dict(current) if isinstance(current, Mapping) else {}
+    prior = budget.get("retries_used", 0)
+    if isinstance(prior, bool) or not isinstance(prior, int):
+        prior = 0
+    budget["retries_used"] = prior + retries_used
+    return budget
+
+
 def _default_agent_graphs() -> dict[str, Any]:
     # Keep provider-dependent Agent imports behind the production build boundary.
-    from agents import chart_interpret, elicit, error_review, fallback, input_assist, qa
+    from agents import chart_interpret, elicit, error_review, input_assist, qa
 
     return {
         "qa": qa.graph,
@@ -132,7 +146,6 @@ def _default_agent_graphs() -> dict[str, Any]:
         "elicit": elicit.graph,
         "error_review": error_review.graph,
         "chart_interpret": chart_interpret.graph,
-        "fallback": fallback.graph,
     }
 
 
@@ -140,28 +153,21 @@ def _agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
     async def execute(payload: dict[str, Any]) -> Mapping[str, Any]:
         task = payload["task"]
         task_id = str(task.get("id", "task-unknown"))
-        is_fallback = agent_name == "fallback"
         agent_state = {
-            "message": "" if is_fallback else payload["message"],
+            "message": payload["message"],
             "step_id": payload["step_id"],
-            "customer_info": {} if is_fallback else payload["customer_info"],
-            "field_registry": [] if is_fallback else payload["field_registry"],
-            "bound_inputs": {} if is_fallback else payload["bound_inputs"],
-            "current_task": {"id": task_id, "type": "fallback"} if is_fallback else deepcopy(task),
+            "customer_info": payload["customer_info"],
+            "field_registry": payload["field_registry"],
+            "bound_inputs": payload["bound_inputs"],
+            "current_task": deepcopy(task),
             "next": payload["next"],
-            "chart_payload": None if is_fallback else payload.get("chart_payload"),
+            "chart_payload": payload.get("chart_payload"),
             "request_mode": payload.get("request_mode", "chat"),
-            "review_trigger": payload.get("review_trigger"),
-            "elicit_routing": (
-                {} if is_fallback else deepcopy(payload.get("elicit_routing", {}))
-            ),
-            "elicit_contexts": (
-                {} if is_fallback else deepcopy(payload.get("elicit_contexts", {}))
-            ),
-            "context_scope": {} if is_fallback else deepcopy(payload.get("context_scope", {})),
-            "conversation_context": {} if is_fallback else deepcopy(payload.get("conversation_context", {})),
+            "elicit_routing": deepcopy(payload.get("elicit_routing", {})),
+            "elicit_contexts": deepcopy(payload.get("elicit_contexts", {})),
+            "context_scope": deepcopy(payload.get("context_scope", {})),
+            "conversation_context": deepcopy(payload.get("conversation_context", {})),
             "request_id": payload.get("request_id"),
-            "fallback_category": task.get("route", {}).get("reason_code"),
         }
         result = await agent_graph.ainvoke(agent_state)
         if (
@@ -277,9 +283,9 @@ def build_graph(
     *,
     instrumentation: RuntimeInstrumentationAdapter,
     planner=plan_tasks_with_model,
-    classifier=classify_task_with_model,
     agent_graphs: Mapping[str, Any] | None = None,
     tool_executors: Mapping[str, RuntimeExecutor] | None = None,
+    response_composer: AggregateComposer | None = compose_aggregate_response,
 ):
     """Build the planner → sequential executor → validator orchestration graph."""
 
@@ -414,16 +420,7 @@ def build_graph(
                 planner_elicit_index = {}
         except (TypeError, ValueError) as error:
             error_identity = exception_identity_fields(error)
-            fallback_plan = _direct_agent_plan(
-                request_id=str(state.get("request_id", "request-unknown")),
-                task_type="fallback",
-                description="안전한 대화 문맥을 복원할 수 없음",
-                agent="fallback",
-                state=state,
-                reason_code="plan_invalid",
-            )
             validation_span = observed.start(RuntimeStage.PLAN_VALIDATION)
-            decision = guard_plan(fallback_plan)
             observed.fail(
                 validation_span,
                 reason_code="context_invalid",
@@ -436,46 +433,41 @@ def build_graph(
                 output={"reason_code": "context_invalid"},
                 **error_identity,
             )
-            if not decision.allowed:
-                return _policy_blocked_result(
-                    state=state,
-                    plan_id=plan_id,
-                    reason_code=decision.reason_code,
-                )
-            return {
-                "route_plan": fallback_plan,
-                "plan_issues": [{
+            return _plan_failure_result(
+                state=state,
+                plan_id=plan_id,
+                issues=[{
                     "code": "CONTEXT_INVALID",
                     "path": "conversation_context",
                     "message": "대화 문맥을 안전하게 복원하지 못했습니다.",
                 }],
-            }
+            )
 
         request_mode = state.get("request_mode")
         direct_request = {
             "error_review": (
                 "review_validation_error",
                 "현재 draft의 오기·단위 착오·문맥 불일치 검토",
-                "error_review",
             ),
             "presentation_entry": (
                 "interpret_chart",
                 "Presentation 단계 최초 진입 핵심 안내",
-                "chart_interpret",
             ),
         }.get(request_mode)
         if direct_request is not None:
-            task_type, description, agent = direct_request
-            direct_plan = _direct_agent_plan(
-                request_id=str(request_id or "request-unknown"),
+            task_type, description = direct_request
+            direct_output = _direct_planner_output(
                 task_type=task_type,
                 description=description,
-                agent=agent,
-                state=state,
-                conversation_projection=context_window_payload(window),
+            )
+            direct_candidate = enrich_route_plan(
+                raw_plan=direct_output,
+                step_id=state["step_id"],
+                registered_tool_capabilities=tuple(active_tools),
+                plan_id=plan_id,
             )
             validation_span = observed.start(RuntimeStage.PLAN_VALIDATION)
-            decision = guard_plan(direct_plan)
+            decision = guard_plan(direct_candidate)
             if decision.allowed:
                 observed.succeed(
                     validation_span,
@@ -492,11 +484,22 @@ def build_graph(
                     reason_code=decision.reason_code.lower(),
                     output=decision.to_dict(),
                 )
-                return _policy_blocked_result(
+                return _plan_failure_result(
                     state=state,
                     plan_id=plan_id,
-                    reason_code=decision.reason_code,
+                    issues=[
+                        violation.to_dict()
+                        for violation in decision.violations
+                    ],
                 )
+            direct_plan = deepcopy(decision.plan)
+            direct_plan.update({
+                "chart_payload": deepcopy(state.get("chart_payload")),
+                "request_mode": state.get("request_mode", "chat"),
+                "elicit_contexts": deepcopy(elicit_contexts),
+                "context_scope": deepcopy(state.get("context_scope", {})),
+                "conversation_context": context_window_payload(window),
+            })
             observed.succeed(planner_span, output=direct_plan)
             return {
                 "route_plan": direct_plan,
@@ -513,7 +516,12 @@ def build_graph(
                             step_id=state["step_id"],
                             context_window=window,
                             planner=planner,
-                            classifier=classifier,
+                            enricher=enrich_route_plan,
+                            evaluator=guard_plan,
+                            allowed_task_types=allowed_task_types_for(
+                                step_id=state["step_id"],
+                                registered_tool_capabilities=tuple(active_tools),
+                            ),
                             registered_tool_capabilities=tuple(active_tools),
                             plan_id=plan_id,
                             elicit_context_index=planner_elicit_index,
@@ -570,15 +578,6 @@ def build_graph(
                 reason_code=(next(iter(sorted(issue_codes)), "plan_invalid")),
                 output=failure_output,
             )
-            fallback_plan = _direct_agent_plan(
-                request_id=str(request_id or "request-unknown"),
-                task_type="fallback",
-                description="유효한 실행 계획을 만들 수 없음",
-                agent="fallback",
-                state=state,
-                reason_code="plan_invalid",
-            )
-            decision = guard_plan(fallback_plan)
             if "planner_error" in issue_codes:
                 observed.fail(
                     planner_span,
@@ -595,46 +594,28 @@ def build_graph(
                 )
             else:
                 observed.succeed(planner_span, output=failure_output)
-            if not decision.allowed:
-                return _policy_blocked_result(
-                    state=state,
-                    plan_id=plan_id,
-                    reason_code=decision.reason_code,
-                )
-            return {
-                "route_plan": fallback_plan,
-                "plan_issues": [issue.to_dict() for issue in validation.issues],
-            }
+            failure = _plan_failure_result(
+                state=state,
+                plan_id=plan_id,
+                issues=[issue.to_dict() for issue in validation.issues],
+            )
+            failure["execution_budget"] = _planner_budget_update(
+                state,
+                retries_used=validation.retries_used,
+            )
+            return failure
         plan = deepcopy(validation.plan)
         plan.update({
             "chart_payload": deepcopy(state.get("chart_payload")),
             "request_mode": state.get("request_mode", "chat"),
-            "review_trigger": state.get("review_trigger"),
             "elicit_contexts": deepcopy(elicit_contexts),
             "context_scope": deepcopy(state.get("context_scope", {})),
             "conversation_context": context_window_payload(window),
         })
-        decision = guard_plan(plan)
         planner_output = {
             "plan": validation.plan,
             "diagnostics": list(validation.diagnostics),
         }
-        if not decision.allowed:
-            observed.fail(
-                validation_span,
-                reason_code=decision.reason_code.lower(),
-                output=decision.to_dict(),
-            )
-            observed.fail(
-                planner_span,
-                reason_code=decision.reason_code.lower(),
-                output=decision.to_dict(),
-            )
-            return _policy_blocked_result(
-                state=state,
-                plan_id=plan_id,
-                reason_code=decision.reason_code,
-            )
         observed.succeed(
             validation_span,
             output={"valid": True, "issues": []},
@@ -643,6 +624,10 @@ def build_graph(
         return {
             "route_plan": plan,
             "plan_issues": [],
+            "execution_budget": _planner_budget_update(
+                state,
+                retries_used=validation.retries_used,
+            ),
         }
 
     async def execute_plan(state: ChatState) -> dict[str, Any]:
@@ -701,6 +686,7 @@ def build_graph(
                 ),
             ),
             instrumentation=observed,
+            response_composer=response_composer,
         )
         updated_budget = (
             {

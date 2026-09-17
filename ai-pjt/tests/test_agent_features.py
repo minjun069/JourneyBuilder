@@ -526,7 +526,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
-class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
+class ChartAndFailureResponderTests(unittest.IsolatedAsyncioTestCase):
     async def test_chart_without_contract_is_treated_as_unsupported_without_model(self) -> None:
         configure_runtime()
         from agents import chart_interpret
@@ -539,27 +539,21 @@ class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("설명 대상이 아닙니다", result["output"]["response"])
         self.assertIsNone(result["output"]["action"])
 
-    async def test_fallback_accepts_only_four_categories(self) -> None:
+    async def test_failure_responder_has_four_stable_categories(self) -> None:
         configure_runtime()
-        from agents import fallback
+        from graph.executor import failure_response
 
-        for category in fallback.MESSAGES:
-            result = await fallback.graph.ainvoke({
-                "message": "",
-                "step_id": "intro",
-                "customer_info": {},
-                "field_registry": [],
-                "bound_inputs": {},
-                "current_task": {"id": "task-1", "type": "fallback"},
-                "next": "fallback",
-                "fallback_category": category,
-            })
-            self.assertEqual(
-                result["output"]["response"],
-                fallback.MESSAGES[category],
-            )
-        with self.assertRaises(ValueError):
-            fallback._run({"step_id": "intro", "fallback_category": "capability_unavailable"})
+        for category in (
+            "ambiguous_intent",
+            "unsupported_intent",
+            "plan_invalid",
+            "all_tasks_failed",
+        ):
+            self.assertTrue(failure_response(category))
+        self.assertEqual(
+            failure_response("capability_unavailable"),
+            "요청을 안전하게 처리하지 못했습니다. 내용을 확인해 다시 시도해 주세요.",
+        )
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class ElicitStateTests(unittest.IsolatedAsyncioTestCase):

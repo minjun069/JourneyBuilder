@@ -6,11 +6,10 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
-from time import monotonic
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.context import ContextWindow
 from core.model_boundary import (
@@ -18,15 +17,11 @@ from core.model_boundary import (
     prompt_messages,
     secure_structured_invoke,
 )
-from core.monitoring import OperationStage, OperationStatus
 from core.observability_masking import (
     exception_identity_fields,
     masked_exception_fields,
 )
-from core.operation_observation import record_operation_observation
-from core.step_registry import load_step_candidates
 from graph.elicit_context import ELICIT_TURN_KINDS, FIELD_ID_SET
-from graph.router import TASK_TYPE_DEFAULT_AGENTS, TaskClassifier, select_route
 from tools.financial_policy import REFERENCE_VALUE_INPUT_SCHEMA
 from tools.registry import validate_json_schema
 from prompts import get_prompt
@@ -37,6 +32,8 @@ PLAN_SCHEMA_VERSION = "1.0"
 HOUSEHOLD_WRITABLE_REFERENCE_PREFIX = "household_monthly_expense_"
 
 TaskPlanner = Callable[..., Mapping[str, Any]]
+PlanEnricher = Callable[..., Mapping[str, Any]]
+PlanEvaluator = Callable[..., Any]
 logger = logging.getLogger(__name__)
 
 
@@ -158,11 +155,6 @@ TASK_TYPE_CONTRACTS: dict[str, dict[str, Any]] = {
         "produces": "text_response",
         "binding_expectations": {},
     },
-    "fallback": {
-        "executor_kind": "agent",
-        "produces": "text_response",
-        "binding_expectations": {},
-    },
     "lookup_reference_value": {
         "executor_kind": "tool",
         "capability": "lookup_reference_value",
@@ -231,7 +223,6 @@ TASK_PLANNING_GUIDANCE: dict[str, str] = {
     "review_validation_error": "유효한 draft의 오기·단위 착오·문맥 불일치를 자문한다.",
     "interpret_chart": "Backend가 검증한 Presentation chart payload만 설명한다.",
     "collect_qualitative_info": "financial-mindset의 정성 필드 하나를 이어서 수집한다.",
-    "fallback": "요청이 모호하거나 현재 step의 역할 범위를 벗어났음을 안전하게 알린다.",
     "lookup_reference_value": "승인된 공식 기준값이 필요한 경우에만 등록된 조회 도구를 호출한다.",
     "lookup_retirement_gap": "검증된 최신 보고서의 은퇴 부족액을 등록된 도구로 조회한다.",
     "answer_dashboard_metric": "도구가 반환한 dashboard metric을 값 변경 없이 설명한다.",
@@ -281,6 +272,7 @@ class PlannerElicitRoutingOutput(BaseModel):
 class PlannerModelOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    status: Literal["executable", "ambiguous", "unsupported"] = "executable"
     elicit_routing: PlannerElicitRoutingOutput = Field(
         default_factory=lambda: PlannerElicitRoutingOutput(
             is_related=False,
@@ -289,7 +281,15 @@ class PlannerModelOutput(BaseModel):
             confidence_sufficient=False,
         )
     )
-    tasks: list[PlannerTaskOutput]
+    tasks: list[PlannerTaskOutput] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_status_contract(self) -> "PlannerModelOutput":
+        if self.status == "executable" and not self.tasks:
+            raise ValueError("executable planner output requires tasks")
+        if self.status != "executable" and self.tasks:
+            raise ValueError("non-executable planner output must not include tasks")
+        return self
 
     def to_route_plan(self) -> dict[str, Any]:
         """Remove provider-added empty optionals before policy validation."""
@@ -317,6 +317,7 @@ class RoutePlanValidation:
     plan: dict[str, Any]
     issues: tuple[PlanIssue, ...]
     diagnostics: tuple[dict[str, str], ...] = ()
+    retries_used: int = 0
 
 
 def context_window_payload(window: ContextWindow) -> dict[str, Any]:
@@ -334,10 +335,11 @@ def context_window_payload(window: ContextWindow) -> dict[str, Any]:
     }
 
 
-def validate_route_plan(
-    raw_plan: Mapping[str, Any],
+def _validate_plan_structure(
+    raw_plan: Any,
     *,
     step_id: str,
+    allowed_task_types: Sequence[str] | None = None,
 ) -> RoutePlanValidation:
     """Normalize a model plan into canonical ids and reject unsafe topology."""
 
@@ -346,20 +348,56 @@ def validate_route_plan(
         return _invalid_plan(
             [_issue("INVALID_PLAN", "plan", "route plan은 object여야 합니다.")]
         )
-    if set(raw_plan) - {"tasks", "elicit_routing"}:
+    if set(raw_plan) - {"status", "tasks", "elicit_routing"}:
         issues.append(
             _issue(
                 "INVALID_PLAN_FIELDS",
                 "plan",
-                "route plan root에는 tasks와 elicit_routing만 허용됩니다.",
+                "route plan root에는 status, tasks와 elicit_routing만 허용됩니다.",
             )
         )
+    status = raw_plan.get("status", "executable")
+    if status not in {"executable", "ambiguous", "unsupported"}:
+        issues.append(_issue(
+            "INVALID_PLAN_STATUS",
+            "plan.status",
+            "planner status가 지원 계약과 일치하지 않습니다.",
+        ))
     normalized_elicit_routing = _validate_elicit_routing(
         raw_plan.get("elicit_routing"),
         issues,
     )
 
     raw_tasks = raw_plan.get("tasks")
+    if status in {"ambiguous", "unsupported"}:
+        if raw_tasks != []:
+            issues.append(_issue(
+                "NON_EXECUTABLE_TASKS",
+                "plan.tasks",
+                "실행하지 않는 planner 결과에는 task가 없어야 합니다.",
+            ))
+        if (
+            normalized_elicit_routing is not None
+            and normalized_elicit_routing["confidence_sufficient"]
+        ):
+            issues.append(_issue(
+                "NON_EXECUTABLE_ELICIT_ROUTING",
+                "plan.elicit_routing",
+                "모호하거나 미지원인 요청은 신뢰도가 충분한 Elicit 실행 판단을 포함할 수 없습니다.",
+            ))
+        if issues:
+            return _invalid_plan(issues)
+        normalized_plan = {
+            "schema_version": PLAN_SCHEMA_VERSION,
+            "tasks": [],
+            "outcome_reason": (
+                "ambiguous_intent" if status == "ambiguous" else "unsupported_intent"
+            ),
+        }
+        if normalized_elicit_routing is not None:
+            normalized_plan["elicit_routing"] = normalized_elicit_routing
+        return RoutePlanValidation(valid=True, plan=normalized_plan, issues=())
+
     if not isinstance(raw_tasks, list) or not 1 <= len(raw_tasks) <= MAX_PLAN_TASKS:
         issues.append(
             _issue(
@@ -438,6 +476,12 @@ def validate_route_plan(
                 )
             )
             continue
+        if allowed_task_types is not None and task_type not in set(allowed_task_types):
+            issues.append(_issue(
+                "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
+                f"{path}.type",
+                "현재 단계와 실행 capability에서 허용되지 않은 task type입니다.",
+            ))
         description = raw_task.get("description")
         if not isinstance(description, str) or not description.strip():
             issues.append(
@@ -757,55 +801,96 @@ def create_route_plan(
     step_id: str,
     context_window: ContextWindow,
     planner: TaskPlanner,
-    classifier: TaskClassifier,
-    step_candidates: Mapping[str, Sequence[str]] | None = None,
+    enricher: PlanEnricher,
+    evaluator: PlanEvaluator,
+    allowed_task_types: Sequence[str],
     registered_tool_capabilities: Sequence[str] = (),
     plan_id: str | None = None,
     elicit_context_index: Mapping[str, Any] | None = None,
 ) -> RoutePlanValidation:
-    """Plan with bounded context, validate, then route every canonical task."""
+    """Plan, enrich, and enter validation only through the supplied evaluator."""
 
-    active_candidates = step_candidates or load_step_candidates()
     route_constraints = planner_route_constraints(
         step_id=step_id,
-        step_candidates=active_candidates,
+        allowed_task_types=allowed_task_types,
         registered_tool_capabilities=registered_tool_capabilities,
     )
     context = context_window_payload(context_window)
     context["elicit_context_index"] = deepcopy(dict(elicit_context_index or {}))
     context["route_constraints"] = route_constraints
     diagnostics: list[dict[str, str]] = []
-    try:
-        raw_plan = planner(message=message, step_id=step_id, context=context)
-    except Exception as error:
-        diagnostic = {
-            "component": "planner",
-            **exception_identity_fields(error),
-        }
-        logger.error(
-            "planner model adapter raised",
-            extra={
-                "event": "planner_error",
-                "detail": masked_exception_fields(
-                    error,
-                    step_id=step_id,
-                ),
-            },
-        )
-        if not _looks_like_explanatory_question(message):
-            return _invalid_plan(
-                [
-                    _issue(
-                        "PLANNER_ERROR",
-                        "plan",
-                        "planner가 실행 계획을 만들지 못했습니다.",
-                    )
-                ],
-                diagnostics=(diagnostic,),
+    stable_plan_id = plan_id or f"plan-{uuid4()}"
+    last_issues: tuple[PlanIssue, ...] = ()
+    planner_failed = False
+
+    for attempt in range(2):
+        try:
+            raw_plan = planner(message=message, step_id=step_id, context=context)
+            planner_failed = False
+        except Exception as error:
+            planner_failed = True
+            diagnostic = {
+                "component": "planner",
+                "attempt": str(attempt + 1),
+                **exception_identity_fields(error),
+            }
+            diagnostics.append(diagnostic)
+            logger.error(
+                "planner model adapter raised",
+                extra={
+                    "event": "planner_error",
+                    "detail": masked_exception_fields(error, step_id=step_id),
+                },
             )
-        diagnostic["recovery"] = "single_qa_plan"
-        diagnostics.append(diagnostic)
-        raw_plan = {
+            last_issues = (
+                _issue(
+                    "PLANNER_ERROR",
+                    "plan",
+                    "planner가 실행 계획을 만들지 못했습니다.",
+                ),
+            )
+            if attempt == 0:
+                context["validation_feedback"] = [
+                    issue.to_dict() for issue in last_issues
+                ]
+                continue
+            break
+
+        candidate = enricher(
+            raw_plan=raw_plan,
+            step_id=step_id,
+            registered_tool_capabilities=registered_tool_capabilities,
+            plan_id=stable_plan_id,
+        )
+        decision = evaluator(candidate)
+        if decision.allowed:
+            return RoutePlanValidation(
+                valid=True,
+                plan=deepcopy(decision.plan),
+                issues=(),
+                diagnostics=tuple(diagnostics),
+                retries_used=attempt,
+            )
+
+        last_issues = tuple(
+            _issue(violation.code, violation.path, violation.message)
+            for violation in decision.violations
+        )
+        if attempt == 0:
+            diagnostics.append({
+                "component": "planner_repair",
+                "attempt": "1",
+                "issue_codes": ",".join(issue.code for issue in last_issues),
+            })
+            context["validation_feedback"] = [
+                issue.to_dict() for issue in last_issues
+            ]
+            continue
+        break
+
+    if planner_failed and _looks_like_explanatory_question(message):
+        recovery_plan = {
+            "status": "executable",
             "tasks": [{
                 "id": "answer",
                 "type": "answer_question",
@@ -814,92 +899,34 @@ def create_route_plan(
                 "bindings": {},
             }],
         }
-
-    validation = validate_route_plan(raw_plan, step_id=step_id)
-    if not validation.valid:
-        return RoutePlanValidation(
-            valid=False,
-            plan=validation.plan,
-            issues=validation.issues,
-            diagnostics=tuple(diagnostics),
+        candidate = enricher(
+            raw_plan=recovery_plan,
+            step_id=step_id,
+            registered_tool_capabilities=registered_tool_capabilities,
+            plan_id=stable_plan_id,
         )
-
-    allowed_task_types = set(route_constraints["allowed_task_types"])
-    disallowed_tasks = [
-        (index, task.get("type"))
-        for index, task in enumerate(validation.plan["tasks"])
-        if task.get("type") not in allowed_task_types
-    ]
-    if disallowed_tasks:
-        return _invalid_plan([
-            _issue(
-                "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
-                f"plan.tasks[{index}].type",
-                f"현재 step과 runtime capability에서 허용되지 않은 task type입니다: {task_type}",
-            )
-            for index, task_type in disallowed_tasks
-        ], diagnostics=tuple(diagnostics))
-
-    planned = deepcopy(validation.plan)
-    planned["plan_id"] = plan_id or f"plan-{uuid4()}"
-    for task in planned["tasks"]:
-        task_id = str(task.get("id", "task-unknown"))
-
-        def collect_router_diagnostic(
-            diagnostic: Mapping[str, str],
-            *,
-            current_task_id: str = task_id,
-        ) -> None:
+        decision = evaluator(candidate)
+        if decision.allowed:
             diagnostics.append({
-                "component": "router_classifier",
-                "task_id": current_task_id,
-                **dict(diagnostic),
+                "component": "planner",
+                "recovery": "single_qa_plan",
             })
+            return RoutePlanValidation(
+                valid=True,
+                plan=deepcopy(decision.plan),
+                issues=(),
+                diagnostics=tuple(diagnostics),
+                retries_used=1,
+            )
 
-        route_started = monotonic()
-        try:
-            route = select_route(
-                task=task,
-                step_id=step_id,
-                step_candidates=active_candidates,
-                classifier=classifier,
-                registered_tool_capabilities=registered_tool_capabilities,
-                diagnostic_sink=collect_router_diagnostic,
-            )
-        except Exception as error:
-            record_operation_observation(
-                stage=OperationStage.ROUTE,
-                status=OperationStatus.FAILED,
-                operation_name="router.select",
-                duration_ms=max(0, int((monotonic() - route_started) * 1000)),
-                task_id=task_id,
-                agent="router",
-                error_code="route_selection_failed",
-                input={"task_type": task.get("type")},
-                output={"routed": False},
-                **exception_identity_fields(error),
-            )
-            raise
-        task["route"] = route
-        record_operation_observation(
-            stage=OperationStage.ROUTE,
-            status=OperationStatus.SUCCEEDED,
-            operation_name="router.select",
-            duration_ms=max(0, int((monotonic() - route_started) * 1000)),
-            task_id=task_id,
-            agent="router",
-            input={"task_type": task.get("type")},
-            output={
-                "executor_kind": route.get("executor_kind"),
-                "executor": route.get("executor"),
-                "reason_code": route.get("reason_code"),
-            },
-        )
     return RoutePlanValidation(
-        valid=True,
-        plan=planned,
-        issues=(),
+        valid=False,
+        plan={"schema_version": PLAN_SCHEMA_VERSION, "tasks": []},
+        issues=last_issues or (
+            _issue("PLAN_INVALID", "plan", "실행 계획을 검증하지 못했습니다."),
+        ),
         diagnostics=tuple(diagnostics),
+        retries_used=1,
     )
 
 
@@ -938,6 +965,7 @@ def plan_tasks_with_model(
         operation_name="planner.plan",
         sensitive_payload={"message": message, "context": dict(context)},
         prompt=PLANNER_PROMPT,
+        max_attempts=1,
     )
     return response.to_route_plan()
 
@@ -945,37 +973,15 @@ def plan_tasks_with_model(
 def planner_route_constraints(
     *,
     step_id: str,
-    step_candidates: Mapping[str, Sequence[str]],
+    allowed_task_types: Sequence[str],
     registered_tool_capabilities: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Build the authoritative task menu for the current step and runtime."""
+    """Describe the deterministic task menu without selecting an executor."""
 
-    allowed_agents = tuple(step_candidates.get(step_id, ()))
-    active_tools = set(registered_tool_capabilities)
-    allowed_task_types = {
-        task_type
-        for task_type, agent in TASK_TYPE_DEFAULT_AGENTS.items()
-        if agent in allowed_agents
-    }
-    for task_type, contract in TASK_TYPE_CONTRACTS.items():
-        if contract["executor_kind"] != "tool":
-            continue
-        if (
-            contract["authorized_agent"] in allowed_agents
-            and contract["capability"] in active_tools
-        ):
-            allowed_task_types.add(task_type)
-
-    # A dashboard answer is meaningful only when its bound metric can be
-    # produced in this runtime. Generic QA remains available independently.
-    if "get_dashboard_metric" not in active_tools:
-        allowed_task_types.discard("answer_dashboard_metric")
-
-    ordered_task_types = sorted(allowed_task_types)
+    ordered_task_types = sorted(set(allowed_task_types))
     return {
         "step_id": step_id,
-        "allowed_agents": list(allowed_agents),
-        "available_tool_capabilities": sorted(active_tools),
+        "available_tool_capabilities": sorted(set(registered_tool_capabilities)),
         "allowed_task_types": ordered_task_types,
         "task_type_guidance": {
             task_type: TASK_PLANNING_GUIDANCE[task_type]

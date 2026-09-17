@@ -241,13 +241,11 @@ class OutputValidationTests(unittest.TestCase):
         }
         state = {
             "step_id": "basic-info",
-            "review_trigger": "save",
             "field_registry": [],
             "output": {
                 "response": "확인이 필요합니다.",
                 "review": {
                     "type": "error_review",
-                    "trigger": "save",
                     "manual": {"document_id": "interface-basic-info", "version": "1.0.0"},
                     "items": [item],
                 },

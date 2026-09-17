@@ -1,10 +1,4 @@
-"""Pure allow/block policy for a fully routed F03 ``RoutePlan``.
-
-The F03 planner remains the source of truth for task, dependency, and binding
-normalization.  This module reuses that validator, then verifies that the
-routing metadata still agrees with trusted step and tool registries before a
-later integration layer may execute the plan.
-"""
+"""Single validation entry point for enriched planner candidates."""
 
 from __future__ import annotations
 
@@ -14,28 +8,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.step_registry import load_step_candidates
-from graph.planner import TASK_FIELDS, TASK_TYPE_CONTRACTS, validate_route_plan
+from graph.planner import _validate_plan_structure
+from graph.router import TASK_TYPE_DEFAULT_AGENTS, allowed_task_types_for
 
 
 PLAN_GUARDRAIL_ALLOW_REASON = "PLAN_GUARDRAIL_ALLOWED"
-CANONICAL_TASK_FIELDS = TASK_FIELDS | {
+ENRICHMENT_FIELDS = {
+    "source_task_id",
     "executor_kind",
-    "produces",
-    "step_id",
-    "capability",
-    "tool_name",
-    "authorized_agent",
-    "route",
-}
-ROUTE_FIELDS = {"task_id", "executor_kind", "executor", "reason_code"}
-ROUTED_TASK_METADATA_FIELDS = {
-    "executor_kind",
-    "produces",
-    "step_id",
-    "capability",
-    "tool_name",
-    "authorized_agent",
-    "route",
+    "executor",
+    "reason_code",
 }
 
 
@@ -54,6 +36,7 @@ class PlanGuardrailDecision:
     decision: str
     reason_code: str
     violations: tuple[PlanGuardrailViolation, ...]
+    plan: dict[str, Any]
 
     @property
     def allowed(self) -> bool:
@@ -68,225 +51,191 @@ class PlanGuardrailDecision:
 
 
 def evaluate_route_plan(
-    plan: Any,
+    candidate: Any,
     *,
     step_id: str,
     step_candidates: Mapping[str, Sequence[str]] | None = None,
     registered_tool_capabilities: Sequence[str] = (),
 ) -> PlanGuardrailDecision:
-    """Evaluate a routed plan without invoking an Agent, tool, or model.
+    """Validate planner structure first, then validate route enrichment.
 
-    Structural issues retain the existing F03 validator reason codes.  Route
-    issues are accumulated in deterministic task/field order; the first code is
-    the stable primary reason used by the security regression corpus.
+    The deterministic router is intentionally not trusted.  This function
+    recomputes the step task menu and execution contract before returning the
+    only canonical plan that the executor may consume.
     """
 
-    validation = validate_route_plan(_planner_view(plan), step_id=step_id)
-    if not validation.valid:
+    if not isinstance(candidate, Mapping):
+        return _blocked((
+            _violation("INVALID_PLAN_CANDIDATE", "candidate", "plan candidate는 object여야 합니다."),
+        ))
+    if set(candidate) != {
+        "plan_id",
+        "step_id",
+        "planner_plan",
+        "route_enrichments",
+    }:
+        return _blocked((
+            _violation(
+                "INVALID_PLAN_CANDIDATE_FIELDS",
+                "candidate",
+                "plan candidate의 trusted field 구성이 올바르지 않습니다.",
+            ),
+        ))
+    if candidate.get("step_id") != step_id:
+        return _blocked((
+            _violation(
+                "PLAN_STEP_MISMATCH",
+                "candidate.step_id",
+                "plan candidate의 step이 현재 요청과 일치하지 않습니다.",
+            ),
+        ))
+    plan_id = candidate.get("plan_id")
+    if not isinstance(plan_id, str) or not plan_id.strip():
+        return _blocked((
+            _violation("INVALID_PLAN_ID", "candidate.plan_id", "runtime plan ID가 필요합니다."),
+        ))
+
+    active_steps = load_step_candidates() if step_candidates is None else step_candidates
+    active_tools = tuple(registered_tool_capabilities)
+    allowed_task_types = allowed_task_types_for(
+        step_id=step_id,
+        step_candidates=active_steps,
+        registered_tool_capabilities=active_tools,
+    )
+    structural = _validate_plan_structure(
+        candidate.get("planner_plan"),
+        step_id=step_id,
+        allowed_task_types=allowed_task_types,
+    )
+    if not structural.valid:
         return _blocked(
             PlanGuardrailViolation(issue.code, issue.path, issue.message)
-            for issue in validation.issues
+            for issue in structural.issues
         )
 
-    if not isinstance(plan, Mapping):
+    enrichments = candidate.get("route_enrichments")
+    if not isinstance(enrichments, list):
         return _blocked((
-            _violation("INVALID_PLAN", "plan", "route plan은 object여야 합니다."),
+            _violation(
+                "INVALID_ROUTE_ENRICHMENTS",
+                "candidate.route_enrichments",
+                "route enrichment는 array여야 합니다.",
+            ),
         ))
-    candidate_tasks = plan.get("tasks")
-    if not isinstance(candidate_tasks, list):
+    trusted_tasks = structural.plan["tasks"]
+    if len(enrichments) != len(trusted_tasks):
         return _blocked((
-            _violation("INVALID_TASKS", "plan.tasks", "tasks는 array여야 합니다."),
+            _violation(
+                "ROUTE_COUNT_MISMATCH",
+                "candidate.route_enrichments",
+                "route enrichment 수가 검증된 task 수와 일치하지 않습니다.",
+            ),
         ))
 
-    trusted_tasks = validation.plan["tasks"]
-    active_steps = (
-        load_step_candidates() if step_candidates is None else step_candidates
+    planner_plan = candidate.get("planner_plan")
+    raw_tasks = (
+        planner_plan.get("tasks", [])
+        if isinstance(planner_plan, Mapping)
+        else []
     )
-    active_tools = set(registered_tool_capabilities)
     violations: list[PlanGuardrailViolation] = []
+    routed_tasks: list[dict[str, Any]] = []
+    allowed_agents = set(active_steps.get(step_id, ()))
+    active_tool_set = set(active_tools)
 
-    for index, (candidate, trusted) in enumerate(
-        zip(candidate_tasks, trusted_tasks, strict=True)
+    for index, (trusted, enrichment) in enumerate(
+        zip(trusted_tasks, enrichments, strict=True)
     ):
-        if not isinstance(candidate, Mapping):
-            # The shared planner validator already reports this branch.
-            continue
-        path = f"plan.tasks[{index}]"
-        unknown_fields = set(candidate) - CANONICAL_TASK_FIELDS
-        if unknown_fields:
+        path = f"candidate.route_enrichments[{index}]"
+        if not isinstance(enrichment, Mapping):
             violations.append(_violation(
-                "UNKNOWN_CANONICAL_TASK_FIELDS",
+                "INVALID_ROUTE_ENRICHMENT",
                 path,
-                f"route task에 허용되지 않은 field가 있습니다: "
-                f"{', '.join(sorted(unknown_fields))}",
+                "route enrichment는 object여야 합니다.",
             ))
-
-        _compare_trusted_field(violations, candidate, trusted, path, "id")
-        _compare_trusted_field(violations, candidate, trusted, path, "depends_on")
-        _compare_trusted_field(violations, candidate, trusted, path, "bindings")
-        _compare_trusted_field(violations, candidate, trusted, path, "executor_kind")
-        _compare_trusted_field(violations, candidate, trusted, path, "produces")
-        _compare_trusted_field(violations, candidate, trusted, path, "step_id")
+            continue
+        if set(enrichment) != ENRICHMENT_FIELDS:
+            violations.append(_violation(
+                "INVALID_ROUTE_FIELDS",
+                path,
+                "route enrichment field 구성이 올바르지 않습니다.",
+            ))
+        raw_task = raw_tasks[index] if index < len(raw_tasks) else None
+        source_task_id = raw_task.get("id") if isinstance(raw_task, Mapping) else None
+        if enrichment.get("source_task_id") != source_task_id:
+            violations.append(_violation(
+                "ROUTE_SOURCE_TASK_MISMATCH",
+                f"{path}.source_task_id",
+                "route source가 planner task와 일치하지 않습니다.",
+            ))
 
         expected_kind = trusted["executor_kind"]
-        if expected_kind == "tool":
-            _compare_trusted_field(
-                violations,
-                candidate,
-                trusted,
-                path,
-                "capability",
-                code="TASK_TOOL_CAPABILITY_MISMATCH",
-            )
-            _compare_trusted_field(
-                violations,
-                candidate,
-                trusted,
-                path,
-                "tool_name",
-                code="TASK_TOOL_NAME_MISMATCH",
-            )
-            _compare_trusted_field(
-                violations,
-                candidate,
-                trusted,
-                path,
-                "authorized_agent",
-                code="TASK_TOOL_AGENT_MISMATCH",
-            )
-            _compare_trusted_field(
-                violations,
-                candidate,
-                trusted,
-                path,
-                "arguments",
-                code="TRUSTED_TOOL_ARGUMENT_MISMATCH",
-            )
-        elif "capability" in candidate:
-            violations.append(_violation(
-                "UNEXPECTED_TASK_CAPABILITY",
-                f"{path}.capability",
-                "Agent task에는 tool capability를 지정할 수 없습니다.",
-            ))
-
-        route = candidate.get("route")
-        if not isinstance(route, Mapping):
-            violations.append(_violation(
-                "ROUTE_MISSING",
-                f"{path}.route",
-                "검증할 route 결정이 없습니다.",
-            ))
-            continue
-        unknown_route_fields = set(route) - ROUTE_FIELDS
-        if unknown_route_fields:
-            violations.append(_violation(
-                "UNKNOWN_ROUTE_FIELDS",
-                f"{path}.route",
-                f"route에 허용되지 않은 field가 있습니다: "
-                f"{', '.join(sorted(unknown_route_fields))}",
-            ))
-        if route.get("task_id") != trusted["id"]:
-            violations.append(_violation(
-                "ROUTE_TASK_ID_MISMATCH",
-                f"{path}.route.task_id",
-                "route task_id가 검증된 task와 일치하지 않습니다.",
-            ))
-        if route.get("executor_kind") != expected_kind:
+        executor = enrichment.get("executor")
+        expected_reason = "intent_match"
+        if enrichment.get("executor_kind") != expected_kind:
             violations.append(_violation(
                 "ROUTE_EXECUTOR_KIND_MISMATCH",
-                f"{path}.route.executor_kind",
+                f"{path}.executor_kind",
                 "route executor kind가 task 계약과 일치하지 않습니다.",
             ))
 
-        executor = route.get("executor")
         if expected_kind == "agent":
-            if trusted.get("type") == "fallback":
-                if executor != "fallback":
-                    violations.append(_violation(
-                        "AGENT_NOT_ALLOWLISTED",
-                        f"{path}.route.executor",
-                        "Fallback task는 fallback Agent만 실행할 수 있습니다.",
-                    ))
-                continue
-            allowed_agents = active_steps.get(step_id)
-            if allowed_agents is None:
+            expected_executor = TASK_TYPE_DEFAULT_AGENTS.get(str(trusted.get("type")))
+            if executor != expected_executor:
                 violations.append(_violation(
-                    "UNKNOWN_STEP",
-                    f"{path}.step_id",
-                    "Agent allowlist를 확인할 수 없는 step입니다.",
+                    "ROUTE_EXECUTOR_MISMATCH",
+                    f"{path}.executor",
+                    "Agent route가 task type의 결정론적 매핑과 일치하지 않습니다.",
                 ))
-            elif not isinstance(executor, str) or executor not in allowed_agents:
+            if executor not in allowed_agents:
                 violations.append(_violation(
                     "AGENT_NOT_ALLOWLISTED",
-                    f"{path}.route.executor",
+                    f"{path}.executor",
                     "현재 step에서 허용되지 않은 Agent입니다.",
                 ))
         else:
-            trusted_capability = trusted["capability"]
-            if executor != trusted_capability:
+            expected_executor = trusted.get("capability")
+            expected_reason = "capability_match"
+            if executor != expected_executor:
                 violations.append(_violation(
                     "TOOL_CAPABILITY_MISMATCH",
-                    f"{path}.route.executor",
-                    "route tool이 task type의 trusted capability와 일치하지 않습니다.",
+                    f"{path}.executor",
+                    "route tool이 task type의 capability와 일치하지 않습니다.",
                 ))
-            if not isinstance(executor, str) or executor not in active_tools:
+            if executor not in active_tool_set:
                 violations.append(_violation(
                     "TOOL_NOT_ALLOWLISTED",
-                    f"{path}.route.executor",
+                    f"{path}.executor",
                     "현재 runtime에 등록되지 않은 tool capability입니다.",
                 ))
+        if enrichment.get("reason_code") != expected_reason:
+            violations.append(_violation(
+                "ROUTE_REASON_MISMATCH",
+                f"{path}.reason_code",
+                "route reason이 검증된 실행 결정과 일치하지 않습니다.",
+            ))
+
+        routed = deepcopy(trusted)
+        routed["route"] = {
+            "task_id": trusted["id"],
+            "executor_kind": expected_kind,
+            "executor": expected_executor,
+            "reason_code": expected_reason,
+        }
+        routed_tasks.append(routed)
 
     if violations:
         return _blocked(violations)
+
+    plan = deepcopy(structural.plan)
+    plan["plan_id"] = plan_id
+    plan["tasks"] = routed_tasks
     return PlanGuardrailDecision(
         decision="allow",
         reason_code=PLAN_GUARDRAIL_ALLOW_REASON,
         violations=(),
+        plan=plan,
     )
-
-
-def _planner_view(plan: Any) -> Any:
-    """Project a routed plan back to the exact F03 planner input contract."""
-
-    if not isinstance(plan, Mapping):
-        return plan
-    tasks = plan.get("tasks")
-    if not isinstance(tasks, list):
-        return {"tasks": tasks}
-    projected: list[Any] = []
-    for task in tasks:
-        if not isinstance(task, Mapping):
-            projected.append(task)
-            continue
-        contract = TASK_TYPE_CONTRACTS.get(str(task.get("type")), {})
-        projected.append({
-            key: deepcopy(value)
-            for key, value in task.items()
-            if key not in ROUTED_TASK_METADATA_FIELDS
-            and not (key == "arguments" and "fixed_arguments" in contract)
-        })
-    planner_view = {"tasks": projected}
-    if "elicit_routing" in plan:
-        planner_view["elicit_routing"] = deepcopy(plan["elicit_routing"])
-    return planner_view
-
-
-def _compare_trusted_field(
-    violations: list[PlanGuardrailViolation],
-    candidate: Mapping[str, Any],
-    trusted: Mapping[str, Any],
-    path: str,
-    field: str,
-    *,
-    code: str = "TRUSTED_TASK_METADATA_MISMATCH",
-) -> None:
-    if candidate.get(field) == trusted.get(field):
-        return
-    violations.append(_violation(
-        code,
-        f"{path}.{field}",
-        f"{field} 값이 task type의 trusted 계약과 일치하지 않습니다.",
-    ))
 
 
 def _blocked(
@@ -298,6 +247,7 @@ def _blocked(
         decision="block",
         reason_code=primary,
         violations=collected,
+        plan={"schema_version": "1.0", "tasks": []},
     )
 
 

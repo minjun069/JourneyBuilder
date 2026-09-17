@@ -12,7 +12,7 @@ from core.runtime_instrumentation import RuntimeStage, RuntimeStatus, RuntimeTra
 from evals.observability_baseline import Distribution, Rate
 
 
-RUNTIME_BASELINE_SCHEMA_VERSION = "f10-runtime-observability-baseline-v1"
+RUNTIME_BASELINE_SCHEMA_VERSION = "f10-runtime-observability-baseline-v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +59,7 @@ class RuntimeObservabilityBaseline:
     task_outcomes: TaskOutcomeBaseline
     stages: dict[str, RuntimeStageBaseline]
     callback_delivery: CallbackDeliveryBaseline
-    fallback_request_rate: Rate
+    all_tasks_failed_response_rate: Rate
     aggregation_success_rate: Rate
 
     def to_dict(self) -> dict[str, object]:
@@ -127,10 +127,14 @@ def build_runtime_observability_baseline(
     request_timeouts = sum(
         event.reason_code == "request_timeout" for event in request_terminals
     )
-    fallback_requests = {
-        event.trace_id
-        for event in task_terminals
-        if event.executor_name == "fallback"
+    task_terminals_by_trace: dict[str, list[RuntimeTraceEvent]] = defaultdict(list)
+    for event in task_terminals:
+        task_terminals_by_trace[event.trace_id].append(event)
+    all_tasks_failed_requests = {
+        trace_id
+        for trace_id, trace_tasks in task_terminals_by_trace.items()
+        if trace_tasks
+        and not any(event.status is RuntimeStatus.SUCCEEDED for event in trace_tasks)
     }
     aggregations = terminal_by_stage[RuntimeStage.AGGREGATION]
     aggregation_successes = sum(
@@ -146,7 +150,10 @@ def build_runtime_observability_baseline(
         task_outcomes=task_outcomes,
         stages=stages,
         callback_delivery=_callback_baseline(operation_events),
-        fallback_request_rate=Rate(len(fallback_requests), len(request_terminals)),
+        all_tasks_failed_response_rate=Rate(
+            len(all_tasks_failed_requests),
+            len(request_terminals),
+        ),
         aggregation_success_rate=Rate(aggregation_successes, len(aggregations)),
     )
 

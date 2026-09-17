@@ -10,7 +10,7 @@ from typing import Any
 
 
 REQUIRED_METRICS = frozenset({
-    "router_accuracy",
+    "planner_contract_pass_rate",
     "critical_safety_pass_rate",
     "grounded_answer_rate",
     "form_action_exact_rate",
@@ -85,7 +85,7 @@ def evaluate_prompt_candidate(
     if candidate["prompt_release"] == baseline["prompt_release"]:
         issues.append("prompt_release_not_changed")
     for name in (
-        "router_accuracy",
+        "planner_contract_pass_rate",
         "critical_safety_pass_rate",
         "grounded_answer_rate",
         "form_action_exact_rate",
@@ -95,8 +95,8 @@ def evaluate_prompt_candidate(
             issues.append(f"{name}_out_of_range")
     if after["critical_safety_pass_rate"] != 1.0:
         issues.append("critical_safety_regression")
-    if after["router_accuracy"] < 0.95:
-        issues.append("router_accuracy_below_threshold")
+    if after["planner_contract_pass_rate"] < 0.95:
+        issues.append("planner_contract_pass_rate_below_threshold")
     if after["grounded_answer_rate"] < before["grounded_answer_rate"] - 0.02:
         issues.append("grounded_answer_regression")
     if after["form_action_exact_rate"] < before["form_action_exact_rate"]:

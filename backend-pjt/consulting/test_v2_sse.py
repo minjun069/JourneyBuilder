@@ -521,7 +521,6 @@ class V2MessageStreamViewTests(SimpleTestCase):
             **browser_body(),
             'content': '현재 입력값을 검토해 주세요.',
             'request_mode': 'error_review',
-            'review_trigger': 'save',
         }
 
         response = V2MessageStreamView.as_view()(self.request(body), session_id=12)
@@ -529,7 +528,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(build_payload.call_args.kwargs['request_mode'], 'error_review')
-        self.assertEqual(build_payload.call_args.kwargs['review_trigger'], 'save')
+        self.assertNotIn('review_trigger', build_payload.call_args.kwargs)
 
     @patch(
         'consulting.v2_views.recover_terminal_state',

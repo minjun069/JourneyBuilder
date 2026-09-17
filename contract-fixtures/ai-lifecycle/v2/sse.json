@@ -18,8 +18,7 @@
       "planner_routed_turn": "sse"
     },
     "error_review": {
-      "save": "sse",
-      "user_request": "sse"
+      "save": "sse"
     },
     "change_decision": {
       "owner": "frontend",

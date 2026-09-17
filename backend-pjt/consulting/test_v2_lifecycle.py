@@ -91,20 +91,23 @@ class BrowserMessageValidationTests(SimpleTestCase):
         self.assertEqual(captured.exception.status_code, 422)
         self.assertEqual(captured.exception.code, 'CONTRACT_VERSION_UNSUPPORTED')
 
-    def test_error_review_control_is_bound_and_legacy_elicit_control_is_rejected(self):
+    def test_error_review_is_save_bound_and_legacy_controls_are_rejected(self):
         review = validate_browser_message({
             **self.valid_payload(),
             'request_mode': 'error_review',
-            'review_trigger': 'save',
         })
-        self.assertEqual(review['review_trigger'], 'save')
+        self.assertEqual(review['request_mode'], 'error_review')
 
         with self.assertRaises(LifecycleError):
-            validate_browser_message({**self.valid_payload(), 'request_mode': 'error_review'})
+            validate_browser_message({
+                **self.valid_payload(),
+                'request_mode': 'error_review',
+                'review_trigger': 'save',
+            })
         with self.assertRaises(LifecycleError):
             validate_browser_message({**self.valid_payload(), 'elicit_action': 'start'})
 
-    def test_presentation_entry_is_a_bound_mode_without_review_trigger(self):
+    def test_presentation_entry_is_a_bound_mode(self):
         payload = validate_browser_message({
             **self.valid_payload(),
             'step_id': 'lifetime-cashflow',
@@ -294,7 +297,6 @@ class TerminalPayloadValidationTests(SimpleTestCase):
     def test_structured_error_review_output_is_validated(self):
         review = {
             'type': 'error_review',
-            'trigger': 'save',
             'manual': {'document_id': 'interface-basic-info', 'version': '1.0.0'},
             'items': [{
                 'section': 'basic_info',
@@ -311,7 +313,7 @@ class TerminalPayloadValidationTests(SimpleTestCase):
 
         invalid = completed_terminal(output={
             'response': '확인이 필요합니다.',
-            'review': {**review, 'trigger': 'blocking_save'},
+            'review': {**review, 'trigger': 'save'},
         })
         with self.assertRaises(LifecycleError):
             validate_terminal_payload(invalid)

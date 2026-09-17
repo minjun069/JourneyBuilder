@@ -1906,7 +1906,7 @@
         "classification_accuracy": 1.0,
         "acceptance_threshold": null
       },
-      "fallback_and_aggregation": {
+      "failure_responder_and_aggregation": {
         "quality_disposition": "deterministic_contract_only",
         "actual_model_calls": 0
       }

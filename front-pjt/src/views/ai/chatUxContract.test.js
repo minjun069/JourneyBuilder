@@ -21,7 +21,7 @@ test('폼 저장은 결정론적 검증 뒤 save Error Review만 호출한다', 
   const submit = view.slice(view.indexOf('async function submitForm'), view.indexOf('async function confirmEmptyForm'))
   assert.ok(submit.indexOf('validateConsultationForm') < submit.indexOf('requestErrorReview'))
   assert.doesNotMatch(view, /입력값 검토|requestErrorReview\(['"]user_request/)
-  assert.match(store, /reviewTrigger: 'save'/)
+  assert.doesNotMatch(store, /reviewTrigger|review_trigger/)
 })
 
 test('Error Review 처리 상태와 오류를 스크롤 밖의 현재 화면에 표시한다', () => {

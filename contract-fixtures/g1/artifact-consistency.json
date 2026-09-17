@@ -71,15 +71,16 @@
     },
     {
       "id": "P06",
-      "artifact_role": "evaluation-foundation",
-      "production_status": "deferred",
+      "artifact_role": "deterministic-routing-contract",
+      "production_status": "active",
       "current_consumers": [
-        "ai-pjt/tests/router_evaluation.py",
-        "ai-pjt/tests/test_router_evaluation.py",
-        "ai-pjt/graph/router.py"
+        "ai-pjt/tests/test_routing_policy.py",
+        "ai-pjt/guardrails/tests/test_plan_policy.py",
+        "ai-pjt/graph/router.py",
+        "ai-pjt/guardrails/plan_policy.py"
       ],
-      "next_activation": ["W1-L02", "M2-L02"],
-      "checks": ["step-contract", "router-evaluation-coverage"]
+      "next_activation": [],
+      "checks": ["step-contract", "deterministic-route-enrichment", "single-plan-validation-entry"]
     },
     {
       "id": "P07",

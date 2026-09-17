@@ -20,7 +20,7 @@ from guardrails.boundary_policy import (
 )
 from guardrails.plan_policy import PlanGuardrailDecision, PlanGuardrailViolation
 from tests.instrumentation import fake_instrumentation
-from tests.test_graph_execution import FakeClassifier, all_agent_graphs
+from tests.test_graph_execution import all_agent_graphs
 
 
 LANGGRAPH_AVAILABLE = importlib.util.find_spec("langgraph") is not None
@@ -115,7 +115,6 @@ class ProductionGraphGuardrailTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=instrumentation,
             planner=planner,
-            classifier=FakeClassifier(),
             agent_graphs=agents,
             tool_executors={"lookup_reference_value": tool},
         )
@@ -144,7 +143,6 @@ class ProductionGraphGuardrailTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=instrumentation,
             planner=planner,
-            classifier=FakeClassifier(),
             agent_graphs=agents,
         )
         denied = PlanGuardrailDecision(
@@ -155,6 +153,7 @@ class ProductionGraphGuardrailTests(unittest.IsolatedAsyncioTestCase):
                 path="plan.tasks[0].route.executor",
                 message="위조 route",
             ),),
+            plan={"schema_version": "1.0", "tasks": []},
         )
         with patch("graph.builder.evaluate_route_plan", return_value=denied):
             result = await graph.ainvoke({
@@ -165,7 +164,7 @@ class ProductionGraphGuardrailTests(unittest.IsolatedAsyncioTestCase):
                 "field_registry": [],
             })
 
-        self.assertEqual(planner.calls, 1)
+        self.assertEqual(planner.calls, 2)
         self.assertEqual(sum(len(agent.calls) for agent in agents.values()), 0)
         self.assertEqual(result["route_plan"]["tasks"], [])
         plan_events = [

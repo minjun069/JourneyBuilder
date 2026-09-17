@@ -52,9 +52,22 @@ class PromptRegistryTests(unittest.TestCase):
             ):
                 self.assertEqual(get_prompt_manifest()["release"], release)
                 self.assertEqual(len(prompt_ids()), 18)
+        self.assertEqual(
+            set(prompt_ids(release=ACTIVE_PROMPT_RELEASE))
+            - set(prompt_ids(release=PREVIOUS_PROMPT_RELEASE)),
+            {"aggregator.compose"},
+        )
+        self.assertEqual(
+            set(prompt_ids(release=PREVIOUS_PROMPT_RELEASE))
+            - set(prompt_ids(release=ACTIVE_PROMPT_RELEASE)),
+            {"router.classify"},
+        )
 
     def test_changed_prompt_content_requires_a_new_semantic_version(self) -> None:
-        for prompt_id in prompt_ids(release=ACTIVE_PROMPT_RELEASE):
+        shared_ids = set(prompt_ids(release=ACTIVE_PROMPT_RELEASE)) & set(
+            prompt_ids(release=PREVIOUS_PROMPT_RELEASE)
+        )
+        for prompt_id in shared_ids:
             active = get_prompt(prompt_id, release=ACTIVE_PROMPT_RELEASE)
             previous = get_prompt(prompt_id, release=PREVIOUS_PROMPT_RELEASE)
             if active.content_hash != previous.content_hash:

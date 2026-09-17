@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
-from core.monitoring import OperationStage
 from tests.instrumentation import fake_instrumentation
 
 
@@ -16,20 +15,6 @@ class FakePlanner:
 
     def __call__(self, **_: object) -> dict:
         return self.plan
-
-
-class FakeClassifier:
-    def __call__(self, *, task: dict, candidates: tuple[str, ...]) -> dict:
-        agent = {
-            "answer_question": "qa",
-            "answer_dashboard_metric": "qa",
-            "propose_form_change": "input_assist",
-            "collect_qualitative_info": "elicit",
-        }.get(task["type"], "fallback")
-        return {
-            "status": "matched",
-            "agent": agent if agent in candidates else "fallback",
-        }
 
 
 class FakeAgentGraph:
@@ -79,7 +64,6 @@ def all_agent_graphs() -> dict[str, FakeAgentGraph]:
             "error_review",
             "chart_interpret",
             "elicit",
-            "fallback",
         )
     }
 
@@ -111,7 +95,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=fake_instrumentation()[0],
             planner=planner_must_not_run,
-            classifier=FakeClassifier(),
             agent_graphs=agents,
         )
         result = await graph.ainvoke({
@@ -126,7 +109,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["route_plan"]["tasks"][0]["type"], "interpret_chart")
         self.assertEqual(len(agents["chart_interpret"].calls), 1)
-        self.assertEqual(len(agents["fallback"].calls), 0)
 
     async def test_other_step_keeps_elicit_memory_out_of_planner_scope(self) -> None:
         from graph.builder import build_graph
@@ -183,7 +165,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=instrumentation,
             planner=planner,
-            classifier=FakeClassifier(),
             agent_graphs=agents,
         )
 
@@ -200,15 +181,13 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(planner.context["elicit_context_index"], {})
         self.assertEqual(result["elicit_contexts"], contexts)
         self.assertEqual(result["output"]["response"], "qa 응답")
-        self.assertEqual(len(agents["fallback"].calls), 0)
-        route_events = [
+        plan_decisions = [
             event
-            for event in sink.baseline_events
-            if getattr(event, "stage", None) is OperationStage.ROUTE
+            for event in sink.security_events
+            if event.boundary == "plan_guardrail"
         ]
-        self.assertEqual(len(route_events), 1)
-        self.assertEqual(route_events[0].operation_name, "router.select")
-        self.assertEqual(route_events[0].task_id, "task-1")
+        self.assertEqual(len(plan_decisions), 1)
+        self.assertEqual(plan_decisions[0].reason_code, "PLAN_GUARDRAIL_ALLOWED")
 
     async def test_planner_reconnects_field_context_after_intervening_qa(self) -> None:
         from graph.builder import build_graph
@@ -274,7 +253,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
-            classifier=FakeClassifier(),
             agent_graphs=agents,
         )
 
@@ -321,9 +299,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         def unavailable_planner(**_kwargs: object) -> dict:
             raise RuntimeError("simulated planner outage")
 
-        def unavailable_classifier(**_kwargs: object) -> dict:
-            raise RuntimeError("simulated classifier outage")
-
         for index, message in enumerate((
             "단기 지향이면 어느정도 기간을 말하지?",
             "안정추구란 정확히 뭘 말하는거야?",
@@ -335,7 +310,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                     None,
                     instrumentation=instrumentation,
                     planner=unavailable_planner,
-                    classifier=unavailable_classifier,
                     agent_graphs=agents,
                 )
                 result = await graph.ainvoke({
@@ -353,7 +327,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                     "qa",
                 )
                 self.assertEqual(len(agents["qa"].calls), 1)
-                self.assertEqual(len(agents["fallback"].calls), 0)
                 planner_terminal = next(
                     event
                     for event in sink.runtime_events
@@ -363,7 +336,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                     item["component"]
                     for item in planner_terminal.output["diagnostics"]
                 }
-                self.assertEqual(components, {"planner", "router_classifier"})
+                self.assertEqual(components, {"planner"})
 
     async def test_current_form_overrides_saved_fact_only_for_active_fields(self) -> None:
         from graph.builder import _flatten_customer_info
@@ -449,9 +422,9 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
-            classifier=FakeClassifier(),
             agent_graphs=agents,
             tool_executors={"lookup_reference_value": lookup},
+            response_composer=None,
         )
         result = await graph.ainvoke({
             "request_id": "req-1",
@@ -470,7 +443,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["output"]["action"]["changes"][0]["value"], 2_500_000)
 
-    async def test_invalid_plan_calls_only_sanitized_fallback(self) -> None:
+    async def test_invalid_plan_returns_detailed_failure_without_agent_call(self) -> None:
         from graph.builder import build_graph
 
         agents = all_agent_graphs()
@@ -478,7 +451,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=fake_instrumentation()[0],
             planner=FakePlanner({"tasks": []}),
-            classifier=FakeClassifier(),
             agent_graphs=agents,
         )
         result = await graph.ainvoke({
@@ -490,13 +462,9 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         })
 
         self.assertTrue(result["plan_issues"])
-        self.assertEqual(result["output"]["response"], "fallback 응답")
-        self.assertEqual(len(agents["fallback"].calls), 1)
-        self.assertEqual(agents["fallback"].calls[0]["customer_info"], {})
-        self.assertEqual(
-            sum(len(agent.calls) for name, agent in agents.items() if name != "fallback"),
-            0,
-        )
+        self.assertIn("실행 계획", result["output"]["response"])
+        self.assertIn("다시 시도", result["output"]["response"])
+        self.assertEqual(sum(len(agent.calls) for agent in agents.values()), 0)
 
     async def test_planner_instrumentation_includes_conversation_context(self) -> None:
         from graph.builder import build_graph
@@ -512,7 +480,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=instrumentation,
             planner=FakePlanner({"tasks": []}),
-            classifier=FakeClassifier(),
             agent_graphs=all_agent_graphs(),
         )
         context = {
@@ -584,34 +551,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(planner_start_index, validation_start_index)
         self.assertLess(validation_start_index, validation_end_index)
         self.assertLess(validation_end_index, planner_end_index)
-
-    async def test_invalid_plan_reaches_compiled_fallback_graph(self) -> None:
-        from agents import fallback
-        from graph.builder import build_graph
-
-        agents = all_agent_graphs()
-        agents["fallback"] = fallback.graph
-        graph = build_graph(
-            None,
-            instrumentation=fake_instrumentation()[0],
-            planner=FakePlanner({"tasks": []}),
-            classifier=FakeClassifier(),
-            agent_graphs=agents,
-        )
-
-        result = await graph.ainvoke({
-            "request_id": "req-compiled-fallback",
-            "message": "요청",
-            "step_id": "intro",
-            "customer_info": {"saved_data": {}, "current_form": {}},
-            "field_registry": [],
-        })
-
-        self.assertTrue(result["plan_issues"])
-        self.assertEqual(
-            result["output"]["response"],
-            fallback.MESSAGES["plan_invalid"],
-        )
 
 if __name__ == "__main__":
     unittest.main()
