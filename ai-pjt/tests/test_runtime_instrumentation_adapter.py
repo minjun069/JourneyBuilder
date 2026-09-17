@@ -188,7 +188,7 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime[-1].status, RuntimeStatus.SUCCEEDED)
         self.assertTrue(all(event.trace_id == runtime[0].trace_id for event in runtime))
         self.assertEqual(runtime[0].executor_name, "qa")
-        self.assertEqual(runtime[0].input["message"], "질문")
+        self.assertEqual(runtime[0].input["task_type"], "answer_question")
         search = next(
             event
             for event in sink.baseline_events

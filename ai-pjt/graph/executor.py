@@ -118,9 +118,11 @@ async def execute_route_plan(
             executor_kind=str(executor_kind or "unknown"),
             executor_name=str(executor_name or "unknown"),
             input={
-                "task": deepcopy(dict(task)),
+                "task_type": str(task.get("type", "unknown")),
+                "dependency_count": len(dependencies),
                 "message": str(task.get("description", "")),
                 "step_id": step_id,
+                "customer_info": deepcopy(dict(customer_info)),
             },
         )
 
