@@ -451,12 +451,26 @@ def build_graph(
                 }],
             }
 
-        if state.get("request_mode") == "error_review":
+        request_mode = state.get("request_mode")
+        direct_request = {
+            "error_review": (
+                "review_validation_error",
+                "현재 draft의 오기·단위 착오·문맥 불일치 검토",
+                "error_review",
+            ),
+            "presentation_entry": (
+                "interpret_chart",
+                "Presentation 단계 최초 진입 핵심 안내",
+                "chart_interpret",
+            ),
+        }.get(request_mode)
+        if direct_request is not None:
+            task_type, description, agent = direct_request
             direct_plan = _direct_agent_plan(
                 request_id=str(request_id or "request-unknown"),
-                task_type="review_validation_error",
-                description="현재 draft의 오기·단위 착오·문맥 불일치 검토",
-                agent="error_review",
+                task_type=task_type,
+                description=description,
+                agent=agent,
                 state=state,
                 conversation_projection=context_window_payload(window),
             )

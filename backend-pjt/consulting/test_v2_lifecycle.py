@@ -104,6 +104,16 @@ class BrowserMessageValidationTests(SimpleTestCase):
         with self.assertRaises(LifecycleError):
             validate_browser_message({**self.valid_payload(), 'elicit_action': 'start'})
 
+    def test_presentation_entry_is_a_bound_mode_without_review_trigger(self):
+        payload = validate_browser_message({
+            **self.valid_payload(),
+            'step_id': 'lifetime-cashflow',
+            'request_mode': 'presentation_entry',
+        })
+
+        self.assertEqual(payload['request_mode'], 'presentation_entry')
+        self.assertNotIn('review_trigger', payload)
+
 
 class RedisLifecycleStoreTests(SimpleTestCase):
     def test_active_terminal_and_idempotency_ttls_are_distinct(self):

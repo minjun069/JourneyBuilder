@@ -87,6 +87,13 @@ class FeatureControlContractTests(IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             make_request(elicit_action="start")
 
+    def test_presentation_entry_requires_no_review_trigger(self):
+        request = make_request(request_mode="presentation_entry")
+        self.assertEqual(request.request_mode, "presentation_entry")
+
+        with self.assertRaises(ValueError):
+            make_request(request_mode="presentation_entry", review_trigger="save")
+
 
 class CallbackClientTests(IsolatedAsyncioTestCase):
     async def test_retryable_failures_use_four_attempts_and_same_payload(self):

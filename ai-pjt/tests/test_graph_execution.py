@@ -100,6 +100,34 @@ FIELD_SPEC = {
 
 @unittest.skipUnless(LANGGRAPH_AVAILABLE, "LangGraph runtime image에서 실행")
 class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_presentation_entry_bypasses_planner_and_routes_directly_to_chart(self) -> None:
+        from graph.builder import build_graph
+
+        def planner_must_not_run(**_: object) -> dict:
+            raise AssertionError("presentation entry must bypass the planner")
+
+        agents = all_agent_graphs()
+        graph = build_graph(
+            None,
+            instrumentation=fake_instrumentation()[0],
+            planner=planner_must_not_run,
+            classifier=FakeClassifier(),
+            agent_graphs=agents,
+        )
+        result = await graph.ainvoke({
+            "request_id": "presentation-entry-1",
+            "message": "이 보고서의 핵심을 먼저 안내해 주세요.",
+            "step_id": "lifetime-cashflow",
+            "request_mode": "presentation_entry",
+            "customer_info": {"saved_data": {}, "current_form": {}},
+            "field_registry": [],
+            "chart_payload": {"status": "guidance_only"},
+        })
+
+        self.assertEqual(result["route_plan"]["tasks"][0]["type"], "interpret_chart")
+        self.assertEqual(len(agents["chart_interpret"].calls), 1)
+        self.assertEqual(len(agents["fallback"].calls), 0)
+
     async def test_other_step_keeps_elicit_memory_out_of_planner_scope(self) -> None:
         from graph.builder import build_graph
         from graph.elicit_context import initial_elicit_contexts
