@@ -103,6 +103,25 @@ async def execute_route_plan(
         dependencies = task.get("depends_on", [])
         if not isinstance(dependencies, list):
             dependencies = []
+        route = task.get("route")
+        executor_kind = (
+            route.get("executor_kind") if isinstance(route, Mapping) else None
+        )
+        executor_name = (
+            route.get("executor") if isinstance(route, Mapping) else None
+        )
+        task_span = instrumentation.start(
+            RuntimeStage.TASK_EXECUTION,
+            task_id=task_id,
+            depends_on=tuple(str(item) for item in dependencies),
+            executor_kind=str(executor_kind or "unknown"),
+            executor_name=str(executor_name or "unknown"),
+            input={
+                "task": deepcopy(dict(task)),
+                "message": str(task.get("description", "")),
+                "step_id": step_id,
+            },
+        )
 
         blockers = [
             dependency
@@ -115,6 +134,11 @@ async def execute_route_plan(
                 task_id=task_id,
                 depends_on=tuple(str(item) for item in dependencies),
                 blocked_by=tuple(str(item) for item in blockers),
+            )
+            instrumentation.fail(
+                task_span,
+                reason_code="dependency_blocked",
+                output=task_results[task_id],
             )
             continue
 
@@ -146,25 +170,22 @@ async def execute_route_plan(
                     task_id,
                     "binding_resolution_failed",
                 )
+            instrumentation.fail(
+                task_span,
+                reason_code=exc.code.lower(),
+                output=task_results[task_id],
+            )
             continue
         instrumentation.succeed(binding_span)
 
-        route = task.get("route")
         if not isinstance(route, Mapping):
             task_results[task_id] = failed_task_result(
                 task_id,
                 "route_missing",
             )
-            task_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=task_id,
-                depends_on=tuple(str(item) for item in dependencies),
-            )
             instrumentation.fail(task_span, reason_code="route_missing")
             continue
 
-        executor_kind = route.get("executor_kind")
-        executor_name = route.get("executor")
         if (
             executor_kind == "tool"
             and route.get("reason_code") == "capability_unavailable"
@@ -172,13 +193,6 @@ async def execute_route_plan(
             task_results[task_id] = failed_task_result(
                 task_id,
                 "capability_unavailable",
-            )
-            task_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=task_id,
-                depends_on=tuple(str(item) for item in dependencies),
-                executor_kind="tool",
-                executor_name=str(executor_name or "unavailable"),
             )
             instrumentation.fail(task_span, reason_code="capability_unavailable")
             continue
@@ -190,13 +204,6 @@ async def execute_route_plan(
                 task_id,
                 "executor_unavailable",
             )
-            task_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=task_id,
-                depends_on=tuple(str(item) for item in dependencies),
-                executor_kind=str(executor_kind or "agent"),
-                executor_name=str(executor_name or "unavailable"),
-            )
             instrumentation.fail(task_span, reason_code="executor_unavailable")
             continue
 
@@ -204,13 +211,6 @@ async def execute_route_plan(
             task_results[task_id] = failed_task_result(
                 task_id,
                 "task_budget_exhausted",
-            )
-            task_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=task_id,
-                depends_on=tuple(str(item) for item in dependencies),
-                executor_kind=str(executor_kind),
-                executor_name=str(executor_name),
             )
             instrumentation.fail(task_span, reason_code="task_budget_exhausted")
             continue
@@ -250,14 +250,6 @@ async def execute_route_plan(
         }
         if executor_kind == "tool":
             execution_input["tool_audit_sink"] = instrumentation.record_tool_audit
-        task_span = instrumentation.start(
-            RuntimeStage.TASK_EXECUTION,
-            task_id=task_id,
-            depends_on=tuple(str(item) for item in dependencies),
-            executor_kind=str(executor_kind),
-            executor_name=str(executor_name),
-            input=observable_execution_input,
-        )
         operation_started = instrumentation.elapsed_ms(task_span)
         try:
             if executor_kind == "tool":

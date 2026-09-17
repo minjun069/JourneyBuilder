@@ -164,9 +164,9 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [event.stage for event in runtime],
             [
-                RuntimeStage.BINDING_RESOLUTION,
-                RuntimeStage.BINDING_RESOLUTION,
                 RuntimeStage.TASK_EXECUTION,
+                RuntimeStage.BINDING_RESOLUTION,
+                RuntimeStage.BINDING_RESOLUTION,
                 RuntimeStage.ARTIFACT_VALIDATION,
                 RuntimeStage.ARTIFACT_VALIDATION,
                 RuntimeStage.TASK_EXECUTION,
@@ -176,8 +176,8 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(runtime[-1].status, RuntimeStatus.SUCCEEDED)
         self.assertTrue(all(event.trace_id == runtime[0].trace_id for event in runtime))
-        self.assertEqual(runtime[2].executor_name, "qa")
-        self.assertEqual(runtime[2].input["message"], "질문")
+        self.assertEqual(runtime[0].executor_name, "qa")
+        self.assertEqual(runtime[0].input["message"], "질문")
         self.assertEqual(runtime[5].response_owner, "agent")
         self.assertEqual(runtime[5].output["response"], "정상 응답")
         self.assertEqual(runtime[3].producer_task_id, "task-1")
