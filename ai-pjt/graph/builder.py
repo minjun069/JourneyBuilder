@@ -18,6 +18,7 @@ from core.context import (
     resolve_confirmed_facts,
 )
 from core.model_boundary import bind_model_call_recorder
+from core.operation_observation import bind_operation_recorder
 from core.observability_masking import (
     exception_identity_fields,
     masked_exception_fields,
@@ -487,17 +488,18 @@ def build_graph(
                 "plan_issues": [],
             }
         try:
-            with bind_model_call_recorder(observed.record_model_call):
-                validation = create_route_plan(
-                    message=state["message"],
-                    step_id=state["step_id"],
-                    context_window=window,
-                    planner=planner,
-                    classifier=classifier,
-                    registered_tool_capabilities=tuple(active_tools),
-                    plan_id=plan_id,
-                    elicit_context_index=planner_elicit_index,
-                )
+            with bind_operation_recorder(observed.record_operation):
+                with bind_model_call_recorder(observed.record_model_call):
+                    validation = create_route_plan(
+                        message=state["message"],
+                        step_id=state["step_id"],
+                        context_window=window,
+                        planner=planner,
+                        classifier=classifier,
+                        registered_tool_capabilities=tuple(active_tools),
+                        plan_id=plan_id,
+                        elicit_context_index=planner_elicit_index,
+                    )
         except Exception as error:
             error_identity = exception_identity_fields(error)
             logger.error(

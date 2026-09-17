@@ -261,6 +261,19 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "agent": "planner",
         })
         exporter.emit({
+            "contract_version": "1.3",
+            "event_family": "operation",
+            "masking_status": "applied",
+            "trace_id": runtime["trace_id"],
+            "attempt_id": "attempt_maskedvalue0001",
+            "stage": "route",
+            "status": "succeeded",
+            "duration_ms": 1,
+            "operation_name": "router.select",
+            "task_id": "task-1",
+            "agent": "router",
+        })
+        exporter.emit({
             **runtime,
             "stage": "plan_validation",
             "status": "started",
@@ -323,13 +336,15 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         planner = by_name["retirewise.planner"]
         validation = by_name["retirewise.plan_validation"]
         planner_model = by_name["retirewise.model.planner.plan"]
-        task = by_name["retirewise.task.qa"]
+        route = by_name["retirewise.route.router.select"]
+        task = by_name["retirewise.task.task-1.qa"]
         binding = by_name["retirewise.binding_resolution"]
         agent_step = by_name["retirewise.agent_step.qa.specify"]
         agent_model = by_name["retirewise.model.qa.specify"]
 
         self.assertIs(planner.parent, root)
         self.assertIs(planner_model.parent, planner)
+        self.assertIs(route.parent, planner)
         self.assertIs(validation.parent, planner)
         self.assertIs(task.parent, root)
         self.assertIs(binding.parent, task)

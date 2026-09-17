@@ -5,6 +5,7 @@ import unittest
 from itertools import count
 
 from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
+from core.operation_observation import record_operation_observation
 from core.runtime_instrumentation import (
     FakeInstrumentationSink,
     InstrumentationPort,
@@ -125,6 +126,16 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         observed, sink = _bound_adapter()
 
         async def qa(_: dict) -> dict:
+            record_operation_observation(
+                stage=OperationStage.SEARCH,
+                status=OperationStatus.SUCCEEDED,
+                operation_name="qa.search",
+                duration_ms=3,
+                agent="qa",
+                resource_ids=("approved-guide",),
+                scores=(0.9,),
+                result_count=1,
+            )
             return {
                 "task_id": "task-1",
                 "status": "completed",
@@ -178,10 +189,16 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(event.trace_id == runtime[0].trace_id for event in runtime))
         self.assertEqual(runtime[0].executor_name, "qa")
         self.assertEqual(runtime[0].input["message"], "질문")
+        search = next(
+            event
+            for event in sink.baseline_events
+            if isinstance(event, OperationTraceEvent)
+            and event.stage is OperationStage.SEARCH
+        )
+        self.assertEqual(search.task_id, "task-1")
         self.assertEqual(runtime[5].response_owner, "agent")
         self.assertEqual(runtime[5].output["response"], "정상 응답")
         self.assertEqual(runtime[3].producer_task_id, "task-1")
-        self.assertEqual(sink.baseline_events, ())
 
 
 if __name__ == "__main__":

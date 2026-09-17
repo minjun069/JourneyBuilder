@@ -622,8 +622,9 @@ def _observation_name(payload: Mapping[str, Any]) -> str:
     if event_family == "runtime":
         stage = str(payload.get("stage") or "event")
         if stage == "task_execution":
+            task_id = str(payload.get("task_id") or "unknown")
             executor = str(payload.get("executor_name") or "unknown")
-            return f"retirewise.task.{executor}"
+            return f"retirewise.task.{task_id}.{executor}"
         return f"retirewise.{stage}"
     if event_family == "operation":
         stage = str(payload.get("stage") or "event")
@@ -691,7 +692,9 @@ def _observation_parent(
         }:
             parent_stage = "task_execution"
     elif event_family == "operation":
-        if isinstance(task_id, str) and task_id:
+        if stage == "route":
+            parent_stage = "planner"
+        elif isinstance(task_id, str) and task_id:
             parent_stage = "task_execution"
         elif stage in {"model", "route"}:
             parent_stage = "planner"

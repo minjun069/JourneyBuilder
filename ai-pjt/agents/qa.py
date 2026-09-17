@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from math import isfinite
+from time import monotonic
 from typing import Any, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -13,6 +15,9 @@ from core.model_boundary import (
     secure_ainvoke,
     secure_system_prompt,
 )
+from core.monitoring import OperationStage, OperationStatus
+from core.observability_masking import exception_identity_fields
+from core.operation_observation import record_operation_observation
 from rag.retriever import format_docs, get_retriever
 
 MAX_RETRIES = 2
@@ -273,10 +278,41 @@ async def _generate(state: QAState) -> dict:
     if state["need_retrieval"]:
         context = state["current_context"]
         if not context:
+            search_started = monotonic()
             try:
                 nodes = await get_retriever().aretrieve(state["current_query"])
-            except RuntimeError:
+            except RuntimeError as error:
                 nodes = []
+                record_operation_observation(
+                    stage=OperationStage.SEARCH,
+                    status=OperationStatus.FAILED,
+                    operation_name="qa.search",
+                    duration_ms=max(
+                        0,
+                        int((monotonic() - search_started) * 1000),
+                    ),
+                    agent="qa",
+                    error_code="retrieval_unavailable",
+                    result_count=0,
+                    output={"result_count": 0},
+                    **exception_identity_fields(error),
+                )
+            else:
+                resource_ids, scores = _search_result_metadata(nodes)
+                record_operation_observation(
+                    stage=OperationStage.SEARCH,
+                    status=OperationStatus.SUCCEEDED,
+                    operation_name="qa.search",
+                    duration_ms=max(
+                        0,
+                        int((monotonic() - search_started) * 1000),
+                    ),
+                    agent="qa",
+                    resource_ids=resource_ids,
+                    scores=scores,
+                    result_count=len(nodes),
+                    output={"result_count": len(nodes)},
+                )
             context = format_docs(nodes)
             update["current_context"] = context
         human_parts = [
@@ -425,6 +461,34 @@ async def _merge(state: QAState) -> dict:
         sensitive_payload=_model_sensitive_payload(state),
     )
     return {"output": {"response": result.content, "update": {}}}
+
+
+def _search_result_metadata(
+    results: list[Any],
+) -> tuple[tuple[str, ...], tuple[float, ...]]:
+    resource_ids: list[str] = []
+    scores: list[float] = []
+    all_scores_available = True
+    for result in results:
+        chunk = getattr(result, "chunk", None)
+        metadata = getattr(chunk, "metadata", None)
+        source_id = getattr(metadata, "source_id", None)
+        if not isinstance(source_id, str) or not source_id:
+            continue
+        resource_ids.append(source_id)
+        score = getattr(result, "score", None)
+        if (
+            isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not isfinite(score)
+        ):
+            all_scores_available = False
+            continue
+        scores.append(float(score))
+    return (
+        tuple(resource_ids),
+        tuple(scores) if all_scores_available else (),
+    )
 
 
 def _requests_unbound_official_value(state: QAState) -> bool:

@@ -7,6 +7,7 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -18,10 +19,12 @@ from core.model_boundary import (
     secure_structured_invoke,
     secure_system_prompt,
 )
+from core.monitoring import OperationStage, OperationStatus
 from core.observability_masking import (
     exception_identity_fields,
     masked_exception_fields,
 )
+from core.operation_observation import record_operation_observation
 from core.step_registry import load_step_candidates
 from graph.elicit_context import ELICIT_TURN_KINDS, FIELD_ID_SET
 from graph.router import TaskClassifier, select_route
@@ -868,13 +871,44 @@ def create_route_plan(
                 **dict(diagnostic),
             })
 
-        task["route"] = select_route(
-            task=task,
-            step_id=step_id,
-            step_candidates=active_candidates,
-            classifier=classifier,
-            registered_tool_capabilities=registered_tool_capabilities,
-            diagnostic_sink=collect_router_diagnostic,
+        route_started = monotonic()
+        try:
+            route = select_route(
+                task=task,
+                step_id=step_id,
+                step_candidates=active_candidates,
+                classifier=classifier,
+                registered_tool_capabilities=registered_tool_capabilities,
+                diagnostic_sink=collect_router_diagnostic,
+            )
+        except Exception as error:
+            record_operation_observation(
+                stage=OperationStage.ROUTE,
+                status=OperationStatus.FAILED,
+                operation_name="router.select",
+                duration_ms=max(0, int((monotonic() - route_started) * 1000)),
+                task_id=task_id,
+                agent="router",
+                error_code="route_selection_failed",
+                input={"task_type": task.get("type")},
+                output={"routed": False},
+                **exception_identity_fields(error),
+            )
+            raise
+        task["route"] = route
+        record_operation_observation(
+            stage=OperationStage.ROUTE,
+            status=OperationStatus.SUCCEEDED,
+            operation_name="router.select",
+            duration_ms=max(0, int((monotonic() - route_started) * 1000)),
+            task_id=task_id,
+            agent="router",
+            input={"task_type": task.get("type")},
+            output={
+                "executor_kind": route.get("executor_kind"),
+                "executor": route.get("executor"),
+                "reason_code": route.get("reason_code"),
+            },
         )
     return RoutePlanValidation(
         valid=True,

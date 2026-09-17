@@ -11,6 +11,7 @@ from typing import Any
 
 from core.model_boundary import bind_model_call_recorder
 from core.monitoring import OperationStage, OperationStatus
+from core.operation_observation import bind_operation_recorder
 from core.observability_masking import (
     exception_identity_fields,
     masked_exception_fields,
@@ -255,13 +256,19 @@ async def execute_route_plan(
             if executor_kind == "tool":
                 raw_result = await executor(execution_input)
             else:
-                with bind_model_call_recorder(
+                with bind_operation_recorder(
                     partial(
-                        instrumentation.record_model_call,
+                        instrumentation.record_operation,
                         task_id=task_id,
                     )
                 ):
-                    raw_result = await executor(execution_input)
+                    with bind_model_call_recorder(
+                        partial(
+                            instrumentation.record_model_call,
+                            task_id=task_id,
+                        )
+                    ):
+                        raw_result = await executor(execution_input)
         except Exception as error:
             # 이 except 는 사용자에게 executor_error 안내문만 남기므로, 여기서 기록하지
             # 않으면 배포본에서 원인을 되짚을 수 있는 흔적이 전혀 남지 않는다.
@@ -295,6 +302,7 @@ async def execute_route_plan(
                     status=OperationStatus.FAILED,
                     operation_name=str(executor_name),
                     duration_ms=operation_duration,
+                    task_id=task_id,
                     error_code="executor_error",
                     input=observable_execution_input,
                     output=failure_output,
@@ -322,6 +330,7 @@ async def execute_route_plan(
                 status=OperationStatus.SUCCEEDED,
                 operation_name=str(executor_name),
                 duration_ms=operation_duration,
+                task_id=task_id,
                 input=observable_execution_input,
                 output=raw_result,
             )
@@ -434,13 +443,19 @@ async def execute_route_plan(
                 },
             )
             try:
-                with bind_model_call_recorder(
+                with bind_operation_recorder(
                     partial(
-                        instrumentation.record_model_call,
+                        instrumentation.record_operation,
                         task_id=fallback_task["id"],
                     )
                 ):
-                    fallback_result = await fallback_executor(fallback_payload)
+                    with bind_model_call_recorder(
+                        partial(
+                            instrumentation.record_model_call,
+                            task_id=fallback_task["id"],
+                        )
+                    ):
+                        fallback_result = await fallback_executor(fallback_payload)
                 fallback_artifact_span = instrumentation.start(
                     RuntimeStage.ARTIFACT_VALIDATION,
                     task_id=fallback_task["id"],

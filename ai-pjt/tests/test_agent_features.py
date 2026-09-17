@@ -300,6 +300,55 @@ class ErrorReviewManualTests(unittest.TestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retrieval_records_only_safe_result_metadata(self) -> None:
+        configure_runtime()
+        from agents import qa
+        from core.operation_observation import bind_operation_recorder
+        from langchain_core.messages import AIMessage
+
+        records: list[dict] = []
+        results = [SimpleNamespace(
+            chunk=SimpleNamespace(
+                metadata=SimpleNamespace(source_id="approved-pension-guide")
+            ),
+            score=0.91,
+        )]
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=results))
+        model = SimpleNamespace(
+            ainvoke=AsyncMock(return_value=AIMessage(content="승인 근거 답변"))
+        )
+        state = {
+            "message": "연금 제도를 설명해줘",
+            "step_id": "pension",
+            "customer_info": {},
+            "bound_inputs": {},
+            "current_query": "연금 제도 승인 근거",
+            "current_context": "",
+            "need_retrieval": True,
+            "retry_hint": "",
+            "official_value_unavailable": False,
+        }
+
+        with (
+            bind_operation_recorder(
+                lambda **event: records.append(dict(event))
+            ),
+            patch.object(qa, "get_retriever", return_value=retriever),
+            patch.object(qa, "format_docs", return_value="승인 문서 context"),
+            patch.object(qa, "llm", model),
+        ):
+            result = await qa._generate(state)
+
+        self.assertEqual(result["current_answer"], "승인 근거 답변")
+        self.assertEqual(len(records), 1)
+        event = records[0]
+        self.assertEqual(event["operation_name"], "qa.search")
+        self.assertEqual(event["resource_ids"], ("approved-pension-guide",))
+        self.assertEqual(event["scores"], (0.91,))
+        self.assertEqual(event["result_count"], 1)
+        self.assertNotIn("query", repr(event).lower())
+        self.assertNotIn("연금 제도 승인 근거", repr(event))
+
     async def test_qualitative_choice_answers_do_not_invent_thresholds(self) -> None:
         configure_runtime()
         from agents import qa
