@@ -28,6 +28,8 @@ class SettingsTests(unittest.TestCase):
         settings.validate_runtime()
 
         self.assertEqual(settings.rag_top_k, 5)
+        self.assertEqual(settings.llm_temperature, 0.0)
+        self.assertEqual(settings.prompt_release, "2026-09-17.1")
         self.assertEqual(settings.rag_fetch_k, 10)
         self.assertEqual(settings.rag_min_dense_score, 0.30)
         self.assertEqual(settings.rag_financial_collection, "financial-knowledge")
@@ -93,6 +95,10 @@ class SettingsTests(unittest.TestCase):
             Settings({**BASE_ENV, "RAG_TOP_K": "5", "RAG_FETCH_K": "4"})
         with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_MIN_DENSE_SCORE"):
             Settings({**BASE_ENV, "RAG_MIN_DENSE_SCORE": "1.1"})
+        with self.assertRaisesRegex(RuntimeConfigurationError, "LLM_TEMPERATURE"):
+            Settings({**BASE_ENV, "LLM_TEMPERATURE": "1.1"})
+        with self.assertRaisesRegex(RuntimeConfigurationError, "PROMPT_RELEASE"):
+            Settings({**BASE_ENV, "PROMPT_RELEASE": "missing"}).validate_runtime()
         with self.assertRaisesRegex(
             RuntimeConfigurationError,
             "AI_CONTEXT_MEMORY_TOP_K",

@@ -10,8 +10,8 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from core.model_boundary import (
     ModelPurpose,
+    prompt_messages,
     secure_structured_invoke,
-    secure_system_prompt,
 )
 from core.observability_masking import (
     exception_identity_fields,
@@ -19,6 +19,7 @@ from core.observability_masking import (
 )
 from core.step_registry import load_agent_descriptions, load_step_candidates
 from graph.state import ChatState
+from prompts import get_prompt
 
 
 STEP_CANDIDATES = load_step_candidates()
@@ -41,27 +42,7 @@ TASK_TYPE_DEFAULT_AGENTS = {
 }
 
 
-ROUTER_PROMPT = secure_system_prompt("""\
-사용자 요청 하나를 분석해 후보 에이전트 중 하나를 선택하세요.
-지정된 구조화 출력 스키마에 맞는 object를 반환하세요.
-
-허용 status: matched, ambiguous, unsupported
-matched이면 agent에 후보 중 하나를 넣고, 그 외에는 null을 넣으세요.
-task type이 역할을 명확히 정한 경우 다음 대응을 우선하세요:
-- answer_question, answer_dashboard_metric: qa
-- propose_form_change: input_assist
-- review_validation_error: error_review
-- interpret_chart: chart_interpret
-- collect_qualitative_info: elicit
-- fallback: fallback
-
-현재 단계: {step_id}
-요청 종류: {task_type}
-요청 설명: {description}
-
-후보 에이전트:
-{candidates}
-""")
+ROUTER_PROMPT = get_prompt("router.classify")
 
 
 class RouterModelOutput(BaseModel):
@@ -248,28 +229,24 @@ def classify_task_with_model(
 ) -> Mapping[str, Any]:
     """Normalize the model response into the small classifier contract."""
 
-    from langchain_core.messages import HumanMessage, SystemMessage
-
     from core.llm import llm
 
-    candidate_lines = "\n".join(
-        f"- {name}: {AGENT_DESCRIPTIONS[name]}" for name in candidates
-    )
-    system = SystemMessage(content=ROUTER_PROMPT.format(
-        step_id=task.get("step_id", ""),
-        task_type=task.get("type", "user_request"),
-        description=task.get("description", ""),
-        candidates=candidate_lines,
-    ))
+    messages = prompt_messages(ROUTER_PROMPT, {
+        "step_id": task.get("step_id", ""),
+        "task_type": task.get("type", "user_request"),
+        "description": task.get("description", ""),
+        "candidates": [
+            {"agent": name, "description": AGENT_DESCRIPTIONS[name]}
+            for name in candidates
+        ],
+    })
     result = secure_structured_invoke(
         llm,
         RouterModelOutput,
-        [
-            system,
-            HumanMessage(content=str(task.get("description", ""))),
-        ],
+        messages,
         purpose=ModelPurpose.ROUTER,
         sensitive_payload={"task": dict(task)},
+        prompt=ROUTER_PROMPT,
     )
     return result.model_dump(mode="json")
 

@@ -45,6 +45,8 @@ uv pip compile \
 | 필수 | `DATABASE_URL` | AI startup과 readiness가 사용하는 PostgreSQL DSN |
 | 현재 필수 | `GOOGLE_API_KEY` | Compose가 고정한 Gemini embedding과 기본 Gemini LLM에 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
+| 모델 선택 | `LLM_PROVIDER`, `LLM_MODEL`, `LLM_TEMPERATURE` | provider·model과 재현 가능한 0~1 temperature. 기본 temperature는 `0` |
+| prompt release | `PROMPT_RELEASE` | AI 이미지에 함께 포함된 활성/직전 prompt release 중 하나. 미지원 값은 startup에서 거부 |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/api/ai/v2/chat/stream` request bearer로 사용 |
 | startup 필수 | `AI_MASKING_PSEUDONYM_KEY` | 서비스 token과 다른 32바이트 이상 가명화 secret |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
@@ -86,7 +88,9 @@ docker compose run --rm --no-deps ai-pjt \
 ```
 
 연결 확인 뒤 AI 서비스를 기동하면 `retirewise.<event_family>.<stage>` observation에서
-가명 trace correlation, 단계·상태·지연, 모델 token·비용 metadata를 확인할 수 있다.
+가명 trace correlation, 단계·상태·지연, 모델 token·비용과 prompt
+ID·version·hash·release·policy version, model provider·name·temperature metadata를
+확인할 수 있다.
 prompt·response·고객 snapshot·도구 원문은 보내지 않는다. SDK는 이 exporter가 직접
 만든 span만 허용하므로 `langfuse.langchain.CallbackHandler`, `@observe`, 자동
 LangChain tracing을 production 경로에 추가하지 않는다.

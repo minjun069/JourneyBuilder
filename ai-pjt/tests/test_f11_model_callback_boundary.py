@@ -17,11 +17,14 @@ from core.model_boundary import (
     ModelOutputBlockedError,
     ModelPurpose,
     mask_model_payload,
+    prompt_messages,
     prompt_policy_version,
     secure_invoke,
     secure_structured_invoke,
     secure_system_prompt,
 )
+from core.prompt_registry import bind_prompt_trace_sink
+from prompts import get_prompt
 from transport.contracts import CompletedCallback
 
 
@@ -80,6 +83,30 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(prompt_policy_version, "1.1")
         self.assertIn("v1.1", DATA_HANDLING_PROMPT)
         self.assertIn("참조 token", DATA_HANDLING_PROMPT)
+
+    def test_registered_prompt_keeps_runtime_payload_out_of_system_message(self) -> None:
+        prompt = get_prompt("qa.specify")
+        messages = prompt_messages(prompt, {"message": "사용자 런타임 입력"})
+
+        self.assertNotIn("사용자 런타임 입력", messages[0].content)
+        self.assertIn("사용자 런타임 입력", messages[1].content)
+
+    def test_prompt_invocation_emits_complete_version_metadata(self) -> None:
+        prompt = get_prompt("qa.specify")
+        records = []
+        with bind_prompt_trace_sink(records.append):
+            secure_invoke(
+                FakeModel("정상 응답"),
+                prompt_messages(prompt, {"message": "질문"}),
+                purpose=ModelPurpose.QA,
+                prompt=prompt,
+            )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].prompt_id, "qa.specify")
+        self.assertEqual(records[0].prompt_version, "1.0.0")
+        self.assertEqual(len(records[0].prompt_hash), 64)
+        self.assertEqual(records[0].prompt_policy_version, "1.1")
 
     def test_structured_output_is_schema_validated_and_retried_once(self) -> None:
         provider = FakeStructuredProvider()
@@ -360,6 +387,7 @@ class ProductionModelCallAuditTests(unittest.TestCase):
         "agents/error_review.py",
         "agents/chart_interpret.py",
         "agents/elicit.py",
+        "core/context_summary.py",
     )
 
     def test_no_production_model_call_bypasses_secure_wrapper(self) -> None:
@@ -375,45 +403,45 @@ class ProductionModelCallAuditTests(unittest.TestCase):
                     bypasses.append(f"{relative}:{node.lineno}")
         self.assertEqual(bypasses, [])
 
-    def test_planner_router_and_six_agents_register_common_prompt(self) -> None:
+    def test_all_model_roles_register_versioned_prompt_specs(self) -> None:
         expected = {
             "graph/planner.py": {"PLANNER_PROMPT"},
             "graph/router.py": {"ROUTER_PROMPT"},
             "agents/qa.py": {
-                "_SPECIFY_SYSTEM",
-                "_DECIDE_SYSTEM",
-                "_ANSWER_SYSTEM",
-                "_DIRECT_ANSWER_SYSTEM",
-                "_MERGE_SYSTEM",
-                "_JUDGE_SYSTEM",
-                "_REFINE_SYSTEM",
+                "_SPECIFY_PROMPT",
+                "_DECIDE_PROMPT",
+                "_ANSWER_PROMPT",
+                "_DIRECT_ANSWER_PROMPT",
+                "_MERGE_PROMPT",
+                "_JUDGE_PROMPT",
+                "_REFINE_PROMPT",
             },
             "agents/input_assist.py": {
-                "_CLASSIFY_SYSTEM",
-                "_IDENTIFY_SYSTEM",
-                "_RESOLVE_SYSTEM",
-                "_ERROR_CHECK_2_SYSTEM",
-                "_MERGE_SYSTEM",
+                "_CLASSIFY_PROMPT",
+                "_IDENTIFY_PROMPT",
+                "_RESOLVE_PROMPT",
+                "_ERROR_CHECK_2_PROMPT",
+                "_MERGE_PROMPT",
             },
-            "agents/error_review.py": {"SYSTEM_PROMPT"},
-            "agents/chart_interpret.py": {"SYSTEM_PROMPT"},
+            "agents/error_review.py": {"REVIEW_PROMPT"},
+            "agents/chart_interpret.py": {"CHART_PROMPT"},
             "agents/elicit.py": {"ANALYZE_PROMPT"},
-            "agents/fallback.py": {"SYSTEM_PROMPT"},
+            "core/context_summary.py": {"SUMMARY_PROMPT"},
         }
         for relative, required_names in expected.items():
             tree = ast.parse((AI_ROOT / relative).read_text(encoding="utf-8"))
-            secured = {
+            registered = {
                 target.id
                 for node in tree.body
                 if isinstance(node, ast.Assign)
                 and isinstance(node.value, ast.Call)
                 and isinstance(node.value.func, ast.Name)
-                and node.value.func.id == "secure_system_prompt"
+                and node.value.func.id == "get_prompt"
                 for target in node.targets
                 if isinstance(target, ast.Name)
             }
             with self.subTest(relative=relative):
-                self.assertTrue(required_names.issubset(secured))
+                self.assertTrue(required_names.issubset(registered))
 
 
 if __name__ == "__main__":

@@ -5,12 +5,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from core.llm import llm
-from core.model_boundary import ModelPurpose, secure_ainvoke, secure_system_prompt
+from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 from graph.elicit_context import (
     ELICIT_TURN_KINDS,
     FIELD_ID_SET,
@@ -21,6 +20,7 @@ from graph.elicit_context import (
     load_elicit_contexts,
 )
 from graph.state import ChatState
+from prompts import get_prompt
 
 
 class ElicitAnalysis(BaseModel):
@@ -32,19 +32,7 @@ class ElicitAnalysis(BaseModel):
 
 _analysis_chain = llm.with_structured_output(ElicitAnalysis)
 
-ANALYZE_PROMPT = secure_system_prompt("""\
-정성정보 필드에 관한 사용자의 현재 발화 하나만 분류하세요.
-- substantive: 필드에 기록할 사용자의 직접 표현이 있음
-- uncertain: 잘 모르겠음 또는 생각할 시간이 필요함
-- refusal: 이 필드에 답하고 싶지 않음
-- stop: 이 필드에 관한 질문을 더 이어가고 싶지 않음
-- skip: 이 필드를 건너뜀
-- reset: 이 필드의 후보를 버리고 처음부터 다시 질문함
-captured_text는 substantive일 때만 작성하세요. 사용자의 의미를 보태지 마세요.
-발화 종류가 correction이고 기존 확인 내용이 있다면, 기존 내용 중 사용자가 명시적으로
-고친 부분만 반영해 필드 전체의 수정된 요약을 반환하세요.
-재무 조언이나 다음 질문을 생성하지 마세요.
-""")
+ANALYZE_PROMPT = get_prompt("elicit.analyze")
 
 
 def _routing(state: ChatState) -> tuple[str, str]:
@@ -203,19 +191,17 @@ async def _analyze_field_turn(
 
     result = await secure_ainvoke(
         _analysis_chain,
-        [
-            SystemMessage(content=ANALYZE_PROMPT),
-            HumanMessage(content=(
-                f"대상 필드: {field_id}\n"
-                f"발화 종류: {turn_kind}\n"
-                f"기존 확인 내용: {context['confirmed_summary']}\n"
-                f"보류 후보: {context['pending_candidate']}\n"
-                f"열린 질문: {context['open_question'] or FIELD_QUESTIONS[field_id]}\n"
-                f"사용자 발화: {state['message']}"
-            )),
-        ],
+        prompt_messages(ANALYZE_PROMPT, {
+            "target_field": field_id,
+            "turn_kind": turn_kind,
+            "confirmed_summary": context["confirmed_summary"],
+            "pending_candidate": context["pending_candidate"],
+            "open_question": context["open_question"] or FIELD_QUESTIONS[field_id],
+            "user_message": state["message"],
+        }),
         purpose=ModelPurpose.ELICIT,
         sensitive_payload={"message": state["message"]},
+        prompt=ANALYZE_PROMPT,
     )
     response_class = result.response_class
     if response_class == "stop":
