@@ -15,7 +15,7 @@ from enum import Enum
 from math import isfinite
 from typing import Any, Protocol, TypeAlias
 
-OBSERVABILITY_CONTRACT_VERSION = "1.2"
+OBSERVABILITY_CONTRACT_VERSION = "1.3"
 
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")
 _PSEUDONYMOUS_SUFFIX = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -135,6 +135,7 @@ class OperationTraceEvent:
     duration_ms: int
     operation_name: str
     step_id: str | None = None
+    task_id: str | None = None
     agent: str | None = None
     error_code: str | None = None
     model_provider: str | None = None
@@ -169,6 +170,7 @@ class OperationTraceEvent:
         for field_name in (
             "operation_name",
             "step_id",
+            "task_id",
             "agent",
             "error_code",
             "model_provider",
@@ -228,6 +230,7 @@ class OperationTraceEvent:
         }
         for name in (
             "step_id",
+            "task_id",
             "agent",
             "error_code",
             "model_provider",

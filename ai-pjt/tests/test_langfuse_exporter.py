@@ -112,7 +112,7 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
                 "thread_id": "thread_maskedvalue0001",
             },
         )
-        self.assertEqual(planner_args["name"], "retirewise.runtime.planner")
+        self.assertEqual(planner_args["name"], "retirewise.planner")
         self.assertEqual(planner_args["metadata"], {})
         self.assertIs(planner.parent, root)
         self.assertNotIn("trace_context", planner_args)
@@ -223,8 +223,118 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         callback_args, callback = client.calls[1]
         self.assertTrue(root.ended)
         self.assertIs(callback.parent, root)
-        self.assertEqual(callback_args["name"], "retirewise.operation.callback")
+        self.assertEqual(
+            callback_args["name"],
+            "retirewise.callback.backend_callback",
+        )
         self.assertNotIn("trace_context", callback_args)
+
+    def test_projects_planner_task_and_agent_step_hierarchy(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        runtime = {
+            "contract_version": "1.5",
+            "event_family": "runtime",
+            "masking_status": "applied",
+            "trace_id": "trace_0123456789abcdef01234567",
+            "request_id": "request_maskedvalue0001",
+            "thread_id": "thread_maskedvalue0001",
+            "plan_id": "plan_maskedvalue0001",
+        }
+
+        exporter.emit({
+            **runtime,
+            "stage": "request_processing",
+            "status": "started",
+        })
+        exporter.emit({**runtime, "stage": "planner", "status": "started"})
+        exporter.emit({
+            "contract_version": "1.3",
+            "event_family": "operation",
+            "masking_status": "applied",
+            "trace_id": runtime["trace_id"],
+            "attempt_id": "attempt_maskedvalue0001",
+            "stage": "model",
+            "status": "succeeded",
+            "duration_ms": 7,
+            "operation_name": "planner.plan",
+            "agent": "planner",
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "plan_validation",
+            "status": "started",
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "plan_validation",
+            "status": "succeeded",
+            "duration_ms": 2,
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "planner",
+            "status": "succeeded",
+            "duration_ms": 10,
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "task_execution",
+            "status": "started",
+            "task_id": "task-1",
+            "depends_on": [],
+            "executor_kind": "agent",
+            "executor_name": "qa",
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "binding_resolution",
+            "status": "started",
+            "task_id": "task-1",
+            "depends_on": [],
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "binding_resolution",
+            "status": "succeeded",
+            "duration_ms": 1,
+            "task_id": "task-1",
+            "depends_on": [],
+        })
+        exporter.emit({
+            "contract_version": "1.3",
+            "event_family": "operation",
+            "masking_status": "applied",
+            "trace_id": runtime["trace_id"],
+            "attempt_id": "attempt_maskedvalue0001",
+            "stage": "model",
+            "status": "succeeded",
+            "duration_ms": 5,
+            "operation_name": "qa.specify",
+            "task_id": "task-1",
+            "agent": "qa",
+        })
+
+        by_name = {
+            args["name"]: observation
+            for args, observation in client.calls
+        }
+        root = by_name["retirewise.request"]
+        planner = by_name["retirewise.planner"]
+        validation = by_name["retirewise.plan_validation"]
+        planner_model = by_name["retirewise.model.planner.plan"]
+        task = by_name["retirewise.task.qa"]
+        binding = by_name["retirewise.binding_resolution"]
+        agent_step = by_name["retirewise.agent_step.qa.specify"]
+        agent_model = by_name["retirewise.model.qa.specify"]
+
+        self.assertIs(planner.parent, root)
+        self.assertIs(planner_model.parent, planner)
+        self.assertIs(validation.parent, planner)
+        self.assertIs(task.parent, root)
+        self.assertIs(binding.parent, task)
+        self.assertIs(agent_step.parent, task)
+        self.assertIs(agent_model.parent, agent_step)
 
     def test_rejects_payload_without_masked_contract_identity(self) -> None:
         exporter = LangfuseInstrumentationExporter(_FakeClient())

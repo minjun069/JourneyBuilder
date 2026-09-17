@@ -272,6 +272,7 @@ class BoundRuntimeInstrumentation:
         status: OperationStatus,
         operation_name: str,
         duration_ms: int,
+        task_id: str | None = None,
         agent: str | None = None,
         error_code: str | None = None,
         model_provider: str | None = None,
@@ -291,6 +292,7 @@ class BoundRuntimeInstrumentation:
             duration_ms=duration_ms,
             operation_name=operation_name,
             step_id=self.correlation.step_id,
+            task_id=task_id,
             agent=agent,
             error_code=error_code,
             model_provider=model_provider,
@@ -310,6 +312,7 @@ class BoundRuntimeInstrumentation:
         duration_ms: int,
         input: Any,
         output: Any,
+        task_id: str | None = None,
         error_type: str | None = None,
         error_fingerprint: str | None = None,
     ) -> None:
@@ -330,6 +333,7 @@ class BoundRuntimeInstrumentation:
             status=operation_status,
             operation_name=f"{purpose}.generate",
             duration_ms=duration_ms,
+            task_id=task_id,
             agent=purpose,
             error_code=(
                 None

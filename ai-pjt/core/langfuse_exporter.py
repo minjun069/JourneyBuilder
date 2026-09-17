@@ -59,6 +59,7 @@ _OBSERVATION_METADATA_FIELDS_BY_FAMILY = {
             "resource_ids",
             "result_count",
             "scores",
+            "task_id",
             "tool_version",
         }
     ),
@@ -129,6 +130,7 @@ _ALLOWED_FIELDS_BY_FAMILY = {
         "stage",
         "status",
         "step_id",
+        "task_id",
         "tool_version",
     },
     "attempt": _COMMON_FIELDS
@@ -197,6 +199,7 @@ _MAX_RETAINED_TRACES = 1_024
 class _OpenObservation:
     observation: _LangfuseObservation
     metadata: dict[str, Any] = field(default_factory=dict)
+    identity: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -282,17 +285,20 @@ class LangfuseInstrumentationExporter:
                 self._evict_closed_traces()
                 return
 
-            observation = state.root.start_observation(
-                **_observation_args(payload, contract_version)
+            self._emit_one_shot_observation(
+                state,
+                payload,
+                contract_version,
             )
-            observation.end()
             self._evict_closed_traces()
 
     def shutdown(self) -> None:
         failure: Exception | None = None
         with self._lock:
             for state in self._traces.values():
-                for open_observation in state.observations.values():
+                for open_observation in reversed(
+                    tuple(state.observations.values())
+                ):
                     try:
                         open_observation.observation.end()
                     except Exception as error:  # noqa: BLE001 - flush all spans
@@ -363,7 +369,7 @@ class LangfuseInstrumentationExporter:
         if payload.get("status") == "started":
             return
 
-        for open_observation in state.observations.values():
+        for open_observation in reversed(tuple(state.observations.values())):
             open_observation.observation.end()
         state.observations.clear()
         state.root.end()
@@ -391,12 +397,14 @@ class LangfuseInstrumentationExporter:
             existing.metadata = metadata
             return
         metadata = _observation_metadata(payload)
-        observation = state.root.start_observation(
+        parent = _observation_parent(state, payload)
+        observation = parent.start_observation(
             **_observation_args(payload, contract_version, metadata=metadata)
         )
         state.observations[lifecycle_key] = _OpenObservation(
             observation=observation,
             metadata=metadata,
+            identity=_observation_identity(payload),
         )
 
     def _finish_runtime_observation(
@@ -415,6 +423,27 @@ class LangfuseInstrumentationExporter:
         )
         open_observation.observation.end()
         del state.observations[lifecycle_key]
+
+    def _emit_one_shot_observation(
+        self,
+        state: _TraceState,
+        payload: Mapping[str, Any],
+        contract_version: str,
+    ) -> None:
+        parent = _observation_parent(state, payload)
+        agent_step = _agent_step_args(payload, contract_version)
+        if agent_step is not None:
+            step_observation = parent.start_observation(**agent_step)
+            observation = step_observation.start_observation(
+                **_observation_args(payload, contract_version)
+            )
+            observation.end()
+            step_observation.end()
+            return
+        observation = parent.start_observation(
+            **_observation_args(payload, contract_version)
+        )
+        observation.end()
 
     def _evict_closed_traces(self) -> None:
         if len(self._traces) <= _MAX_RETAINED_TRACES:
@@ -572,7 +601,7 @@ def _observation_args(
 ) -> dict[str, Any]:
     event_family = str(payload["event_family"])
     args: dict[str, Any] = {
-        "name": f"retirewise.{event_family}.{_event_action(payload)}",
+        "name": _observation_name(payload),
         "as_type": "span",
         "metadata": dict(
             _observation_metadata(payload) if metadata is None else metadata
@@ -586,6 +615,108 @@ def _observation_args(
     if event_family == "operation" and payload.get("stage") == "model":
         args.update(_generation_args(payload))
     return args
+
+
+def _observation_name(payload: Mapping[str, Any]) -> str:
+    event_family = str(payload["event_family"])
+    if event_family == "runtime":
+        stage = str(payload.get("stage") or "event")
+        if stage == "task_execution":
+            executor = str(payload.get("executor_name") or "unknown")
+            return f"retirewise.task.{executor}"
+        return f"retirewise.{stage}"
+    if event_family == "operation":
+        stage = str(payload.get("stage") or "event")
+        operation = str(payload.get("operation_name") or stage)
+        return f"retirewise.{stage}.{operation}"
+    if event_family == "security_decision":
+        boundary = str(payload.get("boundary") or "decision")
+        return f"retirewise.guardrail.{boundary}"
+    return f"retirewise.{event_family}.{_event_action(payload)}"
+
+
+def _agent_step_args(
+    payload: Mapping[str, Any],
+    contract_version: str,
+) -> dict[str, Any] | None:
+    if (
+        payload.get("event_family") != "operation"
+        or payload.get("stage") not in {"model", "search"}
+        or not isinstance(payload.get("task_id"), str)
+        or not isinstance(payload.get("agent"), str)
+        or not isinstance(payload.get("operation_name"), str)
+    ):
+        return None
+    return {
+        "name": f"retirewise.agent_step.{payload['operation_name']}",
+        "as_type": "span",
+        "metadata": {
+            "agent": payload["agent"],
+            "task_id": payload["task_id"],
+        },
+        "version": contract_version,
+    }
+
+
+def _observation_identity(payload: Mapping[str, Any]) -> dict[str, str]:
+    return {
+        name: value
+        for name in (
+            "event_family",
+            "stage",
+            "task_id",
+            "executor_kind",
+            "executor_name",
+        )
+        if isinstance((value := payload.get(name)), str) and value
+    }
+
+
+def _observation_parent(
+    state: _TraceState,
+    payload: Mapping[str, Any],
+) -> _LangfuseObservation:
+    event_family = payload.get("event_family")
+    stage = payload.get("stage")
+    task_id = payload.get("task_id")
+    parent_stage: str | None = None
+
+    if event_family == "runtime":
+        if stage == "plan_validation":
+            parent_stage = "planner"
+        elif stage in {
+            "binding_resolution",
+            "artifact_validation",
+            "dependency_block",
+        }:
+            parent_stage = "task_execution"
+    elif event_family == "operation":
+        if isinstance(task_id, str) and task_id:
+            parent_stage = "task_execution"
+        elif stage in {"model", "route"}:
+            parent_stage = "planner"
+    elif event_family == "security_decision":
+        boundary = payload.get("boundary")
+        if boundary == "plan_guardrail":
+            parent_stage = "planner"
+        elif boundary == "tool_authorization":
+            parent_stage = "task_execution"
+
+    if parent_stage is None:
+        return state.root
+    for open_observation in reversed(tuple(state.observations.values())):
+        identity = open_observation.identity
+        if identity.get("event_family") != "runtime":
+            continue
+        if identity.get("stage") != parent_stage:
+            continue
+        if parent_stage == "task_execution" and (
+            not isinstance(task_id, str)
+            or identity.get("task_id") != task_id
+        ):
+            continue
+        return open_observation.observation
+    return state.root
 
 
 def _is_request_lifecycle(payload: Mapping[str, Any]) -> bool:
