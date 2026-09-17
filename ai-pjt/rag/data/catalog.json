@@ -1,10 +1,10 @@
 {
-  "catalog_version": "2.1.0",
-  "as_of_date": "2026-09-07",
+  "catalog_version": "2.3.0",
+  "as_of_date": "2026-09-17",
   "hash_algorithm": "sha256",
   "acceptance": {
     "status": "domain-approved",
-    "approved_at": "2026-09-07",
+    "approved_at": "2026-09-17",
     "approved_scope": [
       "required",
       "recommended"
@@ -31,12 +31,49 @@
       "document_type": "financial-knowledge",
       "path_pattern": "ai-pjt/rag/data/financial-knowledge/*.md",
       "consumers": [
-        "qa"
+        "qa",
+        "chart_interpret"
       ],
       "purpose": "공식 출처로 확인한 금융 사실과 승인된 내부 진단·가정·상담 정책 제공"
+    },
+    {
+      "id": "chart-guides",
+      "document_type": "financial-knowledge",
+      "path_pattern": "ai-pjt/rag/data/chart-guides/*.md",
+      "consumers": [
+        "chart_interpret"
+      ],
+      "purpose": "Presentation 보고서별 정의·해석 순서·주의사항·호환 가능한 보고서 연결 제공"
     }
   ],
   "documents": [
+    {
+      "id": "chart-guide-presentation-report-interpretation",
+      "title": "Presentation 보고서 해석과 연결",
+      "source_id": "retirewise-presentation-report-interpretation",
+      "publisher": "S15P21B109",
+      "source_locator": "docs/requirements/ai-agent.md#AI-KNOWLEDGE",
+      "published_at": "2026-09-17",
+      "document_type": "financial-knowledge",
+      "collection": "chart-guides",
+      "path": "ai-pjt/rag/data/chart-guides/presentation-report-interpretation.md",
+      "as_of_date": "2026-09-17",
+      "version": "1.0.0",
+      "applies_to": {
+        "country": "KR",
+        "topic": "presentation-report-interpretation",
+        "step_count": 10
+      },
+      "refresh": {
+        "cadence_days": null,
+        "triggers": [
+          "Presentation 단계·chart payload schema 변경",
+          "보고서 산식·사건·연결 호환성 정책 변경"
+        ]
+      },
+      "retire_when": "보고서별 전문 승인 문서가 정의·읽는 순서·주의사항·연결 범위를 대체할 때",
+      "sha256": "118c19eb52f2bb809762dcce6f991d5e0153aec7f1d14c54f2fac60c5838fe9b"
+    },
     {
       "id": "interface-basic-info",
       "document_type": "interface-guide",

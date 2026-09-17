@@ -112,6 +112,7 @@
           ],
           "knowledge_scope": {
             "source_ids": [
+              "retirewise-presentation-report-interpretation",
               "retirewise-retirement-planning-report-interpretation",
               "retirewise-planning-assumptions-2026",
               "retirewise-household-balance-cash-flow"
@@ -312,6 +313,7 @@
           "details": {},
           "knowledge_scope": {
             "source_ids": [
+              "retirewise-presentation-report-interpretation",
               "retirewise-retirement-planning-report-interpretation",
               "retirewise-planning-assumptions-2026",
               "retirewise-household-balance-cash-flow"

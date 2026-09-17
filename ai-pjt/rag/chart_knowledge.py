@@ -11,40 +11,55 @@ from typing import Any
 
 DATA_ROOT = Path(__file__).resolve().parent / "data"
 CATALOG_PATH = DATA_ROOT / "catalog.json"
+PRESENTATION_GUIDE_SOURCE = "retirewise-presentation-report-interpretation"
 
 CHART_KNOWLEDGE_SOURCES: dict[str, tuple[str, ...]] = {
-    "balance-sheet": ("retirewise-household-balance-cash-flow",),
-    "cash-flow": ("retirewise-household-balance-cash-flow",),
+    "balance-sheet": (
+        PRESENTATION_GUIDE_SOURCE,
+        "retirewise-household-balance-cash-flow",
+    ),
+    "cash-flow": (
+        PRESENTATION_GUIDE_SOURCE,
+        "retirewise-household-balance-cash-flow",
+    ),
     "financial-indicators": (
+        PRESENTATION_GUIDE_SOURCE,
         "retirewise-household-financial-indicator-policy",
         "retirewise-household-balance-cash-flow",
     ),
     "financial-goal-result": (
+        PRESENTATION_GUIDE_SOURCE,
         "retirewise-financial-goals-time-value",
         "retirewise-planning-assumptions-2026",
     ),
     "retirement-fund": (
+        PRESENTATION_GUIDE_SOURCE,
         "retirewise-retirement-planning-report-interpretation",
         "retirewise-planning-assumptions-2026",
     ),
     "retirement-readiness": (
+        PRESENTATION_GUIDE_SOURCE,
         "retirewise-retirement-planning-report-interpretation",
         "retirewise-planning-assumptions-2026",
     ),
     "retirement-simulation": (
+        PRESENTATION_GUIDE_SOURCE,
         "retirewise-retirement-planning-report-interpretation",
         "retirewise-planning-assumptions-2026",
     ),
     "pension-schedule": (
+        PRESENTATION_GUIDE_SOURCE,
         "retirewise-retirement-planning-report-interpretation",
         "retirewise-planning-assumptions-2026",
     ),
     "lifetime-cashflow": (
+        PRESENTATION_GUIDE_SOURCE,
         "retirewise-retirement-planning-report-interpretation",
         "retirewise-planning-assumptions-2026",
         "retirewise-household-balance-cash-flow",
     ),
     "required-savings": (
+        PRESENTATION_GUIDE_SOURCE,
         "retirewise-retirement-planning-report-interpretation",
         "retirewise-financial-goals-time-value",
         "retirewise-planning-assumptions-2026",
@@ -75,7 +90,7 @@ def load_chart_knowledge(step_id: str, requested_source_ids: Any) -> str:
     records = {
         record["source_id"]: record
         for record in catalog.get("documents", [])
-        if record.get("collection") == "financial-knowledge"
+        if record.get("collection") in {"financial-knowledge", "chart-guides"}
     }
 
     blocks = []

@@ -35,14 +35,15 @@ INDICATOR_SOURCE = "retirewise-household-financial-indicator-policy"
 GOAL_SOURCE = "retirewise-financial-goals-time-value"
 RETIREMENT_SOURCE = "retirewise-retirement-planning-report-interpretation"
 ASSUMPTION_SOURCE = "retirewise-planning-assumptions-2026"
+PRESENTATION_GUIDE_SOURCE = "retirewise-presentation-report-interpretation"
 
 
 CHART_DEFINITIONS: dict[str, ChartDefinition] = {
-    "balance-sheet": ChartDefinition("balance-sheet", "자산·부채 현황", Report.ReportType.ASSET_STATEMENT, (), (), (BALANCE_SOURCE,), ("cash-flow", "retirement-readiness")),
-    "cash-flow": ChartDefinition("cash-flow", "현금흐름", Report.ReportType.CASH_FLOW, (), (), (BALANCE_SOURCE,), ("balance-sheet", "lifetime-cashflow", "required-savings")),
-    "financial-indicators": ChartDefinition("financial-indicators", "가계재무지표", Report.ReportType.FINANCIAL_INDICATORS, (), (), (INDICATOR_SOURCE, BALANCE_SOURCE), ("balance-sheet", "cash-flow")),
-    "financial-goal-result": ChartDefinition("financial-goal-result", "재무목표 결과", Report.ReportType.FINANCIAL_GOAL_RESULT, ("inflation_rate",), (), (GOAL_SOURCE, ASSUMPTION_SOURCE), ("retirement-fund", "required-savings")),
-    "retirement-fund": ChartDefinition("retirement-fund", "은퇴 필요자금", Report.ReportType.RETIREMENT_FUND, ("inflation_rate",), (), (RETIREMENT_SOURCE, ASSUMPTION_SOURCE), ("financial-goal-result", "retirement-readiness", "required-savings")),
+    "balance-sheet": ChartDefinition("balance-sheet", "자산·부채 현황", Report.ReportType.ASSET_STATEMENT, (), (), (PRESENTATION_GUIDE_SOURCE, BALANCE_SOURCE), ("cash-flow", "retirement-readiness")),
+    "cash-flow": ChartDefinition("cash-flow", "현금흐름", Report.ReportType.CASH_FLOW, (), (), (PRESENTATION_GUIDE_SOURCE, BALANCE_SOURCE), ("balance-sheet", "lifetime-cashflow", "required-savings")),
+    "financial-indicators": ChartDefinition("financial-indicators", "가계재무지표", Report.ReportType.FINANCIAL_INDICATORS, (), (), (PRESENTATION_GUIDE_SOURCE, INDICATOR_SOURCE, BALANCE_SOURCE), ("balance-sheet", "cash-flow")),
+    "financial-goal-result": ChartDefinition("financial-goal-result", "재무목표 결과", Report.ReportType.FINANCIAL_GOAL_RESULT, ("inflation_rate",), (), (PRESENTATION_GUIDE_SOURCE, GOAL_SOURCE, ASSUMPTION_SOURCE), ("retirement-fund", "required-savings")),
+    "retirement-fund": ChartDefinition("retirement-fund", "은퇴 필요자금", Report.ReportType.RETIREMENT_FUND, ("inflation_rate",), (), (PRESENTATION_GUIDE_SOURCE, RETIREMENT_SOURCE, ASSUMPTION_SOURCE), ("financial-goal-result", "retirement-readiness", "required-savings")),
     "retirement-readiness": ChartDefinition(
         "retirement-readiness", "은퇴 준비도", Report.ReportType.RETIREMENT_READINESS,
         ("financial_return_rate", "pension_default_return_rate", "real_estate_appreciation_rate", "wage_growth_rate", "rent_growth_rate", "vacancy_rate"),
@@ -50,21 +51,21 @@ CHART_DEFINITIONS: dict[str, ChartDefinition] = {
             ("financial_return_rate", "aggressive_financial_return_rate"),
             ("pension_default_return_rate", "financial_return_rate"),
         ),
-        (RETIREMENT_SOURCE, ASSUMPTION_SOURCE), ("retirement-fund", "retirement-simulation", "lifetime-cashflow"),
+        (PRESENTATION_GUIDE_SOURCE, RETIREMENT_SOURCE, ASSUMPTION_SOURCE), ("retirement-fund", "retirement-simulation", "lifetime-cashflow"),
     ),
-    "retirement-simulation": ChartDefinition("retirement-simulation", "은퇴 시뮬레이션", None, (), (), (RETIREMENT_SOURCE, ASSUMPTION_SOURCE), ("retirement-readiness", "lifetime-cashflow")),
-    "pension-schedule": ChartDefinition("pension-schedule", "연금 수령 일정", Report.ReportType.PENSION_SCHEDULE, ("inflation_rate",), (), (RETIREMENT_SOURCE, ASSUMPTION_SOURCE), ("retirement-readiness", "lifetime-cashflow")),
+    "retirement-simulation": ChartDefinition("retirement-simulation", "은퇴 시뮬레이션", None, (), (), (PRESENTATION_GUIDE_SOURCE, RETIREMENT_SOURCE, ASSUMPTION_SOURCE), ("retirement-readiness", "lifetime-cashflow")),
+    "pension-schedule": ChartDefinition("pension-schedule", "연금 수령 일정", Report.ReportType.PENSION_SCHEDULE, ("inflation_rate",), (), (PRESENTATION_GUIDE_SOURCE, RETIREMENT_SOURCE, ASSUMPTION_SOURCE), ("retirement-readiness", "lifetime-cashflow")),
     "lifetime-cashflow": ChartDefinition(
         "lifetime-cashflow", "생애 현금흐름", Report.ReportType.LIFETIME_CASHFLOW,
         ("inflation_rate", "investment_rate", "wage_growth_rate", "real_estate_growth_rate"),
         (("inflation_rate", "conservative_inflation_rate"), ("investment_rate", "financial_return_rate")),
-        (RETIREMENT_SOURCE, ASSUMPTION_SOURCE, BALANCE_SOURCE),
+        (PRESENTATION_GUIDE_SOURCE, RETIREMENT_SOURCE, ASSUMPTION_SOURCE, BALANCE_SOURCE),
         ("cash-flow", "retirement-readiness", "pension-schedule", "required-savings"),
     ),
     "required-savings": ChartDefinition(
         "required-savings", "필요저축액", Report.ReportType.REQUIRED_SAVINGS,
         ("expected_return_rate",), (("expected_return_rate", "financial_return_rate"),),
-        (RETIREMENT_SOURCE, GOAL_SOURCE, ASSUMPTION_SOURCE), ("cash-flow", "retirement-fund", "lifetime-cashflow"),
+        (PRESENTATION_GUIDE_SOURCE, RETIREMENT_SOURCE, GOAL_SOURCE, ASSUMPTION_SOURCE), ("cash-flow", "retirement-fund", "lifetime-cashflow"),
     ),
 }
 
