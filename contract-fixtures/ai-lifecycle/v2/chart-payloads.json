@@ -5,6 +5,7 @@
   "chart_contract": {
     "schema_version": "2.1",
     "transport_field": "chart_payload",
+    "representative_step_id": "lifetime-cashflow",
     "supported_step_ids": [
       "balance-sheet",
       "cash-flow",
