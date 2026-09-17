@@ -124,7 +124,7 @@ git status --short
 
 명령은 catalog에서 collection별 승인 문서를 읽고 Markdown chunk를 만든 다음 GMS
 Gemini embedding을 호출해 새 physical index에 upsert한다. 이어 20개 인터페이스
-질문과 38개 금융 질문을 각각 검색해 Recall@5, MRR@5, provenance, collection 혼입,
+질문과 46개 금융 질문을 각각 검색해 Recall@5, MRR@5, provenance, collection 혼입,
 false evidence를 계산한다. 두 결과는 PASS/FAIL과 관계없이 collection 보고서와 하나의
 `official__...__qualification.json`으로 확정된다. 두 collection이 모두 통과한 경우에만
 `activatable=true`가 되며 `--promote`는 두 active pointer를 한 transaction에서 함께
@@ -139,8 +139,8 @@ dense cosine similarity가 `0.54` 미만인 후보는 제외한다. catalog 2.1.
 문서 최저 점수 `0.5401`은 보존하면서, catalog 2.2.0 용어 사전이 무관한 여행 질의에
 반응한 dense 최고 점수 `0.5329`를 차단하도록 GMS `gemini-embedding-2`로 다시 측정한
 경계다. 제목·별칭·본문 BM25 결과는 dense 경계와 독립적으로 RRF에 참여하므로
-용어 정확 일치는 유지한다. corpus·청킹·검색 순위가 바뀐 catalog 2.2.0은 66문항 공식
-qualification을 다시 통과한 뒤에만 승격한다.
+용어 정확 일치는 유지한다. catalog 2.2.0은 이 경계로 66문항 공식 qualification을
+통과해 승격됐다.
 
 `.local/reports/official__<catalog-version>__qualification.json`에서 다음을 모두
 확인한다.
@@ -169,6 +169,24 @@ sha256sum artifacts/official__official-<catalog-version>.tar.gz
 
 첫 artifact가 20 MiB 이하이면 일반 Git으로 커밋한다. 누적 크기가 문제가 될 때만
 `artifacts/*.tar.gz`를 Git LFS로 전환한다.
+
+### catalog 2.2.0 공식 실행 결과
+
+- source revision `e1bfb4da08aef2ef09b5041e4f1e7582d28b51d4`, catalog SHA-256
+  `06f58788a6b8db622d72ad7af4035f32a9cf2b9c564e2f6bcca7f6aa858d3102`, 계산 정책
+  `2026-09-12.v1`/`972ffb38464183cad16f714cc200b962e7c8bf73d3151e0550bb3b7cb49fb7a7`를 고정했다.
+- `interface-guides__official-catalog-2-2-0`은 10문서·38 chunk, Recall@5 `1.000`,
+  MRR@5 `0.967`, provenance `1.000`, 혼입·false evidence 0건이다.
+- `financial-knowledge__official-catalog-2-2-0`은 15문서·230 chunk, Recall@5 `1.000`,
+  MRR@5 `0.911`, provenance `1.000`, 혼입·false evidence 0건이다. 5개 no-result 질의는
+  모두 빈 결과를 반환했다.
+- 전체 66문항은 `PASS`, `activatable=true`, `deployable=true`고, 두 active pointer를
+  한 transaction에서 2.2.0 physical index로 전환했다.
+- artifact는 `artifacts/official__official-catalog-2-2-0.tar.gz`, 4,429,692 bytes,
+  SHA-256 `3e6e5e20e3e490578ad06a435275c9e196655ff915fe4d98b309e87435792a56`다.
+- 독립 consumer의 최초 import는 pointer를 유지한 채 두 index를 삽입했고,
+  활성화·재실행은 두 index를 byte-equivalent로 재사용하면서 38·230 chunk와
+  active pointer를 일치시켰다.
 
 ## 논리 백업 artifact 승계
 

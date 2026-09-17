@@ -23,3 +23,7 @@ version 하나를 선택해 멱등 import 후 두 active pointer를 원자적으
 collection에 active manifest와 chunk가 있는지 다시 확인한다. 새 공식 artifact를 이
 디렉터리에 추가하면 다음 GitLab 배포부터 자동 선택되고, 이미지 롤백 때는 직전
 `rag-bootstrap:last-good` 이미지의 artifact가 다시 활성화된다.
+
+현재 최신 공식 artifact는 `official__official-catalog-2-2-0.tar.gz`이다. catalog
+2.2.0·66문항 GMS qualification을 통과했으며 파일 SHA-256은
+`3e6e5e20e3e490578ad06a435275c9e196655ff915fe4d98b309e87435792a56`다.

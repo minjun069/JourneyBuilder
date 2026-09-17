@@ -96,9 +96,9 @@ G1은 빈 volume·clean image에서 migration, 두 애플리케이션 readiness,
 
 현재 공식 artifact:
 
-- 파일: `ai-pjt/rag/artifacts/official__official-catalog-2-1-0.tar.gz`
-- SHA-256: `4e8f80a985aed40966f3a00516acb25470a6b3a8c18388202f16969d21cc3ed7`
-- active index: `interface-guides__official-catalog-2-1-0`, `financial-knowledge__official-catalog-2-1-0`
+- 파일: `ai-pjt/rag/artifacts/official__official-catalog-2-2-0.tar.gz`
+- SHA-256: `3e6e5e20e3e490578ad06a435275c9e196655ff915fe4d98b309e87435792a56`
+- active index: `interface-guides__official-catalog-2-2-0`, `financial-knowledge__official-catalog-2-2-0`
 
 운영 루트 `.env`에는 GMS key와 실제로 바꿀 검색 tuning만 둔다.
 
@@ -120,8 +120,8 @@ export와 Git 추적 절차는 [RAG pipeline 운영 문서](ai-pjt/rag/README.md
 
 `docker compose up`은 `rag-bootstrap` one-shot을 먼저 실행한다. 배포 이미지 안의 검증된
 `official__*.tar.gz` 중 catalog semantic version이 가장 높은 파일을 멱등 import하고 두
-pointer를 원자적으로 활성화한 뒤에만 `ai-pjt`를 시작한다. 현재 저장소에는 2.1.0 공식
-artifact만 있으므로 2.2.0 공식 artifact가 추가될 때까지는 2.1.0을 유지한다.
+pointer를 원자적으로 활성화한 뒤에만 `ai-pjt`를 시작한다. 2.1.0과 2.2.0이
+함께 있는 현재 저장소에서는 검증을 통과한 최신 2.2.0을 선택한다.
 
 ```bash
 docker compose up --build -d
