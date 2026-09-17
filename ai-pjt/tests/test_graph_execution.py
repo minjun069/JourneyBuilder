@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import unittest
 
+from core.monitoring import OperationStage
 from tests.instrumentation import fake_instrumentation
 
 
@@ -149,9 +150,10 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         })
         planner = CapturePlanner()
         agents = all_agent_graphs()
+        instrumentation, sink = fake_instrumentation()
         graph = build_graph(
             None,
-            instrumentation=fake_instrumentation()[0],
+            instrumentation=instrumentation,
             planner=planner,
             classifier=FakeClassifier(),
             agent_graphs=agents,
@@ -171,6 +173,14 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["elicit_contexts"], contexts)
         self.assertEqual(result["output"]["response"], "qa 응답")
         self.assertEqual(len(agents["fallback"].calls), 0)
+        route_events = [
+            event
+            for event in sink.baseline_events
+            if getattr(event, "stage", None) is OperationStage.ROUTE
+        ]
+        self.assertEqual(len(route_events), 1)
+        self.assertEqual(route_events[0].operation_name, "router.select")
+        self.assertEqual(route_events[0].task_id, "task-1")
 
     async def test_planner_reconnects_field_context_after_intervening_qa(self) -> None:
         from graph.builder import build_graph
@@ -462,7 +472,12 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_planner_instrumentation_includes_conversation_context(self) -> None:
         from graph.builder import build_graph
-        from core.runtime_instrumentation import RuntimeStage, RuntimeStatus
+        from core.runtime_instrumentation import (
+            RuntimeStage,
+            RuntimeStatus,
+            RuntimeTraceEvent,
+            SecurityDecisionTraceEvent,
+        )
 
         instrumentation, sink = fake_instrumentation()
         graph = build_graph(
@@ -508,6 +523,39 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             and event.status is RuntimeStatus.STARTED
         )
         self.assertEqual(planner_start.input["context"]["conversation"], context)
+        events = list(sink.events)
+        input_guardrail_index = next(
+            index
+            for index, event in enumerate(events)
+            if isinstance(event, SecurityDecisionTraceEvent)
+            and event.boundary == "input_guardrail"
+        )
+        planner_start_index = events.index(planner_start)
+        validation_start_index = next(
+            index
+            for index, event in enumerate(events)
+            if isinstance(event, RuntimeTraceEvent)
+            and event.stage is RuntimeStage.PLAN_VALIDATION
+            and event.status is RuntimeStatus.STARTED
+        )
+        validation_end_index = next(
+            index
+            for index, event in enumerate(events)
+            if isinstance(event, RuntimeTraceEvent)
+            and event.stage is RuntimeStage.PLAN_VALIDATION
+            and event.status is not RuntimeStatus.STARTED
+        )
+        planner_end_index = next(
+            index
+            for index, event in enumerate(events)
+            if isinstance(event, RuntimeTraceEvent)
+            and event.stage is RuntimeStage.PLANNER
+            and event.status is not RuntimeStatus.STARTED
+        )
+        self.assertLess(input_guardrail_index, planner_start_index)
+        self.assertLess(planner_start_index, validation_start_index)
+        self.assertLess(validation_start_index, validation_end_index)
+        self.assertLess(validation_end_index, planner_end_index)
 
     async def test_invalid_plan_reaches_compiled_fallback_graph(self) -> None:
         from agents import fallback

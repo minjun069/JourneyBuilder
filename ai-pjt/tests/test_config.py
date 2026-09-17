@@ -40,6 +40,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.context_embedding_batch_size, 8)
         self.assertFalse(settings.langfuse_enabled)
         self.assertEqual(settings.langfuse_base_url, "")
+        self.assertEqual(settings.langfuse_release, "local")
         self.assertEqual(
             settings.masking_pseudonym_key_bytes,
             b"g1-disposable-masking-key-32-bytes!",
@@ -114,6 +115,12 @@ class SettingsTests(unittest.TestCase):
             "LANGFUSE_BASE_URL": "https://langfuse.example.com",
         }
         Settings(enabled).validate_runtime()
+        self.assertEqual(
+            Settings(
+                {**enabled, "LANGFUSE_RELEASE": "candidate-sha-dirty"}
+            ).langfuse_release,
+            "candidate-sha-dirty",
+        )
 
         for name in (
             "LANGFUSE_PUBLIC_KEY",

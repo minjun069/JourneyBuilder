@@ -200,6 +200,7 @@ async def _analyze_field_turn(
             "user_message": state["message"],
         }),
         purpose=ModelPurpose.ELICIT,
+        operation_name="elicit.analyze",
         sensitive_payload={"message": state["message"]},
         prompt=ANALYZE_PROMPT,
     )

@@ -268,6 +268,19 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             sort_keys=True,
         )
         assert_no_raw_sentinels(rendered_trace, ContractSink.TRACE_EXPORT)
+        model_events = [
+            payload
+            for payload in downstream.payloads
+            if payload.get("event_family") == "operation"
+            and payload.get("stage") == "model"
+        ]
+        self.assertEqual(len(model_events), len(TASK_MODEL_PURPOSE))
+        for event in model_events:
+            self.assertEqual(
+                [message["role"] for message in event["input"]],
+                ["system", "user"],
+            )
+            self.assertEqual(event["output"]["role"], "assistant")
         forbidden_event_fields = {
             "message",
             "customer_info",

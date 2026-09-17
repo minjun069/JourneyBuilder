@@ -16,6 +16,7 @@ from core.model_boundary import (
     DATA_HANDLING_PROMPT,
     ModelOutputBlockedError,
     ModelPurpose,
+    bind_model_call_recorder,
     mask_model_payload,
     prompt_messages,
     prompt_policy_version,
@@ -108,6 +109,37 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(len(records[0].prompt_hash), 64)
         self.assertEqual(records[0].prompt_policy_version, "1.1")
 
+    def test_combined_recorders_emit_one_content_and_metadata_event(self) -> None:
+        prompt = get_prompt("qa.specify")
+        model_events: list[dict] = []
+        prompt_events = []
+
+        with bind_model_call_recorder(
+            lambda **event: model_events.append(dict(event))
+        ):
+            with bind_prompt_trace_sink(prompt_events.append):
+                secure_invoke(
+                    FakeModel("정상 응답"),
+                    prompt_messages(prompt, {"message": "질문"}),
+                    purpose=ModelPurpose.QA,
+                    operation_name="qa.specify",
+                    prompt=prompt,
+                )
+
+        self.assertEqual(len(model_events), 1)
+        self.assertEqual(prompt_events, [])
+        event = model_events[0]
+        self.assertEqual(event["prompt_id"], "qa.specify")
+        self.assertEqual(event["prompt_version"], "1.0.0")
+        self.assertEqual(len(event["prompt_hash"]), 64)
+        self.assertTrue(event["prompt_release"])
+        self.assertEqual(event["prompt_policy_version"], "1.1")
+        self.assertEqual(event["input"][0]["role"], "system")
+        self.assertEqual(
+            event["output"],
+            {"role": "assistant", "content": "정상 응답"},
+        )
+
     def test_structured_output_is_schema_validated_and_retried_once(self) -> None:
         provider = FakeStructuredProvider()
         result = secure_structured_invoke(
@@ -151,6 +183,63 @@ class ModelBoundaryTests(unittest.TestCase):
             self.assertNotIn(forbidden, rendered)
         self.assertIn("3000000", rendered)
         self.assertIn(DATA_HANDLING_PROMPT, model.messages[0].content)
+
+    def test_actual_provider_prompt_and_response_are_reported_after_model_masking(self) -> None:
+        raw = {
+            "customer_info": {
+                "customer_name": "홍길동",
+                "phone_number": "010-1234-5678",
+                "monthly_income": 3_000_000,
+            }
+        }
+        records: list[dict] = []
+
+        def record(**event: object) -> None:
+            records.append(dict(event))
+
+        with bind_model_call_recorder(record):
+            result = secure_invoke(
+                FakeModel("월 소득 기준으로 안내할게요."),
+                [
+                    SystemMessage(content=secure_system_prompt("QA 실제 시스템 규칙")),
+                    HumanMessage(content=json.dumps(raw, ensure_ascii=False)),
+                ],
+                purpose=ModelPurpose.QA,
+                operation_name="qa.specify",
+                sensitive_payload=raw,
+            )
+
+        self.assertEqual(result.content, "월 소득 기준으로 안내할게요.")
+        self.assertEqual(len(records), 1)
+        event = records[0]
+        self.assertEqual(event["purpose"], "qa")
+        self.assertEqual(event["operation_name"], "qa.specify")
+        self.assertEqual(event["status"], "succeeded")
+        self.assertEqual(event["input"][0]["role"], "system")
+        self.assertEqual(event["input"][1]["role"], "user")
+        rendered_input = repr(event["input"])
+        self.assertIn("QA 실제 시스템 규칙", rendered_input)
+        self.assertIn("[FINANCIAL_VALUE_MASKED]", rendered_input)
+        self.assertNotIn("3000000", rendered_input)
+        self.assertNotIn("홍길동", rendered_input)
+        self.assertNotIn("010-1234-5678", rendered_input)
+        self.assertEqual(
+            event["output"],
+            {"role": "assistant", "content": "월 소득 기준으로 안내할게요."},
+        )
+
+    def test_observation_failure_does_not_fail_model_call(self) -> None:
+        def fail_to_record(**_event: object) -> None:
+            raise RuntimeError("simulated observability outage")
+
+        with bind_model_call_recorder(fail_to_record):
+            result = secure_invoke(
+                FakeModel("정상 응답"),
+                [SystemMessage(content=secure_system_prompt("QA 규칙"))],
+                purpose=ModelPurpose.QA,
+            )
+
+        self.assertEqual(result.content, "정상 응답")
 
     def test_malicious_phone_or_email_output_is_blocked(self) -> None:
         for content in (

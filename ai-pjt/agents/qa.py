@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from math import isfinite
+from time import monotonic
 from typing import Any, Literal, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -11,6 +14,9 @@ from core.model_boundary import (
     prompt_messages,
     secure_ainvoke,
 )
+from core.monitoring import OperationStage, OperationStatus
+from core.observability_masking import exception_identity_fields
+from core.operation_observation import record_operation_observation
 from prompts import get_prompt
 from rag.retriever import format_docs, get_retriever
 
@@ -152,6 +158,7 @@ async def _specify(state: QAState) -> dict:
         _specify_chain,
         prompt_messages(_SPECIFY_PROMPT, {"message": state["message"]}),
         purpose=ModelPurpose.QA,
+        operation_name="qa.specify",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_SPECIFY_PROMPT,
     )
@@ -187,6 +194,7 @@ async def _decide(state: QAState) -> dict:
             "current_query": state["current_query"],
         }),
         purpose=ModelPurpose.QA,
+        operation_name="qa.decide",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_DECIDE_PROMPT,
     )
@@ -214,10 +222,41 @@ async def _generate(state: QAState) -> dict:
     if state["need_retrieval"]:
         context = state["current_context"]
         if not context:
+            search_started = monotonic()
             try:
                 nodes = await get_retriever().aretrieve(state["current_query"])
-            except RuntimeError:
+            except RuntimeError as error:
                 nodes = []
+                record_operation_observation(
+                    stage=OperationStage.SEARCH,
+                    status=OperationStatus.FAILED,
+                    operation_name="qa.search",
+                    duration_ms=max(
+                        0,
+                        int((monotonic() - search_started) * 1000),
+                    ),
+                    agent="qa",
+                    error_code="retrieval_unavailable",
+                    result_count=0,
+                    output={"result_count": 0},
+                    **exception_identity_fields(error),
+                )
+            else:
+                resource_ids, scores = _search_result_metadata(nodes)
+                record_operation_observation(
+                    stage=OperationStage.SEARCH,
+                    status=OperationStatus.SUCCEEDED,
+                    operation_name="qa.search",
+                    duration_ms=max(
+                        0,
+                        int((monotonic() - search_started) * 1000),
+                    ),
+                    agent="qa",
+                    resource_ids=resource_ids,
+                    scores=scores,
+                    result_count=len(nodes),
+                    output={"result_count": len(nodes)},
+                )
             context = format_docs(nodes)
             update["current_context"] = context
         prompt = _ANSWER_PROMPT
@@ -242,6 +281,7 @@ async def _generate(state: QAState) -> dict:
         llm,
         prompt_messages(prompt, payload),
         purpose=ModelPurpose.QA,
+        operation_name="qa.generate",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=prompt,
     )
@@ -273,6 +313,7 @@ async def _judge(state: QAState) -> dict:
             "answer": state["current_answer"],
         }),
         purpose=ModelPurpose.QA,
+        operation_name="qa.judge",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_JUDGE_PROMPT,
     )
@@ -303,6 +344,7 @@ async def _judge(state: QAState) -> dict:
                 "reason": result.reason,
             }),
             purpose=ModelPurpose.QA,
+            operation_name="qa.refine",
             sensitive_payload=_model_sensitive_payload(state),
             prompt=_REFINE_PROMPT,
         )
@@ -345,10 +387,39 @@ async def _merge(state: QAState) -> dict:
             "partial_answers": state["partial_answers"],
         }),
         purpose=ModelPurpose.QA,
+        operation_name="qa.merge",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_MERGE_PROMPT,
     )
     return {"output": {"response": result.content, "update": {}}}
+
+
+def _search_result_metadata(
+    results: list[Any],
+) -> tuple[tuple[str, ...], tuple[float, ...]]:
+    resource_ids: list[str] = []
+    scores: list[float] = []
+    all_scores_available = True
+    for result in results:
+        chunk = getattr(result, "chunk", None)
+        metadata = getattr(chunk, "metadata", None)
+        source_id = getattr(metadata, "source_id", None)
+        if not isinstance(source_id, str) or not source_id:
+            continue
+        resource_ids.append(source_id)
+        score = getattr(result, "score", None)
+        if (
+            isinstance(score, bool)
+            or not isinstance(score, (int, float))
+            or not isfinite(score)
+        ):
+            all_scores_available = False
+            continue
+        scores.append(float(score))
+    return (
+        tuple(resource_ids),
+        tuple(scores) if all_scores_available else (),
+    )
 
 
 def _requests_unbound_official_value(state: QAState) -> bool:

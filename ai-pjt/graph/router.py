@@ -245,6 +245,7 @@ def classify_task_with_model(
         RouterModelOutput,
         messages,
         purpose=ModelPurpose.ROUTER,
+        operation_name="router.classify",
         sensitive_payload={"task": dict(task)},
         prompt=ROUTER_PROMPT,
     )

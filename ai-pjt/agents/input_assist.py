@@ -138,6 +138,7 @@ async def _classify(state: InputAssistState) -> dict:
         _classify_chain,
         prompt_messages(_CLASSIFY_PROMPT, {"message": state["message"]}),
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.classify",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_CLASSIFY_PROMPT,
     )
@@ -193,6 +194,7 @@ async def _identify(state: InputAssistState) -> dict:
             "message": state["message"],
         }),
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.identify",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_IDENTIFY_PROMPT,
     )
@@ -313,6 +315,7 @@ async def _resolve(state: InputAssistState) -> dict:
             "user_excerpt": item["excerpt"],
         }),
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.resolve",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_RESOLVE_PROMPT,
     )
@@ -411,6 +414,7 @@ async def _error_check_2(state: InputAssistState) -> dict:
             "resolution": state["resolution"],
         }),
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.validate",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_ERROR_CHECK_2_PROMPT,
     )
@@ -544,6 +548,7 @@ async def _merge(state: InputAssistState) -> dict:
             "results": parts,
         }),
         purpose=ModelPurpose.INPUT_ASSIST,
+        operation_name="input_assist.merge",
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_MERGE_PROMPT,
     )

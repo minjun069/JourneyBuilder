@@ -20,7 +20,12 @@ from core.context import (
     StructuredConversationState,
     SummaryJob,
 )
-from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
+from core.model_boundary import (
+    ModelPurpose,
+    bind_model_call_recorder,
+    prompt_messages,
+    secure_ainvoke,
+)
 from core.prompt_registry import bind_prompt_trace_sink
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 from prompts import get_prompt
@@ -95,6 +100,7 @@ class ModelSummaryGenerator:
                 runnable,
                 messages,
                 purpose=ModelPurpose.SUMMARY,
+                operation_name="summary.extract",
                 prompt=SUMMARY_PROMPT,
             )
         else:
@@ -107,13 +113,15 @@ class ModelSummaryGenerator:
                 plan_id=f"summary-{job.scope.session_id}",
                 step_id=f"summary-{job.target_cursor}",
             )
-            with bind_prompt_trace_sink(observed.record_prompt_invocation):
-                result = await secure_ainvoke(
-                    runnable,
-                    messages,
-                    purpose=ModelPurpose.SUMMARY,
-                    prompt=SUMMARY_PROMPT,
-                )
+            with bind_model_call_recorder(observed.record_model_call):
+                with bind_prompt_trace_sink(observed.record_prompt_invocation):
+                    result = await secure_ainvoke(
+                        runnable,
+                        messages,
+                        purpose=ModelPurpose.SUMMARY,
+                        operation_name="summary.extract",
+                        prompt=SUMMARY_PROMPT,
+                    )
         return result if isinstance(result, SummaryCandidate) else SummaryCandidate.model_validate(result)
 
 

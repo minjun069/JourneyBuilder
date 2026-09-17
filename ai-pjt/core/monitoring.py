@@ -135,6 +135,7 @@ class OperationTraceEvent:
     duration_ms: int
     operation_name: str
     step_id: str | None = None
+    task_id: str | None = None
     agent: str | None = None
     error_code: str | None = None
     model_provider: str | None = None
@@ -174,6 +175,7 @@ class OperationTraceEvent:
         for field_name in (
             "operation_name",
             "step_id",
+            "task_id",
             "agent",
             "error_code",
             "model_provider",
@@ -254,6 +256,7 @@ class OperationTraceEvent:
         }
         for name in (
             "step_id",
+            "task_id",
             "agent",
             "error_code",
             "model_provider",

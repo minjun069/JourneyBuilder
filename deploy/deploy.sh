@@ -50,6 +50,15 @@ done
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
+
+# Langfuse release와 OCI revision은 런타임 env가 아니라 새 AI 이미지에 고정한다.
+# 롤백에서 --no-build로 과거 이미지를 다시 올리면 그 이미지가 빌드될 때의 SHA가 유지된다.
+APP_RELEASE="${CI_COMMIT_SHA:-$(git rev-parse HEAD)}"
+if [ -n "$(git status --porcelain)" ]; then
+  APP_RELEASE="${APP_RELEASE}-dirty"
+fi
+export APP_RELEASE
+
 # 프로젝트 이름을 고정한다. compose 기본값은 체크아웃 디렉터리 이름에서 오는데(러너: S15P21B109 → s15p21b109),
 # 롤백이 compose 가 build-only 서비스에 붙이는 이미지 이름(<프로젝트>-<서비스>)을 직접 다뤄야 해서 추측하지 않는다.
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-s15p21b109}"
@@ -121,7 +130,9 @@ report_missing_env() {
 [ -r "$ENV_FILE" ] || { log "env 파일을 읽을 수 없습니다: $ENV_FILE"; exit 1; }
 compose config --quiet || { log "compose 병합 실패 (필수 env 누락?)"; report_missing_env; exit 1; }
 mkdir -p "$STATE_DIR"
-log "저장소 $(git rev-parse --short HEAD 2>/dev/null || echo '?') · env $ENV_FILE · build=$BUILD"
+release_log="$APP_RELEASE"
+[ "$BUILD" = 1 ] || release_log="기존 이미지 유지"
+log "저장소 $(git rev-parse --short HEAD 2>/dev/null || echo '?') · build release $release_log · env $ENV_FILE · build=$BUILD"
 
 # ── 2. 롤백 대상 확인: 직전 성공 배포가 남긴 유지 태그 ───────────────────
 # 기동 중인 컨테이너의 이미지 ID 를 들고 있는 방식은 쓰지 않는다. 그 이미지는 태그를 잃은 채 남아 있어야만

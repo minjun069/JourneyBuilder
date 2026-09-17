@@ -22,6 +22,10 @@ COPY --chown=app:app contract-fixtures/ai-lifecycle/v2/step-registry.json \
 COPY --chown=app:app contract-fixtures/financial-calculation/v1/policy.json \
     ./contract-fixtures/financial-calculation/v1/policy.json
 
+ARG APP_RELEASE=local
+ENV LANGFUSE_RELEASE=${APP_RELEASE}
+LABEL org.opencontainers.image.revision=${APP_RELEASE}
+
 USER app
 
 EXPOSE 8001

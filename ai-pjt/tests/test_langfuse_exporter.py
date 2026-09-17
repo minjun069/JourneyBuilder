@@ -30,8 +30,17 @@ from core.runtime_instrumentation import RuntimeStage
 
 
 class _FakeObservation:
-    def __init__(self) -> None:
+    def __init__(self, client, *, parent=None) -> None:
+        self.client = client
+        self.parent = parent
+        self.updates: list[dict] = []
         self.ended = False
+
+    def start_observation(self, **kwargs):
+        return self.client._start(parent=self, **kwargs)
+
+    def update(self, **kwargs) -> None:
+        self.updates.append(kwargs)
 
     def end(self) -> None:
         self.ended = True
@@ -42,17 +51,20 @@ class _FakeClient:
         self.calls: list[tuple[dict, _FakeObservation]] = []
         self.shutdown_called = False
 
-    def start_observation(self, **kwargs):
-        observation = _FakeObservation()
+    def _start(self, *, parent=None, **kwargs):
+        observation = _FakeObservation(self, parent=parent)
         self.calls.append((kwargs, observation))
         return observation
+
+    def start_observation(self, **kwargs):
+        return self._start(**kwargs)
 
     def shutdown(self) -> None:
         self.shutdown_called = True
 
 
 class LangfuseInstrumentationExporterTests(unittest.TestCase):
-    def test_exports_masked_metadata_with_deterministic_trace_correlation(self) -> None:
+    def test_groups_runtime_lifecycle_under_one_request_root(self) -> None:
         client = _FakeClient()
         exporter = LangfuseInstrumentationExporter(client)
         payload = {
@@ -61,23 +73,58 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "masking_status": "applied",
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
+            "thread_id": "thread_maskedvalue0001",
+            "plan_id": "plan_maskedvalue0001",
             "stage": "planner",
-            "status": "succeeded",
+            "status": "started",
+            "input": {"message": "은퇴 준비를 알려줘"},
         }
 
+        exporter.emit({
+            **payload,
+            "stage": "request_processing",
+        })
         exporter.emit(payload)
-        exporter.emit({**payload, "stage": "aggregation"})
+        exporter.emit({
+            **payload,
+            "status": "succeeded",
+            "duration_ms": 25,
+            "output": {"tasks": 1},
+        })
+        exporter.emit({
+            **payload,
+            "stage": "request_processing",
+            "status": "succeeded",
+            "duration_ms": 30,
+            "output": {"response": "준비 순서를 안내할게요."},
+        })
 
-        first, second = (call[0] for call in client.calls)
-        self.assertEqual(first["name"], "retirewise.runtime.planner")
-        self.assertEqual(first["as_type"], "span")
-        self.assertEqual(first["metadata"], payload)
-        self.assertNotIn("input", first)
-        self.assertNotIn("output", first)
-        trace_id = first["trace_context"]["trace_id"]
+        self.assertEqual(len(client.calls), 2)
+        root_args, root = client.calls[0]
+        planner_args, planner = client.calls[1]
+        self.assertEqual(root_args["name"], "retirewise.request")
+        self.assertEqual(root_args["as_type"], "span")
+        self.assertEqual(
+            root_args["metadata"],
+            {
+                "plan_id": "plan_maskedvalue0001",
+                "request_id": "request_maskedvalue0001",
+                "thread_id": "thread_maskedvalue0001",
+            },
+        )
+        self.assertEqual(planner_args["name"], "retirewise.planner")
+        self.assertEqual(planner_args["metadata"], {})
+        self.assertIs(planner.parent, root)
+        self.assertNotIn("trace_context", planner_args)
+        self.assertEqual(planner_args["input"], payload["input"])
+        self.assertEqual(planner.updates[-1]["output"], {"tasks": 1})
+        self.assertEqual(root.updates[-1]["output"], {
+            "response": "준비 순서를 안내할게요.",
+        })
+        trace_id = root_args["trace_context"]["trace_id"]
         self.assertRegex(trace_id, re.compile(r"^[0-9a-f]{32}$"))
-        self.assertEqual(trace_id, second["trace_context"]["trace_id"])
-        self.assertTrue(all(call[1].ended for call in client.calls))
+        self.assertTrue(root.ended)
+        self.assertTrue(planner.ended)
 
     def test_model_operation_maps_usage_cost_and_masked_content(self) -> None:
         client = _FakeClient()
@@ -98,7 +145,12 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "output": {"status": "matched", "agent": "qa"},
         })
 
-        args = client.calls[0][0]
+        self.assertEqual(len(client.calls), 2)
+        root_args, root = client.calls[0]
+        args, generation = client.calls[1]
+        self.assertIs(generation.parent, root)
+        self.assertNotIn("trace_context", args)
+        self.assertEqual(root_args["input"], args["input"])
         self.assertEqual(args["as_type"], "generation")
         self.assertEqual(args["model"], "gemini-2.5-flash-lite")
         self.assertEqual(
@@ -113,6 +165,9 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertEqual(args["output"], {"status": "matched", "agent": "qa"})
         self.assertNotIn("input", args["metadata"])
         self.assertNotIn("output", args["metadata"])
+        self.assertNotIn("trace_id", args["metadata"])
+        self.assertNotIn("masking_status", args["metadata"])
+        self.assertNotIn("occurred_at_epoch_ms", args["metadata"])
 
     def test_failure_is_marked_without_copying_error_text(self) -> None:
         client = _FakeClient()
@@ -128,9 +183,173 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "reason_code": "TOOL_CONTEXT_MISMATCH",
         })
 
-        args = client.calls[0][0]
+        args = client.calls[1][0]
         self.assertEqual(args["level"], "ERROR")
-        self.assertNotIn("status_message", args)
+        self.assertEqual(args["status_message"], "TOOL_CONTEXT_MISMATCH")
+
+    def test_late_callback_reuses_the_ended_request_root(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        request_event = {
+            "contract_version": "1.4",
+            "event_family": "runtime",
+            "masking_status": "applied",
+            "trace_id": "trace_0123456789abcdef01234567",
+            "request_id": "request_maskedvalue0001",
+            "thread_id": "thread_maskedvalue0001",
+            "plan_id": "plan_maskedvalue0001",
+            "stage": "request_processing",
+        }
+        exporter.emit({**request_event, "status": "started"})
+        exporter.emit({
+            **request_event,
+            "status": "succeeded",
+            "duration_ms": 10,
+        })
+        exporter.emit({
+            "contract_version": "1.2",
+            "event_family": "operation",
+            "masking_status": "applied",
+            "trace_id": "trace_0123456789abcdef01234567",
+            "attempt_id": "attempt_maskedvalue0001",
+            "stage": "callback",
+            "status": "succeeded",
+            "duration_ms": 5,
+            "operation_name": "backend_callback",
+        })
+
+        self.assertEqual(len(client.calls), 2)
+        root = client.calls[0][1]
+        callback_args, callback = client.calls[1]
+        self.assertTrue(root.ended)
+        self.assertIs(callback.parent, root)
+        self.assertEqual(
+            callback_args["name"],
+            "retirewise.callback.backend_callback",
+        )
+        self.assertNotIn("trace_context", callback_args)
+
+    def test_projects_planner_task_and_agent_step_hierarchy(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        runtime = {
+            "contract_version": "1.5",
+            "event_family": "runtime",
+            "masking_status": "applied",
+            "trace_id": "trace_0123456789abcdef01234567",
+            "request_id": "request_maskedvalue0001",
+            "thread_id": "thread_maskedvalue0001",
+            "plan_id": "plan_maskedvalue0001",
+        }
+
+        exporter.emit({
+            **runtime,
+            "stage": "request_processing",
+            "status": "started",
+        })
+        exporter.emit({**runtime, "stage": "planner", "status": "started"})
+        exporter.emit({
+            "contract_version": "1.3",
+            "event_family": "operation",
+            "masking_status": "applied",
+            "trace_id": runtime["trace_id"],
+            "attempt_id": "attempt_maskedvalue0001",
+            "stage": "model",
+            "status": "succeeded",
+            "duration_ms": 7,
+            "operation_name": "planner.plan",
+            "agent": "planner",
+        })
+        exporter.emit({
+            "contract_version": "1.3",
+            "event_family": "operation",
+            "masking_status": "applied",
+            "trace_id": runtime["trace_id"],
+            "attempt_id": "attempt_maskedvalue0001",
+            "stage": "route",
+            "status": "succeeded",
+            "duration_ms": 1,
+            "operation_name": "router.select",
+            "task_id": "task-1",
+            "agent": "router",
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "plan_validation",
+            "status": "started",
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "plan_validation",
+            "status": "succeeded",
+            "duration_ms": 2,
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "planner",
+            "status": "succeeded",
+            "duration_ms": 10,
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "task_execution",
+            "status": "started",
+            "task_id": "task-1",
+            "depends_on": [],
+            "executor_kind": "agent",
+            "executor_name": "qa",
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "binding_resolution",
+            "status": "started",
+            "task_id": "task-1",
+            "depends_on": [],
+        })
+        exporter.emit({
+            **runtime,
+            "stage": "binding_resolution",
+            "status": "succeeded",
+            "duration_ms": 1,
+            "task_id": "task-1",
+            "depends_on": [],
+        })
+        exporter.emit({
+            "contract_version": "1.3",
+            "event_family": "operation",
+            "masking_status": "applied",
+            "trace_id": runtime["trace_id"],
+            "attempt_id": "attempt_maskedvalue0001",
+            "stage": "model",
+            "status": "succeeded",
+            "duration_ms": 5,
+            "operation_name": "qa.specify",
+            "task_id": "task-1",
+            "agent": "qa",
+        })
+
+        by_name = {
+            args["name"]: observation
+            for args, observation in client.calls
+        }
+        root = by_name["retirewise.request"]
+        planner = by_name["retirewise.planner"]
+        validation = by_name["retirewise.plan_validation"]
+        planner_model = by_name["retirewise.model.planner.plan"]
+        route = by_name["retirewise.route.router.select"]
+        task = by_name["retirewise.task.task-1.qa"]
+        binding = by_name["retirewise.binding_resolution"]
+        agent_step = by_name["retirewise.agent_step.qa.specify"]
+        agent_model = by_name["retirewise.model.qa.specify"]
+
+        self.assertIs(planner.parent, root)
+        self.assertIs(planner_model.parent, planner)
+        self.assertIs(route.parent, planner)
+        self.assertIs(validation.parent, planner)
+        self.assertIs(task.parent, root)
+        self.assertIs(binding.parent, task)
+        self.assertIs(agent_step.parent, task)
+        self.assertIs(agent_model.parent, agent_step)
 
     def test_rejects_payload_without_masked_contract_identity(self) -> None:
         exporter = LangfuseInstrumentationExporter(_FakeClient())
@@ -205,9 +424,115 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertNotIn("350만 원", rendered)
         self.assertNotIn("홍길동", rendered)
 
+    def test_actual_chat_prompt_is_masked_and_exported_as_generation_input(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        adapter, _sink = build_masked_runtime_instrumentation(
+            pseudonym_key=b"f15-langfuse-prompt-test-key-32bytes",
+            downstream=exporter,
+            sink=MaskingSink.TRACE_EXPORT,
+        )
+        observed = adapter.bind(
+            request_id="request-raw-0001",
+            thread_id="thread-raw-0001",
+            plan_id="plan-request-raw-0001",
+            step_id="basic-info",
+        )
+
+        observed.record_model_call(
+            purpose="qa",
+            operation_name="qa.generate",
+            status="succeeded",
+            duration_ms=15,
+            prompt_id="qa.answer_direct",
+            prompt_version="1.0.0",
+            prompt_hash="a" * 64,
+            prompt_release="2026-09-17.1",
+            prompt_policy_version="1.1",
+            input=[
+                {"role": "system", "content": "QA 실제 시스템 프롬프트"},
+                {
+                    "role": "user",
+                    "content": "[DIRECT_IDENTIFIER] 고객의 월급은 350만 원입니다.",
+                },
+            ],
+            output={"role": "assistant", "content": "맞춤 안내입니다."},
+        )
+
+        self.assertEqual(len(client.calls), 2)
+        args, _generation = client.calls[1]
+        self.assertEqual(args["as_type"], "generation")
+        self.assertEqual(args["name"], "retirewise.model.qa.generate")
+        self.assertEqual(args["metadata"]["prompt_id"], "qa.answer_direct")
+        self.assertEqual(args["metadata"]["prompt_version"], "1.0.0")
+        self.assertEqual(args["metadata"]["prompt_hash"], "a" * 64)
+        self.assertEqual(
+            args["metadata"]["prompt_release"],
+            "2026-09-17.1",
+        )
+        self.assertEqual(args["metadata"]["prompt_policy_version"], "1.1")
+        self.assertEqual(args["metadata"]["model_temperature"], 0.0)
+        self.assertEqual(args["input"][0], {
+            "role": "system",
+            "content": "QA 실제 시스템 프롬프트",
+        })
+        rendered = repr(args["input"])
+        self.assertIn("[DIRECT_IDENTIFIER]", rendered)
+        self.assertIn("[FINANCIAL_VALUE_MASKED]", rendered)
+        self.assertNotIn("350만 원", rendered)
+        self.assertEqual(
+            args["output"],
+            {"role": "assistant", "content": "맞춤 안내입니다."},
+        )
+
     def test_shutdown_delegates_to_client(self) -> None:
         client = _FakeClient()
-        LangfuseInstrumentationExporter(client).shutdown()
+        exporter = LangfuseInstrumentationExporter(client)
+        exporter.emit({
+            "contract_version": "1.4",
+            "event_family": "runtime",
+            "masking_status": "applied",
+            "trace_id": "trace_0123456789abcdef01234567",
+            "request_id": "request_maskedvalue0001",
+            "thread_id": "thread_maskedvalue0001",
+            "plan_id": "plan_maskedvalue0001",
+            "stage": "planner",
+            "status": "started",
+        })
+
+        exporter.shutdown()
+
+        self.assertTrue(client.shutdown_called)
+        self.assertTrue(all(observation.ended for _, observation in client.calls))
+
+    def test_shutdown_still_stops_client_when_observation_close_fails(self) -> None:
+        class FailingEndObservation(_FakeObservation):
+            def end(self) -> None:
+                raise RuntimeError("simulated observation close failure")
+
+        class FailingEndClient(_FakeClient):
+            def _start(self, *, parent=None, **kwargs):
+                observation = FailingEndObservation(self, parent=parent)
+                self.calls.append((kwargs, observation))
+                return observation
+
+        client = FailingEndClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        exporter.emit({
+            "contract_version": "1.4",
+            "event_family": "runtime",
+            "masking_status": "applied",
+            "trace_id": "trace_0123456789abcdef01234567",
+            "request_id": "request_maskedvalue0001",
+            "thread_id": "thread_maskedvalue0001",
+            "plan_id": "plan_maskedvalue0001",
+            "stage": "planner",
+            "status": "started",
+        })
+
+        with self.assertRaisesRegex(RuntimeError, "observation close"):
+            exporter.shutdown()
+
         self.assertTrue(client.shutdown_called)
 
     def test_builder_exports_only_langfuse_created_spans(self) -> None:
@@ -228,12 +553,14 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
                 public_key="pk-lf-test",
                 secret_key="sk-lf-test",
                 base_url="https://langfuse.example.com",
+                release="candidate-sha-dirty",
             )
 
         self.assertIsInstance(exporter, LangfuseInstrumentationExporter)
         self.assertEqual(captured["public_key"], "pk-lf-test")
         self.assertEqual(captured["secret_key"], "sk-lf-test")
         self.assertEqual(captured["base_url"], "https://langfuse.example.com")
+        self.assertEqual(captured["release"], "candidate-sha-dirty")
         self.assertTrue(captured["tracing_enabled"])
         self.assertIs(captured["should_export_span"], filter_marker)
 
@@ -297,18 +624,24 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             sink.emit(event)
 
         self.assertEqual(sink.dropped_exports, 0)
-        self.assertEqual(len(client.calls), len(events))
+        self.assertEqual(len(client.calls), len(events) + 1)
+        root = client.calls[0][1]
+        self.assertTrue(
+            all(
+                observation.parent is root
+                for _, observation in client.calls[1:]
+            )
+        )
 
     def test_masked_sink_is_the_only_runtime_path_and_isolates_sdk_failure(self) -> None:
-        class FailingObservation(_FakeObservation):
-            def end(self) -> None:
-                raise RuntimeError("simulated SDK failure")
-
         class FailingClient(_FakeClient):
+            def __init__(self) -> None:
+                super().__init__()
+                self.attempts: list[dict] = []
+
             def start_observation(self, **kwargs):
-                observation = FailingObservation()
-                self.calls.append((kwargs, observation))
-                return observation
+                self.attempts.append(kwargs)
+                raise RuntimeError("simulated SDK failure")
 
         client = FailingClient()
         exporter = LangfuseInstrumentationExporter(client)
@@ -328,15 +661,15 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         observed.succeed(span)
 
         self.assertEqual(sink.dropped_exports, 2)
-        self.assertEqual(len(client.calls), 2)
-        for args, _observation in client.calls:
+        self.assertEqual(len(client.attempts), 2)
+        for args in client.attempts:
             rendered = repr(args)
             self.assertNotIn("request-raw-0001", rendered)
             self.assertNotIn("thread-raw-0001", rendered)
             self.assertNotIn("plan-request-raw-0001", rendered)
             self.assertRegex(
-                args["metadata"]["trace_id"],
-                re.compile(r"^trace_[0-9a-f]{24}$"),
+                args["trace_context"]["trace_id"],
+                re.compile(r"^[0-9a-f]{32}$"),
             )
 
 

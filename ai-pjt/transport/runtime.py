@@ -16,8 +16,9 @@ import httpx
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
-from core.monitoring import OperationStatus
+from core.monitoring import OperationStage, OperationStatus
 from core.model_boundary import ModelOutputBlockedError
+from core.observability_masking import exception_identity_fields
 from core.runtime_instrumentation import RuntimeStage, SecurityDecision
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 from guardrails.boundary_policy import BOUNDARY_POLICY_VERSION
@@ -594,8 +595,52 @@ class AsyncChatTransport:
                     message="AI 응답 생성에 실패했습니다.",
                     retryable=False,
                 )
+            validation_started = monotonic()
             try:
                 payload = self._callback_masker.mask(raw_payload)
+            except Exception as error:
+                observed.record_operation(
+                    stage=OperationStage.OUTPUT_VALIDATION,
+                    status=OperationStatus.FAILED,
+                    operation_name="terminal.callback_contract",
+                    duration_ms=max(
+                        0,
+                        int((monotonic() - validation_started) * 1000),
+                    ),
+                    error_code="output_validation_failed",
+                    input={"status": raw_payload.get("status")},
+                    output={"valid": False},
+                    **exception_identity_fields(error),
+                )
+                observed.fail(
+                    request_span,
+                    reason_code="output_validation_failed",
+                )
+                raise
+            observed.record_operation(
+                stage=OperationStage.OUTPUT_VALIDATION,
+                status=OperationStatus.SUCCEEDED,
+                operation_name="terminal.callback_contract",
+                duration_ms=max(
+                    0,
+                    int((monotonic() - validation_started) * 1000),
+                ),
+                input={"status": raw_payload.get("status")},
+                output={"valid": True},
+            )
+            if request_failure is None:
+                observed.record_security_decision(
+                    task_id="response",
+                    boundary="output_guardrail",
+                    decision=SecurityDecision.ALLOWED,
+                    actor_kind="runtime",
+                    actor_name="callback_masker",
+                    target_name="terminal_callback",
+                    target_version=BOUNDARY_POLICY_VERSION,
+                    call_source="request_processing",
+                    reason_code="OUTPUT_ALLOWED",
+                )
+            try:
                 checkpoint = await self._checkpoint_store.save_terminal(
                     request.request_id,
                     payload,

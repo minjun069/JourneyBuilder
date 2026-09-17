@@ -5,6 +5,7 @@ import unittest
 from itertools import count
 
 from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
+from core.operation_observation import record_operation_observation
 from core.prompt_registry import PromptInvocationRecord
 from core.runtime_instrumentation import (
     FakeInstrumentationSink,
@@ -91,6 +92,46 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.status, OperationStatus.TIMEOUT)
         self.assertEqual(event.error_code, "callback_timeout")
 
+    def test_actual_model_call_recorder_emits_generation_content(self) -> None:
+        observed, sink = _bound_adapter()
+        prompt = [
+            {"role": "system", "content": "마스킹된 시스템 프롬프트"},
+            {"role": "user", "content": "마스킹된 사용자 프롬프트"},
+        ]
+        response = {"role": "assistant", "content": "모델 응답"}
+
+        observed.record_model_call(  # type: ignore[attr-defined]
+            purpose="qa",
+            operation_name="qa.judge",
+            status="succeeded",
+            duration_ms=12,
+            task_id="task-1",
+            input=prompt,
+            output=response,
+            prompt_id="qa.judge",
+            prompt_version="1.2.0",
+            prompt_hash="b" * 64,
+            prompt_release="2026-09-17.1",
+            prompt_policy_version="1.1",
+        )
+
+        self.assertEqual(len(sink.baseline_events), 1)
+        event = sink.baseline_events[0]
+        self.assertIsInstance(event, OperationTraceEvent)
+        self.assertEqual(event.stage, OperationStage.MODEL)
+        self.assertEqual(event.operation_name, "qa.judge")
+        self.assertEqual(event.task_id, "task-1")
+        self.assertEqual(event.agent, "qa")
+        self.assertEqual(event.input, prompt)
+        self.assertEqual(event.output, response)
+        self.assertTrue(event.model_provider)
+        self.assertTrue(event.model_name)
+        self.assertEqual(event.prompt_id, "qa.judge")
+        self.assertEqual(event.prompt_version, "1.2.0")
+        self.assertEqual(event.prompt_hash, "b" * 64)
+        self.assertEqual(event.prompt_release, "2026-09-17.1")
+        self.assertEqual(event.prompt_policy_version, "1.1")
+
     def test_prompt_invocation_emits_complete_model_metadata(self) -> None:
         observed, sink = _bound_adapter()
         observed.record_prompt_invocation(PromptInvocationRecord(
@@ -121,6 +162,16 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         observed, sink = _bound_adapter()
 
         async def qa(_: dict) -> dict:
+            record_operation_observation(
+                stage=OperationStage.SEARCH,
+                status=OperationStatus.SUCCEEDED,
+                operation_name="qa.search",
+                duration_ms=3,
+                agent="qa",
+                resource_ids=("approved-guide",),
+                scores=(0.9,),
+                result_count=1,
+            )
             return {
                 "task_id": "task-1",
                 "status": "completed",
@@ -160,9 +211,9 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [event.stage for event in runtime],
             [
-                RuntimeStage.BINDING_RESOLUTION,
-                RuntimeStage.BINDING_RESOLUTION,
                 RuntimeStage.TASK_EXECUTION,
+                RuntimeStage.BINDING_RESOLUTION,
+                RuntimeStage.BINDING_RESOLUTION,
                 RuntimeStage.ARTIFACT_VALIDATION,
                 RuntimeStage.ARTIFACT_VALIDATION,
                 RuntimeStage.TASK_EXECUTION,
@@ -172,12 +223,18 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(runtime[-1].status, RuntimeStatus.SUCCEEDED)
         self.assertTrue(all(event.trace_id == runtime[0].trace_id for event in runtime))
-        self.assertEqual(runtime[2].executor_name, "qa")
-        self.assertEqual(runtime[2].input["message"], "질문")
+        self.assertEqual(runtime[0].executor_name, "qa")
+        self.assertEqual(runtime[0].input["task_type"], "answer_question")
+        search = next(
+            event
+            for event in sink.baseline_events
+            if isinstance(event, OperationTraceEvent)
+            and event.stage is OperationStage.SEARCH
+        )
+        self.assertEqual(search.task_id, "task-1")
         self.assertEqual(runtime[5].response_owner, "agent")
         self.assertEqual(runtime[5].output["response"], "정상 응답")
         self.assertEqual(runtime[3].producer_task_id, "task-1")
-        self.assertEqual(len(sink.baseline_events), 0)
 
 
 if __name__ == "__main__":

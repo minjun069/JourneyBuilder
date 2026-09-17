@@ -294,12 +294,13 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             },
         })
         callback = AsyncMock()
+        instrumentation, sink = fake_instrumentation()
         transport = AsyncChatTransport(
             checkpoint_store=store,
             processor=processor,
             callback_client=callback,
             callback_masker=fake_callback_masker(),
-            instrumentation=fake_instrumentation()[0],
+            instrumentation=instrumentation,
         )
         request = make_request()
         await store.claim(request, request_digest(request))
@@ -318,6 +319,20 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
             callback.send.await_args.kwargs["context"].plan_id,
             f"plan-{request.request_id}",
         )
+        validation_events = [
+            event
+            for event in sink.baseline_events
+            if getattr(event, "stage", None) is OperationStage.OUTPUT_VALIDATION
+        ]
+        self.assertEqual(len(validation_events), 1)
+        self.assertEqual(validation_events[0].status, OperationStatus.SUCCEEDED)
+        output_guardrails = [
+            event
+            for event in sink.security_events
+            if event.boundary == "output_guardrail"
+        ]
+        self.assertEqual(len(output_guardrails), 1)
+        self.assertEqual(output_guardrails[0].decision.value, "allowed")
 
     async def test_expired_request_emits_safe_timeout_callback(self):
         store = InMemoryRequestCheckpointStore()
