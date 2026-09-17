@@ -51,6 +51,7 @@ fi
 
 if [ "$1" = inspect ]; then
   format="$3"
+  container="${@: -1}"
   case "$format" in
     *restart_count*)
       printf '%s\n' '  state=restarting running=true restarting=true restart_count=4 exit_code=1 oom_killed=false error=""'
@@ -58,8 +59,31 @@ if [ "$1" = inspect ]; then
     *start=%s*)
       printf '%s\n' '  start=2026-09-16T00:00:00Z end=2026-09-16T00:00:01Z exit=1 output="not ready: RuntimeError\\n"'
       ;;
+    *State.Status*State.ExitCode*)
+      if [ "$container" = fake-rag-bootstrap ]; then
+        rag_state="$(dirname "$0")/rag-health-seen"
+        if [ "${FAKE_RAG_FAIL_ONCE:-0}" = 1 ] && [ ! -e "$rag_state" ]; then
+          : > "$rag_state"
+          printf '%s\n' 'exited:2'
+        else
+          printf '%s\n' 'exited:0'
+        fi
+      else
+        printf '%s\n' 'running:0'
+      fi
+      ;;
     *)
-      printf '%s\n' healthy
+      if [ "$container" = fake-ai-pjt ]; then
+        ai_state="$(dirname "$0")/ai-health-seen"
+        if [ -e "$ai_state" ]; then
+          printf '%s\n' healthy
+        else
+          : > "$ai_state"
+          printf '%s\n' starting
+        fi
+      else
+        printf '%s\n' healthy
+      fi
       ;;
   esac
   exit 0
@@ -104,7 +128,8 @@ grep -q 'state=restarting.*restart_count=4.*exit_code=1.*oom_killed=false' "$dep
 grep -q 'ai-pjt healthcheck 최근 기록' "$deploy_log"
 grep -q 'output="not ready: RuntimeError' "$deploy_log"
 grep -q 'DIAGNOSTIC_AI_EXCEPTION' "$deploy_log"
-grep -q '롤백 후 상태: web=healthy backend=healthy ai-pjt=healthy http=200 api=401' "$deploy_log"
+grep -q 'rag-bootstrap ← s15p21b109-rag-bootstrap:last-good' "$deploy_log"
+grep -q '롤백 후 상태: rag-bootstrap=exited:0 web=healthy backend=healthy ai-pjt=healthy http=200 api=401' "$deploy_log"
 
 diagnostic_line="$(grep -n 'DIAGNOSTIC_AI_EXCEPTION' "$deploy_log" | cut -d: -f1)"
 rollback_line="$(grep -n 'web ← s15p21b109-web:last-good' "$deploy_log" | cut -d: -f1)"
@@ -114,5 +139,23 @@ if grep -q "$secret_sentinel" "$deploy_log"; then
   echo '배포 진단 로그가 환경변수 값을 노출했습니다' >&2
   exit 1
 fi
+
+rag_failure_log="$tmp/rag-failure.log"
+set +e
+PATH="$fake_bin:$PATH" \
+  ENV_FILE="$env_file" \
+  STATE_DIR="$tmp/rag-state" \
+  AI_REQUIRED=1 \
+  FAKE_RAG_FAIL_ONCE=1 \
+  TIMEOUT=0 \
+  bash "$tool" --no-build > "$rag_failure_log" 2>&1
+rag_status=$?
+set -e
+
+test "$rag_status" -eq 1
+grep -q '실패: 공식 RAG artifact import·activate가 완료되지 않았습니다 (exited:2)' "$rag_failure_log"
+grep -q 'rag-bootstrap 컨테이너 진단 (롤백 전)' "$rag_failure_log"
+grep -q 'rag-bootstrap ← s15p21b109-rag-bootstrap:last-good' "$rag_failure_log"
+grep -q '롤백 후 상태: rag-bootstrap=exited:0' "$rag_failure_log"
 
 echo 'deploy AI diagnostics tests passed'

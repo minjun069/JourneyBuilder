@@ -3,10 +3,11 @@
 #   docker compose --env-file /srv/s15p21b109/secrets/app.env \
 #     -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
-# 루트 compose 는 건드리지 않는다(ai-docs/architecture/overview.md §3). 여기서 추가하는 것은 세 가지뿐:
+# 루트 compose의 공통 서비스 계약은 유지하고, 여기서는 운영 전용 설정만 겹친다:
 #   1. web — front-pjt 이미지(nginx: SPA 정적 + /api·/admin → backend 프록시). 호스트에 바인딩되는 유일한 서비스.
 #      호스트 nginx(TLS 종단, S15P21B109-123)가 127.0.0.1:8080 으로 넘긴다. 외부에 직접 열리지 않는다.
-#   2. restart 정책 — 서버 재부팅·프로세스 종료 후 자동 복구. 상시 서비스 전부에 붙인다(migrate 는 one-shot 이라 제외).
+#   2. restart 정책 — 서버 재부팅·프로세스 종료 후 자동 복구. 상시 서비스 전부에 붙인다
+#      (migrate·rag-bootstrap은 one-shot이라 제외).
 #   3. 로그 상한 — 디스크가 로그로 차는 것을 막는다.
 #
 # 로컬에서도 같은 명령(--env-file 대신 .env)으로 운영과 같은 경로를 재현할 수 있다: http://localhost:8080
@@ -44,6 +45,9 @@ services:
 
   backend:
     <<: [*restart, *logging]
+
+  rag-bootstrap:
+    <<: *logging
 
   ai-pjt:
     <<: [*restart, *logging]

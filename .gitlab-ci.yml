@@ -53,7 +53,7 @@ test:env-contract:
   stage: test
   script:
     - python3 deploy/check_env_contract.py
-    - python3 -m unittest discover -s deploy/tests -p 'test_env_contract.py' -v
+    - python3 -m unittest discover -s deploy/tests -p 'test_*.py' -v
     - bash deploy/tests/test_deploy_ai_diagnostics.sh
 
 # ── 산출물 정합성 게이트 (Makefile g1-foundation, g1_gate.py — 강병민 작성 2026-09-06) ──
@@ -100,6 +100,7 @@ test:ai:
       -e DATABASE_URL="$CI_DATABASE_URL"
       ci-ai:$CI_COMMIT_SHORT_SHA
       sh -c "
+        python -m rag.bootstrap --check-only &&
         python -m unittest discover -s tests -v &&
         python -m unittest discover -s rag/tests -v &&
         python -m unittest discover -s tools/tests -v &&
@@ -162,3 +163,4 @@ deploy:production:
     - bash deploy/deploy.sh
   after_script:
     - docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml ps || true
+    - docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml ps -a rag-bootstrap || true

@@ -66,6 +66,20 @@ services:
     networks:
       - application
 
+  rag-bootstrap:
+    build:
+      context: .
+      dockerfile: ai-pjt/Dockerfile
+    command: ["python", "-m", "rag.bootstrap"]
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?DATABASE_URL is required}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - application
+
   backend:
     build:
       context: .
@@ -137,6 +151,8 @@ services:
       postgres:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      rag-bootstrap:
         condition: service_completed_successfully
     expose:
       - "8001"

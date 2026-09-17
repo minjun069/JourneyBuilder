@@ -120,6 +120,8 @@ docker run --rm \
 1. `DATABASE_URL`과 probe 설정이 유효하다.
 2. 컨테이너 내부 `GET /api/system/v1/health`가 200과 예상 payload를 반환한다.
 3. 현재 LangGraph checkpointer가 사용하는 PostgreSQL에서 `SELECT 1`이 성공한다.
+4. `financial-knowledge`와 `interface-guides` 모두 active pointer와 일치하는 manifest,
+   1개 이상의 chunk를 가진다.
 
 성공하면 `ready`를 출력하고 exit 0, 실패하면 예외 종류만 출력하고 exit 1을 반환한다. DSN·credential·원격 URL이 오류 출력에 포함되지 않도록 예외 메시지는 출력하지 않는다. Dockerfile의 `HEALTHCHECK`가 이 exit code를 `healthy` 또는 `unhealthy`로 변환한다.
 
@@ -140,6 +142,8 @@ P03 Compose 담당자는 다음 조건을 사용한다.
 - service DNS 예시: `ai-pjt`
 - PostgreSQL의 실제 user/password/database/host를 `DATABASE_URL`로 주입
 - AI가 사용할 PostgreSQL service가 먼저 healthy가 되도록 dependency condition 설정
+- 같은 AI 이미지의 `rag-bootstrap` one-shot이 최신 공식 artifact를 import·activate하고
+  exit 0으로 완료된 뒤에만 AI를 시작
 - AI Dockerfile의 healthcheck를 덮어쓴다면 동일한 `python readiness.py` 조건 유지
 - 현재 AI runtime은 Redis를 사용하지 않으므로 Redis를 AI readiness dependency로 연결하지 않음
 
@@ -147,6 +151,7 @@ G1은 빈 환경에서 lock 설치, PostgreSQL 기동, AI `healthy`, 종료 순�
 
 - `DATABASE_URL` 누락
 - PostgreSQL 미기동 또는 연결 끊김
+- 두 operational RAG collection의 active pointer·manifest·chunk 누락
 - `/api/system/v1/health`의 비정상 status 또는 payload
 - 0 이하·10초 초과·숫자가 아닌 readiness timeout
 
@@ -159,11 +164,11 @@ G1은 `DATABASE_URL`, provider credential과 `AI_SERVICE_BEARER_TOKEN`을 startu
 1. `AI_SERVICE_BEARER_TOKEN`은 `/api/ai/v2/chat/stream` 인증에 연결된 rotation 가능한 secret이다.
 2. 비스트리밍 `/v2/chat`, 구형 `/chat[/stream]`, HTTP callback 전송과 관련 환경변수는 제거됐다.
 3. startup/config 오류와 SSE 로그에 API key, bearer token, 전체 DSN을 남기지 않는다.
-4. `/ready` endpoint를 application에 추가한다면 `readiness.py`와 PostgreSQL 판정이 서로 달라지지 않게 하나를 공통 경계로 만들고 Docker healthcheck도 그 경계를 사용한다.
+4. `/ready` endpoint를 application에 추가한다면 `readiness.py`의 PostgreSQL·active RAG 판정과 서로 달라지지 않게 하나를 공통 경계로 만들고 Docker healthcheck도 그 경계를 사용한다.
 5. 실제 LLM·Redis·Langfuse 호출을 readiness에 추가하지 않는다. 별도 provider/SSE smoke test와 운영 관측으로 검증한다.
 
 후속 검증에는 인증 없는 SSE request 거부, 제거된 route의 404, DSN/token 마스킹, PostgreSQL 정상·장애,
-liveness 정상인데 PostgreSQL이 실패하는 경우를 포함한다. readiness 구현 변경 시
+liveness 정상인데 PostgreSQL 또는 active RAG index가 실패하는 경우를 포함한다. readiness 구현 변경 시
 `tests/test_readiness.py`도 같은 변경에서 갱신한다.
 
 ## P01 Docker 검증 결과

@@ -15,3 +15,11 @@
 `experiment__...` 파일은 로컬 검증용이며 배포 DB에서 활성화할 수 없다. 공식
 artifact 생성·교체와 승인 corpus 갱신은 RAG 담당자만 수행한다. 다른 개발자와
 운영자는 전달받은 공식 파일의 checksum을 검사한 뒤 import만 수행한다.
+
+배포 이미지에는 이 디렉터리가 포함된다. `rag.bootstrap`은 모든 `official__*.tar.gz`
+파일의 checksum·qualification·manifest 결합을 검증하고 가장 높은 catalog semantic
+version 하나를 선택해 멱등 import 후 두 active pointer를 원자적으로 전환한다. Compose의
+`rag-bootstrap` one-shot이 성공해야 `ai-pjt`가 시작하며, AI readiness는 두 logical
+collection에 active manifest와 chunk가 있는지 다시 확인한다. 새 공식 artifact를 이
+디렉터리에 추가하면 다음 GitLab 배포부터 자동 선택되고, 이미지 롤백 때는 직전
+`rag-bootstrap:last-good` 이미지의 artifact가 다시 활성화된다.

@@ -116,58 +116,16 @@ RAG_INDEX_RETENTION_DAYS=30
 공식 artifact 생성·갱신은 RAG 담당자만 수행한다. 생산자 DB 준비, qualification,
 export와 Git 추적 절차는 [RAG pipeline 운영 문서](ai-pjt/rag/README.md#공식-artifact-생성과-갱신)를 따른다.
 
-### 애플리케이션 DB에 artifact 반영
+### 애플리케이션 DB에 artifact 자동 반영
 
-배포할 commit을 checkout한 뒤 PostgreSQL과 AI 이미지를 먼저 준비한다.
-
-```bash
-docker compose config --quiet
-docker compose up -d postgres
-docker compose build ai-pjt
-```
-
-현재 pointer를 기록하고 artifact 자체를 검사한다.
-
-```bash
-docker compose exec --no-TTY postgres psql \
-  --username retirewise \
-  --dbname retirewise_db \
-  --command "SELECT logical_collection, physical_collection FROM rag_active_indexes ORDER BY logical_collection;"
-
-docker compose run --rm --no-TTY ai-pjt \
-  python -m rag.artifacts inspect \
-  --artifact rag/artifacts/official__official-<catalog-version>.tar.gz
-```
-
-먼저 활성화 없이 import한다. `inserted_physical_collections` 또는
-`reused_physical_collections`에 두 공식 index가 있고 `activation_performed=false`인지
-확인한다.
-
-```bash
-docker compose run --rm --no-TTY ai-pjt \
-  python -m rag.artifacts import \
-  --artifact rag/artifacts/official__official-<catalog-version>.tar.gz
-```
-
-manifest와 chunk가 충돌하면 중단한다. 이상이 없을 때만 두 pointer를 함께 활성화한다.
-
-```bash
-docker compose run --rm --no-TTY ai-pjt \
-  python -m rag.artifacts import \
-  --artifact rag/artifacts/official__official-<catalog-version>.tar.gz \
-  --activate
-
-docker compose exec --no-TTY postgres psql \
-  --username retirewise \
-  --dbname retirewise_db \
-  --command "SELECT logical_collection, physical_collection FROM rag_active_indexes ORDER BY logical_collection;"
-```
-
-`activation_performed=true`와 두 공식 physical ID를 확인한 뒤 전체 서비스를 기동하고
-readiness와 실제 검색을 검사한다.
+`docker compose up`은 `rag-bootstrap` one-shot을 먼저 실행한다. 배포 이미지 안의 검증된
+`official__*.tar.gz` 중 catalog semantic version이 가장 높은 파일을 멱등 import하고 두
+pointer를 원자적으로 활성화한 뒤에만 `ai-pjt`를 시작한다. 현재 저장소에는 2.1.0 공식
+artifact만 있으므로 2.2.0 공식 artifact가 추가될 때까지는 2.1.0을 유지한다.
 
 ```bash
 docker compose up --build -d
+docker compose ps -a rag-bootstrap
 docker compose exec ai-pjt python readiness.py
 docker compose exec backend python readiness.py
 
@@ -175,8 +133,13 @@ docker compose exec --no-TTY ai-pjt python -c \
   'from rag.retriever import get_retriever; r=get_retriever("financial-knowledge"); assert r.retrieve("연금저축 IRP 세액공제 한도", top_k=5); assert not r.retrieve("김치찌개 조리법", top_k=5)'
 ```
 
-검증에 실패하면 서비스를 중단하고, 반영 전에 기록한 이전 공식 artifact를 같은 import
-명령의 `--artifact`에 지정해 `--activate`한 뒤 pointer와 readiness를 다시 확인한다.
+`deploy/deploy.sh`는 `rag-bootstrap` 이미지도 `:last-good`으로 보존한다. 새 배포가
+실패하면 직전 이미지들을 복원하고 이전 이미지에 포함된 최신 공식 artifact를 다시
+활성화한다. 수동 점검만 필요할 때는 DB에 쓰지 않는 다음 명령을 사용한다.
+
+```bash
+docker compose run --rm --no-TTY rag-bootstrap python -m rag.bootstrap --check-only
+```
 
 ## PB 관리자 대시보드
 
