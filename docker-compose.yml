@@ -98,6 +98,8 @@ services:
     build:
       context: .
       dockerfile: ai-pjt/Dockerfile
+      args:
+        APP_RELEASE: "${APP_RELEASE:-local}"
     environment:
       LLM_PROVIDER: "${LLM_PROVIDER:-gemini}"
       EMBEDDING_PROVIDER: "gemini"
@@ -131,7 +133,6 @@ services:
       LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
       LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-}"
       LANGFUSE_TRACING_ENVIRONMENT: "${LANGFUSE_TRACING_ENVIRONMENT:-default}"
-      LANGFUSE_RELEASE: "${LANGFUSE_RELEASE:-}"
       LANGCHAIN_TRACING_V2: "false"
     depends_on:
       postgres:

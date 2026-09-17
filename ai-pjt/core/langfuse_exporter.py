@@ -431,6 +431,7 @@ def build_langfuse_instrumentation_exporter(
     public_key: str,
     secret_key: str,
     base_url: str,
+    release: str,
 ) -> LangfuseInstrumentationExporter:
     """Build an isolated masked-event client without third-party span export."""
 
@@ -440,6 +441,7 @@ def build_langfuse_instrumentation_exporter(
         public_key=public_key,
         secret_key=secret_key,
         base_url=base_url,
+        release=release,
         tracing_enabled=True,
         should_export_span=is_langfuse_span,
     )

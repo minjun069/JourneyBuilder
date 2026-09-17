@@ -51,7 +51,8 @@ uv pip compile \
 | 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.30 |
 | 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM` | retired 인덱스 30일 보관, embedding 차원 |
 | Langfuse 조건부 필수 | `LANGFUSE_ENABLED`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | 활성화할 때 세 연결값을 모두 명시하며 URL credential을 금지 |
-| Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT`, `LANGFUSE_RELEASE` | 환경 분리와 배포 SHA·버전 표시 |
+| Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT` | 환경 분리 |
+| 이미지 빌드 | `APP_RELEASE` | 기본 `local`. Dockerfile이 `LANGFUSE_RELEASE`와 OCI revision label로 고정하는 Git SHA·버전 |
 | readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/api/system/v1/health`, 2초 |
 | 미래 선택 | `REDIS_URL` | 현재 AI runtime과 readiness는 사용하지 않음 |
 | 운영 선택 | `LOG_LEVEL`, `RAG_SOURCE_REVISION` | 로그 수준과 indexing provenance 재정의 |
@@ -72,7 +73,6 @@ LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_TRACING_ENVIRONMENT=development
-LANGFUSE_RELEASE=<git-sha-or-release>
 LANGCHAIN_TRACING_V2=false
 ```
 
@@ -103,13 +103,28 @@ Langfuse 전송은 비동기다. FastAPI lifespan 종료 시 SDK `shutdown()`으
 flush하며, emit 또는 shutdown 장애는 AI 업무 응답을 실패시키지 않는다. Langfuse는
 readiness dependency가 아니므로 장애 여부는 exporter 지표와 별도 smoke에서 확인한다.
 
+Langfuse release는 실행 시 `.env`로 주입하지 않는다. `APP_RELEASE` build arg를
+Dockerfile이 `LANGFUSE_RELEASE`와 `org.opencontainers.image.revision`에 함께 기록하고,
+SDK 생성자에도 그 값을 명시적으로 전달한다. `deploy/deploy.sh`는 새 이미지를 빌드하기
+전에 `CI_COMMIT_SHA` 또는 현재 Git SHA를 선택하고 미커밋 변경이 있으면 `-dirty`를
+붙인다. 따라서 `--no-build` 롤백은 과거 이미지에 저장된 과거 SHA를 유지하며, 서버
+`.env`에 남은 `LANGFUSE_RELEASE` 값은 Compose가 전달하지 않는다.
+
 ## Container build와 실행
 
 공용 step registry를 image에 포함하기 위해 저장소 루트를 build context로 사용한다.
 
 ```bash
-docker build -f ai-pjt/Dockerfile -t retirewise-ai:g1 .
+docker build \
+  --build-arg APP_RELEASE="$(git rev-parse HEAD)" \
+  -f ai-pjt/Dockerfile \
+  -t retirewise-ai:g1 \
+  .
 ```
+
+Compose로 로컬 이미지를 한 번 빌드할 때도 런타임 `LANGFUSE_RELEASE` 대신
+`APP_RELEASE="$(git rev-parse HEAD)" docker compose build ai-pjt`를 사용한다. build arg를
+생략하면 두 이미지 메타데이터 모두 `local`이 된다.
 
 기본 배포에서는 AI 포트를 host에 공개하지 않고 Backend가 Compose 내부 주소 `http://ai-pjt:8001`로 호출한다. 로컬에서 직접 smoke test할 때만 loopback에 임시 공개한다.
 

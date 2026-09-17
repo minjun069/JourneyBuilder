@@ -367,12 +367,14 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
                 public_key="pk-lf-test",
                 secret_key="sk-lf-test",
                 base_url="https://langfuse.example.com",
+                release="candidate-sha-dirty",
             )
 
         self.assertIsInstance(exporter, LangfuseInstrumentationExporter)
         self.assertEqual(captured["public_key"], "pk-lf-test")
         self.assertEqual(captured["secret_key"], "sk-lf-test")
         self.assertEqual(captured["base_url"], "https://langfuse.example.com")
+        self.assertEqual(captured["release"], "candidate-sha-dirty")
         self.assertTrue(captured["tracing_enabled"])
         self.assertIs(captured["should_export_span"], filter_marker)
 

@@ -86,6 +86,7 @@ async def lifespan(app: FastAPI):
             public_key=settings.langfuse_public_key,
             secret_key=settings.langfuse_secret_key,
             base_url=settings.langfuse_base_url,
+            release=settings.langfuse_release,
         )
     else:
         instrumentation_exporter = StructuredLogInstrumentationExporter(

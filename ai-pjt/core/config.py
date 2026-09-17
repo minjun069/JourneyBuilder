@@ -180,6 +180,9 @@ class Settings:
         self.langfuse_base_url = active_environ.get(
             "LANGFUSE_BASE_URL", ""
         ).strip()
+        self.langfuse_release = (
+            active_environ.get("LANGFUSE_RELEASE", "local").strip() or "local"
+        )
 
     @staticmethod
     def _require_runtime_value(name: str, value: str) -> None:
