@@ -45,7 +45,7 @@ def make_document(version: str, text: str) -> SourceDocument:
 
 @unittest.skipUnless(DATABASE_URL, "RAG_TEST_DATABASE_URL is not configured")
 class PostgresStoreIntegrationTests(unittest.TestCase):
-    def test_approved_catalog_and_58_queries_pass_in_pgvector(self) -> None:
+    def test_approved_catalog_and_66_queries_pass_in_pgvector(self) -> None:
         repository_root = Path(__file__).resolve().parents[3]
         rag_root = repository_root / "ai-pjt" / "rag"
         catalog = load_approved_catalog(
@@ -80,7 +80,7 @@ class PostgresStoreIntegrationTests(unittest.TestCase):
         for collection in ("interface-guides", "financial-knowledge"):
             manifest = pipeline.build(
                 catalog.for_collection(collection),
-                IndexTarget(collection, "postgres-catalog-2-1-0", operational=True),
+                IndexTarget(collection, "postgres-catalog-2-2-0", operational=True),
             )
             report = evaluate_retriever(
                 retriever=retriever,
@@ -95,7 +95,7 @@ class PostgresStoreIntegrationTests(unittest.TestCase):
             candidates.append((manifest, report))
             query_count += report.query_count
 
-        self.assertEqual(query_count, 58)
+        self.assertEqual(query_count, 66)
         pipeline.promote_many(candidates)
         for manifest, _ in candidates:
             self.assertEqual(

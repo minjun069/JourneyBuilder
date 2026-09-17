@@ -63,3 +63,10 @@
 실제 Gemini 평가는 배포환경의 `GOOGLE_API_KEY`와 `DATABASE_URL`을 주입해 다시 실행한다.
 계산기 정합화는 F09-T07 별도 작업이며 완료 전 `financial-knowledge` 운영 승격은 명령이
 거부한다. 이 제한은 인터페이스 승격과 비활성 후보 build·평가를 막지 않는다.
+
+## 2026-09-17 제품 용어 RAG 보완
+
+- 제품 용어 188개를 정의·별칭·사용 맥락·주의사항이 있는 Markdown 188개 독립 청크로 추가했다.
+- 한국어 조사와 띄어쓰기·별칭을 정규화하고 제목 4.0, 별칭 2.5, 본문 1.0의 BM25 필드 가중치와 dense RRF를 적용했다.
+- 승인 후보는 25문서와 66개 gold query로 늘었고 deterministic 재현검사를 통과했다.
+- 운영 active는 catalog 2.1.0을 유지하며 catalog 2.2.0의 실제 Gemini qualification과 artifact 승격은 RAG 담당자가 수행한다.

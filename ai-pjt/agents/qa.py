@@ -13,7 +13,6 @@ from core.model_boundary import (
     secure_ainvoke,
     secure_system_prompt,
 )
-from core.product_glossary import answer_product_term_question
 from rag.retriever import format_docs, get_retriever
 
 MAX_RETRIES = 2
@@ -37,6 +36,7 @@ class QAState(TypedDict):
     # 쿼리별 작업 필드
     current_query: str
     current_context: str  # 첫 시도에서 캐시, retry 시 재사용
+    current_sources: list[str]
     current_answer: str
     need_retrieval: bool
     retry_hint: str      # judge 실패 이유 → generate 재시도 시 참고
@@ -87,6 +87,7 @@ _SPECIFY_SYSTEM = secure_system_prompt("""\
 [작성 규칙]
 - 과도한 확장 금지: 사용자의 질문 범위를 넘어선 구체적인 하위 사례(예: 특정 상품명, 개별 공제 항목 등)를 자의적으로 생성하지 마세요.
 - 핵심 개념 위주: 질문의 뼈대가 되는 상위 개념과 구조적 키워드에 집중하여 최소화하세요.
+- 제품 용어의 뜻을 묻는 질문은 사용자가 쓴 용어명 또는 별칭을 바꾸지 말고 검색어에 그대로 남기세요.
 
 [예시]
 사용자 질문: "세액 공제 한도 구조 알려주세요"
@@ -101,6 +102,8 @@ _DECIDE_SYSTEM = secure_system_prompt("""\
 
 검증된 선행 값이 있다는 이유만으로 retrieve를 금지하지 마세요. 검색 문서는 그 값을
 바꾸거나 다른 공식 숫자를 만들기 위한 근거가 아니라 보충 설명에만 사용합니다.
+제품 화면의 용어명·별칭·뜻·차이·사용 맥락·주의사항을 묻는 질문은 승인된 제품 용어
+문서를 확인해야 하므로 retrieve로 판단하세요.
 requests_new_official_value는 binding에 없는 새 공식 수치·한도·비율을 묻는 경우 true입니다.""")
 
 _ANSWER_SYSTEM = secure_system_prompt("""\
@@ -108,6 +111,8 @@ _ANSWER_SYSTEM = secure_system_prompt("""\
 제공된 승인 문서 근거만 사용해 사용자 질문에 정확하고 이해하기 쉽게 답변하세요.
 문서에 없는 내용은 추측하지 말고 현재 근거로 확인할 수 없다고 밝히세요.
 사실을 설명할 때는 참고 문서에 표시된 문서 제목과 원문 위치를 함께 인용하세요.
+제품 용어 질문은 검색된 용어 절의 정의·사용 맥락·주의사항을 질문 맥락에 맞게 풀어 쓰고,
+답변 끝에 `출처: 문서 제목 (원문 위치)` 형식으로 해당 용어 문서를 반드시 표시하세요.
 검증된 선행 task 입력이 있으면 그 값·단위·출처를 그대로 사용하고 다시 계산하거나 바꾸지 마세요.""")
 
 _DIRECT_ANSWER_SYSTEM = secure_system_prompt("""\
@@ -119,7 +124,7 @@ _MERGE_SYSTEM = secure_system_prompt("""\
 아래 부분 답변들을 하나의 완결된 답변으로 통합하세요.
 두괄식으로 작성하세요: 핵심 결론을 먼저 제시하고, 이후 근거와 세부 내용을 자연스럽게 설명하세요.
 중복 내용은 제거하세요. 검증된 선행 값·단위·출처·기준일은 그대로 보존하고
-다른 값으로 바꾸거나 재계산하지 마세요.""")
+다른 값으로 바꾸거나 재계산하지 마세요. 부분 답변의 문서 출처도 삭제하지 마세요.""")
 
 _JUDGE_SYSTEM = secure_system_prompt("""\
 답변의 품질을 평가하세요.
@@ -129,6 +134,8 @@ _JUDGE_SYSTEM = secure_system_prompt("""\
 - bad + answer_quality: 근거는 충분하지만 표현·구성·질문 충실도가 부족함
 - bad + evidence_insufficient: 현재 승인 문서 context만으로 질문의 근거를 뒷받침할 수 없음
 
+제품 용어를 설명하면서 검색된 용어 문서의 제목과 원문 위치를 출처로 표시하지 않았다면
+answer_quality로 판정하세요.
 검증된 선행 값 자체는 다시 평가하거나 변경하지 마세요.""")
 
 _REFINE_SYSTEM = secure_system_prompt("""\
@@ -147,6 +154,7 @@ def _init(_: QAState) -> dict:
         "query_index": 0,
         "current_query": "",
         "current_context": "",
+        "current_sources": [],
         "current_answer": "",
         "need_retrieval": False,
         "retry_hint": "",
@@ -159,8 +167,6 @@ def _init(_: QAState) -> dict:
 
 
 async def _specify(state: QAState) -> dict:
-    if answer_product_term_question(state["message"], state["message"]) is not None:
-        return {"search_queries": [state["message"]], "query_index": 0}
     result = await secure_ainvoke(
         _specify_chain,
         [
@@ -178,6 +184,7 @@ def _next_query(state: QAState) -> dict:
     return {
         "current_query": state["search_queries"][i],
         "current_context": "",
+        "current_sources": [],
         "current_answer": "",
         "retry_hint": "",
         "retries": 0,
@@ -192,8 +199,6 @@ async def _decide(state: QAState) -> dict:
             "need_retrieval": False,
             "official_value_unavailable": True,
         }
-    if _is_product_term_explanation(state):
-        return {"need_retrieval": False}
     decision = await secure_ainvoke(
         _decision_chain,
         [
@@ -216,9 +221,6 @@ async def _decide(state: QAState) -> dict:
 
 
 async def _generate(state: QAState) -> dict:
-    glossary_answer = _product_term_answer(state)
-    if glossary_answer is not None:
-        return {"current_answer": glossary_answer}
     if state.get("official_value_unavailable"):
         return {
             "current_answer": (
@@ -237,6 +239,7 @@ async def _generate(state: QAState) -> dict:
                 nodes = []
             context = format_docs(nodes)
             update["current_context"] = context
+            update["current_sources"] = _source_references(nodes)
         human_parts = [
             f"현재 단계: {state['step_id']}",
             f"고객 정보: {state['customer_info']}",
@@ -268,17 +271,14 @@ async def _generate(state: QAState) -> dict:
         purpose=ModelPurpose.QA,
         sensitive_payload=_model_sensitive_payload(state),
     )
-    return {**update, "current_answer": result.content}
+    answer = result.content
+    if state["need_retrieval"]:
+        sources = update.get("current_sources", state.get("current_sources", []))
+        answer = _append_source_references(answer, sources)
+    return {**update, "current_answer": answer}
 
 
 async def _judge(state: QAState) -> dict:
-    if _product_term_answer(state) is not None:
-        return {
-            "partial_answers": state["partial_answers"] + [state["current_answer"]],
-            "query_index": state["query_index"] + 1,
-            "retry_hint": "",
-            "retries": 0,
-        }
     if state.get("official_value_unavailable"):
         return {
             "partial_answers": state["partial_answers"] + [state["current_answer"]],
@@ -394,21 +394,6 @@ def _requests_unbound_official_value(state: QAState) -> bool:
     )
 
 
-def _is_product_term_explanation(state: QAState) -> bool:
-    """Keep product-owned terminology out of the official-value/RAG path."""
-
-    return _product_term_answer(state) is not None
-
-
-def _product_term_answer(state: QAState) -> str | None:
-    """Return the validated product meaning without model or retrieval drift."""
-
-    return answer_product_term_question(
-        state.get("message", ""),
-        state.get("current_query", ""),
-    )
-
-
 def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
     return {
         "message": state.get("message", ""),
@@ -417,6 +402,41 @@ def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
         "evidence": state.get("current_context", ""),
         "current_answer": state.get("current_answer", ""),
     }
+
+
+def _source_references(results: list[Any]) -> list[str]:
+    from guardrails.boundary_policy import filter_rag_results
+
+    references: list[str] = []
+    for result in filter_rag_results(results):
+        if hasattr(result, "chunk"):
+            metadata = result.chunk.metadata
+            title = metadata.title
+            locators = metadata.source_locators
+        else:
+            metadata = result.node.metadata
+            title = metadata.get("title", metadata.get("source", "알 수 없음"))
+            raw_locators = metadata.get(
+                "source_locators",
+                metadata.get("source_locator", ()),
+            )
+            locators = (
+                (raw_locators,)
+                if isinstance(raw_locators, str)
+                else tuple(raw_locators)
+            )
+        locator_text = ", ".join(str(locator) for locator in locators)
+        reference = f"{title} ({locator_text})" if locator_text else str(title)
+        if reference not in references:
+            references.append(reference)
+    return references
+
+
+def _append_source_references(answer: str, references: list[str]) -> str:
+    if not references:
+        return answer
+    source_block = "\n".join(f"- {reference}" for reference in references)
+    return f"{answer.rstrip()}\n\n출처:\n{source_block}"
 
 
 # ---------------------------------------------------------------------------
