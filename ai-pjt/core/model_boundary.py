@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from enum import Enum
 import re
+from time import monotonic
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
@@ -54,6 +57,13 @@ class StructuredModelOutputError(RuntimeError):
 
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
+ModelCallRecorder = Callable[..., None]
+
+
+_MODEL_CALL_RECORDER: ContextVar[ModelCallRecorder | None] = ContextVar(
+    "model_call_recorder",
+    default=None,
+)
 
 
 _ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
@@ -142,6 +152,21 @@ def mask_model_payload(
     )
 
 
+@contextmanager
+def bind_model_call_recorder(
+    recorder: ModelCallRecorder | None,
+) -> Iterator[None]:
+    """Bind request-scoped observation without coupling agents to Langfuse."""
+
+    if recorder is not None and not callable(recorder):
+        raise TypeError("model call recorder must be callable")
+    token = _MODEL_CALL_RECORDER.set(recorder)
+    try:
+        yield
+    finally:
+        _MODEL_CALL_RECORDER.reset(token)
+
+
 def secure_invoke(
     runnable: Any,
     messages: Sequence[Any],
@@ -149,13 +174,41 @@ def secure_invoke(
     purpose: ModelPurpose,
     sensitive_payload: Any | None = None,
 ) -> Any:
-    safe_messages, _ = _prepare_call(
+    safe_messages, policy = _prepare_call(
         messages,
         purpose=purpose,
         sensitive_payload=sensitive_payload,
     )
-    result = runnable.invoke(safe_messages)
-    _block_forbidden_output(result)
+    trace_replacements, observation_input = _prepare_observation_input(
+        safe_messages,
+        sensitive_payload=sensitive_payload,
+        policy=policy,
+    )
+    started_at = monotonic()
+    try:
+        result = runnable.invoke(safe_messages)
+        _block_forbidden_output(result)
+    except Exception as error:
+        _record_model_call(
+            purpose=purpose,
+            status="failed",
+            duration_ms=_elapsed_ms(started_at),
+            input=observation_input,
+            output={"status": "failed"},
+            error=error,
+        )
+        raise
+    _record_model_call(
+        purpose=purpose,
+        status="succeeded",
+        duration_ms=_elapsed_ms(started_at),
+        input=observation_input,
+        output=_safe_output_observation_value(
+            result,
+            replacements=trace_replacements,
+            policy=policy,
+        ),
+    )
     return result
 
 
@@ -218,14 +271,200 @@ async def secure_ainvoke(
     purpose: ModelPurpose,
     sensitive_payload: Any | None = None,
 ) -> Any:
-    safe_messages, _ = _prepare_call(
+    safe_messages, policy = _prepare_call(
         messages,
         purpose=purpose,
         sensitive_payload=sensitive_payload,
     )
-    result = await runnable.ainvoke(safe_messages)
-    _block_forbidden_output(result)
+    trace_replacements, observation_input = _prepare_observation_input(
+        safe_messages,
+        sensitive_payload=sensitive_payload,
+        policy=policy,
+    )
+    started_at = monotonic()
+    try:
+        result = await runnable.ainvoke(safe_messages)
+        _block_forbidden_output(result)
+    except Exception as error:
+        _record_model_call(
+            purpose=purpose,
+            status="failed",
+            duration_ms=_elapsed_ms(started_at),
+            input=observation_input,
+            output={"status": "failed"},
+            error=error,
+        )
+        raise
+    _record_model_call(
+        purpose=purpose,
+        status="succeeded",
+        duration_ms=_elapsed_ms(started_at),
+        input=observation_input,
+        output=_safe_output_observation_value(
+            result,
+            replacements=trace_replacements,
+            policy=policy,
+        ),
+    )
     return result
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return max(0, int((monotonic() - started_at) * 1000))
+
+
+def _prepare_observation_input(
+    messages: Sequence[Any],
+    *,
+    sensitive_payload: Any | None,
+    policy: MaskingPolicy,
+) -> tuple[tuple[tuple[str, str], ...], Any]:
+    try:
+        replacements = _trace_observation_replacements(
+            sensitive_payload,
+            policy=policy,
+        )
+        return replacements, _message_observation_input(
+            messages,
+            replacements=replacements,
+            policy=policy,
+        )
+    except Exception:
+        return (), {"status": "observation_unavailable"}
+
+
+def _message_observation_input(
+    messages: Sequence[Any],
+    *,
+    replacements: tuple[tuple[str, str], ...],
+    policy: MaskingPolicy,
+) -> list[dict[str, Any]]:
+    role_aliases = {
+        "ai": "assistant",
+        "human": "user",
+    }
+    captured: list[dict[str, Any]] = []
+    for message in messages:
+        raw_role = getattr(message, "type", "message")
+        role = role_aliases.get(raw_role, raw_role)
+        if role not in {"assistant", "system", "tool", "user"}:
+            role = "message"
+        content = _replace_literals(
+            getattr(message, "content", None),
+            replacements,
+        )
+        content = mask_payload(
+            {"content": content},
+            sink=MaskingSink.TRACE_EXPORT,
+            policy=policy,
+        )["content"]
+        captured.append({
+            "role": role,
+            "content": _observation_value(content),
+        })
+    return captured
+
+
+def _trace_observation_replacements(
+    sensitive_payload: Any | None,
+    *,
+    policy: MaskingPolicy,
+) -> tuple[tuple[str, str], ...]:
+    if sensitive_payload is None:
+        return ()
+    trace_safe_payload = mask_payload(
+        sensitive_payload,
+        sink=MaskingSink.TRACE_EXPORT,
+        policy=policy,
+    )
+    return _replacement_pairs(sensitive_payload, trace_safe_payload)
+
+
+def _output_observation_value(
+    result: Any,
+    *,
+    replacements: tuple[tuple[str, str], ...],
+    policy: MaskingPolicy,
+) -> Any:
+    if hasattr(result, "content"):
+        output: Any = {
+            "role": "assistant",
+            "content": _observation_value(getattr(result, "content", None)),
+        }
+    else:
+        output = _observation_value(result)
+    output = _replace_literals(output, replacements)
+    return mask_payload(
+        {"content": output},
+        sink=MaskingSink.TRACE_EXPORT,
+        policy=policy,
+    )["content"]
+
+
+def _safe_output_observation_value(
+    result: Any,
+    *,
+    replacements: tuple[tuple[str, str], ...],
+    policy: MaskingPolicy,
+) -> Any:
+    try:
+        return _output_observation_value(
+            result,
+            replacements=replacements,
+            policy=policy,
+        )
+    except Exception:
+        return {"status": "observation_unavailable"}
+
+
+def _observation_value(value: Any) -> Any:
+    """Return only JSON-shaped values; never fall back to arbitrary repr/str."""
+
+    if isinstance(value, BaseModel):
+        return _observation_value(value.model_dump(mode="json"))
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, Mapping):
+        return {
+            str(key): _observation_value(child)
+            for key, child in value.items()
+        }
+    if isinstance(value, Sequence):
+        return [_observation_value(child) for child in value]
+    return {"type": "unsupported"}
+
+
+def _record_model_call(
+    *,
+    purpose: ModelPurpose,
+    status: str,
+    duration_ms: int,
+    input: Any,
+    output: Any,
+    error: BaseException | None = None,
+) -> None:
+    recorder = _MODEL_CALL_RECORDER.get()
+    if recorder is None:
+        return
+    try:
+        error_identity: dict[str, str] = {}
+        if error is not None:
+            from core.observability_masking import exception_identity_fields
+
+            error_identity = exception_identity_fields(error)
+        recorder(
+            purpose=purpose.value,
+            status=status,
+            duration_ms=duration_ms,
+            input=input,
+            output=output,
+            **error_identity,
+        )
+    except Exception:
+        # Telemetry must never alter model-call behavior.
+        return
 
 
 def _prepare_call(

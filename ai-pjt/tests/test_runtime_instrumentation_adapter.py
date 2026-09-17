@@ -90,6 +90,34 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.status, OperationStatus.TIMEOUT)
         self.assertEqual(event.error_code, "callback_timeout")
 
+    def test_actual_model_call_recorder_emits_generation_content(self) -> None:
+        observed, sink = _bound_adapter()
+        prompt = [
+            {"role": "system", "content": "마스킹된 시스템 프롬프트"},
+            {"role": "user", "content": "마스킹된 사용자 프롬프트"},
+        ]
+        response = {"role": "assistant", "content": "모델 응답"}
+
+        observed.record_model_call(  # type: ignore[attr-defined]
+            purpose="qa",
+            status="succeeded",
+            duration_ms=12,
+            input=prompt,
+            output=response,
+        )
+
+        self.assertEqual(len(sink.baseline_events), 1)
+        event = sink.baseline_events[0]
+        self.assertIsInstance(event, OperationTraceEvent)
+        self.assertEqual(event.stage, OperationStage.MODEL)
+        self.assertEqual(event.operation_name, "qa.generate")
+        self.assertEqual(event.agent, "qa")
+        self.assertEqual(event.input, prompt)
+        self.assertEqual(event.output, response)
+        self.assertTrue(event.model_provider)
+        self.assertTrue(event.model_name)
+        self.assertEqual(event.prompt_version, "data-policy-1.1")
+
     async def test_executor_emits_correlated_stage_and_operation_events(self) -> None:
         observed, sink = _bound_adapter()
 
@@ -150,10 +178,7 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime[5].response_owner, "agent")
         self.assertEqual(runtime[5].output["response"], "정상 응답")
         self.assertEqual(runtime[3].producer_task_id, "task-1")
-        self.assertEqual(len(sink.baseline_events), 1)
-        self.assertIsInstance(sink.baseline_events[0], OperationTraceEvent)
-        self.assertEqual(sink.baseline_events[0].input["message"], "질문")
-        self.assertEqual(sink.baseline_events[0].output["response"], "정상 응답")
+        self.assertEqual(sink.baseline_events, ())
 
 
 if __name__ == "__main__":

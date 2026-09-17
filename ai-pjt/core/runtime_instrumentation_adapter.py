@@ -274,6 +274,9 @@ class BoundRuntimeInstrumentation:
         duration_ms: int,
         agent: str | None = None,
         error_code: str | None = None,
+        model_provider: str | None = None,
+        model_name: str | None = None,
+        prompt_version: str | None = None,
         input: Any | None = None,
         output: Any | None = None,
         error_type: str | None = None,
@@ -290,11 +293,57 @@ class BoundRuntimeInstrumentation:
             step_id=self.correlation.step_id,
             agent=agent,
             error_code=error_code,
+            model_provider=model_provider,
+            model_name=model_name,
+            prompt_version=prompt_version,
             input=input,
             output=output,
             error_type=error_type,
             error_fingerprint=error_fingerprint,
         ))
+
+    def record_model_call(
+        self,
+        *,
+        purpose: str,
+        status: str,
+        duration_ms: int,
+        input: Any,
+        output: Any,
+        error_type: str | None = None,
+        error_fingerprint: str | None = None,
+    ) -> None:
+        """Record one actual provider invocation made by the model boundary."""
+
+        from core.config import settings
+        from core.model_boundary import PROMPT_POLICY_VERSION
+
+        operation_status = OperationStatus(status)
+        if operation_status not in {
+            OperationStatus.SUCCEEDED,
+            OperationStatus.FAILED,
+            OperationStatus.TIMEOUT,
+        }:
+            raise ValueError("model call status must be terminal")
+        self.record_operation(
+            stage=OperationStage.MODEL,
+            status=operation_status,
+            operation_name=f"{purpose}.generate",
+            duration_ms=duration_ms,
+            agent=purpose,
+            error_code=(
+                None
+                if operation_status is OperationStatus.SUCCEEDED
+                else "model_call_failed"
+            ),
+            model_provider=settings.llm_provider,
+            model_name=settings.llm_model,
+            prompt_version=f"data-policy-{PROMPT_POLICY_VERSION}",
+            input=input,
+            output=output,
+            error_type=error_type,
+            error_fingerprint=error_fingerprint,
+        )
 
     def record_tool_audit(self, event: object) -> None:
         """Translate a tool audit without accepting values or raw arguments."""

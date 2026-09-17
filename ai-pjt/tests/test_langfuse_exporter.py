@@ -299,6 +299,51 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertNotIn("350만 원", rendered)
         self.assertNotIn("홍길동", rendered)
 
+    def test_actual_chat_prompt_is_masked_and_exported_as_generation_input(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        adapter, _sink = build_masked_runtime_instrumentation(
+            pseudonym_key=b"f15-langfuse-prompt-test-key-32bytes",
+            downstream=exporter,
+            sink=MaskingSink.TRACE_EXPORT,
+        )
+        observed = adapter.bind(
+            request_id="request-raw-0001",
+            thread_id="thread-raw-0001",
+            plan_id="plan-request-raw-0001",
+            step_id="basic-info",
+        )
+
+        observed.record_model_call(
+            purpose="qa",
+            status="succeeded",
+            duration_ms=15,
+            input=[
+                {"role": "system", "content": "QA 실제 시스템 프롬프트"},
+                {
+                    "role": "user",
+                    "content": "[DIRECT_IDENTIFIER] 고객의 월급은 350만 원입니다.",
+                },
+            ],
+            output={"role": "assistant", "content": "맞춤 안내입니다."},
+        )
+
+        self.assertEqual(len(client.calls), 2)
+        args, _generation = client.calls[1]
+        self.assertEqual(args["as_type"], "generation")
+        self.assertEqual(args["input"][0], {
+            "role": "system",
+            "content": "QA 실제 시스템 프롬프트",
+        })
+        rendered = repr(args["input"])
+        self.assertIn("[DIRECT_IDENTIFIER]", rendered)
+        self.assertIn("[FINANCIAL_VALUE_MASKED]", rendered)
+        self.assertNotIn("350만 원", rendered)
+        self.assertEqual(
+            args["output"],
+            {"role": "assistant", "content": "맞춤 안내입니다."},
+        )
+
     def test_shutdown_delegates_to_client(self) -> None:
         client = _FakeClient()
         exporter = LangfuseInstrumentationExporter(client)
