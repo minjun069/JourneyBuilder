@@ -135,10 +135,12 @@ reciprocal-rank fusion한다. BM25는 제목 4.0, 별칭 2.5, 본문 1.0의 필�
 사용하고 용어명 완전 일치, 별칭 완전 일치 순으로 보너스를 준다. 완전 일치 후보는
 RRF에서도 한 번 더 우선하며 dense 후보도 최종 순위에 함께 반영한다.
 
-dense cosine similarity가 `0.52` 미만인 후보는 제외한다. 이 경계는 기존 catalog 2.1.0을
-GMS `gemini-embedding-2`로 측정했을 때 무관 질문 최고 점수 `0.5117`과 정답 문서 최저
-점수 `0.5401` 사이에서 정했다. corpus·청킹·검색 순위가 바뀐 catalog 2.2.0은 66문항
-공식 qualification을 다시 통과한 뒤에만 승격한다.
+dense cosine similarity가 `0.54` 미만인 후보는 제외한다. catalog 2.1.0의 정답
+문서 최저 점수 `0.5401`은 보존하면서, catalog 2.2.0 용어 사전이 무관한 여행 질의에
+반응한 dense 최고 점수 `0.5329`를 차단하도록 GMS `gemini-embedding-2`로 다시 측정한
+경계다. 제목·별칭·본문 BM25 결과는 dense 경계와 독립적으로 RRF에 참여하므로
+용어 정확 일치는 유지한다. corpus·청킹·검색 순위가 바뀐 catalog 2.2.0은 66문항 공식
+qualification을 다시 통과한 뒤에만 승격한다.
 
 `.local/reports/official__<catalog-version>__qualification.json`에서 다음을 모두
 확인한다.
@@ -149,7 +151,7 @@ GMS `gemini-embedding-2`로 측정했을 때 무관 질문 최고 점수 `0.5117
 - Recall@5 0.85 이상, MRR@5 0.70 이상, provenance 1.0
 - collection leakage 0건, false evidence 0건
 - `embedding.model=gemini-embedding-2`, `dimensions=3072`
-- `retrieval.minimum_dense_score=0.52`
+- `retrieval.minimum_dense_score=0.54`
 
 하나라도 충족하지 않으면 export하지 않고 기존 active pointer를 유지한다. 전부
 충족하면 다음을 실행한다.

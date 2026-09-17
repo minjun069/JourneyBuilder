@@ -504,7 +504,7 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                 "strategy": "dense-field-bm25-weighted-rrf",
                 "top_k": 5,
                 "fetch_k": 10,
-                "minimum_dense_score": 0.52,
+                "minimum_dense_score": 0.54,
                 "bm25_field_weights": {
                     "title": 4.0,
                     "aliases": 2.5,

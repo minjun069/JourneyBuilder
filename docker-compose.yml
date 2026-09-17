@@ -135,7 +135,7 @@ services:
       RAG_INTERFACE_COLLECTION: "interface-guides"
       RAG_TOP_K: "${RAG_TOP_K:-5}"
       RAG_FETCH_K: "${RAG_FETCH_K:-10}"
-      RAG_MIN_DENSE_SCORE: "${RAG_MIN_DENSE_SCORE:-0.30}"
+      RAG_MIN_DENSE_SCORE: "${RAG_MIN_DENSE_SCORE:-0.54}"
       RAG_INDEX_RETENTION_DAYS: "${RAG_INDEX_RETENTION_DAYS:-30}"
       EMBED_DIM: "3072"
       READINESS_HTTP_URL: http://127.0.0.1:8001/api/system/v1/health

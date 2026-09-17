@@ -106,7 +106,7 @@ G1은 빈 volume·clean image에서 migration, 두 애플리케이션 readiness,
 GOOGLE_API_KEY=<GMS-key>
 RAG_TOP_K=5
 RAG_FETCH_K=10
-RAG_MIN_DENSE_SCORE=0.52
+RAG_MIN_DENSE_SCORE=0.54
 RAG_INDEX_RETENTION_DAYS=30
 ```
 

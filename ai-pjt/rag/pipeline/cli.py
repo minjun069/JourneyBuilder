@@ -34,7 +34,7 @@ _DEFAULT_POLICY = (
 _OPERATIONAL_COLLECTIONS = ("interface-guides", "financial-knowledge")
 _OPERATIONAL_EMBEDDING_MODEL = "gemini-embedding-2"
 _OPERATIONAL_EMBEDDING_DIMENSIONS = 3072
-_OPERATIONAL_MINIMUM_DENSE_SCORE = 0.52
+_OPERATIONAL_MINIMUM_DENSE_SCORE = 0.54
 _GMS_GEMINI_BASE_URL = (
     "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
 )

@@ -146,7 +146,7 @@ class Settings:
         if self.rag_fetch_k < self.rag_top_k:
             raise RuntimeConfigurationError("RAG_FETCH_K must be at least RAG_TOP_K")
         self.rag_min_dense_score = _read_unit_float(
-            "RAG_MIN_DENSE_SCORE", 0.30, active_environ
+            "RAG_MIN_DENSE_SCORE", 0.54, active_environ
         )
         self.rag_index_retention_days = _read_positive_int(
             "RAG_INDEX_RETENTION_DAYS", 30, active_environ
