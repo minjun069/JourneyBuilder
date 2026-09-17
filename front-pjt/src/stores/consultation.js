@@ -162,7 +162,7 @@ export const useConsultationStore = defineStore('consultation', () => {
       },
     )) {
       // Error Review는 구조화된 최종 결과만 화면에 반영한다.
-      if (event === 'start') continue
+      if (event === 'start' || event === 'progress' || event === 'heartbeat') continue
       if (event === 'done') return data.message
       if (event === 'error') {
         const reviewError = new Error(data.error.message)

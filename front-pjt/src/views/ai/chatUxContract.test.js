@@ -83,6 +83,15 @@ test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 i
   assert.match(store, /STREAM_IDLE_TIMEOUT_MS = 120_000/)
 })
 
+test('협상된 진행 이벤트는 퍼센트 없이 임시 단계 문구로만 표시한다', () => {
+  assert.match(consultingApi, /'X-AI-Progress-Events': 'v1'/)
+  assert.match(view, /event === 'progress'/)
+  assert.match(view, /event === 'heartbeat'/)
+  assert.match(view, /streamProgressPhase\.value = data\.phase/)
+  assert.match(view, /질문을 분석하고 있습니다\./)
+  assert.doesNotMatch(view, /progressPercent|progress_pct|예상 완료/)
+})
+
 test('Presentation 최초 진입은 보고서 버전별 자동 안내를 한 번만 요청한다', () => {
   const entry = view.slice(
     view.indexOf('async function maybeSendPresentationEntryGuide'),

@@ -3,8 +3,21 @@
   "browser_endpoint": "/api/consulting/v2/consultations/{session_id}/messages/stream/",
   "ai_endpoint": "/api/ai/v2/chat/stream",
   "required_browser_headers": ["Authorization", "Idempotency-Key", "Accept"],
+  "optional_browser_headers": {"X-AI-Progress-Events": "v1"},
   "required_service_headers": ["Authorization", "Accept"],
+  "optional_service_headers": {"X-AI-Progress-Events": "v1"},
   "content_type": "text/event-stream",
+  "progress_policy": {
+    "capability": "X-AI-Progress-Events: v1",
+    "events": ["progress", "heartbeat"],
+    "phases": ["preparing", "planning", "executing", "reviewing", "composing", "validating", "saving"],
+    "status": "active",
+    "sequence_field": "event_seq",
+    "stored": false,
+    "replayed": false,
+    "includes_percentage": false,
+    "includes_content": false
+  },
   "transport_policy": {
     "browser_to_django": "sse_only",
     "django_to_ai": "sse_only",
@@ -29,7 +42,7 @@
     "frontend_polling_flows": []
   },
   "terminal_events": ["done", "error"],
-  "allowed_events": ["start", "done", "error"],
+  "allowed_events": ["start", "progress", "heartbeat", "done", "error"],
   "browser_request": {
     "contract_version": "2.0",
     "content": "월급은 세후 300만 원이에요.",
@@ -60,6 +73,28 @@
       }
     },
     {
+      "event": "progress",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "event_seq": 1,
+        "phase": "planning",
+        "status": "active"
+      }
+    },
+    {
+      "event": "heartbeat",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "event_seq": 2
+      }
+    },
+    {
       "event": "done",
       "data": {
         "contract_version": "2.0",
@@ -85,6 +120,24 @@
         "session_id": 1,
         "thread_id": "user-3-session-1",
         "user_message_id": 41
+      }
+    },
+    {
+      "event": "progress",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "event_seq": 1,
+        "phase": "planning",
+        "status": "active"
+      }
+    },
+    {
+      "event": "heartbeat",
+      "data": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture",
+        "event_seq": 2
       }
     },
     {
@@ -126,9 +179,11 @@
       "graph_reexecution": false
     },
     "same_key_changed_payload": {"http_status": 409, "code": "IDEMPOTENCY_CONFLICT"},
+    "transient_events_replayed": false,
     "ttl_seconds": 86400
   },
   "timeouts_seconds": {
+    "progress_heartbeat": 15,
     "service_connect": 5,
     "stream_read_idle": 120,
     "gateway_proxy": 130,

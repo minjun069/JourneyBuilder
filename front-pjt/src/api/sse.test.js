@@ -87,6 +87,78 @@ test('delta 이벤트는 지원하지 않는다', async () => {
 })
 
 
+test('진행 단계와 heartbeat는 단조 증가 sequence만 허용한다', async () => {
+  async function* source() {
+    yield { event: 'start', data: { request_id: 'req-1' } }
+    yield {
+      event: 'progress',
+      data: {
+        request_id: 'req-1',
+        contract_version: '2.0',
+        event_seq: 1,
+        phase: 'planning',
+        status: 'active',
+      },
+    }
+    yield {
+      event: 'heartbeat',
+      data: { request_id: 'req-1', contract_version: '2.0', event_seq: 2 },
+    }
+    yield { event: 'done', data: { request_id: 'req-1', output: {} } }
+  }
+
+  const events = []
+  for await (const event of validateSSEEvents(source())) events.push(event)
+
+  assert.deepEqual(
+    events.map(({ event }) => event),
+    ['start', 'progress', 'heartbeat', 'done'],
+  )
+})
+
+
+test('역순 또는 콘텐츠가 포함된 진행 이벤트는 거절한다', async () => {
+  async function* reversed() {
+    yield { event: 'start', data: { request_id: 'req-1' } }
+    yield {
+      event: 'heartbeat',
+      data: { request_id: 'req-1', contract_version: '2.0', event_seq: 2 },
+    }
+    yield {
+      event: 'progress',
+      data: {
+        request_id: 'req-1',
+        contract_version: '2.0',
+        event_seq: 1,
+        phase: 'planning',
+        status: 'active',
+      },
+    }
+  }
+  await assert.rejects(async () => {
+    for await (const event of validateSSEEvents(reversed())) void event
+  }, SSEProtocolError)
+
+  async function* contentBearing() {
+    yield { event: 'start', data: { request_id: 'req-1' } }
+    yield {
+      event: 'progress',
+      data: {
+        request_id: 'req-1',
+        contract_version: '2.0',
+        event_seq: 1,
+        phase: 'planning',
+        status: 'active',
+        content: '노출하면 안 되는 내용',
+      },
+    }
+  }
+  await assert.rejects(async () => {
+    for await (const event of validateSSEEvents(contentBearing())) void event
+  }, SSEProtocolError)
+})
+
+
 test('v2 SSE 완료 이벤트는 저장된 assistant message를 검증한다', async () => {
   async function* source() {
     yield {

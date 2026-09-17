@@ -6,7 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from .v2_sse import proxy_v2_ai_stream, stream_v2_ai_response
+from .sse import SSEProtocolError
+from .v2_sse import (
+    _validate_transient_event,
+    proxy_v2_ai_stream,
+    stream_v2_ai_response,
+)
 from .v2_views import V2MessageStreamView
 from .ai_tokenization import ReferenceTokenVault
 
@@ -103,9 +108,139 @@ class V2AIStreamClientTests(SimpleTestCase):
         headers = client.stream.call_args.kwargs['headers']
         self.assertEqual(headers['Authorization'], 'Bearer service-token')
         self.assertEqual(headers['Accept'], 'text/event-stream')
+        self.assertNotIn('X-AI-Progress-Events', headers)
+
+        response.aiter_lines.return_value = async_items(['event: done', 'data: {}', ''])
+        asyncio.run(collect_async(stream_v2_ai_response(
+            ai_payload(),
+            progress_events=True,
+        )))
+        self.assertEqual(
+            client.stream.call_args.kwargs['headers']['X-AI-Progress-Events'],
+            'v1',
+        )
 
 
 class V2SSEProxyTests(SimpleTestCase):
+    def test_transient_event_validator_rejects_sequence_phase_and_content(self):
+        valid_identity = {
+            'contract_version': '2.0',
+            'request_id': 'ai_req_v2_stream',
+            'session_id': 12,
+            'thread_id': 'user-3-session-12',
+        }
+        invalid_events = (
+            ('heartbeat', {**valid_identity, 'event_seq': 0}),
+            ('heartbeat', {**valid_identity, 'event_seq': 1, 'content': '금지'}),
+            ('progress', {
+                **valid_identity,
+                'event_seq': 1,
+                'phase': 'internal_agent',
+                'status': 'active',
+            }),
+            ('progress', {
+                **valid_identity,
+                'event_seq': 1,
+                'phase': 'planning',
+                'status': 'active',
+                'percent': 10,
+            }),
+        )
+        for event_name, data in invalid_events:
+            with self.subTest(event_name=event_name, data=data):
+                with self.assertRaises(SSEProtocolError):
+                    _validate_transient_event(event_name, data, 0)
+
+    @patch('consulting.v2_sse.finalize_terminal_result')
+    @patch('consulting.v2_sse.stream_v2_ai_response')
+    def test_opt_in_progress_and_heartbeat_are_safely_projected(
+        self,
+        upstream,
+        finalize,
+    ):
+        upstream.return_value = async_items([
+            'event: start',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12"}',
+            '',
+            'event: progress',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12","event_seq":1,"phase":"planning","status":"active"}',
+            '',
+            'event: heartbeat',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12","event_seq":2}',
+            '',
+            'event: done',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","session_id":12,"thread_id":"user-3-session-12","status":"completed","completed_at":"2026-09-08T00:00:01Z","output":{"response":"안녕","step_id":"general","action":null}}',
+            '',
+        ])
+        message = SimpleNamespace(
+            id=99,
+            role='assistant',
+            content='안녕',
+            extracted_data={'action': None},
+        )
+        finalize.return_value = SimpleNamespace(
+            state={
+                **processing_state(),
+                'status': 'completed',
+                'assistant_message_id': 99,
+            },
+            message=message,
+            replay=False,
+        )
+
+        frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
+            proxy_v2_ai_stream(
+                SimpleNamespace(id=12),
+                ai_payload(),
+                processing_state(),
+                MagicMock(),
+                token_vault=token_vault(),
+                progress_events=True,
+            )
+        ))]
+
+        self.assertEqual(
+            [event for event, _ in frames],
+            ['start', 'progress', 'heartbeat', 'done'],
+        )
+        self.assertEqual(frames[1][1], {
+            'contract_version': '2.0',
+            'request_id': 'ai_req_v2_stream',
+            'event_seq': 1,
+            'phase': 'planning',
+            'status': 'active',
+        })
+        self.assertNotIn('percent', json.dumps(frames))
+        self.assertTrue(upstream.call_args.kwargs['progress_events'])
+
+    @patch('consulting.v2_sse.finalize_terminal_result')
+    @patch('consulting.v2_sse.stream_v2_ai_response')
+    def test_transient_events_require_negotiation(self, upstream, finalize):
+        upstream.return_value = async_items([
+            'event: progress',
+            'data: {"contract_version":"2.0","request_id":"ai_req_v2_stream","event_seq":1,"phase":"planning","status":"active"}',
+            '',
+        ])
+        finalize.return_value = SimpleNamespace(
+            state={**processing_state(), 'status': 'failed'},
+            message=None,
+            replay=False,
+        )
+        store = MagicMock()
+
+        frames = [parse_frame(frame) for frame in asyncio.run(collect_async(
+            proxy_v2_ai_stream(
+                SimpleNamespace(id=12),
+                ai_payload(),
+                processing_state(),
+                store,
+                token_vault=token_vault(),
+            )
+        ))]
+
+        self.assertEqual([event for event, _ in frames], ['start', 'error'])
+        store.save_terminal.assert_called_once()
+
     @patch('consulting.v2_sse.finalize_terminal_result')
     @patch('consulting.v2_sse.stream_v2_ai_response')
     def test_disconnect_preserves_request_for_exact_retry(self, upstream, finalize):
@@ -338,13 +473,17 @@ class V2MessageStreamViewTests(SimpleTestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
 
-    def request(self, body=None):
+    def request(self, body=None, *, progress_events_version=None):
+        extra = {}
+        if progress_events_version is not None:
+            extra['HTTP_X_AI_PROGRESS_EVENTS'] = progress_events_version
         request = self.factory.post(
             '/api/consulting/v2/consultations/12/messages/stream/',
             body or browser_body(),
             format='json',
             HTTP_ACCEPT='text/event-stream',
             HTTP_IDEMPOTENCY_KEY='idem-test',
+            **extra,
         )
         force_authenticate(request, user=SimpleNamespace(id=3, is_authenticated=True))
         return request
@@ -388,7 +527,10 @@ class V2MessageStreamViewTests(SimpleTestCase):
             'request_mode': 'presentation_entry',
         }
 
-        response = V2MessageStreamView.as_view()(self.request(body), session_id=12)
+        response = V2MessageStreamView.as_view()(
+            self.request(body, progress_events_version='v1'),
+            session_id=12,
+        )
         b''.join(asyncio.run(collect_async(response.streaming_content)))
 
         self.assertEqual(response.status_code, 200)
@@ -397,6 +539,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
             create_user_message.call_args.kwargs['extracted_data'],
             {'system_event': 'presentation_entry', 'step_id': 'lifetime-cashflow'},
         )
+        self.assertTrue(proxy_stream.call_args.kwargs['progress_events'])
 
     @patch('consulting.v2_views.get_owned_session')
     def test_completed_session_rejects_non_presentation_step(self, get_session):
@@ -464,6 +607,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
             proxy_stream.call_args.kwargs['token_vault'],
             store.save_token_vault.call_args.args[0],
         )
+        self.assertFalse(proxy_stream.call_args.kwargs['progress_events'])
         upstream_payload = proxy_stream.call_args.args[1]
         rendered = json.dumps(upstream_payload, ensure_ascii=False)
         self.assertNotIn('gildong@example.com', rendered)
@@ -484,6 +628,18 @@ class V2MessageStreamViewTests(SimpleTestCase):
             execution_objects.create.call_args.kwargs['payload_digest'],
             upstream_payload['payload_digest'],
         )
+
+    @patch('consulting.v2_views.get_owned_session')
+    def test_progress_capability_rejects_unknown_version(self, get_session):
+        get_session.return_value = SimpleNamespace(id=12, status='in_progress')
+
+        response = V2MessageStreamView.as_view()(
+            self.request(progress_events_version='v2'),
+            session_id=12,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error']['code'], 'REQUEST_INVALID')
 
     @patch('consulting.v2_views.proxy_v2_ai_stream')
     @patch('consulting.v2_views.make_processing_state', return_value=processing_state())

@@ -24,7 +24,12 @@ from .ai_security import recover_terminal_state
 from .ai_tokenization import ReferenceTokenVault
 from .chart_payload import PRESENTATION_CHART_STEP_IDS
 from .models import AIRequestExecution, ConsultingSession, Message
-from .v2_sse import proxy_v2_ai_stream, replay_v2_stream
+from .v2_sse import (
+    PROGRESS_EVENTS_HEADER,
+    PROGRESS_EVENTS_VERSION,
+    proxy_v2_ai_stream,
+    replay_v2_stream,
+)
 
 
 def error_response(error):
@@ -33,6 +38,19 @@ def error_response(error):
 
 def get_owned_session(session_id, user):
     return ConsultingSession.objects.filter(id=session_id, user=user).first()
+
+
+def progress_events_requested(request):
+    value = request.headers.get(PROGRESS_EVENTS_HEADER)
+    if value is None:
+        return False
+    if value != PROGRESS_EVENTS_VERSION:
+        raise LifecycleError(
+            400,
+            'REQUEST_INVALID',
+            '지원하지 않는 진행 이벤트 capability입니다.',
+        )
+    return True
 
 
 class EventStreamRenderer(JSONRenderer):
@@ -75,6 +93,7 @@ class V2MessageStreamView(V2APIView):
 
         try:
             body = validate_browser_message(request.data)
+            progress_events = progress_events_requested(request)
             if (
                 session.status == ConsultingSession.Status.COMPLETED
                 and body['step_id'] not in PRESENTATION_CHART_STEP_IDS
@@ -141,6 +160,7 @@ class V2MessageStreamView(V2APIView):
                                 resumed_state,
                                 store,
                                 token_vault=token_vault,
+                                progress_events=progress_events,
                             )
                         )
                     raise LifecycleError(
@@ -246,6 +266,7 @@ class V2MessageStreamView(V2APIView):
                     state,
                     store,
                     token_vault=token_vault,
+                    progress_events=progress_events,
                 )
             )
         except LifecycleError as exc:

@@ -201,6 +201,7 @@ const chatInputRef           = ref(null)
 const isTyping               = ref(false)
 const isAnimatingResponse    = ref(false)
 const isStreamingResponse    = ref(false)
+const streamProgressPhase    = ref(null)
 const sessionLoading         = ref(false)
 const sessionError           = ref('')
 let animationGeneration = 0
@@ -209,6 +210,18 @@ const animationTimers = new Set()
 const hasOpenErrorReview = computed(() => messages.value.some(
   (message) => message.action?.type === 'error-review',
 ))
+const STREAM_PROGRESS_MESSAGES = Object.freeze({
+  preparing: '요청을 준비하고 있습니다.',
+  planning: '질문을 분석하고 있습니다.',
+  executing: '필요한 작업을 처리하고 있습니다.',
+  reviewing: '입력값을 검토하고 있습니다.',
+  composing: '안내 내용을 구성하고 있습니다.',
+  validating: '답변을 최종 확인하고 있습니다.',
+  saving: '결과를 안전하게 저장하고 있습니다.',
+})
+const streamProgressMessage = computed(
+  () => STREAM_PROGRESS_MESSAGES[streamProgressPhase.value] ?? '',
+)
 
 const isInteractionBusy = computed(() => (
   sessionLoading.value
@@ -270,6 +283,7 @@ function cancelMessageAnimations() {
   animationQueue = Promise.resolve()
   isTyping.value = false
   isAnimatingResponse.value = false
+  streamProgressPhase.value = null
 }
 
 function streamAiMessages(bubbles, { typingDelay = 220, onDone } = {}) {
@@ -337,6 +351,7 @@ function resetConversationState() {
   isTyping.value = false
   isAnimatingResponse.value = false
   isStreamingResponse.value = false
+  streamProgressPhase.value = null
   leftWidth.value = 71.4
   rightWidth.value = 28.6
   reportStore.clearActiveReport()
@@ -433,21 +448,29 @@ async function continueConsultation() {
 }
 
 async function streamAssistantMessage(text, options) {
-  for await (const { event, data } of consultationStore.streamMessageV2(text, options)) {
-    if (event === 'start') continue
-    if (event === 'error') {
-      const error = new Error(data.error.message)
-      error.code = data.error.code
-      error.retryable = data.error.retryable
-      throw error
+  try {
+    for await (const { event, data } of consultationStore.streamMessageV2(text, options)) {
+      if (event === 'start' || event === 'heartbeat') continue
+      if (event === 'progress') {
+        streamProgressPhase.value = data.phase
+        continue
+      }
+      if (event === 'error') {
+        const error = new Error(data.error.message)
+        error.code = data.error.code
+        error.retryable = data.error.retryable
+        throw error
+      }
+      if (event === 'done') {
+        const finalMessage = toChatMessage(data.message)
+        const [rendered] = await streamAiMessages([finalMessage], { typingDelay: 120 })
+        return rendered ?? finalMessage
+      }
     }
-    if (event === 'done') {
-      const finalMessage = toChatMessage(data.message)
-      const [rendered] = await streamAiMessages([finalMessage], { typingDelay: 120 })
-      return rendered ?? finalMessage
-    }
+    throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
+  } finally {
+    streamProgressPhase.value = null
   }
-  throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
 }
 
 const presentationGuideConsumed = new Set()
@@ -1120,7 +1143,13 @@ onBeforeUnmount(() => {
               </template>
               <article v-if="isTyping" class="bubble ai-bubble">
                 <strong>AI</strong>
-                <p class="typing-dots"><span></span><span></span><span></span></p>
+                <p
+                  v-if="streamProgressMessage"
+                  class="stream-progress-status"
+                  role="status"
+                  aria-live="polite"
+                >{{ streamProgressMessage }}</p>
+                <p v-else class="typing-dots"><span></span><span></span><span></span></p>
               </article>
               <div ref="chatSpacerRef" class="chat-spacer"></div>
             </div>

@@ -29,6 +29,7 @@ export async function* streamMessagesV2(
     Accept: 'text/event-stream',
     'Content-Type': 'application/json',
     'Idempotency-Key': idempotencyKey,
+    'X-AI-Progress-Events': 'v1',
   }
   if (token) headers.Authorization = `Bearer ${token}`
 

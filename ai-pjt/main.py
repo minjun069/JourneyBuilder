@@ -1,4 +1,4 @@
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import asyncio
 from hashlib import sha256
 import hmac
@@ -52,6 +52,75 @@ from transport.runtime import (
 configure_logging()
 
 logger = logging.getLogger(__name__)
+
+
+PROGRESS_EVENTS_VERSION = "v1"
+PROGRESS_HEARTBEAT_SECONDS = 15.0
+_PROGRESS_PHASE_ORDER = {
+    "preparing": 0,
+    "planning": 1,
+    "executing": 2,
+    "reviewing": 2,
+    "composing": 2,
+    "validating": 3,
+    "saving": 4,
+}
+_GRAPH_PROGRESS_PHASES = {
+    "plan": "planning",
+    "validate": "validating",
+    "persist_context": "saving",
+}
+
+
+async def _iter_with_optional_heartbeat(events, interval_seconds: float | None):
+    if interval_seconds is None:
+        async for event in events:
+            yield event
+        return
+    if interval_seconds <= 0:
+        raise ValueError("heartbeat interval must be positive")
+
+    iterator = events.__aiter__()
+    pending: asyncio.Task | None = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.create_task(anext(iterator))
+            done, _ = await asyncio.wait((pending,), timeout=interval_seconds)
+            if not done:
+                yield None
+                continue
+            try:
+                event = pending.result()
+            except StopAsyncIteration:
+                return
+            pending = None
+            yield event
+    finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            with suppress(asyncio.CancelledError):
+                await pending
+        close = getattr(iterator, "aclose", None)
+        if callable(close):
+            with suppress(RuntimeError):
+                await close()
+
+
+def _graph_progress_phase(graph_event: dict[str, Any], request_mode: str) -> str | None:
+    if graph_event.get("event") != "on_chain_start":
+        return None
+    metadata = graph_event.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    node = metadata.get("langgraph_node")
+    if node == "execute":
+        if request_mode == "error_review":
+            return "reviewing"
+        if request_mode == "presentation_entry":
+            return "composing"
+        return "executing"
+    return _GRAPH_PROGRESS_PHASES.get(node)
 
 
 async def _context_cleanup_loop(context_api, context_store) -> None:
@@ -327,6 +396,8 @@ async def _stream_v2_chat_events(
     callback_masker: CallbackPayloadMasker,
     memory_manager: ConversationMemoryManager | None = None,
     instrumentation: RuntimeInstrumentationAdapter | None = None,
+    progress_events: bool = False,
+    heartbeat_interval_seconds: float = PROGRESS_HEARTBEAT_SECONDS,
 ) -> AsyncIterator[str]:
     identity = {
         "contract_version": "2.0",
@@ -335,6 +406,35 @@ async def _stream_v2_chat_events(
         "thread_id": request.thread_id,
     }
     yield _encode_sse("start", identity)
+
+    event_sequence = 0
+    latest_progress_rank = -1
+
+    def progress_frame(phase: str) -> str | None:
+        nonlocal event_sequence, latest_progress_rank
+        if not progress_events:
+            return None
+        rank = _PROGRESS_PHASE_ORDER[phase]
+        if rank <= latest_progress_rank:
+            return None
+        latest_progress_rank = rank
+        event_sequence += 1
+        return _encode_sse("progress", {
+            **identity,
+            "event_seq": event_sequence,
+            "phase": phase,
+            "status": "active",
+        })
+
+    def heartbeat_frame() -> str | None:
+        nonlocal event_sequence
+        if not progress_events:
+            return None
+        event_sequence += 1
+        return _encode_sse("heartbeat", {
+            **identity,
+            "event_seq": event_sequence,
+        })
 
     final_state: dict[str, Any] = {}
     scope = ContextScope(request.session_id, request.thread_id)
@@ -351,6 +451,10 @@ async def _stream_v2_chat_events(
             event = "done" if replay.get("status") == "completed" else "error"
             yield _encode_sse(event, dict(replay))
             return
+
+        frame = progress_frame("preparing")
+        if frame is not None:
+            yield frame
 
         if instrumentation is not None:
             observed = instrumentation.bind(
@@ -389,12 +493,30 @@ async def _stream_v2_chat_events(
             "callbacks": get_callbacks(),
         }
 
+        frame = progress_frame("planning")
+        if frame is not None:
+            yield frame
+
         async with asyncio.timeout(budget.remaining_seconds()):
-            async for graph_event in graph.astream_events(
-                graph_input,
-                config=graph_config,
-                version="v2",
+            graph_events = graph.astream_events(
+                graph_input, config=graph_config, version="v2"
+            )
+            async for graph_event in _iter_with_optional_heartbeat(
+                graph_events,
+                heartbeat_interval_seconds if progress_events else None,
             ):
+                if graph_event is None:
+                    frame = heartbeat_frame()
+                    if frame is not None:
+                        yield frame
+                    continue
+
+                phase = _graph_progress_phase(graph_event, request.request_mode)
+                if phase is not None:
+                    frame = progress_frame(phase)
+                    if frame is not None:
+                        yield frame
+
                 if graph_event.get("event") == "on_chat_model_stream":
                     continue
 
@@ -405,6 +527,10 @@ async def _stream_v2_chat_events(
                     output = graph_event.get("data", {}).get("output")
                     if isinstance(output, dict):
                         final_state = output
+
+        frame = progress_frame("validating")
+        if frame is not None:
+            yield frame
 
         output = final_state.get("output", {})
         if not isinstance(output, dict):
@@ -425,6 +551,9 @@ async def _stream_v2_chat_events(
         if not isinstance(context_payload, dict):
             raise ValueError("completed graph state must include conversation_context")
         completed_context = ConversationContext.from_state(context_payload)
+        frame = progress_frame("saving")
+        if frame is not None:
+            yield frame
         committed_terminal = await context_api.commit(
             scope,
             request.request_id,
@@ -533,12 +662,22 @@ async def _stream_v2_chat_events(
 async def chat_v2_stream(
     raw_request: Request,
     authorization: str | None = Header(default=None, alias="Authorization"),
+    progress_events_version: str | None = Header(
+        default=None,
+        alias="X-AI-Progress-Events",
+    ),
 ):
     verify_service_authorization(
         authorization,
         settings.ai_service_bearer_token,
     )
     request = await _parse_v2_request(raw_request)
+    if progress_events_version not in {None, PROGRESS_EVENTS_VERSION}:
+        raise ServiceContractError(
+            status_code=422,
+            code="REQUEST_SCHEMA_INVALID",
+            message="지원하지 않는 진행 이벤트 capability입니다.",
+        )
     return StreamingResponse(
         _stream_v2_chat_events(
             app.state.chat_graph,
@@ -547,6 +686,7 @@ async def chat_v2_stream(
             app.state.callback_masker,
             getattr(app.state, "context_memory", None),
             instrumentation=app.state.instrumentation,
+            progress_events=progress_events_version == PROGRESS_EVENTS_VERSION,
         ),
         media_type="text/event-stream",
         headers={

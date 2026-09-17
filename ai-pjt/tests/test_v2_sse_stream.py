@@ -1,3 +1,4 @@
+import asyncio
 import json
 from hashlib import sha256
 from datetime import datetime, timedelta, timezone
@@ -134,6 +135,37 @@ class FakeV2Graph:
         }
 
 
+class ProgressV2Graph:
+    async def astream_events(self, input_data, *, config, version):
+        for node in ("plan", "execute"):
+            yield {
+                "event": "on_chain_start",
+                "metadata": {"langgraph_node": node},
+                "data": {},
+            }
+        await asyncio.sleep(0.02)
+        for node in ("validate", "persist_context"):
+            yield {
+                "event": "on_chain_start",
+                "metadata": {"langgraph_node": node},
+                "data": {},
+            }
+        yield {
+            "event": "on_chain_end",
+            "parent_ids": [],
+            "data": {
+                "output": {
+                    "conversation_context": EMPTY_CONTEXT,
+                    "output": {
+                        "response": "안녕하세요",
+                        "step_id": "general",
+                        "action": None,
+                    },
+                }
+            },
+        }
+
+
 class FailingV2Graph:
     async def astream_events(self, input_data, *, config, version):
         yield {
@@ -212,6 +244,64 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(frames[-1][1]["status"], "completed")
         self.assertEqual(frames[-1][1]["output"]["response"], "안녕하세요")
         self.assertIn("completed_at", frames[-1][1])
+
+    @patch("main.get_callbacks", return_value=[])
+    async def test_opt_in_stream_emits_public_stages_and_heartbeats(self, _callbacks):
+        frames = [
+            parse_frame(frame)
+            async for frame in _stream_v2_chat_events(
+                ProgressV2Graph(),
+                FakeContextAPI(),
+                v2_request(),
+                fake_callback_masker(),
+                progress_events=True,
+                heartbeat_interval_seconds=0.005,
+            )
+        ]
+
+        self.assertEqual(frames[0][0], "start")
+        self.assertEqual(frames[-1][0], "done")
+        progress = [data for event, data in frames if event == "progress"]
+        self.assertEqual(
+            [data["phase"] for data in progress],
+            ["preparing", "planning", "executing", "validating", "saving"],
+        )
+        nonterminal = [
+            data for event, data in frames if event in {"progress", "heartbeat"}
+        ]
+        self.assertEqual(
+            [data["event_seq"] for data in nonterminal],
+            list(range(1, len(nonterminal) + 1)),
+        )
+        self.assertTrue(any(event == "heartbeat" for event, _ in frames))
+        self.assertNotIn("percent", str(nonterminal))
+        self.assertNotIn("은퇴 준비를 알려줘", str(nonterminal))
+
+    @patch("main.get_callbacks", return_value=[])
+    async def test_terminal_replay_does_not_replay_progress(self, _callbacks):
+        context = FakeContextAPI()
+        context.terminal = {
+            "contract_version": "2.0",
+            "request_id": "ai_req_v2_stream",
+            "session_id": 12,
+            "thread_id": "user-3-session-12",
+            "status": "completed",
+            "completed_at": "2026-09-17T00:00:00Z",
+            "output": {"response": "재생 응답"},
+        }
+
+        frames = [
+            parse_frame(frame)
+            async for frame in _stream_v2_chat_events(
+                FakeV2Graph(),
+                context,
+                v2_request(),
+                fake_callback_masker(),
+                progress_events=True,
+            )
+        ]
+
+        self.assertEqual([event for event, _ in frames], ["start", "done"])
 
     @patch("main.get_callbacks", return_value=[])
     async def test_stream_emits_one_request_root_lifecycle_with_io(self, _callbacks):
@@ -299,7 +389,14 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         app.state.callback_masker = fake_callback_masker()
         app.state.instrumentation = fake_instrumentation()[0]
 
-    async def _post(self, payload, authorization=None, *, sign=True):
+    async def _post(
+        self,
+        payload,
+        authorization=None,
+        *,
+        sign=True,
+        progress_events_version=None,
+    ):
         if sign and isinstance(payload, dict) and payload:
             unsigned = {key: value for key, value in payload.items() if key != "payload_digest"}
             payload = {
@@ -314,6 +411,8 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         headers = {"Accept": "text/event-stream"}
         if authorization is not None:
             headers["Authorization"] = authorization
+        if progress_events_version is not None:
+            headers["X-AI-Progress-Events"] = progress_events_version
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url="http://ai",
@@ -341,6 +440,31 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         self.assertNotIn("event: delta", response.text)
         self.assertIn("event: done", response.text)
         self.assertIn('"contract_version":"2.0"', response.text)
+
+    @patch("main.get_callbacks", return_value=[])
+    async def test_progress_capability_is_explicitly_negotiated(self, _callbacks):
+        app.state.chat_graph = ProgressV2Graph()
+        with patch("main.settings.ai_service_bearer_token", "test-token"):
+            response = await self._post(
+                v2_request().model_dump(mode="json"),
+                authorization="Bearer test-token",
+                progress_events_version="v1",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("event: progress", response.text)
+        self.assertNotIn("percent", response.text)
+
+    async def test_unknown_progress_capability_is_rejected(self):
+        with patch("main.settings.ai_service_bearer_token", "test-token"):
+            response = await self._post(
+                v2_request().model_dump(mode="json"),
+                authorization="Bearer test-token",
+                progress_events_version="v2",
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "REQUEST_SCHEMA_INVALID")
 
     async def test_payload_digest_mismatch_is_rejected_before_graph_execution(self):
         with patch("main.settings.ai_service_bearer_token", "test-token"):
