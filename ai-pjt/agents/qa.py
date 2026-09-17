@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -36,13 +37,13 @@ class QAState(TypedDict):
     # 쿼리별 작업 필드
     current_query: str
     current_context: str  # 첫 시도에서 캐시, retry 시 재사용
-    current_sources: list[str]
     current_answer: str
     need_retrieval: bool
     retry_hint: str      # judge 실패 이유 → generate 재시도 시 참고
     retries: int         # 현재 쿼리 재시도 횟수
     retrieval_refreshes: int  # 근거 부족으로 검색어를 보정한 횟수(쿼리당 최대 1)
     official_value_unavailable: bool
+    retrieval_used: bool
     # judge 통과한 답변 수집
     partial_answers: list[str]
     # 최종 출력 — ChatState 의 output 필드로 전파
@@ -110,9 +111,9 @@ _ANSWER_SYSTEM = secure_system_prompt("""\
 당신은 은퇴 설계 전문 AI 상담사입니다.
 제공된 승인 문서 근거만 사용해 사용자 질문에 정확하고 이해하기 쉽게 답변하세요.
 문서에 없는 내용은 추측하지 말고 현재 근거로 확인할 수 없다고 밝히세요.
-사실을 설명할 때는 참고 문서에 표시된 문서 제목과 원문 위치를 함께 인용하세요.
 제품 용어 질문은 검색된 용어 절의 정의·사용 맥락·주의사항을 질문 맥락에 맞게 풀어 쓰고,
-답변 끝에 `출처: 문서 제목 (원문 위치)` 형식으로 해당 용어 문서를 반드시 표시하세요.
+검색 문서는 내부 grounding에만 사용하고, 최종 답변에 문서 제목·발행기관·`source_id`·
+파일 경로·원문 위치·chunk ID나 출처·참고 문서 목록을 표시하지 마세요.
 검증된 선행 task 입력이 있으면 그 값·단위·출처를 그대로 사용하고 다시 계산하거나 바꾸지 마세요.""")
 
 _DIRECT_ANSWER_SYSTEM = secure_system_prompt("""\
@@ -124,7 +125,8 @@ _MERGE_SYSTEM = secure_system_prompt("""\
 아래 부분 답변들을 하나의 완결된 답변으로 통합하세요.
 두괄식으로 작성하세요: 핵심 결론을 먼저 제시하고, 이후 근거와 세부 내용을 자연스럽게 설명하세요.
 중복 내용은 제거하세요. 검증된 선행 값·단위·출처·기준일은 그대로 보존하고
-다른 값으로 바꾸거나 재계산하지 마세요. 부분 답변의 문서 출처도 삭제하지 마세요.""")
+다른 값으로 바꾸거나 재계산하지 마세요. 검색 문서의 제목·경로·원문 위치·출처 목록을
+새로 붙이거나 복원하지 마세요.""")
 
 _JUDGE_SYSTEM = secure_system_prompt("""\
 답변의 품질을 평가하세요.
@@ -134,7 +136,7 @@ _JUDGE_SYSTEM = secure_system_prompt("""\
 - bad + answer_quality: 근거는 충분하지만 표현·구성·질문 충실도가 부족함
 - bad + evidence_insufficient: 현재 승인 문서 context만으로 질문의 근거를 뒷받침할 수 없음
 
-제품 용어를 설명하면서 검색된 용어 문서의 제목과 원문 위치를 출처로 표시하지 않았다면
+최종 답변에 검색 문서의 제목·경로·원문 위치·`source_id`·출처 목록이 들어가면
 answer_quality로 판정하세요.
 검증된 선행 값 자체는 다시 평가하거나 변경하지 마세요.""")
 
@@ -154,13 +156,13 @@ def _init(_: QAState) -> dict:
         "query_index": 0,
         "current_query": "",
         "current_context": "",
-        "current_sources": [],
         "current_answer": "",
         "need_retrieval": False,
         "retry_hint": "",
         "retries": 0,
         "retrieval_refreshes": 0,
         "official_value_unavailable": False,
+        "retrieval_used": False,
         "partial_answers": [],
         "output": {},
     }
@@ -184,7 +186,6 @@ def _next_query(state: QAState) -> dict:
     return {
         "current_query": state["search_queries"][i],
         "current_context": "",
-        "current_sources": [],
         "current_answer": "",
         "retry_hint": "",
         "retries": 0,
@@ -231,6 +232,7 @@ async def _generate(state: QAState) -> dict:
         }
     update = {}
     if state["need_retrieval"]:
+        update["retrieval_used"] = True
         context = state["current_context"]
         if not context:
             try:
@@ -239,7 +241,6 @@ async def _generate(state: QAState) -> dict:
                 nodes = []
             context = format_docs(nodes)
             update["current_context"] = context
-            update["current_sources"] = _source_references(nodes)
         human_parts = [
             f"현재 단계: {state['step_id']}",
             f"고객 정보: {state['customer_info']}",
@@ -271,10 +272,11 @@ async def _generate(state: QAState) -> dict:
         purpose=ModelPurpose.QA,
         sensitive_payload=_model_sensitive_payload(state),
     )
-    answer = result.content
-    if state["need_retrieval"]:
-        sources = update.get("current_sources", state.get("current_sources", []))
-        answer = _append_source_references(answer, sources)
+    answer = (
+        _strip_retrieval_source_disclosure(result.content)
+        if state["need_retrieval"]
+        else result.content
+    )
     return {**update, "current_answer": answer}
 
 
@@ -378,7 +380,15 @@ async def _merge(state: QAState) -> dict:
         purpose=ModelPurpose.QA,
         sensitive_payload=_model_sensitive_payload(state),
     )
-    return {"output": {"response": result.content, "update": {}}}
+    response = result.content
+    if state.get("retrieval_used"):
+        response = _strip_retrieval_source_disclosure(response)
+    return {
+        "output": {
+            "response": response,
+            "update": {},
+        }
+    }
 
 
 def _requests_unbound_official_value(state: QAState) -> bool:
@@ -404,39 +414,51 @@ def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
     }
 
 
-def _source_references(results: list[Any]) -> list[str]:
-    from guardrails.boundary_policy import filter_rag_results
-
-    references: list[str] = []
-    for result in filter_rag_results(results):
-        if hasattr(result, "chunk"):
-            metadata = result.chunk.metadata
-            title = metadata.title
-            locators = metadata.source_locators
-        else:
-            metadata = result.node.metadata
-            title = metadata.get("title", metadata.get("source", "알 수 없음"))
-            raw_locators = metadata.get(
-                "source_locators",
-                metadata.get("source_locator", ()),
-            )
-            locators = (
-                (raw_locators,)
-                if isinstance(raw_locators, str)
-                else tuple(raw_locators)
-            )
-        locator_text = ", ".join(str(locator) for locator in locators)
-        reference = f"{title} ({locator_text})" if locator_text else str(title)
-        if reference not in references:
-            references.append(reference)
-    return references
+_SOURCE_BLOCK_HEADING = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:\*\*|__)?"
+    r"(?:출처|참고\s*문서|검색\s*문서|sources?)"
+    r"\s*:?\s*(?:\*\*|__)?\s*:?\s*$",
+    re.IGNORECASE,
+)
+_SOURCE_DISCLOSURE_LINE = re.compile(
+    r"^\s*(?:[-*+]\s+)?(?:#{1,6}\s*)?(?:\*\*|__)?"
+    r"(?:출처|참고\s*문서|검색\s*문서|원문\s*위치|source_id|문서\s*제목|sources?)"
+    r"\s*:?\s*(?:\*\*|__)?\s*:?\s*.+$",
+    re.IGNORECASE,
+)
+_CONTEXT_METADATA_LINE = re.compile(
+    r"^\s*(?:\*\*|__)?\[(?:근거|source_id|원문\s*위치)\s*:.*\]"
+    r"(?:\*\*|__)?\s*$",
+    re.IGNORECASE,
+)
+_SOURCE_LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)")
+_INLINE_SOURCE_NOTE = re.compile(
+    r"\s*\((?:출처|원문\s*위치|source_id)\s*:[^)]*\)",
+    re.IGNORECASE,
+)
 
 
-def _append_source_references(answer: str, references: list[str]) -> str:
-    if not references:
-        return answer
-    source_block = "\n".join(f"- {reference}" for reference in references)
-    return f"{answer.rstrip()}\n\n출처:\n{source_block}"
+def _strip_retrieval_source_disclosure(answer: str) -> str:
+    """Keep grounded prose while removing retrieved-document source disclosure."""
+
+    kept: list[str] = []
+    dropping_source_list = False
+    for line in answer.splitlines():
+        stripped = line.strip()
+        if _SOURCE_BLOCK_HEADING.fullmatch(line):
+            dropping_source_list = True
+            continue
+        if dropping_source_list:
+            if not stripped or _SOURCE_LIST_ITEM.match(line):
+                continue
+            dropping_source_list = False
+        if (
+            _SOURCE_DISCLOSURE_LINE.fullmatch(line)
+            or _CONTEXT_METADATA_LINE.fullmatch(line)
+        ):
+            continue
+        kept.append(_INLINE_SOURCE_NOTE.sub("", line).rstrip())
+    return "\n".join(kept).strip()
 
 
 # ---------------------------------------------------------------------------

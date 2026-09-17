@@ -335,23 +335,17 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
             "official_value_unavailable": False,
         }
         answer = "필요할 때 현금으로 바꾸기 쉬운 정도입니다."
-        expected = (
+        generated_with_source = (
             f"{answer}\n\n출처:\n"
             "- RetireWise 제품 용어 설명 "
             "(ai-pjt/rag/data/financial-knowledge/product-terms.md)"
         )
-        invoke = AsyncMock(return_value=SimpleNamespace(content=answer))
+        invoke = AsyncMock(
+            return_value=SimpleNamespace(content=generated_with_source)
+        )
         with (
             patch.object(qa, "get_retriever", return_value=retriever),
             patch.object(qa, "format_docs", return_value="승인된 유동성 용어 절"),
-            patch.object(
-                qa,
-                "_source_references",
-                return_value=[
-                    "RetireWise 제품 용어 설명 "
-                    "(ai-pjt/rag/data/financial-knowledge/product-terms.md)"
-                ],
-            ),
             patch.object(qa, "secure_ainvoke", invoke),
         ):
             generated = await qa._generate(state)
@@ -359,7 +353,27 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         retriever.aretrieve.assert_awaited_once_with("유동성 정의")
         invoke.assert_awaited_once()
         self.assertEqual(generated["current_context"], "승인된 유동성 용어 절")
-        self.assertEqual(generated["current_answer"], expected)
+        self.assertEqual(generated["current_answer"], answer)
+        self.assertNotIn("출처", generated["current_answer"])
+        self.assertNotIn("product-terms.md", generated["current_answer"])
+
+    def test_retrieval_source_disclosure_is_removed_without_losing_answer(
+        self,
+    ) -> None:
+        configure_runtime()
+        from agents import qa
+
+        answer = qa._strip_retrieval_source_disclosure(
+            "핵심 설명입니다. (출처: 제품 용어 문서)\n"
+            "[근거: RetireWise 제품 용어 설명 | 발행: S15P21B109]\n"
+            "[source_id: retirewise-product-terms-2026-09-17 | "
+            "chunk_id: term-liquidity]\n"
+            "[원문 위치: ai-pjt/rag/data/financial-knowledge/product-terms.md]\n"
+            "\n**참고 문서:**\n"
+            "- RetireWise 제품 용어 설명\n"
+        )
+
+        self.assertEqual(answer, "핵심 설명입니다.")
 
     async def test_product_term_explanation_is_classified_for_retrieval(self) -> None:
         configure_runtime()
