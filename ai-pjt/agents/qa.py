@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from math import isfinite
 from time import monotonic
 from typing import Any, Literal, NotRequired, TypedDict
@@ -47,6 +48,7 @@ class QAState(TypedDict):
     retries: int         # 현재 쿼리 재시도 횟수
     retrieval_refreshes: int  # 근거 부족으로 검색어를 보정한 횟수(쿼리당 최대 1)
     official_value_unavailable: bool
+    retrieval_used: bool
     # judge 통과한 답변 수집
     partial_answers: list[str]
     # 최종 출력 — ChatState 의 output 필드로 전파
@@ -80,49 +82,6 @@ _decision_chain = llm.with_structured_output(RetrievalDecision)
 _judge_chain = llm.with_structured_output(JudgeResult)
 _refine_chain = llm.with_structured_output(RefineResult)
 
-_QUALITATIVE_CHOICE_ANSWERS = {
-    "안정추구": (
-        "이 화면에서 ‘안정 추구’는 높은 수익보다 원금 손실 가능성과 자산 가치의 "
-        "변동을 낮추는 것을 우선한다는 뜻입니다. 손실이 전혀 없거나 특정 예금·채권·"
-        "상품을 자동으로 추천한다는 의미는 아닙니다."
-    ),
-    "균형추구": (
-        "이 화면에서 ‘균형 추구’는 안정성과 수익 가능성 중 어느 한쪽만 우선하지 않고 "
-        "감당 가능한 변동 범위에서 둘의 균형을 고려한다는 뜻입니다. 특정 상품 비중을 "
-        "자동으로 결정한다는 의미는 아닙니다."
-    ),
-    "위험감수": (
-        "이 화면에서 ‘위험 감수’는 더 높은 수익 가능성을 기대하며 일정 수준의 가격 "
-        "변동과 손실 가능성을 받아들일 수 있다는 뜻입니다. 실제 감내 가능 수준이나 "
-        "상품 적합성을 진단한 결과는 아닙니다."
-    ),
-    "단기지향": (
-        "이 화면에서 ‘단기 지향’은 장기 지향과 비교해 가까운 시점에 사용할 자금이나 "
-        "목표를 더 중요하게 본다는 뜻입니다. 현재 화면에는 ‘1년 이하’처럼 고정된 "
-        "연수 기준이 정의되어 있지 않으므로 특정 기간으로 단정하지 않습니다. 실제 "
-        "자금 사용 예정 시점을 기준으로 선택해 주세요."
-    ),
-    "장기지향": (
-        "이 화면에서 ‘장기 지향’은 가까운 시점의 사용보다 오랜 기간 뒤의 목표를 더 "
-        "중요하게 본다는 뜻입니다. 현재 화면에는 고정된 연수 기준이 정의되어 있지 "
-        "않으므로 실제 목표 시점을 기준으로 선택해 주세요."
-    ),
-}
-_TERM_EXPLANATION_CUES = (
-    "뜻",
-    "의미",
-    "정의",
-    "설명",
-    "정확히",
-    "뭐",
-    "무엇",
-    "말하",
-    "기간",
-    "어느정도",
-    "기준",
-)
-
-
 _SPECIFY_PROMPT = get_prompt("qa.specify")
 _DECIDE_PROMPT = get_prompt("qa.decide_retrieval")
 _ANSWER_PROMPT = get_prompt("qa.answer_with_evidence")
@@ -148,6 +107,7 @@ def _init(_: QAState) -> dict:
         "retries": 0,
         "retrieval_refreshes": 0,
         "official_value_unavailable": False,
+        "retrieval_used": False,
         "partial_answers": [],
         "output": {},
     }
@@ -184,8 +144,6 @@ async def _decide(state: QAState) -> dict:
             "need_retrieval": False,
             "official_value_unavailable": True,
         }
-    if _is_qualitative_choice_explanation(state):
-        return {"need_retrieval": False}
     decision = await secure_ainvoke(
         _decision_chain,
         prompt_messages(_DECIDE_PROMPT, {
@@ -207,9 +165,6 @@ async def _decide(state: QAState) -> dict:
 
 
 async def _generate(state: QAState) -> dict:
-    qualitative_answer = _qualitative_choice_answer(state)
-    if qualitative_answer is not None:
-        return {"current_answer": qualitative_answer}
     if state.get("official_value_unavailable"):
         return {
             "current_answer": (
@@ -220,6 +175,7 @@ async def _generate(state: QAState) -> dict:
         }
     update = {}
     if state["need_retrieval"]:
+        update["retrieval_used"] = True
         context = state["current_context"]
         if not context:
             search_started = monotonic()
@@ -285,17 +241,15 @@ async def _generate(state: QAState) -> dict:
         sensitive_payload=_model_sensitive_payload(state),
         prompt=prompt,
     )
-    return {**update, "current_answer": result.content}
+    answer = (
+        _strip_retrieval_source_disclosure(result.content)
+        if state["need_retrieval"]
+        else result.content
+    )
+    return {**update, "current_answer": answer}
 
 
 async def _judge(state: QAState) -> dict:
-    if _qualitative_choice_answer(state) is not None:
-        return {
-            "partial_answers": state["partial_answers"] + [state["current_answer"]],
-            "query_index": state["query_index"] + 1,
-            "retry_hint": "",
-            "retries": 0,
-        }
     if state.get("official_value_unavailable"):
         return {
             "partial_answers": state["partial_answers"] + [state["current_answer"]],
@@ -391,7 +345,15 @@ async def _merge(state: QAState) -> dict:
         sensitive_payload=_model_sensitive_payload(state),
         prompt=_MERGE_PROMPT,
     )
-    return {"output": {"response": result.content, "update": {}}}
+    response = result.content
+    if state.get("retrieval_used"):
+        response = _strip_retrieval_source_disclosure(response)
+    return {
+        "output": {
+            "response": response,
+            "update": {},
+        }
+    }
 
 
 def _search_result_metadata(
@@ -435,27 +397,6 @@ def _requests_unbound_official_value(state: QAState) -> bool:
     )
 
 
-def _is_qualitative_choice_explanation(state: QAState) -> bool:
-    """Keep UI choice definitions out of the official-value/RAG path."""
-
-    return _qualitative_choice_answer(state) is not None
-
-
-def _qualitative_choice_answer(state: QAState) -> str | None:
-    """Return the product-owned meaning without inventing numeric thresholds."""
-
-    text = f"{state.get('message', '')} {state.get('current_query', '')}".replace(
-        " ",
-        "",
-    )
-    if not any(cue in text for cue in _TERM_EXPLANATION_CUES):
-        return None
-    for term, answer in _QUALITATIVE_CHOICE_ANSWERS.items():
-        if term in text:
-            return answer
-    return None
-
-
 def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
     return {
         "message": state.get("message", ""),
@@ -464,6 +405,53 @@ def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
         "evidence": state.get("current_context", ""),
         "current_answer": state.get("current_answer", ""),
     }
+
+
+_SOURCE_BLOCK_HEADING = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:\*\*|__)?"
+    r"(?:출처|참고\s*문서|검색\s*문서|sources?)"
+    r"\s*:?\s*(?:\*\*|__)?\s*:?\s*$",
+    re.IGNORECASE,
+)
+_SOURCE_DISCLOSURE_LINE = re.compile(
+    r"^\s*(?:[-*+]\s+)?(?:#{1,6}\s*)?(?:\*\*|__)?"
+    r"(?:출처|참고\s*문서|검색\s*문서|원문\s*위치|source_id|문서\s*제목|sources?)"
+    r"\s*:?\s*(?:\*\*|__)?\s*:?\s*.+$",
+    re.IGNORECASE,
+)
+_CONTEXT_METADATA_LINE = re.compile(
+    r"^\s*(?:\*\*|__)?\[(?:근거|source_id|원문\s*위치)\s*:.*\]"
+    r"(?:\*\*|__)?\s*$",
+    re.IGNORECASE,
+)
+_SOURCE_LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)")
+_INLINE_SOURCE_NOTE = re.compile(
+    r"\s*\((?:출처|원문\s*위치|source_id)\s*:[^)]*\)",
+    re.IGNORECASE,
+)
+
+
+def _strip_retrieval_source_disclosure(answer: str) -> str:
+    """Keep grounded prose while removing retrieved-document source disclosure."""
+
+    kept: list[str] = []
+    dropping_source_list = False
+    for line in answer.splitlines():
+        stripped = line.strip()
+        if _SOURCE_BLOCK_HEADING.fullmatch(line):
+            dropping_source_list = True
+            continue
+        if dropping_source_list:
+            if not stripped or _SOURCE_LIST_ITEM.match(line):
+                continue
+            dropping_source_list = False
+        if (
+            _SOURCE_DISCLOSURE_LINE.fullmatch(line)
+            or _CONTEXT_METADATA_LINE.fullmatch(line)
+        ):
+            continue
+        kept.append(_INLINE_SOURCE_NOTE.sub("", line).rstrip())
+    return "\n".join(kept).strip()
 
 
 # ---------------------------------------------------------------------------

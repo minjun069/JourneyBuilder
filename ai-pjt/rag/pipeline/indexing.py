@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -25,6 +26,26 @@ OPERATIONAL_COLLECTIONS = {
     "interface-guides": "interface-guide",
 }
 _TOKEN_PATTERN = re.compile(r"[0-9A-Za-z가-힣_]+")
+_MARKDOWN_HEADING = re.compile(r"(?m)^#{1,6}\s+(.+?)\s*$")
+_PRODUCT_TERM_HEADING = re.compile(r"(?m)^##\s+(.+?)\s*$")
+_PRODUCT_TERM_ALIASES = re.compile(r"(?m)^- \*\*별칭:\*\*\s*(.+?)\s*$")
+_KOREAN_PARTICLES = tuple(sorted(
+    {
+        "에게서는", "으로서는", "으로부터", "에서는", "으로써", "이라고",
+        "이라면", "로서는", "에게서", "한테서", "까지는", "부터는", "이라도",
+        "이라고", "이란", "에는", "에도", "에서", "에게", "한테", "께서",
+        "으로", "처럼", "보다", "만큼", "조차", "마저", "이랑", "하고",
+        "이라", "라도", "이나", "든지", "부터", "까지", "은", "는", "이",
+        "가", "을", "를", "의", "와", "과", "로", "에", "도", "만", "랑",
+    },
+    key=len,
+    reverse=True,
+))
+_BM25_FIELD_WEIGHTS = {"title": 4.0, "aliases": 2.5, "body": 1.0}
+_EXACT_TITLE_BONUS = 1_000.0
+_EXACT_ALIAS_BONUS = 500.0
+_ONE_CHARACTER_TERM_STEMS = frozenset({"연", "월", "주"})
+_TERM_LOOKUP_CUES = ("뜻", "의미", "정의", "설명", "뭐", "무엇", "차이", "용어")
 
 
 def corpus_digest(documents: list[SourceDocument]) -> str:
@@ -224,6 +245,7 @@ class IndexedRetriever:
         fetch_k: int = 10,
         minimum_dense_score: float = 0.30,
         rrf_constant: int = 60,
+        sparse_rrf_weight: float = 1.0,
     ) -> None:
         if fetch_k < 1:
             raise ValueError("fetch_k must be positive")
@@ -231,12 +253,15 @@ class IndexedRetriever:
             raise ValueError("minimum_dense_score must be between 0 and 1")
         if rrf_constant < 1:
             raise ValueError("rrf_constant must be positive")
+        if sparse_rrf_weight <= 0:
+            raise ValueError("sparse_rrf_weight must be positive")
         self.store = store
         self.embedding = embedding
         self.hybrid = hybrid
         self.fetch_k = fetch_k
         self.minimum_dense_score = minimum_dense_score
         self.rrf_constant = rrf_constant
+        self.sparse_rrf_weight = sparse_rrf_weight
 
     def retrieve(
         self, logical_collection: str, query: str, *, top_k: int = 5
@@ -288,9 +313,13 @@ class IndexedRetriever:
                     "sparse": None,
                 },
             )
-            entry["fusion"] = float(entry["fusion"]) + 1.0 / (
+            entry["fusion"] = float(entry["fusion"]) + self.sparse_rrf_weight / (
                 self.rrf_constant + rank
             )
+            if score >= _EXACT_ALIAS_BONUS:
+                entry["fusion"] = float(entry["fusion"]) + 1.0 / (
+                    self.rrf_constant + 1
+                )
             entry["sparse"] = score
 
         ordered = sorted(
@@ -317,48 +346,152 @@ class IndexedRetriever:
         ]
 
     @staticmethod
-    def _tokens(text: str) -> list[str]:
-        return _TOKEN_PATTERN.findall(text.lower())
+    def _tokens(text: str, *, strip_particles: bool = True) -> list[str]:
+        tokens: list[str] = []
+        for token in _TOKEN_PATTERN.findall(
+            unicodedata.normalize("NFKC", text).casefold()
+        ):
+            normalized = (
+                IndexedRetriever._normalize_token(token)
+                if strip_particles
+                else token
+            )
+            if normalized:
+                tokens.append(normalized)
+        return tokens
+
+    @staticmethod
+    def _normalize_token(token: str) -> str:
+        normalized = unicodedata.normalize("NFKC", token).casefold()
+        for particle in _KOREAN_PARTICLES:
+            if not normalized.endswith(particle):
+                continue
+            stem = normalized[:-len(particle)]
+            if len(stem) >= 2 or stem in _ONE_CHARACTER_TERM_STEMS:
+                return stem
+        return normalized
+
+    @classmethod
+    def _search_fields(cls, embedded: object) -> dict[str, str]:
+        text = embedded.chunk.text
+        product_title = _PRODUCT_TERM_HEADING.search(text)
+        headings = _MARKDOWN_HEADING.findall(text)
+        title = (
+            product_title.group(1).strip()
+            if product_title is not None
+            else " ".join(heading.strip() for heading in headings)
+        )
+        if not title:
+            title = embedded.chunk.metadata.title
+
+        aliases_match = _PRODUCT_TERM_ALIASES.search(text)
+        aliases = ""
+        if aliases_match is not None and aliases_match.group(1).strip() != "없음":
+            aliases = aliases_match.group(1).strip()
+
+        body = _MARKDOWN_HEADING.sub(" ", text)
+        body = _PRODUCT_TERM_ALIASES.sub(" ", body)
+        return {"title": title, "aliases": aliases, "body": body}
+
+    @classmethod
+    def _contains_surface(cls, query_tokens: list[str], surface: str) -> bool:
+        surface_tokens = cls._tokens(surface)
+        if not surface_tokens or len(surface_tokens) > len(query_tokens):
+            return False
+        width = len(surface_tokens)
+        return any(
+            query_tokens[index:index + width] == surface_tokens
+            for index in range(len(query_tokens) - width + 1)
+        )
 
     @classmethod
     def _bm25(
         cls, chunks: list, query: str, top_k: int
     ) -> list[tuple[object, float]]:
-        query_terms = Counter(cls._tokens(query))
+        raw_query_tokens = cls._tokens(query, strip_particles=False)
+        is_term_lookup = (
+            len(raw_query_tokens) <= 3
+            or any(
+                cue in token
+                for token in raw_query_tokens
+                for cue in _TERM_LOOKUP_CUES
+            )
+        )
+        query_tokens = cls._tokens(query, strip_particles=is_term_lookup)
+        query_terms = Counter(query_tokens)
         if not query_terms or not chunks:
             return []
-        documents = [Counter(cls._tokens(item.chunk.text)) for item in chunks]
-        lengths = [sum(document.values()) for document in documents]
-        average_length = sum(lengths) / len(lengths) if lengths else 0.0
+        fields = [cls._search_fields(item) for item in chunks]
+        documents = [
+            {
+                field: Counter(cls._tokens(value))
+                for field, value in document_fields.items()
+            }
+            for document_fields in fields
+        ]
+        lengths = {
+            field: [sum(document[field].values()) for document in documents]
+            for field in _BM25_FIELD_WEIGHTS
+        }
+        average_lengths = {
+            field: (sum(values) / len(values) if values else 0.0)
+            for field, values in lengths.items()
+        }
         document_frequency = {
-            term: sum(term in document for document in documents)
+            term: sum(
+                any(term in document[field] for field in _BM25_FIELD_WEIGHTS)
+                for document in documents
+            )
             for term in query_terms
         }
         k1 = 1.5
         b = 0.75
         scored: list[tuple[float, object]] = []
-        for embedded, frequencies, length in zip(chunks, documents, lengths):
+        for index, (embedded, frequencies) in enumerate(zip(chunks, documents)):
             score = 0.0
             for term, query_frequency in query_terms.items():
-                frequency = frequencies.get(term, 0)
-                if frequency == 0:
-                    continue
                 frequency_in_documents = document_frequency[term]
                 inverse_frequency = math.log(
                     1.0
                     + (len(documents) - frequency_in_documents + 0.5)
                     / (frequency_in_documents + 0.5)
                 )
-                normalization = frequency + k1 * (
-                    1.0 - b + b * length / average_length
+                for field, weight in _BM25_FIELD_WEIGHTS.items():
+                    frequency = frequencies[field].get(term, 0)
+                    average_length = average_lengths[field]
+                    if frequency == 0 or average_length == 0.0:
+                        continue
+                    normalization = frequency + k1 * (
+                        1.0 - b + b * lengths[field][index] / average_length
+                    )
+                    score += (
+                        weight
+                        * inverse_frequency
+                        * frequency
+                        * (k1 + 1.0)
+                        / normalization
+                        * query_frequency
+                    )
+
+            if is_term_lookup and cls._contains_surface(
+                query_tokens,
+                fields[index]["title"],
+            ):
+                score += _EXACT_TITLE_BONUS + 10.0 * len(
+                    cls._tokens(fields[index]["title"])
                 )
-                score += (
-                    inverse_frequency
-                    * frequency
-                    * (k1 + 1.0)
-                    / normalization
-                    * query_frequency
-                )
+            alias_values = [
+                alias.strip()
+                for alias in fields[index]["aliases"].split(",")
+                if alias.strip()
+            ]
+            if is_term_lookup and any(
+                cls._contains_surface(query_tokens, alias)
+                for alias in alias_values
+            ):
+                score += _EXACT_ALIAS_BONUS
+            if not is_term_lookup and "- **용어 ID:**" in embedded.chunk.text:
+                score *= 0.25
             if score > 0.0:
                 scored.append((score, embedded))
         scored.sort(key=lambda item: (-item[0], item[1].chunk.chunk_id))

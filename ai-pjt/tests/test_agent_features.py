@@ -4,6 +4,7 @@ import importlib.util
 import os
 import unittest
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -349,77 +350,118 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("query", repr(event).lower())
         self.assertNotIn("연금 제도 승인 근거", repr(event))
 
-    async def test_qualitative_choice_answers_do_not_invent_thresholds(self) -> None:
+    async def test_product_term_explanation_uses_specify_model(self) -> None:
         configure_runtime()
         from agents import qa
 
-        cases = (
-            (
-                "단기 지향의 기간에 대해 설명",
-                "단기 지향 기간",
-                "고정된 연수 기준이 정의되어 있지 않",
-            ),
-            (
-                "안정추구의 정의에 대해 설명합니다.",
-                "안정 추구 정의",
-                "높은 수익보다 원금 손실 가능성",
-            ),
+        specify_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.SpecifyResult(
+            queries=["유동성 중시 유동성 정의"],
+        )))
+        message = "유동성 중시에서 유동성이 뭐야?"
+        with patch.object(qa, "_specify_chain", specify_chain):
+            specified = await qa._specify({"message": message})
+
+        self.assertEqual(
+            specified,
+            {"search_queries": ["유동성 중시 유동성 정의"], "query_index": 0},
         )
-        for message, query, expected in cases:
-            with self.subTest(message=message):
-                state = {
-                    "message": message,
-                    "current_query": query,
-                    "customer_info": {},
-                    "bound_inputs": {},
-                    "current_context": "",
-                    "current_answer": "",
-                    "need_retrieval": False,
-                    "retry_hint": "",
-                    "official_value_unavailable": False,
-                    "partial_answers": [],
-                    "query_index": 0,
-                    "retries": 0,
-                }
-                model = SimpleNamespace(ainvoke=AsyncMock())
-                judge_chain = SimpleNamespace(ainvoke=AsyncMock())
-                with (
-                    patch.object(qa, "llm", model),
-                    patch.object(qa, "_judge_chain", judge_chain),
-                ):
-                    generated = await qa._generate(state)
-                    judged = await qa._judge({
-                        **state,
-                        "current_answer": generated["current_answer"],
-                    })
+        specify_chain.ainvoke.assert_awaited_once()
 
-                self.assertIn(expected, generated["current_answer"])
-                self.assertEqual(judged["partial_answers"], [generated["current_answer"]])
-                model.ainvoke.assert_not_awaited()
-                judge_chain.ainvoke.assert_not_awaited()
-
-    async def test_qualitative_choice_explanations_skip_official_value_rag(self) -> None:
+    async def test_product_term_explanation_retrieves_then_uses_model(self) -> None:
         configure_runtime()
         from agents import qa
 
-        for message, query in (
-            ("단기 지향이면 어느정도 기간을 말하지?", "단기 지향 기간"),
-            ("안정추구란 정확히 뭘 말하는거야?", "안정 추구 의미"),
-            ("단기 지향의 기간에 대해 설명", "단기 지향 기간"),
-            ("안정추구의 정의에 대해 설명합니다.", "안정 추구 정의"),
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[object()]))
+        state = {
+            "step_id": "financial-mindset",
+            "message": "안정 추구가 정확히 뭐야?",
+            "current_query": "안정 추구 정의",
+            "customer_info": {},
+            "bound_inputs": {},
+            "current_context": "",
+            "current_answer": "",
+            "need_retrieval": True,
+            "retry_hint": "",
+            "official_value_unavailable": False,
+        }
+        answer = "손실 가능성과 자산 가치 변동을 낮추는 것을 우선한다는 뜻입니다."
+        generated_with_source = (
+            f"{answer}\n\n출처:\n"
+            "- RetireWise 제품 용어 설명 "
+            "(ai-pjt/rag/data/financial-knowledge/product-terms.md)"
+        )
+        invoke = AsyncMock(
+            return_value=SimpleNamespace(content=generated_with_source)
+        )
+        with (
+            patch.object(qa, "get_retriever", return_value=retriever),
+            patch.object(qa, "format_docs", return_value="승인된 안정 추구 용어 절"),
+            patch.object(qa, "secure_ainvoke", invoke),
         ):
-            with self.subTest(message=message):
-                decision_chain = SimpleNamespace(ainvoke=AsyncMock())
-                with patch.object(qa, "_decision_chain", decision_chain):
-                    decision = await qa._decide({
-                        "message": message,
-                        "current_query": query,
-                        "customer_info": {},
-                        "bound_inputs": {},
-                    })
+            generated = await qa._generate(state)
 
-                self.assertEqual(decision, {"need_retrieval": False})
-                decision_chain.ainvoke.assert_not_awaited()
+        retriever.aretrieve.assert_awaited_once_with("안정 추구 정의")
+        invoke.assert_awaited_once()
+        self.assertEqual(generated["current_context"], "승인된 안정 추구 용어 절")
+        self.assertEqual(generated["current_answer"], answer)
+        self.assertNotIn("출처", generated["current_answer"])
+        self.assertNotIn("product-terms.md", generated["current_answer"])
+
+    def test_retrieval_source_disclosure_is_removed_without_losing_answer(
+        self,
+    ) -> None:
+        configure_runtime()
+        from agents import qa
+
+        answer = qa._strip_retrieval_source_disclosure(
+            "핵심 설명입니다. (출처: 제품 용어 문서)\n"
+            "[근거: RetireWise 제품 용어 설명 | 발행: S15P21B109]\n"
+            "[source_id: retirewise-product-terms-2026-09-17 | "
+            "chunk_id: term-liquidity]\n"
+            "[원문 위치: ai-pjt/rag/data/financial-knowledge/product-terms.md]\n"
+            "\n**참고 문서:**\n"
+            "- RetireWise 제품 용어 설명\n"
+        )
+
+        self.assertEqual(answer, "핵심 설명입니다.")
+
+    def test_qa_contains_no_fixed_product_term_answer_path(self) -> None:
+        configure_runtime()
+        from agents import qa
+
+        source = Path(qa.__file__).read_text(encoding="utf-8")
+        forbidden = (
+            "_QUALITATIVE_CHOICE_ANSWERS",
+            "_TERM_EXPLANATION_CUES",
+            "_qualitative_choice_answer",
+            "_is_qualitative_choice_explanation",
+            "안정추구",
+            "균형추구",
+            "위험감수",
+            "단기지향",
+            "장기지향",
+        )
+        for token in forbidden:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
+    async def test_product_term_explanation_is_classified_for_retrieval(self) -> None:
+        configure_runtime()
+        from agents import qa
+
+        decision_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RetrievalDecision(
+            need_retrieval=True,
+        )))
+        with patch.object(qa, "_decision_chain", decision_chain):
+            decision = await qa._decide({
+                "message": "안정추구가 정확히 뭐야?",
+                "current_query": "안정 추구 정의",
+                "customer_info": {},
+                "bound_inputs": {},
+            })
+
+        self.assertEqual(decision, {"need_retrieval": True})
+        decision_chain.ainvoke.assert_awaited_once()
 
     async def test_new_official_value_fails_closed_even_with_unrelated_binding(self) -> None:
         configure_runtime()

@@ -95,6 +95,17 @@ class PromptRegistryTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertTrue(all(len(prompt.content_hash) == 64 for prompt in specs))
 
+    def test_active_qa_prompts_require_product_term_rag_without_source_metadata(self) -> None:
+        decide = get_prompt("qa.decide_retrieval").system_text
+        answer = get_prompt("qa.answer_with_evidence").system_text
+        merge = get_prompt("qa.merge").system_text
+
+        self.assertIn("제품 화면의 용어명·별칭·뜻", decide)
+        self.assertIn("retrieve로 판단하세요", decide)
+        self.assertIn("검색된 용어 절의 정의·사용 맥락·주의사항", answer)
+        self.assertIn("출처·참고 문서 목록을 표시하지 마세요", answer)
+        self.assertIn("출처 목록을 새로 붙이거나 복원하지 마세요", merge)
+
 
 class ProductionPromptCallAuditTests(unittest.TestCase):
     def _production_files(self) -> list[Path]:

@@ -105,7 +105,7 @@ class ModelBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0].prompt_id, "qa.specify")
-        self.assertEqual(records[0].prompt_version, "1.0.0")
+        self.assertEqual(records[0].prompt_version, "1.1.0")
         self.assertEqual(len(records[0].prompt_hash), 64)
         self.assertEqual(records[0].prompt_policy_version, "1.1")
 
@@ -130,7 +130,7 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(prompt_events, [])
         event = model_events[0]
         self.assertEqual(event["prompt_id"], "qa.specify")
-        self.assertEqual(event["prompt_version"], "1.0.0")
+        self.assertEqual(event["prompt_version"], "1.1.0")
         self.assertEqual(len(event["prompt_hash"]), 64)
         self.assertTrue(event["prompt_release"])
         self.assertEqual(event["prompt_policy_version"], "1.1")

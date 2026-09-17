@@ -1,7 +1,7 @@
 {
-  "release": "2026-09-17.0",
+  "release": "2026-09-17.1",
   "prompts": [
-    {"id":"chart_interpret.explain","version":"1.0.0","sha256":"812baa952159ef02f400c05c34fb558668b0a17a83d675b07c22faebd4293d6b","purpose":"chart_interpret","output_schema":null,"owner":"ai-team","risk":"financial_explanation"},
+    {"id":"chart_interpret.explain","version":"2.0.0","sha256":"37194864ff3f345dae1ab3e7d4f1042660dfe832ec91a1d9de9adf69598d2814","purpose":"chart_interpret","output_schema":null,"owner":"ai-team","risk":"financial_explanation"},
     {"id":"elicit.analyze","version":"1.0.0","sha256":"b47864f74f3cbf4e80445777283b627c1eb1438a291f83cc6f366c84790d5279","purpose":"elicit","output_schema":"elicit_analysis","owner":"ai-team","risk":"standard"},
     {"id":"error_review.analyze","version":"1.0.0","sha256":"9faeb602675b089d130414a789b69c8120fa48935a1305ea6e8bceab93f0c697","purpose":"error_review","output_schema":"review_result","owner":"ai-team","risk":"financial_review"},
     {"id":"input_assist.classify","version":"1.0.0","sha256":"40335acd424284f3b15e8c6980bcb3092357f13bc81caf769eb0a44667a552cb","purpose":"input_assist","output_schema":"classify_result","owner":"ai-team","risk":"form_change"},

@@ -1,6 +1,6 @@
 # RAG 자료 현재 문제와 D6 인수 범위
 
-상태: **F06-T01~T05 완료 — 실제 Gemini 운영 승격은 계산기 정합화 뒤 수행**
+상태: **F06-T01~T06 완료 — catalog 2.2.0 공식 Gemini 승격·artifact 생성 완료, 운영 배포 대기**
 
 이 문서는 기준 커밋 `ef3f8b7`에서 관찰한 RAG 자료와 검색 코드의 문제, 과거 P08에서
 처리한 범위와 현재 F06에 남은 작업을 기록한다. 채택된 데이터 계약을 변경하지 않으며
@@ -60,6 +60,14 @@
 5. 평가 통과 뒤 transaction으로 active pointer를 전환하고 retired 버전을 30일 보관한다.
 6. 승인 문서 24개와 58개 gold query를 deterministic·임시 pgvector에서 검증했다. 인터페이스 Recall@5/MRR@5는 0.950/0.912, 금융 지식은 1.000/0.880이며 provenance 100%, collection 혼입과 false evidence는 0건이다.
 
-실제 Gemini 평가는 배포환경의 `GOOGLE_API_KEY`와 `DATABASE_URL`을 주입해 다시 실행한다.
-계산기 정합화는 F09-T07 별도 작업이며 완료 전 `financial-knowledge` 운영 승격은 명령이
-거부한다. 이 제한은 인터페이스 승격과 비활성 후보 build·평가를 막지 않는다.
+이 단계에서는 실제 Gemini 평가와 계산기 정합화를 후속 작업으로 남겼다. F09-T07이
+승인 계산 정책을 적용했고, 아래 catalog 2.2.0 공식 실행에서 실제 Gemini 승격을
+완료했다.
+
+## 2026-09-17 제품 용어 RAG 보완
+
+- 제품 용어 188개를 정의·별칭·사용 맥락·주의사항이 있는 Markdown 188개 독립 청크로 추가했다.
+- 한국어 조사와 띄어쓰기·별칭을 정규화하고 제목 4.0, 별칭 2.5, 본문 1.0의 BM25 필드 가중치와 dense RRF를 적용했다.
+- 승인 corpus는 25문서와 66개 gold query로 늘었고 deterministic 재현검사와 실제 GMS `gemini-embedding-2` qualification을 통과했다.
+- dense 경계 0.52의 첫 실행은 무관한 여행 질의의 오탐 `0.5329`로 FAIL했고 pointer를 유지했다. 운영 기본값 0.54로 재실행해 인터페이스·금융지식 모두 PASS, false evidence 0건으로 승격했다.
+- `official__official-catalog-2-2-0.tar.gz`를 생성하고 독립 consumer의 import·activate·멱등 재사용과 38·230 chunk 일치를 확인했다. 운영 DB는 다음 GitLab 배포에서 자동 반영한다.

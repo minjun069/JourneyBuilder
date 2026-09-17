@@ -34,7 +34,7 @@ _DEFAULT_POLICY = (
 _OPERATIONAL_COLLECTIONS = ("interface-guides", "financial-knowledge")
 _OPERATIONAL_EMBEDDING_MODEL = "gemini-embedding-2"
 _OPERATIONAL_EMBEDDING_DIMENSIONS = 3072
-_OPERATIONAL_MINIMUM_DENSE_SCORE = 0.52
+_OPERATIONAL_MINIMUM_DENSE_SCORE = 0.54
 _GMS_GEMINI_BASE_URL = (
     "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
 )
@@ -494,10 +494,17 @@ def run_operational(args: argparse.Namespace) -> int:
             "endpoint": "gms",
         },
         "retrieval": {
-            "strategy": "dense-bm25-rrf",
+            "strategy": "dense-field-bm25-weighted-rrf",
             "top_k": args.top_k,
             "fetch_k": args.fetch_k,
             "minimum_dense_score": args.minimum_dense_score,
+            "bm25_field_weights": {
+                "title": 4.0,
+                "aliases": 2.5,
+                "body": 1.0,
+            },
+            "korean_particle_normalization": True,
+            "exact_match_priority": ["title", "aliases", "body"],
         },
         "thresholds": {
             "recall_at_5_minimum": thresholds.minimum_recall,

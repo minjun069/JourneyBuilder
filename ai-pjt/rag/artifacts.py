@@ -103,8 +103,15 @@ def _validate_qualification(payload: Any) -> dict[str, Any]:
             )
             for result in collections
         }
-        if query_counts != {"interface-guides": 20, "financial-knowledge": 38}:
-            raise ValueError("official artifact must contain all 58 qualification queries")
+        catalog_version = payload.get("catalog", {}).get("version")
+        expected_query_counts = {
+            "2.1.0": {"interface-guides": 20, "financial-knowledge": 38},
+            "2.2.0": {"interface-guides": 20, "financial-knowledge": 46},
+        }.get(catalog_version)
+        if expected_query_counts is None or query_counts != expected_query_counts:
+            raise ValueError(
+                "official artifact qualification counts do not match its catalog version"
+            )
         if not payload.get("deployable"):
             raise ValueError("official artifact must be marked deployable")
         if not payload.get("operator_id"):

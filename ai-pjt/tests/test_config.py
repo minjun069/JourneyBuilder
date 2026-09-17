@@ -29,9 +29,9 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.rag_top_k, 5)
         self.assertEqual(settings.llm_temperature, 0.0)
-        self.assertEqual(settings.prompt_release, "2026-09-17.1")
+        self.assertEqual(settings.prompt_release, "2026-09-17.2")
         self.assertEqual(settings.rag_fetch_k, 10)
-        self.assertEqual(settings.rag_min_dense_score, 0.30)
+        self.assertEqual(settings.rag_min_dense_score, 0.54)
         self.assertEqual(settings.rag_financial_collection, "financial-knowledge")
         self.assertEqual(settings.rag_interface_collection, "interface-guides")
         self.assertEqual(settings.embed_dim, 3072)

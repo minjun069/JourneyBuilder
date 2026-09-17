@@ -187,6 +187,7 @@ def collect_service_compose_environment(
     service_targets = {
         "backend": "backend-pjt",
         "migrate": "backend-pjt",
+        "rag-bootstrap": "ai-pjt",
         "ai-pjt": "ai-pjt",
         "front": "front-pjt",
     }
