@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any, Literal, NotRequired, TypedDict
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
@@ -15,9 +14,10 @@ from agents.input_assist_defaults import (
 from core.llm import llm
 from core.model_boundary import (
     ModelPurpose,
+    prompt_messages,
     secure_ainvoke,
-    secure_system_prompt,
 )
+from prompts import get_prompt
 
 MAX_RETRIES = 2
 
@@ -98,84 +98,17 @@ _resolve_chain       = llm.with_structured_output(ResolveResult)
 _error_check_2_chain = llm.with_structured_output(ErrorCheck2Result)
 
 
-# ---------------------------------------------------------------------------
-# 프롬프트
-# ---------------------------------------------------------------------------
-
-_CLASSIFY_SYSTEM = secure_system_prompt("""\
-당신은 은퇴 설계 전문 AI 상담사입니다.
-
-사용자 발화의 의도를 다음 중 하나로 분류하세요.
-- fill_avg : 특정 항목에 적절한 평균값·추천값으로 채워달라는 요청
-- find_field: 값은 알지만 어느 항목에 입력해야 할지 모르는 경우
-- organize  : 입력할 내용이 있으나 정리가 필요한 경우
-user_requested_change는 사용자가 입력·수정·추가·삭제를 명시적으로 요청한 경우에만 true이고,
-질문하거나 추천만 구한 경우에는 false입니다.""")
-
-_IDENTIFY_SYSTEM = secure_system_prompt("""\
-당신은 은퇴 설계 전문 AI 상담사입니다.
-
-[현재 단계의 canonical 필드 레지스트리]
-{guideline}
-
-사용자 발화에서 입력 대상과 동작을 추출하세요.
-- section/path는 위 레지스트리에 있는 조합만 사용하세요.
-- operation은 객체의 단일/반복 여부와 무관하게 같은 뜻으로 사용합니다.
-  - set: 대상 값을 정확히 교체
-  - add: 새 대상·값·항목을 추가
-  - update: 기존 대상·객체·항목의 일부를 수정
-  - remove: 대상·값·항목을 제거
-- 기존 반복 항목이면 현재 폼의 id 또는 client_item_id를 그대로 지정하세요.
-- 새 반복 항목을 add할 때는 item_id와 client_item_id를 비워 두세요.
-- excerpt는 사용자 발화에서 해당 내용을 그대로 발췌하세요.
-- 중첩 항목을 add할 때는 부모의 id 또는 client_item_id를 parent_item_id 또는
-  parent_client_item_id로 지정하세요.
-
-[현재 저장 전 폼]
-{current_form}""")
-
-_RESOLVE_SYSTEM = secure_system_prompt("""\
-당신은 은퇴 설계 전문 AI 상담사입니다.
-{intent_instruction}
-
-[항목 명세서]
-{field_spec}
-
-[공통 작성 규칙]
-- 항목의 type 과 unit 에 맞는 형식으로 반환하세요.
-- value_json은 해석한 값 하나를 JSON으로 직렬화한 문자열입니다. 예를 들어 숫자
-  3200000은 `3200000`, 문자열 직장인은 `"직장인"`으로 반환하세요.
-- constraints 범위를 벗어나면 가장 가까운 경계값으로 조정하세요.
-- confidence는 사용자 발화와 명세만으로 값과 대상을 확정할 수 있는 정도를 0~1로 반환하세요.
-{hint}""")
+_CLASSIFY_PROMPT = get_prompt("input_assist.classify")
+_IDENTIFY_PROMPT = get_prompt("input_assist.identify")
+_RESOLVE_PROMPT = get_prompt("input_assist.resolve")
+_ERROR_CHECK_2_PROMPT = get_prompt("input_assist.validate_resolution")
+_MERGE_PROMPT = get_prompt("input_assist.merge")
 
 _RESOLVE_INTENT_INSTRUCTIONS: dict[str, str] = {
     "fill_avg": "executor가 검증해 전달한 binding 값만 사용하세요. binding 값이 없으면 평균값·추천값을 임의로 생성하지 마세요.",
     "find_field": "발췌 내용에서 이 항목에 해당하는 값을 직접 추출하여 반환하세요.",
     "organize": "발췌 내용을 이 항목의 type·unit·constraints 에 맞게 정리하여 반환하세요.",
 }
-
-_ERROR_CHECK_2_SYSTEM = secure_system_prompt("""\
-분류 기준에 따라 확정된 값의 오류 여부와 판단 근거를 작성하세요.
-
-오류 유형:
-- ok           : 오류 없음
-- hallucination: 사용자 발화 발췌나 참고 자료에 근거 없는 값
-- unorganized  : 값이 정리되지 않아 항목에 입력하기 부적합한 형태
-- type_unit    : 자료형 또는 단위 이상
-- unreasonable : 값의 합리성 의심 (참고 자료 미반영 또는 범위 이탈)
-
-[항목 명세서]
-{field_spec}""")
-
-_MERGE_SYSTEM = secure_system_prompt("""\
-당신은 은퇴 설계 전문 AI 상담사입니다.
-
-아래 항목별 입력 처리 결과를 바탕으로 사용자에게 전달할 자연스러운 한국어 안내 멘트를 작성하세요.
-- 항목별로 두괄식으로 작성하세요.
-- 입력에 성공한 항목은 어떤 값을 왜 선택했는지 설명하세요.
-- 실패한 항목은 실패 이유와 사용자가 직접 확인해야 할 사항을 안내하세요. 실패한 항목이 없다면 생략하세요.""")
-
 
 # ---------------------------------------------------------------------------
 # 노드
@@ -203,12 +136,10 @@ def _init(_: InputAssistState) -> dict:
 async def _classify(state: InputAssistState) -> dict:
     result = await secure_ainvoke(
         _classify_chain,
-        [
-            SystemMessage(content=_CLASSIFY_SYSTEM),
-            HumanMessage(content=state["message"]),
-        ],
+        prompt_messages(_CLASSIFY_PROMPT, {"message": state["message"]}),
         purpose=ModelPurpose.INPUT_ASSIST,
         sensitive_payload=_model_sensitive_payload(state),
+        prompt=_CLASSIFY_PROMPT,
     )
     return {
         "classification": result.intent,
@@ -256,15 +187,14 @@ async def _identify(state: InputAssistState) -> dict:
         }
     result = await secure_ainvoke(
         _identify_chain,
-        [
-            SystemMessage(content=_IDENTIFY_SYSTEM.format(
-                guideline=guideline,
-                current_form=json.dumps(current_form, ensure_ascii=False, indent=2),
-            )),
-            HumanMessage(content=state["message"]),
-        ],
+        prompt_messages(_IDENTIFY_PROMPT, {
+            "field_registry": writable_registry,
+            "current_form": current_form,
+            "message": state["message"],
+        }),
         purpose=ModelPurpose.INPUT_ASSIST,
         sensitive_payload=_model_sensitive_payload(state),
+        prompt=_IDENTIFY_PROMPT,
     )
     return {
         "guideline": guideline,
@@ -374,16 +304,17 @@ async def _resolve(state: InputAssistState) -> dict:
 
     result = await secure_ainvoke(
         _resolve_chain,
-        [
-            SystemMessage(content=_RESOLVE_SYSTEM.format(
-                field_spec=field_spec,
-                intent_instruction=_RESOLVE_INTENT_INSTRUCTIONS.get(state["classification"], ""),
-                hint=hint,
-            )),
-            HumanMessage(content=f"[사용자 입력]\n{item['excerpt']}"),
-        ],
+        prompt_messages(_RESOLVE_PROMPT, {
+            "intent_instruction": _RESOLVE_INTENT_INSTRUCTIONS.get(
+                state["classification"], ""
+            ),
+            "field_spec": field_spec,
+            "hint": hint,
+            "user_excerpt": item["excerpt"],
+        }),
         purpose=ModelPurpose.INPUT_ASSIST,
         sensitive_payload=_model_sensitive_payload(state),
+        prompt=_RESOLVE_PROMPT,
     )
     try:
         resolution = json.loads(result.value_json)
@@ -474,17 +405,14 @@ async def _error_check_2(state: InputAssistState) -> dict:
 
     result = await secure_ainvoke(
         _error_check_2_chain,
-        [
-            SystemMessage(content=_ERROR_CHECK_2_SYSTEM.format(
-                field_spec=state["field_spec"]
-            )),
-            HumanMessage(content=(
-                f"사용자 입력: {item['excerpt']}\n"
-                f"해석된 값: {state['resolution']}\n"
-            )),
-        ],
+        prompt_messages(_ERROR_CHECK_2_PROMPT, {
+            "field_spec": state["field_spec"],
+            "user_input": item["excerpt"],
+            "resolution": state["resolution"],
+        }),
         purpose=ModelPurpose.INPUT_ASSIST,
         sensitive_payload=_model_sensitive_payload(state),
+        prompt=_ERROR_CHECK_2_PROMPT,
     )
     if result.error_type == "ok":
         return {
@@ -611,15 +539,13 @@ async def _merge(state: InputAssistState) -> dict:
 
     result = await secure_ainvoke(
         llm,
-        [
-            SystemMessage(content=_MERGE_SYSTEM),
-            HumanMessage(content=(
-                f"사용자 입력: {state['message']}\n\n"
-                f"항목별 처리 결과:\n" + "\n".join(parts)
-            )),
-        ],
+        prompt_messages(_MERGE_PROMPT, {
+            "message": state["message"],
+            "results": parts,
+        }),
         purpose=ModelPurpose.INPUT_ASSIST,
         sensitive_payload=_model_sensitive_payload(state),
+        prompt=_MERGE_PROMPT,
     )
     return {
         "output": {

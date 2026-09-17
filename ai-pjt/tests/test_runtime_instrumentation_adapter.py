@@ -5,6 +5,7 @@ import unittest
 from itertools import count
 
 from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
+from core.prompt_registry import PromptInvocationRecord
 from core.runtime_instrumentation import (
     FakeInstrumentationSink,
     InstrumentationPort,
@@ -90,6 +91,32 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.status, OperationStatus.TIMEOUT)
         self.assertEqual(event.error_code, "callback_timeout")
 
+    def test_prompt_invocation_emits_complete_model_metadata(self) -> None:
+        observed, sink = _bound_adapter()
+        observed.record_prompt_invocation(PromptInvocationRecord(
+            prompt_id="qa.answer_direct",
+            prompt_version="1.0.0",
+            prompt_hash="a" * 64,
+            prompt_release="2026-09-17.1",
+            prompt_policy_version="1.1",
+            purpose="qa",
+            model_provider="gemini",
+            model_name="gemini-2.5-flash-lite",
+            model_temperature=0.0,
+            status="succeeded",
+            duration_ms=25,
+        ))
+
+        event = sink.baseline_events[0]
+        self.assertEqual(event.stage, OperationStage.MODEL)
+        self.assertEqual(event.operation_name, "qa.answer_direct")
+        self.assertEqual(event.prompt_id, "qa.answer_direct")
+        self.assertEqual(event.prompt_version, "1.0.0")
+        self.assertEqual(event.prompt_hash, "a" * 64)
+        self.assertEqual(event.prompt_release, "2026-09-17.1")
+        self.assertEqual(event.prompt_policy_version, "1.1")
+        self.assertEqual(event.model_temperature, 0.0)
+
     async def test_executor_emits_correlated_stage_and_operation_events(self) -> None:
         observed, sink = _bound_adapter()
 
@@ -150,10 +177,7 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime[5].response_owner, "agent")
         self.assertEqual(runtime[5].output["response"], "정상 응답")
         self.assertEqual(runtime[3].producer_task_id, "task-1")
-        self.assertEqual(len(sink.baseline_events), 1)
-        self.assertIsInstance(sink.baseline_events[0], OperationTraceEvent)
-        self.assertEqual(sink.baseline_events[0].input["message"], "질문")
-        self.assertEqual(sink.baseline_events[0].output["response"], "정상 응답")
+        self.assertEqual(len(sink.baseline_events), 0)
 
 
 if __name__ == "__main__":

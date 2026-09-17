@@ -19,9 +19,6 @@ import sys
 from time import monotonic
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
-
 AI_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = AI_ROOT.parent
 DEFAULT_FIXTURE = AI_ROOT / "evals" / "fixtures" / "f07-f08-model-baseline.json"
@@ -606,15 +603,26 @@ async def _run_chart_cases(cases: list[dict[str, Any]], budget: ModelCallBudget)
 
 async def _run_elicit_cases(cases: list[dict[str, Any]], budget: ModelCallBudget) -> dict[str, Any]:
     from agents import elicit
+    from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 
     results = []
     for case in cases:
         started_calls = budget.used
         try:
-            result = await elicit._analysis_chain.ainvoke([
-                SystemMessage(content=elicit.ANALYZE_PROMPT),
-                HumanMessage(content=case["message"]),
-            ])
+            result = await secure_ainvoke(
+                elicit._analysis_chain,
+                prompt_messages(elicit.ANALYZE_PROMPT, {
+                    "target_field": "life_goal",
+                    "turn_kind": "answer",
+                    "confirmed_summary": None,
+                    "pending_candidate": None,
+                    "open_question": "삶에서 가장 중요한 것은 무엇인가요?",
+                    "user_message": case["message"],
+                }),
+                purpose=ModelPurpose.ELICIT,
+                sensitive_payload={"message": case["message"]},
+                prompt=elicit.ANALYZE_PROMPT,
+            )
             results.append({
                 "id": case["id"],
                 "status": "completed",
@@ -694,6 +702,8 @@ async def build_baseline(
         chart = await _run_chart_cases(fixture["chart_cases"], budget)
         elicit = await _run_elicit_cases(fixture["elicit_classification_cases"], budget)
 
+    from prompts import get_prompt_manifest
+
     return {
         "report_kind": "f07-f08-production-model-baseline",
         "schema_version": "1.0",
@@ -704,6 +714,9 @@ async def build_baseline(
         "runtime": {
             "llm_provider": settings.llm_provider,
             "llm_model": settings.llm_model,
+            "llm_temperature": settings.llm_temperature,
+            "prompt_release": settings.prompt_release,
+            "prompt_manifest": get_prompt_manifest(release=settings.prompt_release),
             "embedding_provider": settings.embedding_provider,
             "embedding_model": settings.embedding_model,
             "rag_min_dense_score": settings.rag_min_dense_score,

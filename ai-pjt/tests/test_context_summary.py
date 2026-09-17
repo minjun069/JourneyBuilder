@@ -11,11 +11,16 @@ from core.context import (
 from core.context_store import InMemoryCommittedContextStore
 from core.context_summary import (
     ConversationMemoryManager,
+    ModelSummaryGenerator,
     SummaryCandidate,
     SummaryClaim,
     SummaryValidationError,
     verify_summary_candidate,
 )
+from core.config import settings
+from core.monitoring import OperationStage
+from core.runtime_instrumentation import FakeInstrumentationSink, InstrumentationPort
+from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
 
 
 class FakeCheckpointer:
@@ -43,6 +48,16 @@ class GroundedSummaryGenerator:
             value="RAG 챗봇 구현",
             evidence_quote="RAG 챗봇 구현을 진행해줘",
         )])
+
+
+class FakeSummaryRunnable:
+    async def ainvoke(self, _messages):
+        return SummaryCandidate(claims=[])
+
+
+class FakeSummaryModel:
+    def with_structured_output(self, _schema):
+        return FakeSummaryRunnable()
 
 
 class VerifiedSummaryTests(unittest.TestCase):
@@ -153,6 +168,30 @@ class ConversationMemoryTests(unittest.IsolatedAsyncioTestCase):
         after_race = await self.api.read_context(self.scope)
         self.assertEqual(after_race.summary, current.summary)
         self.assertEqual(after_race.structured_state, current.structured_state)
+
+    async def test_model_summary_emits_registered_prompt_metadata(self):
+        await self._evict_first()
+        job = await self.api.claim_summary_job()
+        self.assertIsNotNone(job)
+        sink = FakeInstrumentationSink()
+        instrumentation = RuntimeInstrumentationAdapter(InstrumentationPort(sink))
+        generator = ModelSummaryGenerator(
+            FakeSummaryModel(),
+            instrumentation=instrumentation,
+        )
+        previous_key = settings.masking_pseudonym_key
+        settings.masking_pseudonym_key = "context-summary-test-masking-key-32bytes"
+        try:
+            await generator.generate(job)
+        finally:
+            settings.masking_pseudonym_key = previous_key
+
+        self.assertEqual(len(sink.baseline_events), 1)
+        event = sink.baseline_events[0]
+        self.assertEqual(event.stage, OperationStage.MODEL)
+        self.assertEqual(event.prompt_id, "summary.extract")
+        self.assertEqual(event.prompt_release, settings.prompt_release)
+        self.assertEqual(len(event.prompt_hash), 64)
 
     async def test_store_rejects_summary_with_unverified_cursor(self):
         await self._evict_first()

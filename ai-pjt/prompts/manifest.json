@@ -1,0 +1,23 @@
+{
+  "release": "2026-09-17.1",
+  "prompts": [
+    {"id":"chart_interpret.explain","version":"1.0.0","sha256":"812baa952159ef02f400c05c34fb558668b0a17a83d675b07c22faebd4293d6b","purpose":"chart_interpret","output_schema":null,"owner":"ai-team","risk":"financial_explanation"},
+    {"id":"elicit.analyze","version":"1.0.0","sha256":"b47864f74f3cbf4e80445777283b627c1eb1438a291f83cc6f366c84790d5279","purpose":"elicit","output_schema":"elicit_analysis","owner":"ai-team","risk":"standard"},
+    {"id":"error_review.analyze","version":"1.0.0","sha256":"9faeb602675b089d130414a789b69c8120fa48935a1305ea6e8bceab93f0c697","purpose":"error_review","output_schema":"review_result","owner":"ai-team","risk":"financial_review"},
+    {"id":"input_assist.classify","version":"1.0.0","sha256":"40335acd424284f3b15e8c6980bcb3092357f13bc81caf769eb0a44667a552cb","purpose":"input_assist","output_schema":"classify_result","owner":"ai-team","risk":"form_change"},
+    {"id":"input_assist.identify","version":"1.0.0","sha256":"519c7c82e7121d24436deba2dc53aa980647cb9bbc27a387abb235885d6e119b","purpose":"input_assist","output_schema":"identify_result","owner":"ai-team","risk":"form_change"},
+    {"id":"input_assist.merge","version":"1.0.0","sha256":"2baee28045b7fa9d7f37d6e3ef7f16cde2985cf81eca508fa48d1d8fb1f8d365","purpose":"input_assist","output_schema":null,"owner":"ai-team","risk":"form_change"},
+    {"id":"input_assist.resolve","version":"1.0.0","sha256":"1cf78ca2c47f8594850f33dc5064289ebd57ee70f9173a36b9723d14ad2ef8c5","purpose":"input_assist","output_schema":"resolve_result","owner":"ai-team","risk":"form_change"},
+    {"id":"input_assist.validate_resolution","version":"1.0.0","sha256":"b15a19c255d720833fdb845e7e687943322b52a219a200fd31debbb9d23ca963","purpose":"input_assist","output_schema":"error_check_2_result","owner":"ai-team","risk":"form_change"},
+    {"id":"planner.plan","version":"1.0.0","sha256":"86c5150b295e45022dacbcaa2d2805ba4372045392fed31f260d239cd40fe9c9","purpose":"planner","output_schema":"planner_model_output","owner":"ai-team","risk":"orchestration"},
+    {"id":"qa.answer_direct","version":"1.0.0","sha256":"d8f6bd47934f054d0fc3a03cc4ad67701491d8c70676d6b6a694412e49eaa186","purpose":"qa","output_schema":null,"owner":"ai-team","risk":"financial_explanation"},
+    {"id":"qa.answer_with_evidence","version":"1.0.0","sha256":"ddf6978c0a7fa8186522e289364a1948e6b274461bbddc792ea4cc02f4d0da8c","purpose":"qa","output_schema":null,"owner":"ai-team","risk":"financial_explanation"},
+    {"id":"qa.decide_retrieval","version":"1.0.0","sha256":"26272f6289c04d75e6f1298a83669e85f4ffd0c1ee8a45625775c48998b67bfc","purpose":"qa","output_schema":"retrieval_decision","owner":"ai-team","risk":"financial_explanation"},
+    {"id":"qa.judge","version":"1.0.0","sha256":"16c2411a9bdeeab25eae114bc7f2aaa8ab35b8ea6d00656218a6c62a37e91c37","purpose":"qa","output_schema":"judge_result","owner":"ai-team","risk":"standard"},
+    {"id":"qa.merge","version":"1.0.0","sha256":"bc05e69d6f095546bb6485dbdc7beab2958d85b2fd845d58a57ed10a57874c61","purpose":"qa","output_schema":null,"owner":"ai-team","risk":"financial_explanation"},
+    {"id":"qa.refine_query","version":"1.0.0","sha256":"aa1b244a47dfe24fe3c3258b55fd568bc00ebcc50b5fd2fcaf5135c1add358f0","purpose":"qa","output_schema":"refine_result","owner":"ai-team","risk":"standard"},
+    {"id":"qa.specify","version":"1.0.0","sha256":"58b634030b3db3f27705a232e57d199d1bb5954a20d64270e5d6c60d22cf65b9","purpose":"qa","output_schema":"specify_result","owner":"ai-team","risk":"standard"},
+    {"id":"router.classify","version":"1.0.0","sha256":"4319099bd4972bde0bef7602e85f89494a577ad41615c53c6195b69edfa7241c","purpose":"router","output_schema":"router_model_output","owner":"ai-team","risk":"orchestration"},
+    {"id":"summary.extract","version":"1.0.0","sha256":"ae4253dadf82d68592721734488d4a2aaed02b8d1dee4c55c04be98ba755783f","purpose":"summary","output_schema":"summary_candidate","owner":"ai-team","risk":"conversation_memory"}
+  ]
+}

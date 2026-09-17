@@ -13,6 +13,7 @@ from time import monotonic, time
 from typing import Any, Callable
 
 from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
+from core.prompt_registry import PromptInvocationRecord
 from core.runtime_instrumentation import (
     InstrumentationEvent,
     InstrumentationPort,
@@ -278,6 +279,14 @@ class BoundRuntimeInstrumentation:
         output: Any | None = None,
         error_type: str | None = None,
         error_fingerprint: str | None = None,
+        model_provider: str | None = None,
+        model_name: str | None = None,
+        model_temperature: float | None = None,
+        prompt_id: str | None = None,
+        prompt_version: str | None = None,
+        prompt_hash: str | None = None,
+        prompt_release: str | None = None,
+        prompt_policy_version: str | None = None,
     ) -> None:
         self._port.emit(OperationTraceEvent(
             trace_id=self.correlation.trace_id,
@@ -294,7 +303,42 @@ class BoundRuntimeInstrumentation:
             output=output,
             error_type=error_type,
             error_fingerprint=error_fingerprint,
+            model_provider=model_provider,
+            model_name=model_name,
+            model_temperature=model_temperature,
+            prompt_id=prompt_id,
+            prompt_version=prompt_version,
+            prompt_hash=prompt_hash,
+            prompt_release=prompt_release,
+            prompt_policy_version=prompt_policy_version,
         ))
+
+    def record_prompt_invocation(self, record: PromptInvocationRecord) -> None:
+        """Translate one physical model call into a version-complete event."""
+
+        if not isinstance(record, PromptInvocationRecord):
+            raise TypeError("prompt invocation must use PromptInvocationRecord")
+        status = (
+            OperationStatus.SUCCEEDED
+            if record.status == "succeeded"
+            else OperationStatus.FAILED
+        )
+        self.record_operation(
+            stage=OperationStage.MODEL,
+            status=status,
+            operation_name=record.prompt_id,
+            duration_ms=record.duration_ms,
+            agent=record.purpose,
+            error_code=record.error_code,
+            model_provider=record.model_provider,
+            model_name=record.model_name,
+            model_temperature=record.model_temperature,
+            prompt_id=record.prompt_id,
+            prompt_version=record.prompt_version,
+            prompt_hash=record.prompt_hash,
+            prompt_release=record.prompt_release,
+            prompt_policy_version=record.prompt_policy_version,
+        )
 
     def record_tool_audit(self, event: object) -> None:
         """Translate a tool audit without accepting values or raw arguments."""
