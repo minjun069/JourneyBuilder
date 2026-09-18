@@ -198,20 +198,19 @@ async def _dependency_executor_scenario() -> dict[str, Any]:
         }
 
     report = await execute_route_plan(
-        plan={"plan_id": "plan-f14-dependency", "tasks": [
+        plan={"tasks": [
             _reference_task(),
             _dependent_task(),
             _independent_task(),
         ]},
+        request_id="request-f14-dependency",
         step_id="financial-goals",
         customer_info={},
-        field_registry=[],
         agent_executors={"input_assist": dependent, "qa": independent},
         tool_executors={"lookup_reference_value": failing_lookup},
         instrumentation=_instrumentation().bind(
             request_id="request-f14-dependency",
             thread_id="thread-f14-dependency",
-            plan_id="plan-f14-dependency",
             step_id="financial-goals",
         ),
     )
@@ -272,7 +271,6 @@ async def _callback_replay_scenario() -> dict[str, Any]:
         "message": "합성 callback 재실행 공격",
         "deadline_at": "2099-01-01T00:00:00Z",
         "customer_info": {"saved_data": {}, "current_form": {}},
-        "field_registry": [],
         "chart_payload": None,
     })
     scheduled: list[tuple[Callable[..., Awaitable[Any]], Any]] = []

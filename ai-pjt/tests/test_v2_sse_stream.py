@@ -46,7 +46,6 @@ def v2_request() -> ChatV2Request:
         message="은퇴 준비를 알려줘",
         deadline_at=datetime.now(timezone.utc) + timedelta(seconds=60),
         customer_info={"saved_data": {}, "current_form": {}},
-        field_registry=[],
         chart_payload=None,
     )
 
@@ -95,7 +94,10 @@ class FakeContextAPI:
         return self.terminal
 
     def state_channels(self, scope, context, retrieved_memories=()):
-        return {"context_scope": {"session_id": scope.session_id}}
+        return {
+            "conversation_context": context,
+            "retrieved_memories": list(retrieved_memories),
+        }
 
     def config_for(self, scope, request_id):
         return {"configurable": {"thread_id": scope.thread_id}}
@@ -104,7 +106,7 @@ class FakeContextAPI:
 class FakeV2Graph:
     async def astream_events(self, input_data, *, config, version):
         assert input_data["request_id"] == "ai_req_v2_stream"
-        assert "execution_budget" in input_data
+        assert "execution_budget" not in input_data
         assert config["configurable"]["thread_id"] == "user-3-session-12"
         assert version == "v2"
         yield {

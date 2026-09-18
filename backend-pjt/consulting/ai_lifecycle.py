@@ -21,7 +21,6 @@ from .ai_services import (
 from .ai_tokenization import ReferenceTokenVault, TOKEN_VAULT_TTL_SECONDS
 from .field_registry import get_step_field_registry
 from .chart_payload import build_chart_payload
-from .tool_context import build_tool_context
 
 
 CONTRACT_VERSION = '2.0'
@@ -357,13 +356,6 @@ def build_v2_ai_payload(
             current + timedelta(seconds=AI_EXECUTION_DEADLINE_SECONDS)
         ),
         'customer_info': build_customer_info(session, form_data),
-        'field_registry': get_step_field_registry(step_id),
-        'tool_context': build_tool_context(
-            session=session,
-            user=user,
-            step_id=step_id,
-            generated_at=current,
-        ),
         'chart_payload': chart_result.payload,
     }
     if request_mode != 'chat':

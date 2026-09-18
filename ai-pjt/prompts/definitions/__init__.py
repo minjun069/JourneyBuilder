@@ -2,7 +2,7 @@
 
 from prompts.definitions.aggregator_compose import PROMPT as AGGREGATOR_COMPOSE
 from prompts.definitions.chart_interpret_explain import PROMPT as CHART_INTERPRET_EXPLAIN
-from prompts.definitions.elicit_analyze import PROMPT as ELICIT_ANALYZE
+from prompts.definitions.elicit_respond import PROMPT as ELICIT_RESPOND
 from prompts.definitions.error_review_analyze import PROMPT as ERROR_REVIEW_ANALYZE
 from prompts.definitions.input_assist_classify import PROMPT as INPUT_ASSIST_CLASSIFY
 from prompts.definitions.input_assist_identify import PROMPT as INPUT_ASSIST_IDENTIFY
@@ -25,7 +25,7 @@ from prompts.definitions.summary_extract import PROMPT as SUMMARY_EXTRACT
 ALL_PROMPTS = (
     AGGREGATOR_COMPOSE,
     CHART_INTERPRET_EXPLAIN,
-    ELICIT_ANALYZE,
+    ELICIT_RESPOND,
     ERROR_REVIEW_ANALYZE,
     INPUT_ASSIST_CLASSIFY,
     INPUT_ASSIST_IDENTIFY,

@@ -120,8 +120,8 @@ BE/FE 전달·이미지 설치·API·화면 연결은 현재 코드에 반영돼
   `retirement_simulation.input_samples`는 저장형 합성 dict를 실제 입력 어댑터에 전달한다.
   `retirement_simulation.analysis_samples`는 통합 함수를 거쳐 계약의 성공/오류 JSON 1개를 출력한다.
   모두 실제 고객 보고서나 기존 BE 준비율을 생성하지 않는다.
-- `get_retirement_scenario`는 기존 조회 도구로 유지한다. 여기에서 같은 도구나
-  Agent를 추가하지 않는다.
+- 은퇴 시나리오를 AI 요청별 tool context로 전달하거나 별도 조회 도구로 노출하지 않는다.
+  필요하면 명시적인 서비스 계약과 권한 경계를 먼저 정의한다.
 
 ## 실행
 

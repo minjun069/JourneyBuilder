@@ -69,7 +69,6 @@ def evaluate_route_plan(
             _violation("INVALID_PLAN_CANDIDATE", "candidate", "plan candidate는 object여야 합니다."),
         ))
     if set(candidate) != {
-        "plan_id",
         "step_id",
         "planner_plan",
         "route_enrichments",
@@ -89,12 +88,6 @@ def evaluate_route_plan(
                 "plan candidate의 step이 현재 요청과 일치하지 않습니다.",
             ),
         ))
-    plan_id = candidate.get("plan_id")
-    if not isinstance(plan_id, str) or not plan_id.strip():
-        return _blocked((
-            _violation("INVALID_PLAN_ID", "candidate.plan_id", "runtime plan ID가 필요합니다."),
-        ))
-
     active_steps = load_step_candidates() if step_candidates is None else step_candidates
     active_tools = tuple(registered_tool_capabilities)
     allowed_task_types = allowed_task_types_for(
@@ -228,7 +221,6 @@ def evaluate_route_plan(
         return _blocked(violations)
 
     plan = deepcopy(structural.plan)
-    plan["plan_id"] = plan_id
     plan["tasks"] = routed_tasks
     return PlanGuardrailDecision(
         decision="allow",

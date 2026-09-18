@@ -40,9 +40,9 @@ route·검색·도구·모델·공통 출력 검증·callback은 `OperationTrace
 토큰은 모델 이벤트에만 기록하고, 비용은 고정 가격표가 아니라 해당 실행에
 적용된 provider 가격 버전이 계산한 `cost_microusd`를 받는다.
 
-`RuntimeTraceEvent` 1.1은 request·thread·plan correlation과 task의 `depends_on`,
+`RuntimeTraceEvent` 1.1은 request·thread correlation과 task의 `depends_on`,
 dependency 차단의 `blocked_by`, typed artifact 식별자만 기록한다. artifact 식별자는
-TaskResult schema를 바꾸지 않고 `plan_id:producer_task_id:artifact_type`으로 만든다.
+TaskResult schema를 바꾸지 않고 `request_id:producer_task_id:artifact_type`으로 만든다.
 task 실행 event는 executor 종류·이름과 최종 응답 owner를 제한된 token으로
 기록하며, 실제 Agent·tool 호출과 callback adapter 입력은 같은 trace의
 `OperationTraceEvent` 계약을 사용한다.

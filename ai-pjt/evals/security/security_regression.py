@@ -360,12 +360,7 @@ class ProductionSecurityEvaluator:
             "status": payload.get("status", "executable"),
             "tasks": planner_tasks,
         }
-        if "elicit_routing" in payload:
-            planner_plan["elicit_routing"] = copy.deepcopy(
-                payload["elicit_routing"]
-            )
         candidate = {
-            "plan_id": payload.get("plan_id"),
             "step_id": case_input["step_id"],
             "planner_plan": planner_plan,
             "route_enrichments": route_enrichments,
@@ -521,7 +516,6 @@ class ProductionSecurityEvaluator:
         instrumentation.bind(
             request_id=event.request_id,
             thread_id="thread-observability",
-            plan_id=event.plan_id,
             step_id=event.step_id,
         ).record_tool_audit(event)
         rendered = json.dumps(downstream.payloads, ensure_ascii=False, sort_keys=True)

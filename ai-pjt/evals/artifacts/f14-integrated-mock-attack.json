@@ -112,7 +112,6 @@
           ],
           "payload": {
             "schema_version": "1.0",
-            "plan_id": "plan-sec-bnd-002",
             "tasks": [
               {
                 "id": "task-1",

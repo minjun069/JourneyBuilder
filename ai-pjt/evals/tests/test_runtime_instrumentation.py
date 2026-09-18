@@ -15,7 +15,6 @@ from evals.observability_baseline import build_observability_baseline
 TRACE_ID = "trace_00000001"
 REQUEST_ID = "request-00000001"
 THREAD_ID = "thread-00000001"
-PLAN_ID = "plan-request-00000001"
 
 
 def runtime_event(
@@ -29,7 +28,6 @@ def runtime_event(
         trace_id=TRACE_ID,
         request_id=REQUEST_ID,
         thread_id=THREAD_ID,
-        plan_id=PLAN_ID,
         occurred_at_epoch_ms=occurred_at_epoch_ms,
         stage=stage,
         status=status,
@@ -43,7 +41,7 @@ class RuntimeInstrumentationTests(unittest.TestCase):
         port = InstrumentationPort(sink)
         artifact_type = "text_response"
         artifact_id = build_artifact_id(
-            plan_id=PLAN_ID,
+            request_id=REQUEST_ID,
             producer_task_id="task-1",
             artifact_type=artifact_type,
         )
@@ -130,7 +128,7 @@ class RuntimeInstrumentationTests(unittest.TestCase):
             step_id="basic-info",
         )
         artifact_id = build_artifact_id(
-            plan_id=PLAN_ID,
+            request_id=REQUEST_ID,
             producer_task_id="task-1",
             artifact_type="reference_value",
         )
@@ -179,7 +177,7 @@ class RuntimeInstrumentationTests(unittest.TestCase):
         blocked_payload = sink.serialized_events()[4]
         self.assertEqual(blocked_payload["request_id"], REQUEST_ID)
         self.assertEqual(blocked_payload["thread_id"], THREAD_ID)
-        self.assertEqual(blocked_payload["plan_id"], PLAN_ID)
+        self.assertNotIn("plan_id", blocked_payload)
         self.assertEqual(blocked_payload["task_id"], "task-2")
         self.assertEqual(blocked_payload["depends_on"], ["task-1"])
         self.assertEqual(blocked_payload["blocked_by"], ["task-1"])
@@ -191,13 +189,13 @@ class RuntimeInstrumentationTests(unittest.TestCase):
 
     def test_artifact_id_is_deterministic_and_must_match_event_identity(self):
         artifact_id = build_artifact_id(
-            plan_id=PLAN_ID,
+            request_id=REQUEST_ID,
             producer_task_id="task-1",
-            artifact_type="dashboard_metric",
+            artifact_type="text_response",
         )
         self.assertEqual(
             artifact_id,
-            "plan-request-00000001:task-1:dashboard_metric",
+            "request-00000001:task-1:text_response",
         )
         with self.assertRaisesRegex(ValueError, "artifact_id"):
             runtime_event(
@@ -205,7 +203,7 @@ class RuntimeInstrumentationTests(unittest.TestCase):
                 status=RuntimeStatus.FAILED,
                 task_id="task-1",
                 artifact_id="unrelated-artifact",
-                artifact_type="dashboard_metric",
+                artifact_type="text_response",
                 producer_task_id="task-1",
                 duration_ms=1,
                 reason_code="artifact_invalid",

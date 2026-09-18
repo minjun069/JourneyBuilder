@@ -24,7 +24,7 @@ need_retrieval과 requests_new_official_value boolean 필드만 반환합니다.
         ("current_query", "현재 질문"),
         ("step_id", "현재 화면"),
         ("customer_info", "현재 유효한 사용자 정보"),
-        ("bound_inputs", "확인된 선행 결과"),
+        ("bindings", "확인된 선행 결과"),
     ),
     output_schema="retrieval_decision",
     risk="financial_explanation",

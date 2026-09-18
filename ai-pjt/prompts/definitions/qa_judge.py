@@ -25,7 +25,7 @@ answer_quality, reason은 가장 중요한 이유 한 문장으로 반환합니�
         ("question", "사용자 질문"),
         ("answer", "작성된 답변"),
         ("evidence", "사용한 근거"),
-        ("bound_inputs", "확인된 선행 결과"),
+        ("bindings", "확인된 선행 결과"),
     ),
     output_schema="judge_result",
 )

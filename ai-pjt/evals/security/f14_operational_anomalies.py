@@ -137,7 +137,6 @@ def _request(request_id: str, *, deadline_at: datetime) -> ChatV2Request:
         "message": "합성 운영 이상 시나리오",
         "deadline_at": deadline_at,
         "customer_info": {"saved_data": {}, "current_form": {}},
-        "field_registry": [],
         "chart_payload": None,
     })
 
@@ -211,7 +210,6 @@ async def _callback_retry() -> dict[str, Any]:
         context=CallbackDeliveryContext(
             request_id="f14-ops-retry",
             thread_id="thread-f14-ops-retry",
-            plan_id="plan-f14-ops-retry",
             step_id="basic-info",
         ),
     )

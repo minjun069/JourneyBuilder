@@ -29,14 +29,13 @@ def make_request(request_id: str, session_id: int = 301) -> ChatV2Request:
         "payload_digest": "0" * 64,
         "session_id": session_id,
         "thread_id": "vertical-thread",
-        "step_id": "financial-goals",
-        "message": "평균 비용을 찾아 목표 생활비 변경안을 만들어줘.",
+        "step_id": "basic-info",
+        "message": "평균 소득을 찾아 월 소득 변경안을 만들어줘.",
         "deadline_at": datetime.now(timezone.utc) + timedelta(seconds=60),
         "customer_info": {
             "saved_data": {},
-            "current_form": {"monthly_target_expense": 2_000_000},
+            "current_form": {"monthly_income": 2_000_000},
         },
-        "field_registry": [FIELD_SPEC],
         "chart_payload": None,
     })
 
@@ -278,18 +277,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
                 }],
             }]},
         }
-        request_payload["field_registry"] = [{
-            "step_id": "financial-goals",
-            "section": "goal_periods",
-            "path": "items[].amount",
-            "value_type": "integer",
-            "unit": "KRW",
-            "constraints": {"min": 0, "period": "month"},
-            "cardinality": "nested_list",
-            "writable_by_ai": True,
-            "nullable": True,
-            "operations": ["set", "add", "update", "remove"],
-        }]
+        request_payload["step_id"] = "financial-goals"
         request = ChatV2Request.model_validate(request_payload)
 
         classify = SimpleNamespace(ainvoke=AsyncMock(return_value=input_assist.ClassifyResult(

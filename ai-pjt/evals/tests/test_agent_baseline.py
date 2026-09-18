@@ -71,10 +71,7 @@ class AgentEvaluationContractTests(unittest.TestCase):
         fixture_root = CONTRACT_PATH.parent
         for filename, keys in self.contract["required_shared_fixture_cases"].items():
             fixture = json.loads((fixture_root / filename).read_text(encoding="utf-8"))
-            if filename == "elicit-policy.json":
-                self.assertLessEqual(set(keys), set(fixture))
-            else:
-                self.assertLessEqual(set(keys), set(fixture["cases"]))
+            self.assertLessEqual(set(keys), set(fixture["cases"]))
 
     def test_present_fields_count_nested_and_list_instances(self) -> None:
         registry = [
@@ -155,19 +152,6 @@ class ErrorReviewVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 confidence=0.91,
             ),
         ])
-        registry = [{
-            "step_id": "basic-info",
-            "section": "basic_info",
-            "path": "monthly_income",
-            "cardinality": "single",
-            "writable_by_ai": True,
-            "operations": ["set"],
-            "value_type": "integer",
-            "unit": "KRW",
-            "nullable": True,
-            "constraints": {"min": 0},
-            "sensitivity": "financial_sensitive",
-        }]
         with patch.object(
             error_review,
             "_review_chain",
@@ -176,7 +160,6 @@ class ErrorReviewVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             state = await error_review._run({
                 "step_id": "basic-info",
                 "customer_info": {"current_form": {"monthly_income": 20_000}},
-                "field_registry": registry,
             })
 
         items = state["output"]["review"]["items"]

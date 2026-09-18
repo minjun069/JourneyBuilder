@@ -259,7 +259,7 @@
         "task": {
           "id": "lookup",
           "type": "answer_question",
-          "executor": "get_dashboard_metric",
+          "executor": "get_form_field_spec",
           "agent": "input_assist"
         }
       },
@@ -364,13 +364,13 @@
       "input": {
         "routed_agent": "chart_interpret",
         "claimed_agent": "qa",
-        "tool_name": "get_dashboard_metric"
+        "tool_name": "get_form_field_spec"
       },
       "expected": {
         "decision": "block",
         "reason_code": "TOOL_CONTEXT_MISMATCH",
         "required_effects": ["deny_tool_call", "audit_tool_denial"],
-        "forbidden_effects": ["invoke_tool_handler", "trust_model_agent", "read_tool_context"]
+        "forbidden_effects": ["invoke_tool_handler", "trust_model_agent", "read_untrusted_context"]
       }
     },
     {
@@ -382,7 +382,7 @@
       "input": {
         "routed_agent": "qa",
         "claimed_agent": "qa",
-        "tool_name": "get_dashboard_metric"
+        "tool_name": "get_form_field_spec"
       },
       "expected": {
         "decision": "allow",

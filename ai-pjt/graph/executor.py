@@ -18,6 +18,7 @@ from core.model_boundary import (
     prompt_messages,
     secure_ainvoke,
 )
+from core.field_registry import load_field_registry
 from core.monitoring import OperationStage, OperationStatus
 from core.operation_observation import bind_operation_recorder
 from core.prompt_registry import bind_prompt_trace_sink
@@ -39,10 +40,13 @@ from graph.task_contracts import (
 )
 from prompts import get_prompt
 from tools.output_validation import validate_form_update_contract
+from tools.runtime import ToolCallBudget
 
 
 logger = logging.getLogger(__name__)
 _NUMBER_TOKEN = re.compile(r"(?<![A-Za-z0-9])[-+]?\d[\d,.]*(?:%|원|개월|년)?")
+TASK_LIMIT = 3
+TOOL_CALL_LIMIT = 3
 
 
 class AggregatorModelOutput(BaseModel):
@@ -96,7 +100,6 @@ class ExecutionReport:
     output: dict[str, Any]
     tasks_used: int
     tool_calls_used: int = 0
-    state_update: dict[str, Any] | None = None
 
 
 def validate_agent_executor_registry(
@@ -121,14 +124,9 @@ async def execute_route_plan(
     plan: Mapping[str, Any],
     step_id: str,
     customer_info: Mapping[str, Any],
-    field_registry: list[dict[str, Any]],
     agent_executors: Mapping[str, RuntimeExecutor],
     tool_executors: Mapping[str, RuntimeExecutor],
-    task_limit: int = 3,
-    request_id: str = "request-unknown",
-    deadline_at: str | None = None,
-    tool_context: Mapping[str, Any] | None = None,
-    tool_call_budget: Any = None,
+    request_id: str,
     instrumentation: BoundRuntimeInstrumentation,
     response_composer: AggregateComposer | None = None,
 ) -> ExecutionReport:
@@ -142,12 +140,8 @@ async def execute_route_plan(
     task_results: dict[str, dict[str, Any]] = {}
     artifact_seals = {}
     tasks_used = 0
-    if (
-        isinstance(task_limit, bool)
-        or not isinstance(task_limit, int)
-        or task_limit <= 0
-    ):
-        raise ValueError("task_limit must be a positive integer")
+    field_registry = load_field_registry(step_id)
+    tool_call_budget = ToolCallBudget(limit=TOOL_CALL_LIMIT)
     raw_tasks = plan.get("tasks", [])
     tasks = raw_tasks if isinstance(raw_tasks, list) else []
     aggregate_tasks = list(tasks)
@@ -206,7 +200,7 @@ async def execute_route_plan(
             depends_on=tuple(str(item) for item in dependencies),
         )
         try:
-            bound_inputs = resolve_task_bindings(
+            task_bindings = resolve_task_bindings(
                 task=task,
                 task_results=task_results,
                 expectations=binding_expectations_for(task),
@@ -265,7 +259,7 @@ async def execute_route_plan(
             instrumentation.fail(task_span, reason_code="executor_unavailable")
             continue
 
-        if tasks_used >= task_limit:
+        if tasks_used >= TASK_LIMIT:
             task_results[task_id] = failed_task_result(
                 task_id,
                 "task_budget_exhausted",
@@ -276,26 +270,16 @@ async def execute_route_plan(
 
         execution_input = {
             "request_id": request_id,
-            "plan_id": str(plan.get("plan_id", "plan-unknown")),
             "task": deepcopy(dict(task)),
             "task_input": {
                 "description": str(task.get("description", "")),
-                "bindings": deepcopy(bound_inputs),
+                "bindings": deepcopy(task_bindings),
             },
             "message": str(task.get("description", "")),
             "step_id": step_id,
             "customer_info": deepcopy(dict(customer_info)),
-            "field_registry": deepcopy(field_registry),
-            "bound_inputs": deepcopy(bound_inputs),
-            "next": str(executor_name),
-            "deadline_at": deadline_at,
-            "tool_context": deepcopy(dict(tool_context or {})),
-            "tool_call_budget": tool_call_budget,
             "chart_payload": deepcopy(plan.get("chart_payload")),
             "request_mode": plan.get("request_mode", "chat"),
-            "elicit_routing": deepcopy(plan.get("elicit_routing", {})),
-            "elicit_contexts": deepcopy(plan.get("elicit_contexts", {})),
-            "context_scope": deepcopy(plan.get("context_scope", {})),
             "conversation_context": deepcopy(plan.get("conversation_context", {})),
         }
         observable_execution_input = {
@@ -303,9 +287,10 @@ async def execute_route_plan(
             "message": str(task.get("description", "")),
             "step_id": step_id,
             "customer_info": deepcopy(dict(customer_info)),
-            "bound_inputs": deepcopy(bound_inputs),
+            "task_input": deepcopy(execution_input["task_input"]),
         }
         if executor_kind == "tool":
+            execution_input["tool_call_budget"] = tool_call_budget
             execution_input["tool_audit_sink"] = instrumentation.record_tool_audit
         operation_started = instrumentation.elapsed_ms(task_span)
         try:
@@ -341,7 +326,6 @@ async def execute_route_plan(
                     "detail": masked_exception_fields(
                         error,
                         request_id=request_id,
-                        plan_id=str(plan.get("plan_id", "plan-unknown")),
                         step_id=step_id,
                         task_id=task_id,
                         executor_kind=str(executor_kind),
@@ -403,7 +387,7 @@ async def execute_route_plan(
             task_id=task_id,
             depends_on=tuple(str(item) for item in dependencies),
             artifact_id=build_artifact_id(
-                plan_id=str(plan.get("plan_id", "plan-unknown")),
+                request_id=request_id,
                 producer_task_id=task_id,
                 artifact_type=artifact_type,
             ),
@@ -417,7 +401,7 @@ async def execute_route_plan(
             field_registry=field_registry,
         )
         result = validation.result
-        if validation.valid and not _uses_bound_values(result, bound_inputs):
+        if validation.valid and not _uses_bound_values(result, task_bindings):
             result = failed_task_result(task_id, "binding_not_consumed")
             instrumentation.fail(
                 artifact_span,
@@ -485,7 +469,6 @@ async def execute_route_plan(
                 "detail": masked_exception_fields(
                     error,
                     request_id=request_id,
-                    plan_id=str(plan.get("plan_id", "plan-unknown")),
                     step_id=step_id,
                 ),
             },
@@ -499,10 +482,7 @@ async def execute_route_plan(
         tasks_used=tasks_used,
         tool_calls_used=(
             tool_call_budget.used
-            if hasattr(tool_call_budget, "used")
-            else 0
         ),
-        state_update=_collect_state_update(aggregate_tasks, task_results),
     )
 
 
@@ -552,13 +532,10 @@ def aggregate_task_results(
 
         if isinstance(artifact, Mapping) and artifact.get("type") == "reference_value":
             responses.append(_reference_value_message(artifact))
-        if isinstance(artifact, Mapping) and artifact.get("type") == "dashboard_metric":
-            responses.append(_dashboard_metric_message(artifact))
-
         form_artifact = (
             artifact
             if isinstance(artifact, Mapping) and artifact.get("type") == "form_change"
-            else result.get("elicit_capture")
+            else None
         )
         if not isinstance(form_artifact, Mapping) or form_artifact.get("type") != "form_change":
             continue
@@ -585,7 +562,6 @@ def aggregate_task_results(
         output["review"] = reviews[0]
     validation = validate_form_update_contract({
         "step_id": step_id,
-        "field_registry": field_registry,
         "output": output,
     })
     return validation.output
@@ -640,7 +616,6 @@ async def compose_aggregate_response(
             raise ValueError("aggregator changed verified numeric tokens or order")
         validation = validate_form_update_contract({
             "step_id": step_id,
-            "field_registry": field_registry,
             "output": {
                 **deepcopy(dict(output)),
                 "response": composed.response.strip(),
@@ -683,20 +658,6 @@ def _plan_failure_categories(detail_codes: Sequence[str]) -> list[str]:
     return categories
 
 
-def _collect_state_update(
-    tasks: list[Any],
-    task_results: Mapping[str, Mapping[str, Any]],
-) -> dict[str, Any]:
-    update: dict[str, Any] = {}
-    for task in tasks:
-        if not isinstance(task, Mapping):
-            continue
-        result = task_results.get(str(task.get("id")))
-        if isinstance(result, Mapping) and isinstance(result.get("state_update"), Mapping):
-            update.update(deepcopy(dict(result["state_update"])))
-    return update
-
-
 def _binding_source_ids(task: Mapping[str, Any]) -> list[str]:
     bindings = task.get("bindings")
     if not isinstance(bindings, Mapping):
@@ -713,18 +674,18 @@ def _binding_source_ids(task: Mapping[str, Any]) -> list[str]:
 
 def _uses_bound_values(
     result: Mapping[str, Any],
-    bound_inputs: Mapping[str, Any],
+    bindings: Mapping[str, Any],
 ) -> bool:
     """Reject a form proposal that substituted a different bound value."""
 
-    if "value" not in bound_inputs:
+    if "value" not in bindings:
         return True
     artifact = result.get("artifact")
     if not isinstance(artifact, Mapping) or artifact.get("type") != "form_change":
         return True
     for change in artifact.get("changes", []):
-        if isinstance(change, Mapping) and change.get("value") == bound_inputs["value"]:
-            if "unit" in bound_inputs and change.get("unit") != bound_inputs["unit"]:
+        if isinstance(change, Mapping) and change.get("value") == bindings["value"]:
+            if "unit" in bindings and change.get("unit") != bindings["unit"]:
                 continue
             return True
     return False
@@ -852,15 +813,4 @@ def _reference_value_message(artifact: Mapping[str, Any]) -> str:
         f"{artifact.get('population')} 기준 {artifact.get('period')} 값은 "
         f"{rendered_value} {artifact.get('unit')}입니다. "
         f"출처는 {artifact.get('source_id')}, 기준일은 {artifact.get('as_of')}입니다."
-    )
-
-
-def _dashboard_metric_message(artifact: Mapping[str, Any]) -> str:
-    value = artifact.get("value")
-    rendered_value = f"{value:,}" if isinstance(value, int) else str(value)
-    return (
-        f"최신 검증 보고서의 은퇴 부족액은 {rendered_value} {artifact.get('unit')}입니다. "
-        f"보고서 ID/version은 {artifact.get('report_id')}/{artifact.get('report_version')}, "
-        f"계산 정책은 {artifact.get('calculation_policy_version')}, "
-        f"생성 시각은 {artifact.get('generated_at')}입니다."
     )

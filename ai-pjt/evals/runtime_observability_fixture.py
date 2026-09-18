@@ -36,21 +36,20 @@ def _runtime(
     response_owner: str | None = None,
     artifact_type: str | None = None,
 ) -> RuntimeTraceEvent:
-    plan_id = f"plan-request-{number:08d}"
+    request_id = f"request-{number:08d}"
     artifact_id = None
     producer_task_id = None
     if artifact_type is not None:
         producer_task_id = task_id
         artifact_id = build_artifact_id(
-            plan_id=plan_id,
+            request_id=request_id,
             producer_task_id=str(task_id),
             artifact_type=artifact_type,
         )
     return RuntimeTraceEvent(
         trace_id=f"trace_{number:08d}",
-        request_id=f"request-{number:08d}",
+        request_id=request_id,
         thread_id=f"thread-{number:08d}",
-        plan_id=plan_id,
         occurred_at_epoch_ms=occurred_at,
         stage=stage,
         status=status,
@@ -118,7 +117,7 @@ def _successful_partial_request(number: int):
         occurred_at=1_060,
         task_id="task-2",
         executor_kind="tool",
-        executor_name="get_dashboard_metric",
+        executor_name="get_approved_reference_value",
     )
     tool_failed = _runtime(
         number,
@@ -129,7 +128,7 @@ def _successful_partial_request(number: int):
         reason_code="tool_timeout",
         task_id="task-2",
         executor_kind="tool",
-        executor_name="get_dashboard_metric",
+        executor_name="get_approved_reference_value",
     )
     events.extend((tool_start, tool_failed))
     events.append(_runtime(
@@ -157,7 +156,7 @@ def _all_tasks_failed_request(number: int):
         occurred_at=2_010,
         task_id="task-1",
         executor_kind="tool",
-        executor_name="get_dashboard_metric",
+        executor_name="get_approved_reference_value",
     )
     tool_failed = _runtime(
         number,
@@ -168,7 +167,7 @@ def _all_tasks_failed_request(number: int):
         reason_code="tool_dependency_unavailable",
         task_id="task-1",
         executor_kind="tool",
-        executor_name="get_dashboard_metric",
+        executor_name="get_approved_reference_value",
     )
     events.extend((tool_start, tool_failed))
     events.extend(_pair(number, RuntimeStage.AGGREGATION, start=2_031, duration=8))

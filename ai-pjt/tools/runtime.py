@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from time import monotonic
 from typing import Any, Mapping
+
+from core.field_registry import load_field_registry
 
 from .contracts import (
     AuditSink,
@@ -68,12 +68,11 @@ class FunctionToolRuntime:
                 "검증된 task 실행 문맥이 없습니다.",
             )
         request_id = payload.get("request_id")
-        plan_id = payload.get("plan_id")
         task_id = task.get("id")
         step_id = payload.get("step_id")
         if not all(
             isinstance(value, str) and value.strip()
-            for value in (request_id, plan_id, task_id, step_id)
+            for value in (request_id, task_id, step_id)
         ):
             return _runtime_failure(
                 request.tool_name,
@@ -137,7 +136,6 @@ class FunctionToolRuntime:
                 audit_sink,
                 request=request,
                 request_id=request_id,
-                plan_id=plan_id,
                 task_id=task_id,
                 step_id=step_id,
                 task_type=str(task_type or "unknown"),
@@ -166,7 +164,6 @@ class FunctionToolRuntime:
                 audit_sink,
                 request=request,
                 request_id=request_id,
-                plan_id=plan_id,
                 task_id=task_id,
                 step_id=step_id,
                 task_type=task_type,
@@ -177,24 +174,15 @@ class FunctionToolRuntime:
             )
             return result
 
-        snapshot = payload.get("tool_context")
-        if not isinstance(snapshot, Mapping):
-            snapshot = {}
         context = ToolExecutionContext(
             request_id=request_id,
-            plan_id=plan_id,
             task_id=task_id,
             step_id=step_id,
             agent=request.agent,
             task_type=task_type,
             call_source=TOOL_CALL_SOURCE,
-            field_registry=tuple(snapshot.get("field_specs", ())),
-            dashboard_metrics=dict(snapshot.get("dashboard_metrics", {})),
-            retirement_scenarios=dict(snapshot.get("retirement_scenarios", {})),
-            available_reports=tuple(snapshot.get("available_reports", ())),
-            section_completion=dict(snapshot.get("section_completion", {})),
+            field_registry=tuple(load_field_registry(step_id)),
             knowledge_search=self._knowledge_search,
-            deadline_at_monotonic=_deadline_at_monotonic(payload.get("deadline_at")),
             audit_sink=audit_sink,
         )
         return await self._registry.invoke(
@@ -247,21 +235,6 @@ def _validate_task_tool_authorizations(registry: FunctionToolRegistry) -> None:
             )
 
 
-def _deadline_at_monotonic(value: Any) -> float | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        deadline = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return monotonic() - 1
-    if deadline.tzinfo is None:
-        return monotonic() - 1
-    remaining = (
-        deadline.astimezone(timezone.utc) - datetime.now(timezone.utc)
-    ).total_seconds()
-    return monotonic() + max(0.0, remaining)
-
-
 def _runtime_failure(
     tool_name: str,
     code: ToolErrorCode,
@@ -280,7 +253,6 @@ def _audit_runtime_decision(
     *,
     request: RuntimeToolRequest,
     request_id: str,
-    plan_id: str,
     task_id: str,
     step_id: str,
     task_type: str,
@@ -291,7 +263,6 @@ def _audit_runtime_decision(
 ) -> None:
     audit_sink(ToolAuditEvent(
         request_id=request_id,
-        plan_id=plan_id,
         task_id=task_id,
         step_id=step_id,
         task_type=task_type,

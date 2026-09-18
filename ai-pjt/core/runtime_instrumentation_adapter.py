@@ -40,7 +40,6 @@ class RuntimeCorrelation:
     attempt_id: str
     request_id: str
     thread_id: str
-    plan_id: str
     step_id: str
 
 
@@ -98,13 +97,11 @@ class RuntimeInstrumentationAdapter:
         *,
         request_id: str,
         thread_id: str,
-        plan_id: str,
         step_id: str,
     ) -> "BoundRuntimeInstrumentation":
         for name, value in (
             ("request_id", request_id),
             ("thread_id", thread_id),
-            ("plan_id", plan_id),
             ("step_id", step_id),
         ):
             if not isinstance(value, str) or not value:
@@ -114,7 +111,6 @@ class RuntimeInstrumentationAdapter:
             attempt_id=_stable_id("attempt", request_id, step_id),
             request_id=request_id,
             thread_id=thread_id,
-            plan_id=plan_id,
             step_id=step_id,
         )
         return BoundRuntimeInstrumentation(
@@ -129,7 +125,6 @@ class RuntimeInstrumentationAdapter:
         *,
         request_id: str,
         thread_id: str,
-        plan_id: str,
         step_id: str,
         status: OperationStatus,
         duration_ms: int,
@@ -146,7 +141,6 @@ class RuntimeInstrumentationAdapter:
         self.bind(
             request_id=request_id,
             thread_id=thread_id,
-            plan_id=plan_id,
             step_id=step_id,
         ).record_operation(
             stage=OperationStage.CALLBACK,
@@ -431,7 +425,6 @@ class BoundRuntimeInstrumentation:
 
         required = {
             "request_id": self.correlation.request_id,
-            "plan_id": self.correlation.plan_id,
             "step_id": self.correlation.step_id,
         }
         for field_name, expected in required.items():
@@ -473,7 +466,6 @@ class BoundRuntimeInstrumentation:
             trace_id=self.correlation.trace_id,
             request_id=self.correlation.request_id,
             thread_id=self.correlation.thread_id,
-            plan_id=self.correlation.plan_id,
             step_id=self.correlation.step_id,
             task_id=task_id,
             occurred_at_epoch_ms=self._epoch_ms(),
@@ -511,7 +503,6 @@ class BoundRuntimeInstrumentation:
             trace_id=span.correlation.trace_id,
             request_id=span.correlation.request_id,
             thread_id=span.correlation.thread_id,
-            plan_id=span.correlation.plan_id,
             occurred_at_epoch_ms=self._epoch_ms(),
             stage=span.stage,
             status=status,

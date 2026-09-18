@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from math import isfinite
 from time import monotonic
 from typing import Any, Literal, NotRequired, TypedDict
@@ -33,9 +34,8 @@ class QAState(TypedDict):
     message: str
     step_id: str
     customer_info: dict
-    next: str
     # executor가 검증한 선행 typed artifact의 명시적 binding
-    bound_inputs: NotRequired[dict[str, Any]]
+    task_input: NotRequired[dict[str, Any]]
     # specify 출력
     search_queries: list[str]
     query_index: int
@@ -91,6 +91,14 @@ _JUDGE_PROMPT = get_prompt("qa.judge")
 _REFINE_PROMPT = get_prompt("qa.refine_query")
 
 
+def _bindings(state: Mapping[str, Any]) -> dict[str, Any]:
+    task_input = state.get("task_input")
+    if not isinstance(task_input, Mapping):
+        return {}
+    bindings = task_input.get("bindings")
+    return dict(bindings) if isinstance(bindings, Mapping) else {}
+
+
 # ---------------------------------------------------------------------------
 # 노드
 # ---------------------------------------------------------------------------
@@ -119,7 +127,7 @@ async def _specify(state: QAState) -> dict:
         prompt_messages(_SPECIFY_PROMPT, {
             "step_id": state["step_id"],
             "message": state["message"],
-            "bound_inputs": state.get("bound_inputs", {}),
+            "bindings": _bindings(state),
         }),
         purpose=ModelPurpose.QA,
         operation_name="qa.specify",
@@ -153,7 +161,7 @@ async def _decide(state: QAState) -> dict:
         prompt_messages(_DECIDE_PROMPT, {
             "step_id": state["step_id"],
             "customer_info": state.get("customer_info", {}),
-            "bound_inputs": state.get("bound_inputs", {}),
+            "bindings": _bindings(state),
             "current_query": state["current_query"],
         }),
         purpose=ModelPurpose.QA,
@@ -226,7 +234,7 @@ async def _generate(state: QAState) -> dict:
             "customer_info": state["customer_info"],
             "evidence": context,
             "question": state["message"],
-            "bound_inputs": state.get("bound_inputs", {}),
+            "bindings": _bindings(state),
             "retry_hint": state["retry_hint"],
         }
     else:
@@ -235,7 +243,7 @@ async def _generate(state: QAState) -> dict:
             "step_id": state["step_id"],
             "customer_info": state["customer_info"],
             "question": state["message"],
-            "bound_inputs": state.get("bound_inputs", {}),
+            "bindings": _bindings(state),
             "retry_hint": state["retry_hint"],
         }
     result = await secure_ainvoke(
@@ -262,12 +270,12 @@ async def _judge(state: QAState) -> dict:
             "retry_hint": "",
             "retries": 0,
         }
-    bound_inputs = state.get("bound_inputs", {})
+    bindings = _bindings(state)
     result = await secure_ainvoke(
         _judge_chain,
         prompt_messages(_JUDGE_PROMPT, {
             "question": state["message"],
-            "bound_inputs": bound_inputs,
+            "bindings": bindings,
             "evidence": state["current_context"],
             "answer": state["current_answer"],
         }),
@@ -342,7 +350,7 @@ async def _merge(state: QAState) -> dict:
         llm,
         prompt_messages(_MERGE_PROMPT, {
             "question": state["message"],
-            "bound_inputs": state.get("bound_inputs", {}),
+            "bindings": _bindings(state),
             "partial_answers": state["partial_answers"],
         }),
         purpose=ModelPurpose.QA,
@@ -392,7 +400,7 @@ def _search_result_metadata(
 def _requests_unbound_official_value(state: QAState) -> bool:
     """Fail closed only for a *new* official numeric value without a tool binding."""
 
-    if state.get("bound_inputs"):
+    if _bindings(state):
         return False
     text = f"{state.get('message', '')} {state.get('current_query', '')}".replace(" ", "")
     official_tokens = ("공식값", "기준값", "한도", "법정", "공단", "세율", "평균금액", "최신값")
@@ -406,7 +414,7 @@ def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
     return {
         "message": state.get("message", ""),
         "customer_info": state.get("customer_info", {}),
-        "bound_inputs": state.get("bound_inputs", {}),
+        "bindings": _bindings(state),
         "evidence": state.get("current_context", ""),
         "current_answer": state.get("current_answer", ""),
     }

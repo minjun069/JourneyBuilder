@@ -180,22 +180,12 @@ class RedisLifecycleStoreTests(SimpleTestCase):
 
 
 class AIStreamRequestTests(SimpleTestCase):
-    @patch('consulting.ai_lifecycle.get_step_field_registry')
-    @patch('consulting.ai_lifecycle.build_tool_context')
     @patch('consulting.ai_lifecycle.build_customer_info')
     def test_builds_frozen_payload_without_callback_url(
         self,
         customer_info,
-        tool_context,
-        registry,
     ):
         customer_info.return_value = {'saved_data': {}, 'current_form': {}}
-        registry.return_value = [{'path': 'monthly_income'}]
-        tool_context.return_value = {
-            'schema_version': '1.0',
-            'session_id': 12,
-            'step_id': 'basic-info',
-        }
         payload = build_v2_ai_payload(
             request_id='ai_req_test',
             session=SimpleNamespace(id=12),
@@ -208,8 +198,8 @@ class AIStreamRequestTests(SimpleTestCase):
 
         self.assertEqual(payload['thread_id'], 'user-3-session-12')
         self.assertEqual(payload['deadline_at'], '2026-09-02T06:01:00Z')
-        self.assertEqual(payload['field_registry'], [{'path': 'monthly_income'}])
-        self.assertEqual(payload['tool_context']['session_id'], 12)
+        self.assertNotIn('field_registry', payload)
+        self.assertNotIn('tool_context', payload)
         self.assertNotIn('callback_url', payload)
 
 class RequestStateTransitionTests(SimpleTestCase):

@@ -13,7 +13,6 @@
   "scope_fields": ["user_id", "session_id", "request_id"],
   "trusted_financial_prefixes": [
     ["customer_info"],
-    ["tool_context"],
     ["chart_payload"]
   ],
   "vault_ttl_seconds": 600,

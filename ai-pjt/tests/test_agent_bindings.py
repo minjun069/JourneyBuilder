@@ -35,6 +35,7 @@ class InputAssistBindingTests(unittest.IsolatedAsyncioTestCase):
         from agents import input_assist
 
         state = {
+            "step_id": "financial-goals",
             "identification": [{
                 "section": "financial_goals",
                 "path": "monthly_target_expense",
@@ -44,15 +45,13 @@ class InputAssistBindingTests(unittest.IsolatedAsyncioTestCase):
             "cur_index": 0,
             "classification": "fill_avg",
             "validation_reason": "",
-            "field_registry": [{
-                "section": "financial_goals",
-                "path": "monthly_target_expense",
-                "unit": "KRW",
-            }],
-            "bound_inputs": {
-                "value": 2_500_000,
-                "unit": "KRW",
-                "source_id": "approved-statistics-2026",
+            "task_input": {
+                "description": "조회 결과로 입력",
+                "bindings": {
+                    "value": 2_500_000,
+                    "unit": "KRW",
+                    "source_id": "approved-statistics-2026",
+                },
             },
             "partial_results": [],
         }
@@ -70,6 +69,7 @@ class InputAssistBindingTests(unittest.IsolatedAsyncioTestCase):
         from agents import input_assist
 
         state = {
+            "step_id": "financial-goals",
             "identification": [{
                 "section": "financial_goals",
                 "path": "monthly_target_expense",
@@ -79,8 +79,7 @@ class InputAssistBindingTests(unittest.IsolatedAsyncioTestCase):
             "cur_index": 0,
             "classification": "fill_avg",
             "validation_reason": "",
-            "field_registry": [],
-            "bound_inputs": {},
+            "task_input": {"description": "평균값 입력", "bindings": {}},
             "partial_results": [],
         }
 
@@ -111,10 +110,13 @@ class QABindingTests(unittest.IsolatedAsyncioTestCase):
                 "step_id": "financial-goals",
                 "current_query": "기준값 의미와 배경",
                 "customer_info": {},
-                "bound_inputs": {
-                    "value": 2_500_000,
-                    "unit": "KRW",
-                    "source_id": "approved-statistics-2026",
+                "task_input": {
+                    "description": "기준값 설명",
+                    "bindings": {
+                        "value": 2_500_000,
+                        "unit": "KRW",
+                        "source_id": "approved-statistics-2026",
+                    },
                 },
             })
         self.assertEqual(decision, {"need_retrieval": True})

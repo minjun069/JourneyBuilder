@@ -25,7 +25,8 @@ class FakeAgentGraph:
     async def ainvoke(self, state: dict) -> dict:
         self.calls.append(state)
         if self.role == "input_assist":
-            value = state["bound_inputs"]["value"]
+            bindings = state["task_input"]["bindings"]
+            value = bindings["value"]
             return {
                 "output": {
                     "response": "조회 결과로 목표 생활비 변경안을 만들었습니다.",
@@ -36,11 +37,11 @@ class FakeAgentGraph:
                         "user_requested": True,
                         "confidence": 1.0,
                         "changes": [{
-                            "section": "financial_goals",
-                            "path": "monthly_target_expense",
+                            "section": "basic_info",
+                            "path": "monthly_income",
                             "operation": "set",
                             "value": value,
-                            "unit": state["bound_inputs"]["unit"],
+                            "unit": bindings["unit"],
                             "reason": "승인된 조회 결과",
                         }],
                     },
@@ -69,9 +70,9 @@ def all_agent_graphs() -> dict[str, FakeAgentGraph]:
 
 
 FIELD_SPEC = {
-    "step_id": "financial-goals",
-    "section": "financial_goals",
-    "path": "monthly_target_expense",
+    "step_id": "basic-info",
+    "section": "basic_info",
+    "path": "monthly_income",
     "value_type": "integer",
     "unit": "KRW",
     "constraints": {"min": 0, "period": "month"},
@@ -103,193 +104,55 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             "step_id": "lifetime-cashflow",
             "request_mode": "presentation_entry",
             "customer_info": {"saved_data": {}, "current_form": {}},
-            "field_registry": [],
             "chart_payload": {"status": "guidance_only"},
         })
 
         self.assertEqual(result["route_plan"]["tasks"][0]["type"], "interpret_chart")
         self.assertEqual(len(agents["chart_interpret"].calls), 1)
 
-    async def test_other_step_keeps_elicit_memory_out_of_planner_scope(self) -> None:
+    async def test_elicit_is_a_plain_context_aware_agent(self) -> None:
         from graph.builder import build_graph
-        from graph.elicit_context import initial_elicit_contexts
 
-        class CapturePlanner:
-            def __init__(self) -> None:
-                self.context: dict | None = None
-
-            def __call__(
-                self,
-                *,
-                message: str,
-                step_id: str,
-                context: dict,
-            ) -> dict:
-                self.context = context
-                return {
-                    "elicit_routing": {
-                        "is_related": False,
-                        "field": None,
-                        "turn_kind": None,
-                        "confidence_sufficient": False,
-                    },
-                    "tasks": [{
-                        "id": "answer",
-                        "type": "answer_question",
-                        "description": message,
-                        "depends_on": [],
-                        "bindings": {},
-                    }],
-                }
-
-        scope = {
-            "schema_version": "1.0",
-            "session_id": 12,
-            "thread_id": "user-3-session-12",
+        conversation = {
+            "schema_version": "3.0",
+            "summary": {"text": "사용자는 은퇴 후 국내 여행을 선호한다."},
+            "structured_state": {},
+            "turns": [],
         }
-        mindset_state = {
-            "step_id": "financial-mindset",
-            "customer_info": {"saved_data": {}, "current_form": {}},
-            "context_scope": scope,
-        }
-        contexts = initial_elicit_contexts(mindset_state)
-        contexts["contexts"]["future_goals"].update({
-            "open_question": "은퇴 후 어떤 삶을 원하시나요?",
-            "status": "open",
-            "updated_at": "2026-09-16T00:00:00Z",
-        })
-        planner = CapturePlanner()
-        agents = all_agent_graphs()
-        instrumentation, sink = fake_instrumentation()
-        graph = build_graph(
-            None,
-            instrumentation=instrumentation,
-            planner=planner,
-            agent_graphs=agents,
-        )
-
-        result = await graph.ainvoke({
-            "request_id": "turn-intro",
-            "message": "이 서비스는 어떻게 쓰나요?",
-            "step_id": "intro",
-            "customer_info": {"saved_data": {}, "current_form": {}},
-            "field_registry": [],
-            "context_scope": scope,
-            "elicit_contexts": contexts,
-        })
-
-        self.assertEqual(planner.context["elicit_context_index"], {})
-        self.assertEqual(result["elicit_contexts"], contexts)
-        self.assertEqual(result["output"]["response"], "qa 응답")
-        plan_decisions = [
-            event
-            for event in sink.security_events
-            if event.boundary == "plan_guardrail"
-        ]
-        self.assertEqual(len(plan_decisions), 1)
-        self.assertEqual(plan_decisions[0].reason_code, "PLAN_GUARDRAIL_ALLOWED")
-
-    async def test_planner_reconnects_field_context_after_intervening_qa(self) -> None:
-        from graph.builder import build_graph
-        from graph.elicit_context import initial_elicit_contexts
-
-        class InterleavedPlanner:
-            def __init__(self) -> None:
-                self.calls: list[dict] = []
-
-            def __call__(self, *, message: str, step_id: str, context: dict) -> dict:
-                self.calls.append(context)
-                if "계산" in message:
-                    return {
-                        "elicit_routing": {
-                            "is_related": False,
-                            "field": None,
-                            "turn_kind": None,
-                            "confidence_sufficient": False,
-                        },
-                        "tasks": [{
-                            "id": "answer",
-                            "type": "answer_question",
-                            "description": message,
-                            "depends_on": [],
-                            "bindings": {},
-                        }],
-                    }
-                return {
-                    "elicit_routing": {
-                        "is_related": True,
-                        "field": "future_goals",
-                        "turn_kind": "correction",
-                        "confidence_sufficient": True,
-                    },
-                    "tasks": [{
-                        "id": "correct",
-                        "type": "collect_qualitative_info",
-                        "description": message,
-                        "depends_on": [],
-                        "bindings": {},
-                    }],
-                }
-
-        scope = {
-            "schema_version": "1.0",
-            "session_id": 12,
-            "thread_id": "user-3-session-12",
-        }
-        base_state = {
-            "step_id": "financial-mindset",
-            "customer_info": {"saved_data": {}, "current_form": {}},
-            "context_scope": scope,
-        }
-        contexts = initial_elicit_contexts(base_state)
-        contexts["contexts"]["future_goals"].update({
-            "open_question": "은퇴 후 어떤 삶을 원하시나요?",
-            "status": "open",
-            "updated_at": "2026-09-16T00:00:00Z",
-        })
-        planner = InterleavedPlanner()
         agents = all_agent_graphs()
         graph = build_graph(
             None,
             instrumentation=fake_instrumentation()[0],
-            planner=planner,
+            planner=FakePlanner({
+                "tasks": [{
+                    "id": "reply",
+                    "type": "collect_qualitative_info",
+                    "description": "이전 대화를 바탕으로 답해 줘.",
+                    "depends_on": [],
+                    "bindings": {},
+                }],
+            }),
             agent_graphs=agents,
         )
 
-        qa_result = await graph.ainvoke({
-            **base_state,
-            "request_id": "turn-calc",
-            "message": "필요 저축액 계산 방식은 뭐야?",
-            "field_registry": [],
-            "elicit_contexts": contexts,
-        })
-        self.assertEqual(len(agents["qa"].calls), 1)
-        self.assertEqual(len(agents["elicit"].calls), 0)
-        self.assertNotIn("ui_action", qa_result["output"])
-
-        correction_result = await graph.ainvoke({
-            **base_state,
-            "request_id": "turn-correction",
-            "message": "아까 말한 여행은 국내 여행 위주야.",
-            "field_registry": [],
-            "elicit_contexts": qa_result["elicit_contexts"],
+        result = await graph.ainvoke({
+            "request_id": "turn-context-reply",
+            "thread_id": "thread-context-reply",
+            "message": "이전 대화를 바탕으로 답해 줘.",
+            "step_id": "financial-mindset",
+            "customer_info": {"saved_data": {}, "current_form": {}},
+            "conversation_context": conversation,
         })
 
+        self.assertEqual(result["output"]["response"], "elicit 응답")
         self.assertEqual(len(agents["elicit"].calls), 1)
+        call = agents["elicit"].calls[0]
         self.assertEqual(
-            agents["elicit"].calls[0]["elicit_routing"],
-            {
-                "is_related": True,
-                "field": "future_goals",
-                "turn_kind": "correction",
-                "confidence_sufficient": True,
-            },
+            call["conversation_context"]["summary"]["text"],
+            conversation["summary"]["text"],
         )
-        self.assertEqual(
-            planner.calls[0]["elicit_context_index"],
-            planner.calls[1]["elicit_context_index"],
-        )
-        self.assertEqual(correction_result["output"]["response"], "elicit 응답")
+        self.assertNotIn("elicit_routing", call)
+        self.assertNotIn("elicit_contexts", call)
 
     async def test_explanation_questions_do_not_fall_back_on_model_adapter_outage(
         self,
@@ -317,7 +180,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                     "message": message,
                     "step_id": "basic-info",
                     "customer_info": {"saved_data": {}, "current_form": {}},
-                    "field_registry": [],
                 })
 
                 self.assertEqual(result["output"]["response"], "qa 응답")
@@ -339,6 +201,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(components, {"planner"})
 
     async def test_current_form_overrides_saved_fact_only_for_active_fields(self) -> None:
+        from core.field_registry import load_field_registry
         from graph.builder import _flatten_customer_info
 
         facts = _flatten_customer_info(
@@ -354,15 +217,15 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                     "monthly_income": 9_999_999,
                 },
             },
-            field_registry=[FIELD_SPEC],
-            step_id="financial-goals",
+            field_registry=load_field_registry("basic-info"),
+            step_id="basic-info",
         )
 
         self.assertEqual(
             facts["financial_goals.monthly_target_expense"],
-            2_500_000,
+            2_000_000,
         )
-        self.assertEqual(facts["basic_info.monthly_income"], 3_000_000)
+        self.assertEqual(facts["basic_info.monthly_income"], 9_999_999)
 
     async def test_graph_passes_typed_tool_result_to_input_agent(self) -> None:
         from graph.builder import build_graph
@@ -429,16 +292,15 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         result = await graph.ainvoke({
             "request_id": "req-1",
             "message": "평균 비용을 찾고 그 값으로 목표치를 채워줘.",
-            "step_id": "financial-goals",
+            "step_id": "basic-info",
             "customer_info": {"saved_data": {}, "current_form": {}},
-            "field_registry": [FIELD_SPEC],
         })
 
-        self.assertEqual(result["route_plan"]["plan_id"], "plan-req-1")
+        self.assertNotIn("plan_id", result["route_plan"])
         self.assertEqual(result["task_results"]["task-1"]["status"], "completed")
         self.assertEqual(result["task_results"]["task-2"]["status"], "completed")
         self.assertEqual(
-            agents["input_assist"].calls[0]["bound_inputs"],
+            agents["input_assist"].calls[0]["task_input"]["bindings"],
             {"value": 2_500_000, "unit": "KRW"},
         )
         self.assertEqual(result["output"]["action"]["changes"][0]["value"], 2_500_000)
@@ -458,7 +320,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             "message": "요청",
             "step_id": "intro",
             "customer_info": {"saved_data": {}, "current_form": {}},
-            "field_registry": [],
         })
 
         self.assertTrue(result["plan_issues"])
@@ -504,12 +365,6 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
             "message": "요청",
             "step_id": "intro",
             "customer_info": {"saved_data": {}, "current_form": {}},
-            "field_registry": [],
-            "context_scope": {
-                "schema_version": "3.0",
-                "session_id": 1,
-                "thread_id": "thread-context-event",
-            },
             "conversation_context": context,
         })
         planner_start = next(

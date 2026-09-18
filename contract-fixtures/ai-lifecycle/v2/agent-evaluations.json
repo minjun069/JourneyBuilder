@@ -36,7 +36,6 @@
   },
   "required_shared_fixture_cases": {
     "error-reviews.json": ["save_suspicious_income", "save_no_suspicion", "save_agent_failure"],
-    "chart-payloads.json": ["lifetime_cashflow_ready", "lifetime_cashflow_guidance_only"],
-    "elicit-policy.json": ["field_order", "limits"]
+    "chart-payloads.json": ["lifetime_cashflow_ready", "lifetime_cashflow_guidance_only"]
   }
 }

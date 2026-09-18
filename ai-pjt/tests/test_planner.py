@@ -73,10 +73,10 @@ class RoutePlanValidationTests(unittest.TestCase):
         route_plan = model_output.to_route_plan()
 
         self.assertNotIn("arguments", route_plan["tasks"][0])
-        self.assertEqual(route_plan["elicit_routing"]["is_related"], False)
+        self.assertNotIn("elicit_routing", route_plan)
         self.assertTrue(_validate_plan_structure(route_plan, step_id="basic-info").valid)
 
-    def test_elicit_task_requires_structured_field_routing(self) -> None:
+    def test_qualitative_task_needs_no_special_routing_contract(self) -> None:
         elicit_task = task(
             "elicit",
             "collect_qualitative_info",
@@ -86,54 +86,8 @@ class RoutePlanValidationTests(unittest.TestCase):
             {"tasks": [elicit_task]},
             step_id="financial-mindset",
         )
-        self.assertFalse(missing.valid)
-        self.assertIn(
-            "ELICIT_ROUTING_REQUIRED",
-            {issue.code for issue in missing.issues},
-        )
-
-        routed = _validate_plan_structure({
-            "elicit_routing": {
-                "is_related": True,
-                "field": "future_goals",
-                "turn_kind": "correction",
-                "confidence_sufficient": True,
-            },
-            "tasks": [elicit_task],
-        }, step_id="financial-mindset")
-        self.assertTrue(routed.valid, [issue.to_dict() for issue in routed.issues])
-        self.assertEqual(
-            routed.plan["elicit_routing"]["field"],
-            "future_goals",
-        )
-
-    def test_low_confidence_elicit_judgment_cannot_execute_elicit(self) -> None:
-        routing = {
-            "is_related": True,
-            "field": None,
-            "turn_kind": None,
-            "confidence_sufficient": False,
-        }
-        routed = _validate_plan_structure({
-            "status": "ambiguous",
-            "elicit_routing": routing,
-            "tasks": [],
-        }, step_id="financial-mindset")
-        self.assertTrue(routed.valid, [issue.to_dict() for issue in routed.issues])
-        self.assertEqual(routed.plan["outcome_reason"], "ambiguous_intent")
-        blocked = _validate_plan_structure({
-            "elicit_routing": routing,
-            "tasks": [task(
-                "elicit",
-                "collect_qualitative_info",
-                "불확실한 대상의 정성정보 수집",
-            )],
-        }, step_id="financial-mindset")
-        self.assertFalse(blocked.valid)
-        self.assertIn(
-            "ELICIT_ROUTING_REQUIRED",
-            {issue.code for issue in blocked.issues},
-        )
+        self.assertTrue(missing.valid, [issue.to_dict() for issue in missing.issues])
+        self.assertNotIn("elicit_routing", missing.plan)
 
     def test_writable_household_reference_requires_complete_single_source_binding(self) -> None:
         lookup = task(
@@ -182,34 +136,6 @@ class RoutePlanValidationTests(unittest.TestCase):
             ),
         ]}, step_id="financial-goals")
         self.assertTrue(complete.valid, [issue.to_dict() for issue in complete.issues])
-
-    def test_retirement_gap_arguments_are_runtime_fixed(self) -> None:
-        raw_task = task(
-            "gap",
-            "lookup_retirement_gap",
-            "최신 보고서의 은퇴 부족액 조회",
-        )
-        validation = _validate_plan_structure(
-            {"tasks": [raw_task]},
-            step_id="basic-info",
-        )
-
-        self.assertTrue(validation.valid)
-        self.assertEqual(
-            validation.plan["tasks"][0]["arguments"],
-            {"metric_id": "retirement_gap"},
-        )
-
-        raw_task["arguments"] = {"metric_id": "invented_metric"}
-        rejected = _validate_plan_structure(
-            {"tasks": [raw_task]},
-            step_id="basic-info",
-        )
-        self.assertFalse(rejected.valid)
-        self.assertIn(
-            "PLANNER_FIXED_ARGUMENT_INJECTION",
-            {issue.code for issue in rejected.issues},
-        )
 
     def test_reference_lookup_requires_complete_typed_arguments(self) -> None:
         raw_task = task(
@@ -477,7 +403,7 @@ class ContextAwarePlanningTests(unittest.TestCase):
             "lookup_reference_value",
             constraints["task_type_guidance"],
         )
-        self.assertFalse(constraints["elicit_enabled"])
+        self.assertNotIn("elicit_enabled", constraints)
 
     def test_planner_receives_only_bounded_context_and_every_task_is_routed(self) -> None:
         planner = FakePlanner({
@@ -522,10 +448,6 @@ class ContextAwarePlanningTests(unittest.TestCase):
                 registered_tool_capabilities=("lookup_reference_value",),
             ),
             registered_tool_capabilities=("lookup_reference_value",),
-            elicit_context_index={
-                "schema_version": "2.0",
-                "fields": [{"field": "future_goals", "status": "open"}],
-            },
         )
 
         self.assertTrue(validation.valid)
@@ -533,10 +455,7 @@ class ContextAwarePlanningTests(unittest.TestCase):
             planner.calls[0]["context"]["confirmed_facts"],
             {"profile.age_band": "40대"},
         )
-        self.assertEqual(
-            planner.calls[0]["context"]["elicit_context_index"]["fields"][0],
-            {"field": "future_goals", "status": "open"},
-        )
+        self.assertNotIn("elicit_context_index", planner.calls[0]["context"])
         self.assertIn(
             "lookup_reference_value",
             planner.calls[0]["context"]["route_constraints"]["allowed_task_types"],

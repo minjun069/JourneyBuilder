@@ -195,7 +195,7 @@
         "completed": 0,
         "failed": 0
       },
-      "get_dashboard_metric": {
+      "get_form_field_spec": {
         "blocked": 0,
         "completed": 0,
         "failed": 2

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any, Literal, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -12,6 +13,7 @@ from agents.input_assist_defaults import (
     build_default_proposals,
 )
 from core.llm import llm
+from core.field_registry import load_field_registry
 from core.model_boundary import (
     ModelPurpose,
     prompt_messages,
@@ -31,10 +33,8 @@ class InputAssistState(TypedDict):
     message: str
     step_id: str
     customer_info: dict
-    next: str
-    field_registry: list[dict]
     # executor가 검증한 선행 typed artifact의 명시적 binding
-    bound_inputs: NotRequired[dict[str, Any]]
+    task_input: NotRequired[dict[str, Any]]
     # identify 출력 (Django canonical registry)
     guideline: str
     field_spec: str
@@ -110,6 +110,18 @@ _RESOLVE_INTENT_INSTRUCTIONS: dict[str, str] = {
     "organize": "발췌 내용을 이 항목의 type·unit·constraints 에 맞게 정리하여 반환하세요.",
 }
 
+
+def _bindings(state: Mapping[str, Any]) -> dict[str, Any]:
+    task_input = state.get("task_input")
+    if not isinstance(task_input, Mapping):
+        return {}
+    bindings = task_input.get("bindings")
+    return dict(bindings) if isinstance(bindings, Mapping) else {}
+
+
+def _field_registry(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return load_field_registry(str(state.get("step_id", "")))
+
 # ---------------------------------------------------------------------------
 # 노드
 # ---------------------------------------------------------------------------
@@ -153,19 +165,20 @@ async def _classify(state: InputAssistState) -> dict:
 
 async def _identify(state: InputAssistState) -> dict:
     writable_registry = [
-        field for field in state.get("field_registry", [])
+        field for field in _field_registry(state)
         if field.get("writable_by_ai")
     ]
     guideline = json.dumps(writable_registry, ensure_ascii=False, indent=2)
     current_form = state.get("customer_info", {}).get("current_form", {})
     if state["classification"] == "fill_avg":
         try:
-            if "reference_id" in state.get("bound_inputs", {}):
+            bindings = _bindings(state)
+            if "reference_id" in bindings:
                 proposals = build_bound_reference_proposals(
                     step_id=state["step_id"],
                     message=state["message"],
                     current_form=current_form if isinstance(current_form, dict) else {},
-                    bound_inputs=state["bound_inputs"],
+                    bindings=bindings,
                     user_requested_change=state["user_requested_change"],
                 )
             else:
@@ -229,7 +242,7 @@ async def _error_check_1(state: InputAssistState) -> dict:
     item = state["identification"][state["cur_index"]]
     field_spec = next((
         field
-        for field in state.get("field_registry", [])
+        for field in _field_registry(state)
         if field.get("section") == item["section"]
         and field.get("path") == item["path"]
     ), None)
@@ -241,8 +254,8 @@ async def _error_check_1(state: InputAssistState) -> dict:
     elif item["operation"] not in field_spec.get("operations", []):
         reason = "허용되지 않은 form operation"
     elif (
-        state.get("bound_inputs", {}).get("unit") is not None
-        and state["bound_inputs"]["unit"] != field_spec.get("unit", "none")
+        _bindings(state).get("unit") is not None
+        and _bindings(state)["unit"] != field_spec.get("unit", "none")
     ):
         reason = "선행 조회 결과와 canonical 필드의 단위 불일치"
     else:
@@ -284,15 +297,15 @@ async def _resolve(state: InputAssistState) -> dict:
     )
     
     field_spec = next((
-        field for field in state.get("field_registry", [])
+        field for field in _field_registry(state)
         if field.get("section") == item["section"] and field.get("path") == item["path"]
     ), {})
     field_spec = json.dumps(field_spec, ensure_ascii=False, indent=2)
 
-    bound_inputs = state.get("bound_inputs", {})
-    if "value" in bound_inputs:
+    bindings = _bindings(state)
+    if "value" in bindings:
         return {
-            "resolution": bound_inputs["value"],
+            "resolution": bindings["value"],
             "resolution_confidence": 1.0,
             "field_spec": field_spec,
         }
@@ -342,9 +355,9 @@ async def _resolve(state: InputAssistState) -> dict:
 async def _error_check_2(state: InputAssistState) -> dict:
     item = state["identification"][state["cur_index"]]
 
-    bound_inputs = state.get("bound_inputs", {})
-    if "value" in bound_inputs:
-        source_id = bound_inputs.get("source_id")
+    bindings = _bindings(state)
+    if "value" in bindings:
+        source_id = bindings.get("source_id")
         reason = "검증된 선행 task artifact binding"
         if source_id:
             reason = f"{reason} ({source_id})"
@@ -356,13 +369,13 @@ async def _error_check_2(state: InputAssistState) -> dict:
                 "item_id": item.get("item_id"),
                 "client_item_id": item.get("client_item_id"),
                 "excerpt": item["excerpt"],
-                "resolution": bound_inputs["value"],
+                "resolution": bindings["value"],
                 "parent_item_id": item.get("parent_item_id"),
                 "parent_client_item_id": item.get("parent_client_item_id"),
                 "success": True,
                 "reason": reason,
                 "confidence": 1.0,
-                "bound_unit": bound_inputs.get("unit"),
+                "bound_unit": bindings.get("unit"),
                 "policy_metadata": item.get("policy_metadata"),
             }],
             "cur_index": state["cur_index"] + 1,
@@ -583,7 +596,7 @@ def _model_sensitive_payload(state: InputAssistState) -> dict[str, Any]:
     return {
         "message": state.get("message", ""),
         "customer_info": state.get("customer_info", {}),
-        "bound_inputs": state.get("bound_inputs", {}),
+        "bindings": _bindings(state),
         "identification": state.get("identification", []),
         "resolution": state.get("resolution"),
         "partial_results": state.get("partial_results", []),

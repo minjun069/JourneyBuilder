@@ -106,7 +106,7 @@
   "source_artifacts": [
     {
       "path": "ai-pjt/evals/artifacts/f14-integrated-mock-attack.json",
-      "sha256": "77e47fb963632b3b763ffe0155876312cf70b342a859bc4fecd1c5c1b009a013"
+      "sha256": "ab0270d3d01b4caa45c0b633fca2f895e6cbdc7ea90244843de354eb279b2dd6"
     },
     {
       "path": "ai-pjt/evals/artifacts/f14-finding-triage.json",
@@ -129,8 +129,7 @@
     "ai-pjt/tools/financial_policy.py",
     "ai-pjt/tools/catalog.py",
     "backend-pjt/reports/policy.py",
-    "backend-pjt/reports/services.py",
-    "backend-pjt/consulting/tool_context.py"
+    "backend-pjt/reports/services.py"
   ],
   "assertions": {
     "t01_findings": 0,

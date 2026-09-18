@@ -1,15 +1,9 @@
 import json
-import sys
 import unittest
 from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-BACKEND_ROOT = REPOSITORY_ROOT / "backend-pjt"
-sys.path.insert(0, str(BACKEND_ROOT))
-
-from consulting.field_registry import get_step_field_registry  # noqa: E402
-
 from tools.output_validation import validate_form_update, validate_form_update_contract
 
 
@@ -40,10 +34,9 @@ LIST_FIELD_SPEC = {
 }
 
 
-def state_with_change(change, *, step_id="basic-info", registry=None):
+def state_with_change(change, *, step_id="basic-info"):
     return {
         "step_id": step_id,
-        "field_registry": registry or [FIELD_SPEC],
         "output": {
             "response": "입력 제안을 만들었습니다.",
             "step_id": step_id,
@@ -70,7 +63,6 @@ class OutputValidationTests(unittest.TestCase):
                 step_id = case["step_id"]
                 result = validate_form_update_contract({
                     "step_id": step_id,
-                    "field_registry": get_step_field_registry(step_id),
                     "output": {
                         "response": "fixture response",
                         "step_id": step_id,
@@ -85,7 +77,6 @@ class OutputValidationTests(unittest.TestCase):
     def test_plain_answer_passes_mandatory_node(self):
         state = {
             "step_id": "intro",
-            "field_registry": [],
             "output": {"response": "안녕하세요.", "update": {}},
         }
         result = validate_form_update_contract(state)
@@ -172,7 +163,6 @@ class OutputValidationTests(unittest.TestCase):
                 "value": 5_000_000,
             },
             step_id="financial-assets",
-            registry=[LIST_FIELD_SPEC],
         ))
         self.assertFalse(result.valid)
         self.assertIn("ITEM_ID_REQUIRED", {issue.code for issue in result.issues})
@@ -192,7 +182,6 @@ class OutputValidationTests(unittest.TestCase):
                 "value": {"name": "새 자산", "unregistered": 1},
             },
             step_id="financial-assets",
-            registry=[row_name_spec],
         ))
         self.assertFalse(result.valid)
         self.assertIn(
@@ -203,7 +192,6 @@ class OutputValidationTests(unittest.TestCase):
     def test_non_empty_legacy_update_is_rejected(self):
         result = validate_form_update_contract({
             "step_id": "basic-info",
-            "field_registry": [FIELD_SPEC],
             "output": {"response": "변경했습니다.", "update": {"monthly_income": 1}},
         })
         self.assertFalse(result.valid)
@@ -223,7 +211,6 @@ class OutputValidationTests(unittest.TestCase):
 
     def test_missing_runtime_step_fails_closed(self):
         result = validate_form_update_contract({
-            "field_registry": [],
             "output": {"response": "답변"},
         })
         self.assertFalse(result.valid)
@@ -241,7 +228,6 @@ class OutputValidationTests(unittest.TestCase):
         }
         state = {
             "step_id": "basic-info",
-            "field_registry": [],
             "output": {
                 "response": "확인이 필요합니다.",
                 "review": {

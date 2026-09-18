@@ -47,7 +47,7 @@ class PromptRegistryTests(unittest.TestCase):
         payload = {
             "step_id": "basic-info",
             "message": "질문",
-            "bound_inputs": {},
+            "bindings": {},
         }
         self.assertEqual(prompt.validate_payload(payload), payload)
         with self.assertRaisesRegex(ValueError, "missing keys"):
@@ -59,15 +59,15 @@ class PromptRegistryTests(unittest.TestCase):
         planner = get_prompt("planner.plan").system_text
         qa = get_prompt("qa.answer_with_evidence").system_text
         input_resolver = get_prompt("input_assist.resolve").system_text
-        elicit = get_prompt("elicit.analyze").system_text
+        elicit = get_prompt("elicit.respond").system_text
         chart = get_prompt("chart_interpret.explain").system_text
 
         self.assertIn("depends_on", planner)
         self.assertIn("bindings", planner)
         self.assertIn("내부 문서 ID", qa)
         self.assertIn("경계값에 맞추지 않습니다", input_resolver)
-        self.assertIn("상태 전이", elicit)
-        self.assertIn("결정하지 않습니다", elicit)
+        self.assertIn("과거 대화 문맥", elicit)
+        self.assertIn("자연스럽고 간결하게", elicit)
         self.assertIn("새로운 계산", chart)
         self.assertIn("입력 변경안", chart)
 
@@ -77,7 +77,7 @@ class PromptRegistryTests(unittest.TestCase):
         rendered = render_prompt_payload(classifier, {
             "step_id": "basic-info",
             "message": "질문",
-            "bound_inputs": {},
+            "bindings": {},
         })
 
         self.assertIn(COMMON_PRINCIPLES, answer.system_text)

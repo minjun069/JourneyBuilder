@@ -161,7 +161,7 @@ def build_runtime_observability_baseline(
 def _span_key(event: RuntimeTraceEvent) -> tuple[str, str, RuntimeStage, str | None, str | None]:
     return (
         event.trace_id,
-        event.plan_id,
+        event.request_id,
         event.stage,
         event.task_id,
         event.artifact_id,

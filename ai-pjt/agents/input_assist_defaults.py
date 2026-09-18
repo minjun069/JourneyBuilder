@@ -245,7 +245,7 @@ def build_bound_reference_proposals(
     step_id: str,
     message: str,
     current_form: Mapping[str, Any],
-    bound_inputs: Mapping[str, Any],
+    bindings: Mapping[str, Any],
     user_requested_change: bool,
     today: date | None = None,
     policy: Mapping[str, Any] | None = None,
@@ -254,12 +254,12 @@ def build_bound_reference_proposals(
 
     if step_id != "financial-goals" or not user_requested_change:
         raise ReferenceTargetNotAllowed("reference_target_not_allowed")
-    if not REFERENCE_BINDING_FIELDS.issubset(bound_inputs):
+    if not REFERENCE_BINDING_FIELDS.issubset(bindings):
         raise ReferenceTargetNotAllowed("reference_target_not_allowed")
 
     active_policy = dict(policy or load_default_policy())
     mapping = active_policy.get("household_expense_reference_ids")
-    reference_id = bound_inputs.get("reference_id")
+    reference_id = bindings.get("reference_id")
     if not isinstance(mapping, Mapping) or reference_id not in mapping.values():
         raise ReferenceTargetNotAllowed("reference_target_not_allowed")
     expected_name = next(
@@ -269,14 +269,14 @@ def build_bound_reference_proposals(
     try:
         approved = lookup_approved_reference_value(
             reference_id=str(reference_id),
-            age=bound_inputs["age"],
-            period=bound_inputs["period"],
-            population=bound_inputs["population"],
+            age=bindings["age"],
+            period=bindings["period"],
+            population=bindings["population"],
             effective_on=today or date.today(),
         )
     except (ApprovedFinancialPolicyError, ApprovedReferenceValueNotFound, TypeError):
         raise ReferenceTargetNotAllowed("reference_target_not_allowed") from None
-    if any(bound_inputs.get(field) != approved.get(field) for field in REFERENCE_BINDING_FIELDS):
+    if any(bindings.get(field) != approved.get(field) for field in REFERENCE_BINDING_FIELDS):
         raise ReferenceTargetNotAllowed("reference_target_not_allowed")
     if (
         approved["unit"] != "KRW"

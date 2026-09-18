@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ChatInput(BaseModel):
@@ -8,7 +8,6 @@ class ChatInput(BaseModel):
     step_id: str
     message: str
     customer_info: dict
-    field_registry: list[dict] = Field(default_factory=list)
 
 
 class ChatRequest(ChatInput):

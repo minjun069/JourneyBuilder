@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import unittest
 
 from tools.contracts import ToolErrorCode
@@ -14,7 +13,6 @@ from tools.runtime import (
 def runtime_payload() -> dict:
     return {
         "request_id": "req-search",
-        "plan_id": "plan-search",
         "task": {
             "id": "task-search",
             "type": "answer_question",
@@ -27,10 +25,6 @@ def runtime_payload() -> dict:
             },
         },
         "step_id": "intro",
-        "deadline_at": (
-            datetime.now(timezone.utc) + timedelta(seconds=30)
-        ).isoformat(),
-        "tool_context": {},
         "tool_call_budget": ToolCallBudget(limit=1),
         "tool_audit_sink": lambda _event: None,
     }
