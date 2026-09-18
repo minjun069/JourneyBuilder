@@ -20,7 +20,7 @@ def _report(release: str) -> dict:
             "prompts": [{"id": "qa.answer", "version": "1.0.0"}],
         },
         "quality_metrics": {
-            "router_accuracy": 0.97,
+            "planner_contract_pass_rate": 0.97,
             "critical_safety_pass_rate": 1.0,
             "grounded_answer_rate": 0.94,
             "form_action_exact_rate": 0.96,
@@ -42,7 +42,7 @@ class PromptReleaseGateTests(unittest.TestCase):
         candidate = deepcopy(_report("candidate"))
         candidate["quality_metrics"].update({
             "critical_safety_pass_rate": 0.99,
-            "router_accuracy": 0.94,
+            "planner_contract_pass_rate": 0.94,
             "grounded_answer_rate": 0.90,
             "form_action_exact_rate": 0.95,
             "error_review_false_positive_rate": 0.05,
@@ -53,7 +53,7 @@ class PromptReleaseGateTests(unittest.TestCase):
             set(evaluate_prompt_candidate(baseline, candidate)),
             {
                 "critical_safety_regression",
-                "router_accuracy_below_threshold",
+                "planner_contract_pass_rate_below_threshold",
                 "grounded_answer_regression",
                 "form_action_regression",
                 "error_review_false_positive_regression",
@@ -89,9 +89,9 @@ class PromptReleaseGateTests(unittest.TestCase):
     def test_non_numeric_or_out_of_range_metrics_fail_closed(self) -> None:
         baseline = _report("previous")
         candidate = deepcopy(_report("candidate"))
-        candidate["quality_metrics"]["router_accuracy"] = "0.99"
+        candidate["quality_metrics"]["planner_contract_pass_rate"] = "0.99"
         self.assertIn(
-            "candidate_router_accuracy_invalid",
+            "candidate_planner_contract_pass_rate_invalid",
             evaluate_prompt_candidate(baseline, candidate),
         )
 

@@ -14,7 +14,7 @@ from core.runtime_instrumentation import (
 def reference_runtime_events() -> tuple[RuntimeTraceEvent | OperationTraceEvent, ...]:
     events: list[RuntimeTraceEvent | OperationTraceEvent] = []
     events.extend(_successful_partial_request(1))
-    events.extend(_fallback_request(2))
+    events.extend(_all_tasks_failed_request(2))
     events.extend(_timeout_request(3))
     events.extend(_callback_attempts())
     return tuple(events)
@@ -147,7 +147,7 @@ def _successful_partial_request(number: int):
     return events
 
 
-def _fallback_request(number: int):
+def _all_tasks_failed_request(number: int):
     events: list[RuntimeTraceEvent] = []
     events.extend(_pair(number, RuntimeStage.REQUEST_PROCESSING, start=2_000, duration=90))
     tool_start = _runtime(
@@ -171,25 +171,7 @@ def _fallback_request(number: int):
         executor_name="get_dashboard_metric",
     )
     events.extend((tool_start, tool_failed))
-    events.extend(_pair(
-        number,
-        RuntimeStage.TASK_EXECUTION,
-        start=2_031,
-        duration=25,
-        task_id="task-fallback-all-failed",
-        executor_kind="agent",
-        executor_name="fallback",
-        response_owner="fallback",
-    ))
-    events.extend(_pair(
-        number,
-        RuntimeStage.ARTIFACT_VALIDATION,
-        start=2_056,
-        duration=4,
-        task_id="task-fallback-all-failed",
-        artifact_type="text_response",
-    ))
-    events.extend(_pair(number, RuntimeStage.AGGREGATION, start=2_061, duration=8))
+    events.extend(_pair(number, RuntimeStage.AGGREGATION, start=2_031, duration=8))
     return events
 
 

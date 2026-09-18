@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 import logging
+import re
 from typing import Any
 
-from core.model_boundary import bind_model_call_recorder
+from pydantic import BaseModel, ConfigDict, Field
+
+from core.model_boundary import (
+    ModelPurpose,
+    bind_model_call_recorder,
+    prompt_messages,
+    secure_ainvoke,
+)
 from core.monitoring import OperationStage, OperationStatus
 from core.operation_observation import bind_operation_recorder
 from core.prompt_registry import bind_prompt_trace_sink
@@ -29,12 +37,57 @@ from graph.task_contracts import (
     seal_validated_artifact,
     validate_task_result,
 )
+from prompts import get_prompt
 from tools.output_validation import validate_form_update_contract
 
 
 logger = logging.getLogger(__name__)
+_NUMBER_TOKEN = re.compile(r"(?<![A-Za-z0-9])[-+]?\d[\d,.]*(?:%|원|개월|년)?")
+
+
+class AggregatorModelOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    response: str = Field(min_length=1)
+    source_ids: list[str]
+
+
+def failure_response(
+    reason_code: str,
+    *,
+    detail_codes: Sequence[str] = (),
+) -> str:
+    """Render the deterministic recovery policy owned by the Aggregator."""
+
+    if reason_code == "ambiguous_intent":
+        return (
+            "요청의 뜻을 하나로 확정하기 어렵습니다. 궁금한 내용이나 바꾸려는 "
+            "입력 항목을 한 가지씩 구체적으로 말씀해 주세요."
+        )
+    if reason_code == "unsupported_intent":
+        return (
+            "현재 상담은 재무정보 입력, 재무진단 결과 설명과 은퇴설계 질문을 "
+            "지원합니다. 이 범위 안의 요청으로 바꾸어 말씀해 주세요."
+        )
+    if reason_code == "all_tasks_failed":
+        return (
+            "실행한 작업에서 전달할 수 있는 검증된 결과를 만들지 못했습니다. "
+            "위 실패 원인을 확인한 뒤 다시 시도해 주세요."
+        )
+    if reason_code == "plan_invalid":
+        categories = _plan_failure_categories(detail_codes)
+        detail = " ".join(categories)
+        if detail:
+            detail = f" {detail}"
+        return (
+            "요청을 안전한 실행 계획으로 확정하지 못했습니다."
+            f"{detail} 요청을 한 가지씩 나누거나 필요한 대상을 더 구체적으로 "
+            "적어 다시 시도해 주세요."
+        )
+    return "요청을 안전하게 처리하지 못했습니다. 내용을 확인해 다시 시도해 주세요."
 
 RuntimeExecutor = Callable[[dict[str, Any]], Awaitable[Mapping[str, Any]]]
+AggregateComposer = Callable[..., Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
@@ -77,6 +130,7 @@ async def execute_route_plan(
     tool_context: Mapping[str, Any] | None = None,
     tool_call_budget: Any = None,
     instrumentation: BoundRuntimeInstrumentation,
+    response_composer: AggregateComposer | None = None,
 ) -> ExecutionReport:
     """Run validated tasks in source order and pass only explicit bindings.
 
@@ -239,7 +293,6 @@ async def execute_route_plan(
             "tool_call_budget": tool_call_budget,
             "chart_payload": deepcopy(plan.get("chart_payload")),
             "request_mode": plan.get("request_mode", "chat"),
-            "review_trigger": plan.get("review_trigger"),
             "elicit_routing": deepcopy(plan.get("elicit_routing", {})),
             "elicit_contexts": deepcopy(plan.get("elicit_contexts", {})),
             "context_scope": deepcopy(plan.get("context_scope", {})),
@@ -379,11 +432,7 @@ async def execute_route_plan(
             artifact_seals[task_id] = seal_validated_artifact(validation)
         if result.get("status") == "completed":
             response_owner = (
-                "fallback"
-                if str(executor_name) == "fallback"
-                else "aggregator"
-                if executor_kind == "tool"
-                else "agent"
+                "aggregator" if executor_kind == "tool" else "agent"
             )
             instrumentation.succeed(
                 task_span,
@@ -397,143 +446,6 @@ async def execute_route_plan(
                 output=result,
             )
 
-    has_completed = any(
-        result.get("status") == "completed" for result in task_results.values()
-    )
-    has_planned_fallback = any(
-        isinstance(task, Mapping)
-        and isinstance(task.get("route"), Mapping)
-        and task["route"].get("executor") == "fallback"
-        for task in tasks
-    )
-    if not has_completed and tasks and not has_planned_fallback:
-        fallback_task = {
-            "id": "task-fallback-all-failed",
-            "type": "fallback",
-            "description": "검증된 task 결과 없음",
-            "depends_on": [],
-            "bindings": {},
-            "executor_kind": "agent",
-            "produces": "text_response",
-            "step_id": step_id,
-            "route": {
-                "task_id": "task-fallback-all-failed",
-                "executor_kind": "agent",
-                "executor": "fallback",
-                "reason_code": "all_tasks_failed",
-            },
-        }
-        fallback_executor = agent_executors.get("fallback")
-        if fallback_executor is not None:
-            fallback_payload = {
-                "request_id": request_id,
-                "plan_id": str(plan.get("plan_id", "plan-unknown")),
-                "task": fallback_task,
-                "task_input": {"description": "검증된 task 결과 없음", "bindings": {}},
-                "message": "검증된 task 결과 없음",
-                "step_id": step_id,
-                "customer_info": {},
-                "field_registry": [],
-                "bound_inputs": {},
-                "next": "fallback",
-                "deadline_at": deadline_at,
-                "tool_context": {},
-                "tool_call_budget": tool_call_budget,
-            }
-            fallback_span = instrumentation.start(
-                RuntimeStage.TASK_EXECUTION,
-                task_id=fallback_task["id"],
-                executor_kind="agent",
-                executor_name="fallback",
-                input={
-                    "task": fallback_task,
-                    "message": fallback_payload["message"],
-                    "step_id": step_id,
-                },
-            )
-            try:
-                with bind_operation_recorder(
-                    partial(
-                        instrumentation.record_operation,
-                        task_id=fallback_task["id"],
-                    )
-                ):
-                    with bind_model_call_recorder(
-                        partial(
-                            instrumentation.record_model_call,
-                            task_id=fallback_task["id"],
-                        )
-                    ):
-                        with bind_prompt_trace_sink(
-                            instrumentation.record_prompt_invocation
-                        ):
-                            fallback_result = await fallback_executor(
-                                fallback_payload
-                            )
-                fallback_artifact_span = instrumentation.start(
-                    RuntimeStage.ARTIFACT_VALIDATION,
-                    task_id=fallback_task["id"],
-                    artifact_id=build_artifact_id(
-                        plan_id=str(plan.get("plan_id", "plan-unknown")),
-                        producer_task_id=fallback_task["id"],
-                        artifact_type="text_response",
-                    ),
-                    artifact_type="text_response",
-                    producer_task_id=fallback_task["id"],
-                )
-                fallback_validation = validate_task_result(
-                    task=fallback_task,
-                    result=fallback_result,
-                    step_id=step_id,
-                    field_registry=field_registry,
-                )
-                if fallback_validation.valid:
-                    instrumentation.succeed(fallback_artifact_span)
-                    instrumentation.succeed(
-                        fallback_span,
-                        response_owner="fallback",
-                        output=fallback_validation.result,
-                    )
-                else:
-                    instrumentation.fail(
-                        fallback_artifact_span,
-                        reason_code="artifact_invalid",
-                    )
-                    instrumentation.fail(
-                        fallback_span,
-                        reason_code="artifact_invalid",
-                    )
-                task_results[fallback_task["id"]] = fallback_validation.result
-                aggregate_tasks.append(fallback_task)
-                tasks_used += 1
-            except Exception as error:
-                logger.error(
-                    "fallback executor raised",
-                    extra={
-                        "event": "executor_error",
-                        "detail": masked_exception_fields(
-                            error,
-                            request_id=request_id,
-                            plan_id=str(plan.get("plan_id", "plan-unknown")),
-                            step_id=step_id,
-                            task_id=str(fallback_task["id"]),
-                            executor_kind="agent",
-                            executor_name="fallback",
-                        ),
-                    },
-                )
-                error_identity = exception_identity_fields(error)
-                failure_output = {
-                    "status": "failed",
-                    "reason_code": "executor_error",
-                }
-                instrumentation.fail(
-                    fallback_span,
-                    reason_code="executor_error",
-                    output=failure_output,
-                    **error_identity,
-                )
-
     aggregation_span = instrumentation.start(RuntimeStage.AGGREGATION)
     try:
         output = aggregate_task_results(
@@ -541,7 +453,30 @@ async def execute_route_plan(
             task_results=task_results,
             step_id=step_id,
             field_registry=field_registry,
+            outcome_reason=(
+                str(plan["outcome_reason"])
+                if plan.get("outcome_reason") is not None
+                else None
+            ),
         )
+        has_execution_failure = any(
+            result.get("status") != "completed"
+            for result in task_results.values()
+        )
+        if (
+            response_composer is not None
+            and not has_execution_failure
+            and plan.get("outcome_reason") is None
+        ):
+            with bind_model_call_recorder(instrumentation.record_model_call):
+                with bind_prompt_trace_sink(
+                    instrumentation.record_prompt_invocation
+                ):
+                    output = await response_composer(
+                        output=output,
+                        step_id=step_id,
+                        field_registry=field_registry,
+                    )
     except Exception as error:
         logger.error(
             "aggregation raised",
@@ -577,12 +512,14 @@ def aggregate_task_results(
     task_results: Mapping[str, Mapping[str, Any]],
     step_id: str,
     field_registry: list[dict[str, Any]],
+    outcome_reason: str | None = None,
 ) -> dict[str, Any]:
     """Collapse internal results into one public response and at most one action."""
 
     responses: list[str] = []
     form_changes: list[Mapping[str, Any]] = []
     reviews: list[dict[str, Any]] = []
+    completed_count = 0
 
     for task in tasks:
         if not isinstance(task, Mapping):
@@ -599,6 +536,7 @@ def aggregate_task_results(
             continue
         if status != "completed":
             continue
+        completed_count += 1
 
         if isinstance(result.get("review"), Mapping):
             reviews.append(deepcopy(dict(result["review"])))
@@ -632,6 +570,11 @@ def aggregate_task_results(
             "같은 입력 항목에 서로 다른 변경안이 있어 선택지로 각각 제시했습니다."
         )
 
+    if outcome_reason is not None:
+        responses.append(failure_response(outcome_reason))
+    elif tasks and completed_count == 0:
+        responses.append(failure_response("all_tasks_failed"))
+
     output = {
         "response": "\n\n".join(_deduplicate(responses))
         or "요청을 처리할 수 있는 결과를 만들지 못했습니다. 내용을 확인해 다시 요청해 주세요.",
@@ -646,6 +589,102 @@ def aggregate_task_results(
         "output": output,
     })
     return validation.output
+
+
+async def compose_aggregate_response(
+    *,
+    output: Mapping[str, Any],
+    step_id: str,
+    field_registry: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Naturalize multiple verified text blocks without changing structures."""
+
+    response = output.get("response")
+    if not isinstance(response, str):
+        return deepcopy(dict(output))
+    blocks = [block.strip() for block in response.split("\n\n") if block.strip()]
+    if len(blocks) < 2:
+        return deepcopy(dict(output))
+    try:
+        prompt = get_prompt("aggregator.compose")
+    except KeyError:
+        # Previous prompt releases intentionally retain deterministic joining.
+        return deepcopy(dict(output))
+
+    from core.llm import llm
+
+    source_blocks = [
+        {"source_id": f"result-{index + 1}", "text": block}
+        for index, block in enumerate(blocks)
+    ]
+    source_ids = [block["source_id"] for block in source_blocks]
+    try:
+        runnable = llm.with_structured_output(AggregatorModelOutput)
+        raw = await secure_ainvoke(
+            runnable,
+            prompt_messages(prompt, {
+                "step_id": step_id,
+                "response_blocks": source_blocks,
+            }),
+            purpose=ModelPurpose.AGGREGATOR,
+            operation_name="aggregator.compose",
+            sensitive_payload={"response_blocks": source_blocks},
+            prompt=prompt,
+        )
+        composed = (
+            raw
+            if isinstance(raw, AggregatorModelOutput)
+            else AggregatorModelOutput.model_validate(raw)
+        )
+        if composed.source_ids != source_ids:
+            raise ValueError("aggregator omitted or reordered source blocks")
+        source_numbers = _NUMBER_TOKEN.findall(response)
+        composed_numbers = _NUMBER_TOKEN.findall(composed.response)
+        if composed_numbers != source_numbers:
+            raise ValueError("aggregator changed verified numeric tokens or order")
+        validation = validate_form_update_contract({
+            "step_id": step_id,
+            "field_registry": field_registry,
+            "output": {
+                **deepcopy(dict(output)),
+                "response": composed.response.strip(),
+            },
+        })
+        if not validation.valid:
+            raise ValueError("aggregator response failed output validation")
+        return validation.output
+    except Exception as error:  # noqa: BLE001 - deterministic join is authoritative
+        logger.warning(
+            "aggregate response composer fell back to deterministic join",
+            extra={
+                "event": "aggregation_composer_fallback",
+                "detail": masked_exception_fields(error, step_id=step_id),
+            },
+        )
+        return deepcopy(dict(output))
+
+
+def _plan_failure_categories(detail_codes: Sequence[str]) -> list[str]:
+    categories: list[str] = []
+    for raw_code in detail_codes:
+        code = str(raw_code).upper()
+        if code in {"PLANNER_ERROR", "STRUCTURED_MODEL_OUTPUT_ERROR"}:
+            message = "계획 생성 모델이 유효한 구조를 반환하지 못했습니다."
+        elif "BINDING" in code or "DEPENDENCY" in code or "CYCLIC" in code:
+            message = "작업 간 순서와 결과 연결 관계를 안전하게 구성하지 못했습니다."
+        elif "TASK_TYPE" in code or code == "UNSUPPORTED_TASK_TYPE":
+            message = "현재 단계에서 지원되는 작업 유형으로 요청을 변환하지 못했습니다."
+        elif "ROUTE" in code or "AGENT" in code or "TOOL" in code:
+            message = "현재 단계에서 허용된 실행 경로를 확정하지 못했습니다."
+        elif "CONTEXT" in code:
+            message = "안전한 대화 문맥을 복원하지 못했습니다."
+        else:
+            message = "계획의 필수 구조가 실행 계약과 일치하지 않았습니다."
+        if message not in categories:
+            categories.append(message)
+        if len(categories) == 2:
+            break
+    return categories
 
 
 def _collect_state_update(

@@ -4,6 +4,11 @@
     "numerator": 2,
     "value": 1.0
   },
+  "all_tasks_failed_response_rate": {
+    "denominator": 3,
+    "numerator": 1,
+    "value": 0.3333333333333333
+  },
   "callback_delivery": {
     "attempts": 8,
     "eventually_succeeded": 2,
@@ -20,11 +25,6 @@
     "succeeded_attempts": 2,
     "timeout_attempts": 4
   },
-  "fallback_request_rate": {
-    "denominator": 3,
-    "numerator": 1,
-    "value": 0.3333333333333333
-  },
   "measurement_disposition": "baseline_only",
   "request_success_rate": {
     "denominator": 3,
@@ -33,7 +33,7 @@
   },
   "request_timeout_count": 1,
   "requests": 3,
-  "schema_version": "f10-runtime-observability-baseline-v1",
+  "schema_version": "f10-runtime-observability-baseline-v2",
   "stages": {
     "aggregation": {
       "blocked": 0,
@@ -57,19 +57,19 @@
       "blocked": 0,
       "failed": 0,
       "latency_ms": {
-        "count": 2,
-        "p50": 4.5,
-        "p90": 4.9,
-        "p95": 4.95
+        "count": 1,
+        "p50": 5.0,
+        "p90": 5.0,
+        "p95": 5.0
       },
       "reason_counts": {},
-      "succeeded": 2,
+      "succeeded": 1,
       "success_rate": {
-        "denominator": 2,
-        "numerator": 2,
+        "denominator": 1,
+        "numerator": 1,
         "value": 1.0
       },
-      "total": 2
+      "total": 1
     },
     "binding_resolution": {
       "blocked": 0,
@@ -169,22 +169,22 @@
       "blocked": 0,
       "failed": 2,
       "latency_ms": {
-        "count": 4,
-        "p50": 22.5,
-        "p90": 28.500000000000004,
-        "p95": 29.25
+        "count": 3,
+        "p50": 20.0,
+        "p90": 28.0,
+        "p95": 29.0
       },
       "reason_counts": {
         "tool_dependency_unavailable": 1,
         "tool_timeout": 1
       },
-      "succeeded": 2,
+      "succeeded": 1,
       "success_rate": {
-        "denominator": 4,
-        "numerator": 2,
-        "value": 0.5
+        "denominator": 3,
+        "numerator": 1,
+        "value": 0.3333333333333333
       },
-      "total": 4
+      "total": 3
     }
   },
   "task_outcomes": {
@@ -193,11 +193,6 @@
       "dependency_block": {
         "blocked": 1,
         "completed": 0,
-        "failed": 0
-      },
-      "fallback": {
-        "blocked": 0,
-        "completed": 1,
         "failed": 0
       },
       "get_dashboard_metric": {
@@ -211,13 +206,13 @@
         "failed": 0
       }
     },
-    "completed": 2,
+    "completed": 1,
     "completion_rate": {
-      "denominator": 5,
-      "numerator": 2,
-      "value": 0.4
+      "denominator": 4,
+      "numerator": 1,
+      "value": 0.25
     },
     "failed": 2,
-    "total": 5
+    "total": 4
   }
 }

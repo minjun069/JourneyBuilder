@@ -95,7 +95,7 @@ class Settings:
             "LLM_TEMPERATURE", 0.0, active_environ
         )
         self.prompt_release = active_environ.get(
-            "PROMPT_RELEASE", "2026-09-17.3"
+            "PROMPT_RELEASE", "2026-09-18.1"
         ).strip()
         self.embedding_model = active_environ.get(
             "EMBEDDING_MODEL", "gemini-embedding-2"

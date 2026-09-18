@@ -88,7 +88,6 @@ export const useConsultationStore = defineStore('consultation', () => {
     stepId,
     form = null,
     requestMode = 'chat',
-    reviewTrigger = null,
     idempotencyKey = null,
   } = {}) {
     if (!sessionId.value) return
@@ -121,7 +120,6 @@ export const useConsultationStore = defineStore('consultation', () => {
           step_id: stepId,
           form_data: mapCurrentForm(stepId, form ?? {}),
           request_mode: requestMode,
-          ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
         },
         {
           idempotencyKey: idempotencyKey ?? createIdempotencyKey(),
@@ -158,7 +156,6 @@ export const useConsultationStore = defineStore('consultation', () => {
         stepId,
         form,
         requestMode: 'error_review',
-        reviewTrigger: 'save',
       },
     )) {
       // Error Review는 구조화된 최종 결과만 화면에 반영한다.

@@ -57,7 +57,6 @@ def error_review_request() -> ChatV2Request:
             **v2_request().model_dump(),
             "step_id": "basic-info",
             "request_mode": "error_review",
-            "review_trigger": "save",
             "message": "현재 입력값을 검토해 주세요.",
         }
     )
@@ -110,7 +109,7 @@ class FakeV2Graph:
         assert version == "v2"
         yield {
             "event": "on_chat_model_stream",
-            "metadata": {"langgraph_node": "router"},
+            "metadata": {"langgraph_node": "planner"},
             "data": {"chunk": SimpleNamespace(content="내부 출력")},
         }
         yield {
@@ -165,7 +164,7 @@ class EmptyResponseV2Graph:
 class FakeErrorReviewGraph:
     async def astream_events(self, input_data, *, config, version):
         assert input_data["request_mode"] == "error_review"
-        assert input_data["review_trigger"] == "save"
+        assert "review_trigger" not in input_data
         yield {
             "event": "on_chain_end",
             "parent_ids": [],
@@ -178,7 +177,6 @@ class FakeErrorReviewGraph:
                         "action": None,
                         "review": {
                             "type": "error_review",
-                            "trigger": "save",
                             "manual": {
                                 "document_id": "interface-basic-info",
                                 "version": "1.0.0",
@@ -289,7 +287,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual([name for name, _ in frames], ["start", "done"])
         review = frames[-1][1]["output"]["review"]
         self.assertEqual(review["type"], "error_review")
-        self.assertEqual(review["trigger"], "save")
+        self.assertNotIn("trigger", review)
 
 
 class V2SSEEndpointTests(IsolatedAsyncioTestCase):

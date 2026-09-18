@@ -33,10 +33,9 @@ class ChatState(TypedDict):
     tool_context: NotRequired[dict[str, Any]]
     chart_payload: NotRequired[dict[str, Any] | None]
     request_mode: NotRequired[str]
-    review_trigger: NotRequired[str]
     elicit_routing: NotRequired[dict[str, Any]]
     elicit_contexts: NotRequired[dict[str, Any]]
-    next: str   # 라우터가 결정한 다음 에이전트 노드명
+    next: str   # 결정론적 enrichment가 제안한 다음 실행자
     output: dict  # 에이전트 응답 — input_assist는 FormChangeAction 포함
     context_scope: NotRequired[ContextScopeState]
     conversation_context: NotRequired[PersistedConversationState]
@@ -46,7 +45,6 @@ class ChatState(TypedDict):
     current_task: NotRequired[dict[str, Any]]
     task_results: NotRequired[dict[str, dict[str, Any]]]
     bound_inputs: NotRequired[dict[str, Any]]
-    fallback_category: NotRequired[str]
     plan_issues: NotRequired[list[dict[str, str]]]
     security_blocked: NotRequired[bool]
     execution_budget: NotRequired[ExecutionBudgetState]

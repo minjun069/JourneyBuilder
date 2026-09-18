@@ -9,17 +9,17 @@ from evals.runtime_observability_fixture import reference_runtime_events
 
 
 class RuntimeObservabilityBaselineTests(unittest.TestCase):
-    def test_task_request_retry_fallback_and_aggregation_baseline(self) -> None:
+    def test_task_request_retry_failure_response_and_aggregation_baseline(self) -> None:
         baseline = build_runtime_observability_baseline(reference_runtime_events())
 
         self.assertEqual(baseline.requests, 3)
         self.assertEqual(baseline.request_success_rate.value, 2 / 3)
         self.assertEqual(baseline.request_timeout_count, 1)
-        self.assertEqual(baseline.task_outcomes.total, 5)
-        self.assertEqual(baseline.task_outcomes.completed, 2)
+        self.assertEqual(baseline.task_outcomes.total, 4)
+        self.assertEqual(baseline.task_outcomes.completed, 1)
         self.assertEqual(baseline.task_outcomes.failed, 2)
         self.assertEqual(baseline.task_outcomes.blocked, 1)
-        self.assertEqual(baseline.fallback_request_rate.value, 1 / 3)
+        self.assertEqual(baseline.all_tasks_failed_response_rate.value, 1 / 3)
         self.assertEqual(baseline.aggregation_success_rate.value, 1.0)
         self.assertEqual(baseline.callback_delivery.attempts, 8)
         self.assertEqual(baseline.callback_delivery.retried_requests, 2)

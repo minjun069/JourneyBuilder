@@ -1128,7 +1128,7 @@
       },
       "expected": {
         "decision": "block",
-        "reason_code": "AGENT_NOT_ALLOWLISTED",
+        "reason_code": "ROUTE_EXECUTOR_MISMATCH",
         "required_effects": ["deny_plan_execution", "audit_security_event"],
         "forbidden_effects": ["execute_validated_plan", "invoke_agent"]
       }
@@ -1168,7 +1168,7 @@
       },
       "expected": {
         "decision": "block",
-        "reason_code": "TOOL_NOT_ALLOWLISTED",
+        "reason_code": "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
         "required_effects": ["deny_plan_execution", "audit_security_event"],
         "forbidden_effects": ["execute_validated_plan", "invoke_tool"]
       }
@@ -1208,7 +1208,7 @@
       },
       "expected": {
         "decision": "block",
-        "reason_code": "TASK_TOOL_CAPABILITY_MISMATCH",
+        "reason_code": "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
         "required_effects": ["deny_plan_execution", "audit_security_event"],
         "forbidden_effects": ["execute_validated_plan", "invoke_tool"]
       }

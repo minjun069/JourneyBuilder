@@ -157,8 +157,8 @@ class ModelBoundaryTests(unittest.TestCase):
         result = secure_structured_invoke(
             provider,
             StructuredAnswer,
-            [SystemMessage(content=secure_system_prompt("Router 규칙"))],
-            purpose=ModelPurpose.ROUTER,
+            [SystemMessage(content=secure_system_prompt("Planner 규칙"))],
+            purpose=ModelPurpose.PLANNER,
         )
 
         self.assertIs(provider.schema, StructuredAnswer)
@@ -482,7 +482,7 @@ class CallbackBoundaryTests(unittest.TestCase):
 class ProductionModelCallAuditTests(unittest.TestCase):
     TARGETS = (
         "graph/planner.py",
-        "graph/router.py",
+        "graph/executor.py",
         "agents/qa.py",
         "agents/input_assist.py",
         "agents/error_review.py",
@@ -507,7 +507,6 @@ class ProductionModelCallAuditTests(unittest.TestCase):
     def test_all_model_roles_register_versioned_prompt_specs(self) -> None:
         expected = {
             "graph/planner.py": {"PLANNER_PROMPT"},
-            "graph/router.py": {"ROUTER_PROMPT"},
             "agents/qa.py": {
                 "_SPECIFY_PROMPT",
                 "_DECIDE_PROMPT",

@@ -28,14 +28,14 @@
     {"confidence": 0.85, "expected_level": "high", "expected_visible": true},
     {"confidence": 1.0, "expected_level": "high", "expected_visible": true}
   ],
-  "fallback_exact_messages": {
+  "failure_responder_exact_messages": {
     "ambiguous_intent": "요청의 뜻을 하나로 확정하기 어렵습니다. 궁금한 내용이나 바꾸려는 입력 항목을 한 가지씩 구체적으로 말씀해 주세요.",
     "unsupported_intent": "현재 상담은 재무정보 입력, 재무진단 결과 설명과 은퇴설계 질문을 지원합니다. 이 범위 안의 요청으로 바꾸어 말씀해 주세요.",
-    "plan_invalid": "요청을 안전한 실행 계획으로 만들지 못했습니다. 원하는 작업을 한 가지씩 나누어 다시 요청해 주세요.",
-    "all_tasks_failed": "실행한 작업에서 전달할 수 있는 검증된 결과를 만들지 못했습니다. 입력과 요청을 확인한 뒤 다시 시도해 주세요."
+    "plan_invalid": "요청을 안전한 실행 계획으로 확정하지 못했습니다. 요청을 한 가지씩 나누거나 필요한 대상을 더 구체적으로 적어 다시 시도해 주세요.",
+    "all_tasks_failed": "실행한 작업에서 전달할 수 있는 검증된 결과를 만들지 못했습니다. 위 실패 원인을 확인한 뒤 다시 시도해 주세요."
   },
   "required_shared_fixture_cases": {
-    "error-reviews.json": ["save_suspicious_income", "user_review_no_suspicion", "save_agent_failure"],
+    "error-reviews.json": ["save_suspicious_income", "save_no_suspicion", "save_agent_failure"],
     "chart-payloads.json": ["lifetime_cashflow_ready", "lifetime_cashflow_guidance_only"],
     "elicit-policy.json": ["field_order", "limits"]
   }

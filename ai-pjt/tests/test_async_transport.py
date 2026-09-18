@@ -76,18 +76,18 @@ class ServiceAuthorizationTests(IsolatedAsyncioTestCase):
 
 
 class FeatureControlContractTests(IsolatedAsyncioTestCase):
-    def test_error_review_requires_a_trigger(self):
-        review = make_request(request_mode="error_review", review_trigger="save")
-        self.assertEqual(review.review_trigger, "save")
+    def test_error_review_is_save_bound_without_a_trigger_field(self):
+        review = make_request(request_mode="error_review")
+        self.assertEqual(review.request_mode, "error_review")
 
         with self.assertRaises(ValueError):
-            make_request(request_mode="error_review")
+            make_request(request_mode="error_review", review_trigger="save")
 
     def test_legacy_elicit_action_is_rejected(self):
         with self.assertRaises(ValueError):
             make_request(elicit_action="start")
 
-    def test_presentation_entry_requires_no_review_trigger(self):
+    def test_presentation_entry_rejects_legacy_review_trigger(self):
         request = make_request(request_mode="presentation_entry")
         self.assertEqual(request.request_mode, "presentation_entry")
 

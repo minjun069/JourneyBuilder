@@ -58,10 +58,14 @@ class AgentEvaluationContractTests(unittest.TestCase):
                 self.assertEqual(item["confidence_level"], case["expected_level"])
                 self.assertEqual(bool(visible_review_items([item])), case["expected_visible"])
 
-    def test_fallback_messages_match_contract_exactly(self) -> None:
-        from agents.fallback import MESSAGES
+    def test_failure_responder_messages_match_contract_exactly(self) -> None:
+        from graph.executor import failure_response
 
-        self.assertEqual(MESSAGES, self.contract["fallback_exact_messages"])
+        expected = self.contract["failure_responder_exact_messages"]
+        self.assertEqual(
+            {reason: failure_response(reason) for reason in expected},
+            expected,
+        )
 
     def test_referenced_shared_fixture_cases_exist(self) -> None:
         fixture_root = CONTRACT_PATH.parent
@@ -171,7 +175,6 @@ class ErrorReviewVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         ):
             state = await error_review._run({
                 "step_id": "basic-info",
-                "review_trigger": "save",
                 "customer_info": {"current_form": {"monthly_income": 20_000}},
                 "field_registry": registry,
             })

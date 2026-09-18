@@ -88,6 +88,14 @@ EVALUATOR_INPUT_KINDS = {
     "production_policy": "production_payload",
 }
 VERSION_KEYS = {"dataset", "model", "prompt", "document", "index", "tool"}
+PLANNER_TASK_FIELDS = {
+    "id",
+    "type",
+    "description",
+    "depends_on",
+    "bindings",
+    "arguments",
+}
 CASE_ID_PATTERN = re.compile(r"^SEC-[A-Z]+-\d{3}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHARED_DOC_SOURCE_PATTERN = re.compile(r"^shared-docs:[^#]+\.md#[^#]+$")
@@ -323,8 +331,47 @@ class ProductionSecurityEvaluator:
         case_input: dict[str, Any],
         payload: dict[str, Any],
     ) -> Decision:
+        planner_tasks: list[Any] = []
+        route_enrichments: list[Any] = []
+        raw_tasks = payload.get("tasks")
+        if isinstance(raw_tasks, list):
+            for task in raw_tasks:
+                if not isinstance(task, dict):
+                    planner_tasks.append(copy.deepcopy(task))
+                    route_enrichments.append(None)
+                    continue
+                planner_tasks.append({
+                    key: copy.deepcopy(value)
+                    for key, value in task.items()
+                    if key in PLANNER_TASK_FIELDS
+                })
+                route = task.get("route")
+                if isinstance(route, dict):
+                    route_enrichments.append({
+                        "source_task_id": route.get("task_id"),
+                        "executor_kind": route.get("executor_kind"),
+                        "executor": route.get("executor"),
+                        "reason_code": route.get("reason_code"),
+                    })
+                else:
+                    route_enrichments.append(copy.deepcopy(route))
+
+        planner_plan: dict[str, Any] = {
+            "status": payload.get("status", "executable"),
+            "tasks": planner_tasks,
+        }
+        if "elicit_routing" in payload:
+            planner_plan["elicit_routing"] = copy.deepcopy(
+                payload["elicit_routing"]
+            )
+        candidate = {
+            "plan_id": payload.get("plan_id"),
+            "step_id": case_input["step_id"],
+            "planner_plan": planner_plan,
+            "route_enrichments": route_enrichments,
+        }
         result = evaluate_route_plan(
-            payload,
+            candidate,
             step_id=case_input["step_id"],
             step_candidates=self._step_candidates,
             registered_tool_capabilities=tuple(

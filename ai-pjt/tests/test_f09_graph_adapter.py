@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 from graph.builder import build_graph
 from tests.instrumentation import fake_instrumentation
-from tests.test_graph_execution import FakeClassifier, FakePlanner, all_agent_graphs
+from tests.test_graph_execution import FakePlanner, all_agent_graphs
 from tools.catalog import build_default_registry
 from tools.graph_adapter import build_graph_tool_executors
 from tools.runtime import FunctionToolRuntime
@@ -118,9 +118,9 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=instrumentation,
             planner=FakePlanner(_dashboard_plan()),
-            classifier=FakeClassifier(),
             agent_graphs=agents,
             tool_executors=_graph(),
+            response_composer=None,
         )
 
         result = await graph.ainvoke(_state(
@@ -172,9 +172,9 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=fake_instrumentation()[0],
             planner=FakePlanner(_dashboard_plan()),
-            classifier=FakeClassifier(),
             agent_graphs=agents,
             tool_executors=_graph(),
+            response_composer=None,
         )
 
         result = await graph.ainvoke(_state("은퇴 부족액을 알려줘", context))
@@ -194,9 +194,9 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
-            classifier=FakeClassifier(),
             agent_graphs=agents,
             tool_executors=_graph(),
+            response_composer=None,
         )
 
         result = await graph.ainvoke(_state("45세 부채상환 기준을 알려줘"))
@@ -218,9 +218,9 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
             None,
             instrumentation=fake_instrumentation()[0],
             planner=FakePlanner(_reference_plan(period="monthly")),
-            classifier=FakeClassifier(),
             agent_graphs=agents,
             tool_executors=_graph(),
+            response_composer=None,
         )
 
         result = await graph.ainvoke(_state("45세 부채상환 월 기준을 알려줘"))

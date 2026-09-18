@@ -58,7 +58,6 @@ TASK_AGENT = {
     "review_validation_error": "error_review",
     "interpret_chart": "chart_interpret",
     "collect_qualitative_info": "elicit",
-    "fallback": "fallback",
     "answer_dashboard_metric": "qa",
 }
 TASK_MODEL_PURPOSE = {

@@ -374,7 +374,6 @@ function toChatMessage(message, { interactive = true } = {}) {
     const visibleItems = visibleErrorReviewItems(review.items)
     bubble.action = {
       type: 'error-review',
-      trigger: review.trigger,
       items: visibleItems.map((item) => ({ ...item, decision: 'pending' })),
     }
   }

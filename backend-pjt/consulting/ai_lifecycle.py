@@ -98,7 +98,7 @@ def validate_browser_message(payload):
         )
     allowed_fields = {
         'contract_version', 'content', 'step_id', 'form_data',
-        'request_mode', 'review_trigger',
+        'request_mode',
     }
     if set(payload) - allowed_fields:
         raise LifecycleError(400, 'REQUEST_INVALID', '지원하지 않는 요청 필드가 있습니다.')
@@ -118,14 +118,8 @@ def validate_browser_message(payload):
     if not isinstance(form_data, dict):
         raise LifecycleError(400, 'REQUEST_INVALID', 'form_data는 객체여야 합니다.')
     request_mode = payload.get('request_mode', 'chat')
-    review_trigger = payload.get('review_trigger')
     if request_mode not in ('chat', 'error_review', 'presentation_entry'):
         raise LifecycleError(400, 'REQUEST_INVALID', 'request_mode이 올바르지 않습니다.')
-    if request_mode == 'error_review':
-        if review_trigger not in ('save', 'user_request'):
-            raise LifecycleError(400, 'REQUEST_INVALID', 'review_trigger가 필요합니다.')
-    elif review_trigger is not None:
-        raise LifecycleError(400, 'REQUEST_INVALID', '이 요청에는 review_trigger를 사용할 수 없습니다.')
     normalized = {
         'contract_version': CONTRACT_VERSION,
         'content': content,
@@ -134,8 +128,6 @@ def validate_browser_message(payload):
     }
     if 'request_mode' in payload:
         normalized['request_mode'] = request_mode
-    if review_trigger is not None:
-        normalized['review_trigger'] = review_trigger
     return normalized
 
 
@@ -208,9 +200,9 @@ def _validate_error_review_output(output):
     review = output.get('review')
     if review is None:
         return
-    if not isinstance(review, dict) or set(review) != {'type', 'trigger', 'manual', 'items'}:
+    if not isinstance(review, dict) or set(review) != {'type', 'manual', 'items'}:
         raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review output이 올바르지 않습니다.')
-    if review.get('type') != 'error_review' or review.get('trigger') not in ('save', 'user_request'):
+    if review.get('type') != 'error_review':
         raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review output이 올바르지 않습니다.')
     manual = review.get('manual')
     if (
@@ -346,7 +338,7 @@ class RedisLifecycleStore:
 
 def build_v2_ai_payload(
     *, request_id, session, user, message, step_id, form_data,
-    request_mode='chat', review_trigger=None, now=None,
+    request_mode='chat', now=None,
 ):
     current = now or utc_now()
     chart_result = build_chart_payload(
@@ -376,8 +368,6 @@ def build_v2_ai_payload(
     }
     if request_mode != 'chat':
         payload['request_mode'] = request_mode
-    if review_trigger is not None:
-        payload['review_trigger'] = review_trigger
     return payload
 
 

@@ -54,17 +54,19 @@ async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, An
         if isinstance(field, dict) and field.get("step_id") == state["step_id"]
         and field.get("sensitivity") != "operational"
     ]
+    prompt_payload = {
+        "step_id": state["step_id"],
+        "field_registry": registry,
+        "current_form": current_form,
+        "manual_id": manual.document_id,
+        "manual_version": manual.version,
+        "manual_text": manual.text,
+    }
+    if "trigger" in REVIEW_PROMPT.required_input_keys:
+        prompt_payload["trigger"] = "save"
     result = await secure_ainvoke(
         _review_chain,
-        prompt_messages(REVIEW_PROMPT, {
-            "trigger": state.get("review_trigger", "user_request"),
-            "step_id": state["step_id"],
-            "field_registry": registry,
-            "current_form": current_form,
-            "manual_id": manual.document_id,
-            "manual_version": manual.version,
-            "manual_text": manual.text,
-        }),
+        prompt_messages(REVIEW_PROMPT, prompt_payload),
         purpose=ModelPurpose.ERROR_REVIEW,
         operation_name="error_review.review",
         sensitive_payload={"current_form": current_form},
@@ -116,7 +118,6 @@ async def _run(state: ChatState) -> dict:
             "action": None,
             "review": {
                 "type": "error_review",
-                "trigger": state.get("review_trigger", "user_request"),
                 "manual": {
                     "document_id": manual.document_id,
                     "version": manual.version,

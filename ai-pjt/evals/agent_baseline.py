@@ -434,7 +434,6 @@ async def _run_error_review_cases(
         try:
             manual, raw_items = await analyze_review_items({
                 "step_id": case["step_id"],
-                "review_trigger": "user_request",
                 "customer_info": {"current_form": deepcopy(case["current_form"])},
                 "field_registry": registry,
             })
@@ -467,7 +466,6 @@ async def _run_error_review_cases(
         try:
             manual, raw_items = await analyze_review_items({
                 "step_id": case["step_id"],
-                "review_trigger": "save",
                 "customer_info": {"current_form": deepcopy(case["current_form"])},
                 "field_registry": registry,
             })
@@ -750,7 +748,7 @@ async def build_baseline(
             "f08": {
                 "chart": chart,
                 "elicit": elicit,
-                "fallback_and_aggregation": {
+                "failure_responder_and_aggregation": {
                     "quality_disposition": "deterministic_contract_only",
                     "actual_model_calls": 0,
                 },

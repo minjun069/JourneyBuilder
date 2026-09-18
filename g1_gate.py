@@ -170,6 +170,10 @@ def check_step_and_chart_contracts() -> tuple[int, int]:
         raise GateFailure("step registry supported and transport fallback steps must be unique")
     if fallback_steps != {"general"}:
         raise GateFailure("general must be the explicit transport-only fallback step")
+    registered_agents = set(registry.get("agents", []))
+    fallback_agents = set(registry.get("transport_fallback_allowed_agents", []))
+    if fallback_agents != {"qa"} or not fallback_agents <= registered_agents:
+        raise GateFailure("general transport fallback must allow only registered qa")
 
     process_steps = (
         REPOSITORY_ROOT / "front-pjt/src/views/ai/data/processSteps.js"

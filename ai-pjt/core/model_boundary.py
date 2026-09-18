@@ -42,7 +42,7 @@ DATA_HANDLING_PROMPT = f"""\
 
 class ModelPurpose(str, Enum):
     PLANNER = "planner"
-    ROUTER = "router"
+    AGGREGATOR = "aggregator"
     QA = "qa"
     INPUT_ASSIST = "input_assist"
     ERROR_REVIEW = "error_review"
@@ -76,7 +76,7 @@ logger = logging.getLogger(__name__)
 
 _ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
     ModelPurpose.PLANNER: (),
-    ModelPurpose.ROUTER: (),
+    ModelPurpose.AGGREGATOR: (("response_blocks",),),
     ModelPurpose.QA: (("customer_info",), ("bound_inputs",), ("evidence",)),
     ModelPurpose.INPUT_ASSIST: (("customer_info",), ("bound_inputs",)),
     ModelPurpose.ERROR_REVIEW: (("current_form",),),
@@ -263,7 +263,7 @@ def secure_structured_invoke(
 
     The provider adapter owns JSON/tool-call parsing. Every returned value is
     validated again with Pydantic so markdown fences, explanatory prose,
-    missing fields, and invalid enum values never reach planner/router policy.
+    missing fields, and invalid enum values never reach planner or aggregation policy.
     Model calls are read-only, so retrying a transient or parsing failure once
     cannot duplicate a business side effect.
     """

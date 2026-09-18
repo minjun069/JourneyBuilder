@@ -104,7 +104,7 @@ def validate_form_update_contract(
         ))
     review = output.get("review")
     if review is not None:
-        issues.extend(_validate_error_review(review, expected_trigger=state.get("review_trigger")))
+        issues.extend(_validate_error_review(review))
     ui_action = output.get("ui_action")
     if ui_action is not None:
         issues.append(_issue(
@@ -118,18 +118,12 @@ def validate_form_update_contract(
     return OutputValidationResult(valid=True, output=output, issues=())
 
 
-def _validate_error_review(
-    review: Any,
-    *,
-    expected_trigger: Any = None,
-) -> list[ValidationIssue]:
-    if not isinstance(review, dict) or set(review) != {"type", "trigger", "manual", "items"}:
+def _validate_error_review(review: Any) -> list[ValidationIssue]:
+    if not isinstance(review, dict) or set(review) != {"type", "manual", "items"}:
         return [_issue("INVALID_REVIEW", "output.review", "review 계약이 올바르지 않습니다.")]
     issues: list[ValidationIssue] = []
-    if review.get("type") != "error_review" or review.get("trigger") not in {"save", "user_request"}:
-        issues.append(_issue("INVALID_REVIEW", "output.review", "review 종류 또는 trigger가 올바르지 않습니다."))
-    if expected_trigger is not None and review.get("trigger") != expected_trigger:
-        issues.append(_issue("REVIEW_TRIGGER_MISMATCH", "output.review.trigger", "review trigger가 요청과 일치하지 않습니다."))
+    if review.get("type") != "error_review":
+        issues.append(_issue("INVALID_REVIEW", "output.review", "review 종류가 올바르지 않습니다."))
     manual = review.get("manual")
     if (
         not isinstance(manual, dict)
