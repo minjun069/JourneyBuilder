@@ -118,7 +118,7 @@
     },
     {
       "path": "ai-pjt/evals/artifacts/f13-production-security-regression.json",
-      "sha256": "e7377387d286c17d9356d5a73c5309c164c960c201ad6cc77046b0b5a021ad66"
+      "sha256": "0652a83765c6590954c824829ed83dfe91dfe49025f22d14cb54bf54c02779af"
     },
     {
       "path": "contract-fixtures/financial-calculation/v1/policy.json",

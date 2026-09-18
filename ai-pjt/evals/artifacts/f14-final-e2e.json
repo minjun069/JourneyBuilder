@@ -100,7 +100,7 @@
   "source_artifacts": [
     {
       "path": "ai-pjt/evals/artifacts/f14-full-regression.json",
-      "sha256": "934e12d234eca11ee1bba15295abeed9ba5bc56d5448f703e5cb04adda427cdc"
+      "sha256": "fbea0fad702eef905ff1460b0bfce49e82afcdb4ce869ba821f1fa251919ab45"
     },
     {
       "path": "ai-pjt/evals/artifacts/f14-rollback-rehearsal.json",
