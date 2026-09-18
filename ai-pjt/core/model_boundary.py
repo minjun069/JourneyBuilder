@@ -28,16 +28,13 @@ from core.prompt_registry import (
 )
 
 
-prompt_policy_version = "1.1"
+from prompts.common import COMMON_PRINCIPLES, COMMON_PROMPT_POLICY_VERSION
+from prompts.rendering import render_prompt_payload
+
+
+prompt_policy_version = COMMON_PROMPT_POLICY_VERSION
 PROMPT_POLICY_VERSION = prompt_policy_version
-DATA_HANDLING_PROMPT = f"""\
-[공통 데이터 처리 정책 v{prompt_policy_version}]
-- 현재 작업에 필요한 최소 입력만 사용하고 다른 목적에 재사용하지 않습니다.
-- 이름·전화번호·이메일·계좌번호 등 직접 식별정보와 secret은 추론하거나 반복하지 않습니다.
-- 허용된 금융 입력은 해당 작업의 계산·설명에만 사용하고 새 값으로 바꾸지 않습니다.
-- `[[...]]` 형식의 참조 token은 철자와 구분을 바꾸지 않고 필요한 위치에 그대로 사용합니다.
-- 응답에 직접 식별정보나 secret을 포함하지 않습니다.
-"""
+DATA_HANDLING_PROMPT = COMMON_PRINCIPLES
 
 
 class ModelPurpose(str, Enum):
@@ -135,18 +132,11 @@ def secure_system_prompt(role_prompt: str) -> str:
 
 
 def prompt_messages(prompt: PromptSpec, payload: Mapping[str, Any]) -> list[Any]:
-    """Render a static System message and a schema-checked JSON Human payload."""
+    """Render a static System message and schema-checked readable sections."""
 
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    validated = prompt.validate_payload(payload)
-    human_content = json.dumps(
-        {"runtime_payload": validated},
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    human_content = render_prompt_payload(prompt, payload)
     return [
         SystemMessage(content=secure_system_prompt(prompt.system_text)),
         HumanMessage(content=human_content),
@@ -516,13 +506,13 @@ def _record_model_call(
             "prompt_policy_version": prompt_policy_version,
         }
         if prompt is not None:
-            from prompts.catalog import selected_prompt_release
+            from prompts.catalog import current_prompt_release
 
             prompt_metadata.update({
                 "prompt_id": prompt.prompt_id,
                 "prompt_version": prompt.version,
                 "prompt_hash": prompt.content_hash,
-                "prompt_release": selected_prompt_release(),
+                "prompt_release": current_prompt_release(),
             })
         recorder(
             purpose=purpose.value,
@@ -599,13 +589,13 @@ def _emit_prompt_invocation(
         # The model recorder already emits content and prompt metadata together.
         return
     from core.config import settings
-    from prompts.catalog import selected_prompt_release
+    from prompts.catalog import current_prompt_release
 
     record = PromptInvocationRecord(
         prompt_id=prompt.prompt_id,
         prompt_version=prompt.version,
         prompt_hash=prompt.content_hash,
-        prompt_release=selected_prompt_release(),
+        prompt_release=current_prompt_release(),
         prompt_policy_version=prompt_policy_version,
         purpose=purpose.value,
         model_provider=settings.llm_provider,

@@ -605,11 +605,7 @@ async def compose_aggregate_response(
     blocks = [block.strip() for block in response.split("\n\n") if block.strip()]
     if len(blocks) < 2:
         return deepcopy(dict(output))
-    try:
-        prompt = get_prompt("aggregator.compose")
-    except KeyError:
-        # Previous prompt releases intentionally retain deterministic joining.
-        return deepcopy(dict(output))
+    prompt = get_prompt("aggregator.compose")
 
     from core.llm import llm
 

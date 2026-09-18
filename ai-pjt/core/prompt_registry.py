@@ -104,7 +104,7 @@ def emit_prompt_invocation(record: PromptInvocationRecord) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class PromptSpec:
-    """One immutable prompt contract in a versioned release bundle."""
+    """One immutable prompt contract in the current deployment image."""
 
     prompt_id: str
     version: str
@@ -115,6 +115,7 @@ class PromptSpec:
     output_schema: str | None = None
     owner: str = "ai-team"
     risk: str = "standard"
+    input_sections: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -139,6 +140,21 @@ class PromptSpec:
             or _SAFE_ID.fullmatch(self.output_schema) is None
         ):
             raise ValueError("output_schema must be a safe machine identifier")
+        section_keys: list[str] = []
+        for section in self.input_sections:
+            if (
+                not isinstance(section, tuple)
+                or len(section) != 2
+                or not isinstance(section[0], str)
+                or not isinstance(section[1], str)
+                or not section[1].strip()
+            ):
+                raise ValueError("input_sections must contain key/label string pairs")
+            section_keys.append(section[0])
+        if len(section_keys) != len(set(section_keys)):
+            raise ValueError("input_sections must not repeat payload keys")
+        if set(section_keys) != self.required_input_keys | self.optional_input_keys:
+            raise ValueError("input_sections must cover every prompt payload key exactly")
 
     @property
     def content_hash(self) -> str:
@@ -190,6 +206,10 @@ def prompt_manifest(
                 "output_schema": prompt.output_schema,
                 "owner": prompt.owner,
                 "risk": prompt.risk,
+                "input_sections": [
+                    {"key": key, "label": label}
+                    for key, label in prompt.input_sections
+                ],
             }
             for prompt in sorted(prompts.values(), key=lambda item: item.prompt_id)
         ],

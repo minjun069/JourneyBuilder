@@ -120,12 +120,12 @@ PYTHONPATH=. python -m evals.agent_baseline \
   --output evals/artifacts/f07-f08-production-model-baseline.json
 ```
 
-## Prompt release candidate gate
+## Prompt image candidate gate
 
-`agent_baseline.py` 결과의 `runtime`에는 실행한 prompt release, registry manifest와
-model provider·name·temperature가 포함된다. 실제 모델·보안·Planner 계약 평가 결과를 아래
-정규화된 비교 artifact로 모은 뒤, 같은 corpus와 model 설정으로 실행한
-current/previous release를 다음 명령으로 판정한다.
+`agent_baseline.py` 결과의 `runtime`에는 배포 이미지에 고정된 prompt release ID,
+현재 registry manifest와 model provider·name·temperature가 포함된다. 실제 모델·보안·
+Planner 계약 평가 결과를 아래 정규화된 비교 artifact로 모은 뒤, 같은 corpus와 model
+설정으로 실행한 baseline/candidate 이미지를 다음 명령으로 판정한다.
 
 ```json
 {
@@ -156,5 +156,5 @@ PYTHONPATH=. python evals/prompt_release_gate.py \
 두 artifact의 release는 서로 달라야 하며 manifest가 빠지면 실패한다. 보안 차단은
 100%, Planner 계약 통과율은 95% 이상이어야 하고 grounded answer는 2%p 초과 하락할 수 없다.
 form field/value exact match와 false positive는 악화되면 안 되며, provider call budget은
-baseline보다 최대 1회 또는 25% 중 큰 값까지만 허용한다. 실패한 candidate는 활성
-`PROMPT_RELEASE`로 승격하지 않는다.
+baseline보다 최대 1회 또는 25% 중 큰 값까지만 허용한다. 실패한 candidate는 현재
+prompt manifest를 포함한 새 배포 이미지로 승격하지 않는다.

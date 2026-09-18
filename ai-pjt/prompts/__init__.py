@@ -1,18 +1,16 @@
-"""Approved production prompt release registry."""
+"""Approved current-image prompt registry."""
 
 from prompts.catalog import (
-    ACTIVE_PROMPT_RELEASE,
-    PREVIOUS_PROMPT_RELEASE,
-    SUPPORTED_PROMPT_RELEASES,
+    PROMPT_RELEASE,
+    current_prompt_release,
     get_prompt,
     get_prompt_manifest,
     prompt_ids,
 )
 
 __all__ = (
-    "ACTIVE_PROMPT_RELEASE",
-    "PREVIOUS_PROMPT_RELEASE",
-    "SUPPORTED_PROMPT_RELEASES",
+    "PROMPT_RELEASE",
+    "current_prompt_release",
     "get_prompt",
     "get_prompt_manifest",
     "prompt_ids",

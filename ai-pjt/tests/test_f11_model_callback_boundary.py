@@ -81,9 +81,9 @@ class ModelBoundaryTests(unittest.TestCase):
         settings.masking_pseudonym_key = self.previous_key
 
     def test_common_prompt_has_explicit_version(self) -> None:
-        self.assertEqual(prompt_policy_version, "1.1")
-        self.assertIn("v1.1", DATA_HANDLING_PROMPT)
-        self.assertIn("참조 token", DATA_HANDLING_PROMPT)
+        self.assertEqual(prompt_policy_version, "2.0")
+        self.assertIn("[원칙]", DATA_HANDLING_PROMPT)
+        self.assertIn("분석 대상", DATA_HANDLING_PROMPT)
 
     def test_registered_prompt_keeps_runtime_payload_out_of_system_message(self) -> None:
         prompt = get_prompt("qa.specify")
@@ -113,9 +113,9 @@ class ModelBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0].prompt_id, "qa.specify")
-        self.assertEqual(records[0].prompt_version, "2.0.0")
+        self.assertEqual(records[0].prompt_version, "3.0.0")
         self.assertEqual(len(records[0].prompt_hash), 64)
-        self.assertEqual(records[0].prompt_policy_version, "1.1")
+        self.assertEqual(records[0].prompt_policy_version, "2.0")
 
     def test_combined_recorders_emit_one_content_and_metadata_event(self) -> None:
         prompt = get_prompt("qa.specify")
@@ -142,10 +142,10 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(prompt_events, [])
         event = model_events[0]
         self.assertEqual(event["prompt_id"], "qa.specify")
-        self.assertEqual(event["prompt_version"], "2.0.0")
+        self.assertEqual(event["prompt_version"], "3.0.0")
         self.assertEqual(len(event["prompt_hash"]), 64)
         self.assertTrue(event["prompt_release"])
-        self.assertEqual(event["prompt_policy_version"], "1.1")
+        self.assertEqual(event["prompt_policy_version"], "2.0")
         self.assertEqual(event["input"][0]["role"], "system")
         self.assertEqual(
             event["output"],

@@ -46,7 +46,7 @@ uv pip compile \
 | 현재 필수 | `GOOGLE_API_KEY` | Compose가 고정한 Gemini embedding과 기본 Gemini LLM에 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
 | 모델 선택 | `LLM_PROVIDER`, `LLM_MODEL`, `LLM_TEMPERATURE` | provider·model과 재현 가능한 0~1 temperature. 기본 temperature는 `0` |
-| prompt release | `PROMPT_RELEASE` | AI 이미지에 함께 포함된 활성/직전 prompt release 중 하나. 미지원 값은 startup에서 거부 |
+| prompt identity | 이미지 `APP_RELEASE`와 prompt manifest | 이미지는 현재 prompt만 포함하며 과거 prompt는 Git commit과 이전 배포 이미지로 추적·복구 |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/api/ai/v2/chat/stream` request bearer로 사용 |
 | startup 필수 | `AI_MASKING_PSEUDONYM_KEY` | 서비스 token과 다른 32바이트 이상 가명화 secret |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
