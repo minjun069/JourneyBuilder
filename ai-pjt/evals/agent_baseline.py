@@ -724,7 +724,7 @@ async def build_baseline(
             "llm_model": settings.llm_model,
             "llm_temperature": settings.llm_temperature,
             "prompt_release": settings.prompt_release,
-            "prompt_manifest": get_prompt_manifest(release=settings.prompt_release),
+            "prompt_manifest": get_prompt_manifest(),
             "embedding_provider": settings.embedding_provider,
             "embedding_model": settings.embedding_model,
             "rag_min_dense_score": settings.rag_min_dense_score,
