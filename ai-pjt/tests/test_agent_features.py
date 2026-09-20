@@ -116,7 +116,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
                         "phase": "before",
                         "items": [{"id": 501, "name": name, "amount": None}],
                     }]},
-                    bound_inputs=reference,
+                    bindings=reference,
                     user_requested_change=True,
                     today=date(2026, 9, 12),
                 )
@@ -169,13 +169,13 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
             {"current_form": form(amount=1)},
             {"current_form": {"goal_periods": []}},
             {"current_form": {"goal_periods": form()["goal_periods"] * 2}},
-            {"bound_inputs": {**reference, "unit": "USD"}},
+            {"bindings": {**reference, "unit": "USD"}},
         )
         defaults = {
             "step_id": "financial-goals",
             "message": "전국 가구 평균으로 이 기존 항목을 채워줘",
             "current_form": form(),
-            "bound_inputs": reference,
+            "bindings": reference,
             "user_requested_change": True,
             "today": date(2026, 9, 12),
         }
@@ -193,7 +193,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
             effective_on=date(2026, 9, 12),
         )
         with self.assertRaises(ReferenceTargetNotAllowed):
-            build_bound_reference_proposals(**{**defaults, "bound_inputs": old_reference})
+            build_bound_reference_proposals(**{**defaults, "bindings": old_reference})
 
     def test_expired_benchmark_and_inconsistent_age_range_fail_closed(self) -> None:
         configure_runtime()
@@ -322,7 +322,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
             "message": "연금 제도를 설명해줘",
             "step_id": "pension",
             "customer_info": {},
-            "bound_inputs": {},
+            "task_input": {"description": "연금 설명", "bindings": {}},
             "current_query": "연금 제도 승인 근거",
             "current_context": "",
             "need_retrieval": True,
@@ -362,7 +362,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
             specified = await qa._specify({
                 "step_id": "financial-mindset",
                 "message": message,
-                "bound_inputs": {},
+                "task_input": {"description": message, "bindings": {}},
             })
 
         self.assertEqual(
@@ -381,7 +381,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
             "message": "안정 추구가 정확히 뭐야?",
             "current_query": "안정 추구 정의",
             "customer_info": {},
-            "bound_inputs": {},
+            "task_input": {"description": "용어 설명", "bindings": {}},
             "current_context": "",
             "current_answer": "",
             "need_retrieval": True,
@@ -462,7 +462,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
                 "step_id": "financial-mindset",
                 "current_query": "안정 추구 정의",
                 "customer_info": {},
-                "bound_inputs": {},
+                "task_input": {"description": "용어 설명", "bindings": {}},
             })
 
         self.assertEqual(decision, {"need_retrieval": True})
@@ -482,8 +482,11 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
                 "step_id": "basic-info",
                 "current_query": "연금저축 공식 한도",
                 "customer_info": {},
-                "bound_inputs": {
-                    "retirement_gap": {"value": 100_000, "unit": "KRW"},
+                "task_input": {
+                    "description": "공식 한도",
+                    "bindings": {
+                        "retirement_gap": {"value": 100_000, "unit": "KRW"},
+                    },
                 },
             })
 
@@ -496,7 +499,10 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
         base = {
             "message": "기준의 의미를 설명해줘",
-            "bound_inputs": {"value": 100, "unit": "KRW", "source_id": "approved"},
+            "task_input": {
+                "description": "기준 의미",
+                "bindings": {"value": 100, "unit": "KRW", "source_id": "approved"},
+            },
             "current_answer": "답변",
             "current_context": "cached-context",
             "current_query": "원래 검색어",
@@ -557,123 +563,27 @@ class ChartAndFailureResponderTests(unittest.IsolatedAsyncioTestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class ElicitStateTests(unittest.IsolatedAsyncioTestCase):
-    def state(self, request_id: str, message: str, **extra) -> dict:
-        return {
-            "request_id": request_id,
-            "message": message,
-            "step_id": "financial-mindset",
-            "customer_info": {"saved_data": {}, "current_form": {}},
-            "context_scope": {
-                "schema_version": "1.0",
-                "session_id": 12,
-                "thread_id": "user-3-session-12",
-            },
-            **extra,
-        }
-
-    @staticmethod
-    def routing(field: str, turn_kind: str) -> dict:
-        return {
-            "is_related": True,
-            "field": field,
-            "turn_kind": turn_kind,
-            "confidence_sufficient": True,
-        }
-
-    async def test_field_context_confirmation_creates_deterministic_capture(self) -> None:
+    async def test_plain_agent_answers_from_conversation_context(self) -> None:
         configure_runtime()
         from agents import elicit
+        from langchain_core.messages import AIMessage
 
-        started = await elicit._run(self.state(
-            "turn-start",
-            "가치관부터 질문해 줘",
-            elicit_routing=self.routing("values", "new"),
-        ))
-        values = started["elicit_contexts"]["contexts"]["values"]
-        self.assertEqual(values["status"], "open")
-        self.assertEqual(started["output"]["response"].count("?"), 1)
-        next_field = await elicit._run(self.state(
-            "turn-next-field",
-            "과거 경험도 질문해 줘",
-            elicit_routing=self.routing("past_experience", "new"),
-            elicit_contexts=started["elicit_contexts"],
-        ))
-        self.assertNotIn(
-            "재무계획에 담을 고객님의 기준",
-            next_field["output"]["response"],
+        context = {"summary": {"text": "안정적인 생활을 중요하게 생각한다."}}
+        model = SimpleNamespace(
+            ainvoke=AsyncMock(return_value=AIMessage(content="그 기준을 이어서 살펴볼게요."))
         )
+        with patch.object(elicit, "llm", model):
+            result = await elicit._run({
+                "request_id": "turn-chat",
+                "message": "앞서 말한 기준으로 이야기해 줘.",
+                "step_id": "financial-mindset",
+                "customer_info": {"saved_data": {}, "current_form": {}},
+                "conversation_context": context,
+            })
 
-        analysis = SimpleNamespace(ainvoke=AsyncMock(return_value=elicit.ElicitAnalysis(
-            response_class="substantive",
-            captured_text="안정적인 생활을 우선한다",
-        )))
-        with patch.object(elicit, "_analysis_chain", analysis):
-            pending = await elicit._run(self.state(
-                "turn-answer",
-                "안정적인 생활이 제일 중요해요",
-                elicit_routing=self.routing("values", "answer"),
-                elicit_contexts=started["elicit_contexts"],
-            ))
-        values = pending["elicit_contexts"]["contexts"]["values"]
-        self.assertEqual(values["status"], "awaiting_confirmation")
-        self.assertIn("가치관 항목", pending["output"]["response"])
-        self.assertNotIn("elicit_capture", pending["output"])
-        rejected = await elicit._run(self.state(
-            "turn-reject",
-            "아니요",
-            elicit_routing=self.routing("values", "confirmation"),
-            elicit_contexts=pending["elicit_contexts"],
-        ))
-        self.assertEqual(
-            rejected["elicit_contexts"]["contexts"]["values"]["source_turns"],
-            [],
-        )
-
-        confirmed = await elicit._run(self.state(
-            "turn-confirm",
-            "네",
-            elicit_routing=self.routing("values", "confirmation"),
-            elicit_contexts=pending["elicit_contexts"],
-        ))
-        capture = confirmed["output"]["elicit_capture"]["changes"][0]
-        self.assertEqual(capture["path"], "values")
-        self.assertEqual(capture["value"], "안정적인 생활을 우선한다")
-        self.assertEqual(
-            capture["source_turn_ids"],
-            ["turn-answer", "turn-confirm"],
-        )
-        contexts = confirmed["elicit_contexts"]["contexts"]
-        self.assertEqual(contexts["values"]["status"], "completed")
-        self.assertEqual(contexts["past_experience"]["status"], "unstarted")
-        self.assertNotIn("phase", confirmed["elicit_contexts"])
-
-    async def test_corrupted_field_context_is_rejected(self) -> None:
-        configure_runtime()
-        from agents import elicit
-
-        started = await elicit._run(self.state(
-            "turn-start",
-            "가치관부터 질문해 줘",
-            elicit_routing=self.routing("values", "new"),
-        ))
-        corrupted = {
-            **started["elicit_contexts"],
-            "scope": {"session_id": 999, "thread_id": "other", "step_id": "financial-mindset"},
-        }
-        with self.assertRaises(ValueError):
-            await elicit._run(self.state(
-                "turn-answer",
-                "안정이 중요해요",
-                elicit_routing=self.routing("values", "answer"),
-                elicit_contexts=corrupted,
-            ))
-
-    async def test_agent_requires_planner_routing(self) -> None:
-        configure_runtime()
-        from agents import elicit
-
-        with self.assertRaises(ValueError):
-            await elicit._run(self.state("turn-chat", "질문을 시작해줘"))
+        self.assertEqual(result["output"]["response"], "그 기준을 이어서 살펴볼게요.")
+        self.assertIsNone(result["output"]["action"])
+        self.assertNotIn("elicit_capture", result["output"])
 
 
 if __name__ == "__main__":

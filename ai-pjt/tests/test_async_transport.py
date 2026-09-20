@@ -36,7 +36,6 @@ def make_request(**changes) -> ChatV2Request:
         "message": "월급은 세후 300만 원이에요.",
         "deadline_at": datetime.now(timezone.utc) + timedelta(seconds=60),
         "customer_info": {"saved_data": {}, "current_form": {}},
-        "field_registry": [],
         "chart_payload": None,
     }
     payload.update(changes)
@@ -44,20 +43,17 @@ def make_request(**changes) -> ChatV2Request:
 
 
 class ExecutionBudgetTests(IsolatedAsyncioTestCase):
-    def test_budget_uses_one_outer_deadline_and_three_task_limit(self):
+    def test_budget_tracks_only_the_outer_deadline(self):
         deadline = datetime.now(timezone.utc) + timedelta(seconds=30)
         budget = ExecutionBudget(
             deadline_at=deadline,
             started_at_monotonic=0,
         )
 
-        for _ in range(3):
-            budget = budget.consume_task()
-
         self.assertEqual(budget.deadline_at, deadline)
-        self.assertEqual(budget.tasks_used, 3)
-        with self.assertRaises(RuntimeError):
-            budget.consume_task()
+        self.assertGreater(budget.remaining_seconds(), 0)
+        self.assertFalse(hasattr(budget, "tasks_used"))
+        self.assertFalse(hasattr(budget, "tool_calls_used"))
 
 
 class ServiceAuthorizationTests(IsolatedAsyncioTestCase):
@@ -323,9 +319,10 @@ class AsyncChatTransportTests(IsolatedAsyncioTestCase):
         self.assertEqual(checkpoint.terminal_payload, terminal)
         self.assertEqual(callback.send.await_args.args[0], terminal)
         self.assertEqual(
-            callback.send.await_args.kwargs["context"].plan_id,
-            f"plan-{request.request_id}",
+            callback.send.await_args.kwargs["context"].request_id,
+            request.request_id,
         )
+        self.assertFalse(hasattr(callback.send.await_args.kwargs["context"], "plan_id"))
         validation_events = [
             event
             for event in sink.baseline_events

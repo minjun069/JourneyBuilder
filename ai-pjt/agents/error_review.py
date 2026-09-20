@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from agents.error_review_confidence import confidence_level, visible_review_items
 from agents.error_review_manuals import load_error_review_manual
 from core.llm import llm
+from core.field_registry import load_field_registry
 from core.model_boundary import (
     ModelPurpose,
     prompt_messages,
@@ -50,7 +51,7 @@ async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, An
     manual = load_error_review_manual(state["step_id"])
     current_form = state.get("customer_info", {}).get("current_form", {})
     registry = [
-        field for field in state.get("field_registry", [])
+        field for field in load_field_registry(state["step_id"])
         if isinstance(field, dict) and field.get("step_id") == state["step_id"]
         and field.get("sensitivity") != "operational"
     ]
@@ -175,7 +176,6 @@ def _validated_item(
                 change[key] = item[key]
         validation = validate_form_update_contract({
             "step_id": step_id,
-            "field_registry": field_registry,
             "output": {
                 "response": "후보 검증",
                 "step_id": step_id,

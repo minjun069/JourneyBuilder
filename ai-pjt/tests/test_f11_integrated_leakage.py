@@ -38,19 +38,7 @@ from transport.runtime import (
 
 
 TEST_KEY = b"f11-t04-integrated-leakage-key-32bytes"
-STEP_ID = "financial-goals"
-FIELD_REGISTRY = [{
-    "step_id": STEP_ID,
-    "section": "financial_goals",
-    "path": "monthly_target_expense",
-    "value_type": "integer",
-    "unit": "KRW",
-    "constraints": {"min": 0, "period": "month"},
-    "cardinality": "single",
-    "writable_by_ai": True,
-    "nullable": False,
-    "operations": ["set", "update"],
-}]
+STEP_ID = "basic-info"
 
 TASK_AGENT = {
     "answer_question": "qa",
@@ -58,7 +46,6 @@ TASK_AGENT = {
     "review_validation_error": "error_review",
     "interpret_chart": "chart_interpret",
     "collect_qualitative_info": "elicit",
-    "answer_dashboard_metric": "qa",
 }
 TASK_MODEL_PURPOSE = {
     "answer_question": ModelPurpose.QA,
@@ -66,7 +53,6 @@ TASK_MODEL_PURPOSE = {
     "review_validation_error": ModelPurpose.ERROR_REVIEW,
     "interpret_chart": ModelPurpose.CHART_INTERPRET,
     "collect_qualitative_info": ModelPurpose.ELICIT,
-    "answer_dashboard_metric": ModelPurpose.QA,
 }
 
 
@@ -108,8 +94,6 @@ def _task(task_type: str) -> dict:
             "period": "annual",
             "population": "retirewise_kr_households",
         }
-    if task_type == "lookup_retirement_gap":
-        task["arguments"] = {"metric_id": "retirement_gap"}
     return task
 
 
@@ -122,8 +106,8 @@ def _completed_result(task_type: str, task_id: str) -> dict:
             "user_requested": False,
             "confidence": 0.9,
             "changes": [{
-                "section": "financial_goals",
-                "path": "monthly_target_expense",
+                "section": "basic_info",
+                "path": "monthly_income",
                 "operation": "set",
                 "value": 3_000_000,
                 "unit": "KRW",
@@ -146,20 +130,6 @@ def _completed_result(task_type: str, task_id: str) -> dict:
             "source_version": "1.0.0",
             "as_of": "2026-09-11",
             "calculation_policy_version": "2026-09-07.v1",
-        }
-    elif artifact_type == "dashboard_metric":
-        artifact = {
-            "type": "dashboard_metric",
-            "schema_version": "1.0",
-            "producer_task_id": task_id,
-            "availability": "ready",
-            "metric_id": "retirement_gap",
-            "value": 248_600_000,
-            "unit": "KRW",
-            "report_id": 17,
-            "report_version": 3,
-            "calculation_policy_version": "2026-09-07.v1",
-            "generated_at": "2026-09-11T00:00:00Z",
         }
     else:
         artifact = {"type": "text_response", "text": "안전한 응답"}
@@ -189,7 +159,6 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
         expected_types = set(TASK_TYPE_CONTRACTS)
         self.assertEqual(set(TASK_AGENT) | {
             "lookup_reference_value",
-            "lookup_retirement_gap",
         }, expected_types)
 
         downstream = FakeSerializedInstrumentationSink()
@@ -228,13 +197,9 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             task = _task(task_type)
             executor_name = str(task["route"]["executor"])
             report = await execute_route_plan(
-                plan={
-                    "plan_id": f"plan-{task_type}",
-                    "tasks": [task],
-                },
+                plan={"tasks": [task]},
                 step_id=STEP_ID,
                 customer_info={"current_form": _sentinel_fields()},
-                field_registry=FIELD_REGISTRY,
                 agent_executors=(
                     {executor_name: agent_executor}
                     if task["executor_kind"] == "agent"
@@ -249,7 +214,6 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
                 instrumentation=adapter.bind(
                     request_id="P13-REQUEST-RAW-0001",
                     thread_id=f"thread-{task_type}",
-                    plan_id=f"plan-{task_type}",
                     step_id=STEP_ID,
                 ),
             )
@@ -300,7 +264,7 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
         self.assertEqual(
             observed_executors,
             set(TASK_AGENT.values())
-            | {"lookup_reference_value", "get_dashboard_metric"},
+            | {"lookup_reference_value"},
         )
 
     async def test_failed_and_blocked_tasks_export_only_masked_metadata(self):
@@ -315,7 +279,6 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             raise RuntimeError(_sentinel_text())
 
         plan = {
-            "plan_id": "plan-failure-sentinel",
             "tasks": [
                 {
                     **_task("answer_question"),
@@ -344,14 +307,12 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             plan=plan,
             step_id=STEP_ID,
             customer_info={"current_form": _sentinel_fields()},
-            field_registry=FIELD_REGISTRY,
             agent_executors={"qa": fail},
             tool_executors={},
             request_id="P13-REQUEST-RAW-0001",
             instrumentation=adapter.bind(
                 request_id="P13-REQUEST-RAW-0001",
                 thread_id="thread-failure",
-                plan_id="plan-failure-sentinel",
                 step_id=STEP_ID,
             ),
         )
@@ -390,7 +351,6 @@ class SerializedBoundaryTests(TestCase):
             observed = adapter.bind(
                 request_id="P13-REQUEST-RAW-0001",
                 thread_id="P13-THREAD-RAW-0001",
-                plan_id="P13-PLAN-RAW-0001",
                 step_id=STEP_ID,
             )
             span = observed.start(RuntimeStage.PLANNER)
@@ -420,7 +380,6 @@ class SerializedBoundaryTests(TestCase):
             observed = adapter.bind(
                 request_id="P13-REQUEST-RAW-0001",
                 thread_id="P13-THREAD-RAW-0001",
-                plan_id="P13-PLAN-RAW-0001",
                 step_id=STEP_ID,
             )
             span = observed.start(RuntimeStage.AGGREGATION)
@@ -463,7 +422,6 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
             observed = instrumentation.bind(
                 request_id=request.request_id,
                 thread_id=request.thread_id,
-                plan_id=f"plan-{request.request_id}",
                 step_id=request.step_id,
             )
             span = observed.start(RuntimeStage.AGGREGATION)
@@ -479,8 +437,8 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                     "user_requested": False,
                     "confidence": 0.9,
                     "changes": [{
-                        "section": "financial_goals",
-                        "path": "monthly_target_expense",
+                        "section": "basic_info",
+                        "path": "monthly_income",
                         "operation": "set",
                         "value": 3_000_000,
                         "unit": "KRW",
@@ -627,8 +585,11 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                 self.terminal = terminal
                 return terminal
 
-            def state_channels(self, scope, _context, _retrieved_memories=()):
-                return {"context_scope": {"session_id": scope.session_id}}
+            def state_channels(self, _scope, context, retrieved_memories=()):
+                return {
+                    "conversation_context": context,
+                    "retrieved_memories": list(retrieved_memories),
+                }
 
             def config_for(self, scope, _request_id):
                 return {"configurable": {"thread_id": scope.thread_id}}
@@ -693,7 +654,6 @@ def _request(request_id: str) -> ChatV2Request:
             "saved_data": {},
             "current_form": _sentinel_fields(),
         },
-        "field_registry": FIELD_REGISTRY,
         "chart_payload": None,
     })
 

@@ -334,7 +334,6 @@ class ContextStateAPI:
         retrieved_memories: tuple[RetrievedMemory, ...] = (),
     ) -> dict[str, Any]:
         return {
-            "context_scope": scope.to_state(),
             "conversation_context": context.to_state(),
             "retrieved_memories": [memory.to_state() for memory in retrieved_memories],
         }

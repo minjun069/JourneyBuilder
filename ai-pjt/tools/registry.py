@@ -244,7 +244,6 @@ class FunctionToolRegistry:
             return
         context.audit_sink(ToolAuditEvent(
             request_id=context.request_id,
-            plan_id=context.plan_id,
             task_id=context.task_id,
             step_id=context.step_id,
             task_type=context.task_type,

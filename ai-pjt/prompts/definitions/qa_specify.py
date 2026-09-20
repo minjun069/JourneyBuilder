@@ -24,7 +24,7 @@ queries 필드에 정리한 질문 문자열 배열만 반환합니다.""",
     (
         ("message", "사용자 질문"),
         ("step_id", "현재 화면"),
-        ("bound_inputs", "확인된 선행 결과"),
+        ("bindings", "확인된 선행 결과"),
     ),
     output_schema="specify_result",
 )

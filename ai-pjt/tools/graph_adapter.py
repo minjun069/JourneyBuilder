@@ -14,7 +14,6 @@ from .runtime import FunctionToolRuntime, RuntimeToolRequest
 
 
 REFERENCE_CAPABILITY = "lookup_reference_value"
-DASHBOARD_CAPABILITY = "get_dashboard_metric"
 
 
 def build_graph_tool_executors(
@@ -22,7 +21,6 @@ def build_graph_tool_executors(
 ) -> dict[str, RuntimeExecutor]:
     return {
         REFERENCE_CAPABILITY: _reference_executor(runtime),
-        DASHBOARD_CAPABILITY: _dashboard_metric_executor(runtime),
     }
 
 
@@ -61,41 +59,6 @@ def _reference_executor(runtime: FunctionToolRuntime) -> RuntimeExecutor:
                 "schema_version": TOOL_ARTIFACT_SCHEMA_VERSION,
                 "producer_task_id": task_id,
                 **deepcopy(dict(reference)),
-            },
-        }
-
-    return execute
-
-
-def _dashboard_metric_executor(runtime: FunctionToolRuntime) -> RuntimeExecutor:
-    async def execute(payload: dict[str, Any]) -> Mapping[str, Any]:
-        task = payload.get("task")
-        if not isinstance(task, Mapping) or task.get("type") != "lookup_retirement_gap":
-            return failed_task_result("task-unknown", "invalid_tool_task")
-        task_id = str(task.get("id", "task-unknown"))
-        if task.get("arguments") != {"metric_id": "retirement_gap"}:
-            return failed_task_result(task_id, "invalid_tool_arguments")
-        result = await runtime.invoke(
-            RuntimeToolRequest(
-                tool_name=str(task.get("tool_name")),
-                arguments={"metric_id": "retirement_gap"},
-                agent=str(task.get("authorized_agent")),
-            ),
-            payload,
-        )
-        if not result.ok:
-            return _tool_failure(task_id, result)
-        metric = result.data.get("metric") if result.data else None
-        if not isinstance(metric, Mapping):
-            return failed_task_result(task_id, "invalid_tool_result")
-        return {
-            "task_id": task_id,
-            "status": "completed",
-            "artifact": {
-                "type": "dashboard_metric",
-                "schema_version": TOOL_ARTIFACT_SCHEMA_VERSION,
-                "producer_task_id": task_id,
-                **deepcopy(dict(metric)),
             },
         }
 

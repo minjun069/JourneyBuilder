@@ -34,7 +34,7 @@ PROMPT = define_prompt(
         ("question", "사용자 질문"),
         ("step_id", "현재 화면"),
         ("customer_info", "현재 유효한 사용자 정보"),
-        ("bound_inputs", "확인된 선행 결과"),
+        ("bindings", "확인된 선행 결과"),
         ("evidence", "승인된 참고자료"),
         ("retry_hint", "보완할 점"),
     ),

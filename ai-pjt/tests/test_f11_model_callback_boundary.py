@@ -90,7 +90,7 @@ class ModelBoundaryTests(unittest.TestCase):
         messages = prompt_messages(prompt, {
             "step_id": "basic-info",
             "message": "사용자 런타임 입력",
-            "bound_inputs": {},
+            "bindings": {},
         })
 
         self.assertNotIn("사용자 런타임 입력", messages[0].content)
@@ -105,7 +105,7 @@ class ModelBoundaryTests(unittest.TestCase):
                 prompt_messages(prompt, {
                     "step_id": "basic-info",
                     "message": "질문",
-                    "bound_inputs": {},
+                    "bindings": {},
                 }),
                 purpose=ModelPurpose.QA,
                 prompt=prompt,
@@ -131,7 +131,7 @@ class ModelBoundaryTests(unittest.TestCase):
                     prompt_messages(prompt, {
                         "step_id": "basic-info",
                         "message": "질문",
-                        "bound_inputs": {},
+                        "bindings": {},
                     }),
                     purpose=ModelPurpose.QA,
                     operation_name="qa.specify",
@@ -525,7 +525,7 @@ class ProductionModelCallAuditTests(unittest.TestCase):
             },
             "agents/error_review.py": {"REVIEW_PROMPT"},
             "agents/chart_interpret.py": {"CHART_PROMPT"},
-            "agents/elicit.py": {"ANALYZE_PROMPT"},
+            "agents/elicit.py": {"RESPOND_PROMPT"},
             "core/context_summary.py": {"SUMMARY_PROMPT"},
         }
         for relative, required_names in expected.items():

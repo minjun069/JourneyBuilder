@@ -22,7 +22,7 @@ PROMPT = define_prompt(
     (
         ("question", "사용자 질문"),
         ("partial_answers", "검증된 부분 답변"),
-        ("bound_inputs", "확인된 선행 결과"),
+        ("bindings", "확인된 선행 결과"),
     ),
     advisor=True,
     risk="financial_explanation",

@@ -27,7 +27,6 @@ def bound_fake_instrumentation(
     *,
     request_id: str = "request-test",
     thread_id: str = "thread-test",
-    plan_id: str = "plan-unknown",
     step_id: str = "step-test",
 ) -> tuple[BoundRuntimeInstrumentation, FakeInstrumentationSink]:
     adapter, sink = fake_instrumentation()
@@ -35,7 +34,6 @@ def bound_fake_instrumentation(
         adapter.bind(
             request_id=request_id,
             thread_id=thread_id,
-            plan_id=plan_id,
             step_id=step_id,
         ),
         sink,

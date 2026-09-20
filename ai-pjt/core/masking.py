@@ -195,7 +195,6 @@ _OPERATIONAL_FIELD_NAMESPACES = {
     "item_id": "item",
     "parent_client_item_id": "item",
     "parent_item_id": "item",
-    "plan_id": "plan",
     "producer_task_id": "task",
     "proposal_id": "proposal",
     "request_id": "request",
@@ -215,13 +214,12 @@ _SENSITIVE_CONTAINERS = frozenset(
     {
         "arguments",
         "assumptions",
-        "bound_inputs",
+        "bindings",
         "chart_payload",
         "current_form",
         "customer_info",
         "metrics",
         "saved_data",
-        "tool_context",
     }
 )
 _FREE_TEXT_FIELDS = frozenset(
@@ -714,7 +712,7 @@ class _PayloadMasker:
             return True
         if {"section", "path", "operation"}.issubset(parent):
             return True
-        return "bound_inputs" in path
+        return "bindings" in path
 
     def _pseudonymize(self, value: Any, namespace: str) -> str:
         if value is None or isinstance(value, bool) or not isinstance(

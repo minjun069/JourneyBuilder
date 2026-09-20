@@ -74,7 +74,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
             "stage": "planner",
             "status": "started",
             "input": {"message": "은퇴 준비를 알려줘"},
@@ -107,7 +106,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertEqual(
             root_args["metadata"],
             {
-                "plan_id": "plan_maskedvalue0001",
                 "request_id": "request_maskedvalue0001",
                 "thread_id": "thread_maskedvalue0001",
             },
@@ -197,7 +195,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
             "stage": "request_processing",
         }
         exporter.emit({**request_event, "status": "started"})
@@ -239,7 +236,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
         }
 
         exporter.emit({
@@ -406,7 +402,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             trace_id="trace_contenttrace001",
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             occurred_at_epoch_ms=1,
             stage=RuntimeStage.PLANNER,
             status=RuntimeStatus.STARTED,
@@ -435,7 +430,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         observed = adapter.bind(
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             step_id="basic-info",
         )
 
@@ -495,7 +489,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
             "stage": "planner",
             "status": "started",
         })
@@ -525,7 +518,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
             "stage": "planner",
             "status": "started",
         })
@@ -653,7 +645,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         observed = adapter.bind(
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             step_id="basic-info",
         )
 
@@ -666,7 +657,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             rendered = repr(args)
             self.assertNotIn("request-raw-0001", rendered)
             self.assertNotIn("thread-raw-0001", rendered)
-            self.assertNotIn("plan-request-raw-0001", rendered)
             self.assertRegex(
                 args["trace_context"]["trace_id"],
                 re.compile(r"^[0-9a-f]{32}$"),

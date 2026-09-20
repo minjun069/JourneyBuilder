@@ -110,7 +110,6 @@ class ModelSummaryGenerator:
                     f"{job.attempts}"
                 ),
                 thread_id=job.scope.thread_id,
-                plan_id=f"summary-{job.scope.session_id}",
                 step_id=f"summary-{job.target_cursor}",
             )
             with bind_model_call_recorder(observed.record_model_call):

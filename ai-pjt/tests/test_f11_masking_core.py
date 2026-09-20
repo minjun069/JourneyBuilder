@@ -34,7 +34,7 @@ def _policy(*allowed_model_paths: tuple[str | int, ...]) -> MaskingPolicy:
 
 def _sentinel_payload() -> dict[str, object]:
     return {
-        "plan_id": "P13-PLAN-RAW-0001",
+        "request_id": "P13-REQUEST-RAW-0001",
         "tasks": [
             {
                 "id": "task-1",
@@ -153,7 +153,7 @@ class RecursiveMaskingTests(unittest.TestCase):
 
     def test_route_plan_and_task_result_references_keep_correlation(self) -> None:
         payload = {
-            "plan_id": "plan-raw-0001",
+            "request_id": "request-raw-0001",
             "tasks": [
                 {
                     "id": "task-1",
@@ -198,7 +198,7 @@ class RecursiveMaskingTests(unittest.TestCase):
                     },
                 },
             },
-            "bound_inputs": {"value": 7_310_000},
+            "task_input": {"bindings": {"value": 7_310_000}},
         }
 
         first = mask_payload(
@@ -215,7 +215,7 @@ class RecursiveMaskingTests(unittest.TestCase):
         source_id = first["tasks"][0]["id"]
         result_key = next(iter(first["task_results"]))
         self.assertEqual(first, second)
-        self.assertRegex(first["plan_id"], r"^plan_[0-9a-f]{24}$")
+        self.assertRegex(first["request_id"], r"^request_[0-9a-f]{24}$")
         self.assertRegex(source_id, r"^task_[0-9a-f]{24}$")
         self.assertEqual(first["tasks"][1]["depends_on"], [source_id])
         self.assertEqual(
@@ -232,14 +232,17 @@ class RecursiveMaskingTests(unittest.TestCase):
             first["task_results"][result_key]["artifact"]["value"],
             "[FINANCIAL_VALUE_MASKED]",
         )
-        self.assertEqual(first["bound_inputs"]["value"], "[FINANCIAL_VALUE_MASKED]")
+        self.assertEqual(
+            first["task_input"]["bindings"]["value"],
+            "[FINANCIAL_VALUE_MASKED]",
+        )
         second_task_id = first["tasks"][1]["id"]
         self.assertEqual(
             first["task_results"][second_task_id]["artifact"]["changes"][0]["value"],
             "[FINANCIAL_VALUE_MASKED]",
         )
         rendered = json.dumps(first, ensure_ascii=False, sort_keys=True)
-        self.assertNotIn("plan-raw-0001", rendered)
+        self.assertNotIn("request-raw-0001", rendered)
         self.assertNotIn("task-1", rendered)
 
     def test_model_financial_and_quasi_values_require_exact_allowlist_paths(self) -> None:

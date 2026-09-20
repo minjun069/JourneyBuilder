@@ -35,7 +35,6 @@
     "lifetime_cashflow_ready": {
       "step_id": "lifetime-cashflow",
       "django_ai_request_fragment": {
-        "field_registry": [],
         "chart_payload": {
           "schema_version": "2.1",
           "chart_id": "lifetime-cashflow",
@@ -278,7 +277,6 @@
     "lifetime_cashflow_guidance_only": {
       "step_id": "lifetime-cashflow",
       "django_ai_request_fragment": {
-        "field_registry": [],
         "chart_payload": {
           "schema_version": "2.1",
           "chart_id": "lifetime-cashflow",

@@ -198,7 +198,6 @@ def _graph_input(request: ChatV2Request) -> dict[str, Any]:
         "message": request.message,
         "step_id": request.step_id,
         "customer_info": customer_info,
-        "field_registry": request.field_registry,
     }
     for field in ("request_mode",):
         value = getattr(request, field, None)
@@ -207,13 +206,6 @@ def _graph_input(request: ChatV2Request) -> dict[str, Any]:
     chart_payload = getattr(request, "chart_payload", None)
     if chart_payload is not None:
         payload["chart_payload"] = chart_payload
-    tool_context = getattr(request, "tool_context", None)
-    if tool_context is not None:
-        payload["tool_context"] = (
-            tool_context.model_dump(mode="json")
-            if hasattr(tool_context, "model_dump")
-            else tool_context
-        )
     return payload
 
 
@@ -236,7 +228,6 @@ async def _process_v2_graph(
         graph_input = {
             **_graph_input(request),
             **context_api.state_channels(scope, context, memories),
-            "execution_budget": budget.to_state(),
         }
         graph_config = {
             **context_api.config_for(scope, request.request_id),
@@ -356,7 +347,6 @@ async def _stream_v2_chat_events(
             observed = instrumentation.bind(
                 request_id=request.request_id,
                 thread_id=request.thread_id,
-                plan_id=f"plan-{request.request_id}",
                 step_id=request.step_id,
             )
             request_input = {
@@ -382,7 +372,6 @@ async def _stream_v2_chat_events(
         graph_input = {
             **_graph_input(request),
             **context_api.state_channels(scope, context, memories),
-            "execution_budget": budget.to_state(),
         }
         graph_config = {
             **context_api.config_for(scope, request.request_id),

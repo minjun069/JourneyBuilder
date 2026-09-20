@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 import json
 from math import isfinite
 from collections.abc import Mapping
@@ -19,7 +19,6 @@ ARTIFACT_TYPES = {
     "text_response",
     "form_change",
     "reference_value",
-    "dashboard_metric",
 }
 REFERENCE_VALUE_FIELDS = {
     "type",
@@ -37,19 +36,6 @@ REFERENCE_VALUE_FIELDS = {
     "as_of",
     "calculation_policy_version",
 }
-DASHBOARD_METRIC_FIELDS = {
-    "type",
-    "schema_version",
-    "producer_task_id",
-    "availability",
-    "metric_id",
-    "value",
-    "unit",
-    "report_id",
-    "report_version",
-    "calculation_policy_version",
-    "generated_at",
-}
 BINDABLE_ARTIFACT_PATHS = {
     "reference_value": frozenset(
         {
@@ -64,17 +50,6 @@ BINDABLE_ARTIFACT_PATHS = {
             "source_version",
             "as_of",
             "calculation_policy_version",
-        }
-    ),
-    "dashboard_metric": frozenset(
-        {
-            "metric_id",
-            "value",
-            "unit",
-            "report_id",
-            "report_version",
-            "calculation_policy_version",
-            "generated_at",
         }
     ),
     "text_response": frozenset({"text"}),
@@ -400,7 +375,7 @@ def _validate_completed_result(
         )
         return
     if (
-        artifact_type in {"reference_value", "dashboard_metric"}
+        artifact_type == "reference_value"
         and artifact.get("producer_task_id") != task.get("id")
     ):
         issues.append(
@@ -413,8 +388,6 @@ def _validate_completed_result(
 
     if artifact_type == "reference_value":
         _validate_reference_value(artifact, issues)
-    elif artifact_type == "dashboard_metric":
-        _validate_dashboard_metric(artifact, issues)
     elif artifact_type == "text_response":
         if not _non_empty(artifact.get("text")):
             issues.append(
@@ -428,7 +401,6 @@ def _validate_completed_result(
         response = result.get("response", "입력 변경안을 만들었습니다.")
         output_result = validate_form_update_contract({
             "step_id": step_id,
-            "field_registry": field_registry,
             "output": {
                 "response": response,
                 "step_id": step_id,
@@ -505,79 +477,6 @@ def _validate_reference_value(
                 "INVALID_REFERENCE_DATE",
                 "result.artifact.as_of",
                 "reference value 기준일은 ISO date여야 합니다.",
-            )
-        )
-
-
-def _validate_dashboard_metric(
-    artifact: Mapping[str, Any],
-    issues: list[TaskValidationIssue],
-) -> None:
-    _validate_exact_fields(
-        artifact,
-        DASHBOARD_METRIC_FIELDS,
-        issues,
-        artifact_name="dashboard metric",
-    )
-    _validate_tool_artifact_identity(artifact, issues)
-    if artifact.get("availability") != "ready":
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_AVAILABILITY",
-                "result.artifact.availability",
-                "완료된 dashboard metric은 ready여야 합니다.",
-            )
-        )
-    if artifact.get("metric_id") != "retirement_gap":
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_METRIC_ID",
-                "result.artifact.metric_id",
-                "허용되지 않은 dashboard metric입니다.",
-            )
-        )
-    value = artifact.get("value")
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_VALUE",
-                "result.artifact.value",
-                "retirement gap은 0 이상의 정수 금액이어야 합니다.",
-            )
-        )
-    if artifact.get("unit") != "KRW":
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_UNIT",
-                "result.artifact.unit",
-                "retirement gap 단위는 KRW여야 합니다.",
-            )
-        )
-    for field in ("report_id", "report_version"):
-        value = artifact.get(field)
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            issues.append(
-                _issue(
-                    "INVALID_REPORT_PROVENANCE",
-                    f"result.artifact.{field}",
-                    "보고서 ID와 version은 양의 정수여야 합니다.",
-                )
-            )
-    if not _non_empty(artifact.get("calculation_policy_version")):
-        issues.append(
-            _issue(
-                "MISSING_DASHBOARD_POLICY_VERSION",
-                "result.artifact.calculation_policy_version",
-                "dashboard metric에 calculation policy version이 필요합니다.",
-            )
-        )
-    generated_at = artifact.get("generated_at")
-    if not isinstance(generated_at, str) or not _is_aware_iso_datetime(generated_at):
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_GENERATED_AT",
-                "result.artifact.generated_at",
-                "dashboard metric 생성 시각은 timezone이 있는 ISO datetime이어야 합니다.",
             )
         )
 
@@ -690,14 +589,6 @@ def _is_iso_date(value: str) -> bool:
     except ValueError:
         return False
     return True
-
-
-def _is_aware_iso_datetime(value: str) -> bool:
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    return parsed.tzinfo is not None
 
 
 def _issue(code: str, path: str, message: str) -> TaskValidationIssue:

@@ -56,7 +56,7 @@ class DeterministicRoutingPolicyTests(unittest.TestCase):
             registered_tool_capabilities=("lookup_reference_value",),
         )
 
-        self.assertEqual(intro, ("answer_dashboard_metric", "answer_question"))
+        self.assertEqual(intro, ("answer_question",))
         self.assertIn("propose_form_change", goals)
         self.assertIn("review_validation_error", goals)
         self.assertIn("lookup_reference_value", goals)
@@ -84,7 +84,6 @@ class DeterministicRoutingPolicyTests(unittest.TestCase):
         candidate = enrich_route_plan(
             raw_plan=raw_plan,
             step_id="intro",
-            plan_id="plan-test",
         )
 
         self.assertEqual(candidate["planner_plan"], raw_plan)

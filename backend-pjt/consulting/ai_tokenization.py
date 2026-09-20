@@ -87,7 +87,6 @@ _FINANCIAL_FIELDS = frozenset({
 })
 TRUSTED_FINANCIAL_PREFIXES = (
     ('customer_info',),
-    ('tool_context',),
     ('chart_payload',),
 )
 _TEXTUAL_FIELDS = frozenset({

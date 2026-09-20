@@ -184,8 +184,8 @@
         "payload": {
           "agent": "qa",
           "task_type": "answer_question",
-          "tool_name": "get_retirement_scenario",
-          "arguments": {"scenario_id": 7}
+          "tool_name": "get_form_field_spec",
+          "arguments": {"field_path": 7}
         }
       },
       "expected": {
@@ -252,12 +252,6 @@
       "input": {
         "payload": {
           "step_id": "basic-info",
-          "field_registry": [{
-            "step_id": "basic-info", "section": "basic_info", "path": "retirement_age",
-            "value_type": "integer", "unit": "years", "constraints": {"min": 18, "max": 100},
-            "cardinality": "single", "writable_by_ai": true, "nullable": false,
-            "operations": ["set", "update"]
-          }],
           "output": {
             "response": "승인 없이 DB 값을 바꾸려는 응답",
             "step_id": "basic-info",
@@ -290,12 +284,6 @@
       "input": {
         "payload": {
           "step_id": "basic-info",
-          "field_registry": [{
-            "step_id": "basic-info", "section": "basic_info", "path": "retirement_age",
-            "value_type": "integer", "unit": "years", "constraints": {"min": 18, "max": 100},
-            "cardinality": "single", "writable_by_ai": true, "nullable": false,
-            "operations": ["set", "update"]
-          }],
           "output": {
             "response": "미저장 입력 초안을 제안합니다.",
             "step_id": "basic-info",
@@ -304,7 +292,7 @@
               "confidence": 0.96,
               "changes": [{
                 "section": "basic_info", "path": "retirement_age", "operation": "set",
-                "value": 65, "unit": "years", "reason": "사용자 명시 요청"
+                "value": 65, "unit": "age", "reason": "사용자 명시 요청"
               }]
             }
           }
@@ -629,7 +617,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-pln-001",
           "tasks": [
             {
               "id": "task-1",
@@ -670,7 +657,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-pln-002",
           "tasks": [
             {
               "id": "task-1",
@@ -739,7 +725,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-pln-003",
           "tasks": [
             {
               "id": "task-1",
@@ -776,7 +761,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-dep-001",
           "tasks": [
             {
               "id": "task-1",
@@ -823,7 +807,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-dep-002",
           "tasks": [
             {
               "id": "task-1",
@@ -870,7 +853,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-dep-003",
           "tasks": [
             {
               "id": "task-1",
@@ -906,7 +888,6 @@
         "registered_tool_capabilities": ["lookup_reference_value"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-bnd-001",
           "tasks": [
             {
               "id": "task-1",
@@ -957,7 +938,6 @@
         "registered_tool_capabilities": ["lookup_reference_value"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-bnd-002",
           "tasks": [
             {
               "id": "task-1",
@@ -1008,7 +988,6 @@
         "registered_tool_capabilities": ["lookup_reference_value"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-bnd-003",
           "tasks": [
             {
               "id": "task-1",
@@ -1059,7 +1038,6 @@
         "registered_tool_capabilities": ["lookup_reference_value"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-rte-001",
           "tasks": [
             {
               "id": "task-1",
@@ -1110,7 +1088,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-rte-002",
           "tasks": [
             {
               "id": "task-1",
@@ -1146,7 +1123,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-rte-003",
           "tasks": [
             {
               "id": "task-1",
@@ -1183,10 +1159,9 @@
       "evaluator": "production_policy",
       "input": {
         "step_id": "financial-goals",
-        "registered_tool_capabilities": ["get_dashboard_metric"],
+        "registered_tool_capabilities": ["unexpected_tool_capability"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-rte-004",
           "tasks": [
             {
               "id": "task-1",
@@ -1198,10 +1173,10 @@
               "executor_kind": "tool",
               "produces": "reference_value",
               "step_id": "financial-goals",
-              "capability": "get_dashboard_metric",
-              "tool_name": "get_dashboard_metric",
+              "capability": "unexpected_tool_capability",
+              "tool_name": "unexpected_tool_capability",
               "authorized_agent": "qa",
-              "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "get_dashboard_metric", "reason_code": "capability_match"}
+              "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "unexpected_tool_capability", "reason_code": "capability_match"}
             }
           ]
         }
@@ -1348,7 +1323,7 @@
       "input": {
         "payload": {
           "event": {
-            "request_id": "request-observability", "plan_id": "plan-observability", "task_id": "task-1",
+            "request_id": "request-observability", "task_id": "task-1",
             "step_id": "intro", "task_type": "answer_question", "tool_name": "search_financial_knowledge",
             "tool_version": "1.0", "agent": "qa", "decision": "denied", "status": "failed",
             "duration_ms": 0, "argument_classes": ["public_knowledge_query"], "call_source": "graph_task",
@@ -1374,7 +1349,7 @@
       "input": {
         "payload": {
           "event": {
-            "request_id": "request-observability", "plan_id": "plan-observability", "task_id": "task-1",
+            "request_id": "request-observability", "task_id": "task-1",
             "step_id": "intro", "task_type": "answer_question", "tool_name": "search_financial_knowledge",
             "tool_version": "1.0", "agent": "qa", "decision": "allowed", "status": "succeeded",
             "duration_ms": 5, "argument_classes": ["public_knowledge_query"], "call_source": "graph_task",

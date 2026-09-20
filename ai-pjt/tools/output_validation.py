@@ -10,6 +10,7 @@ from agents.error_review_confidence import (
     VISIBLE_CONFIDENCE_LEVELS,
     confidence_level,
 )
+from core.field_registry import load_field_registry
 
 
 SAFE_VALIDATION_FAILURE_RESPONSE = (
@@ -97,10 +98,15 @@ def validate_form_update_contract(
 
     action = output.get("action")
     if action is not None:
+        field_registry = (
+            load_field_registry(current_step_id)
+            if isinstance(current_step_id, str) and current_step_id
+            else []
+        )
         issues.extend(_validate_form_change(
             action=action,
             step_id=current_step_id,
-            field_registry=state.get("field_registry", []),
+            field_registry=field_registry,
         ))
     review = output.get("review")
     if review is not None:

@@ -95,7 +95,6 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         report = await execute_route_plan(
             plan={
-                "plan_id": "plan-request-raw-0001",
                 "tasks": [{
                     "id": "task-1",
                     "type": "answer_question",
@@ -112,15 +111,14 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }],
             },
+            request_id="request-raw-0001",
             step_id="basic-info",
             customer_info={},
-            field_registry=[],
             agent_executors={"qa": qa},
             tool_executors={},
             instrumentation=adapter.bind(
                 request_id="request-raw-0001",
                 thread_id="thread-raw-0001",
-                plan_id="plan-request-raw-0001",
                 step_id="basic-info",
             ),
         )
@@ -134,7 +132,6 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
         for raw in (
             "request-raw-0001",
             "thread-raw-0001",
-            "plan-request-raw-0001",
             "task-1",
         ):
             self.assertNotIn(raw, rendered)
@@ -149,7 +146,6 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
         observed = adapter.bind(
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             step_id="basic-info",
         )
         span = observed.start(RuntimeStage.PLANNER)
@@ -157,7 +153,6 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
         adapter.record_callback_attempt(
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             step_id="basic-info",
             status=OperationStatus.SUCCEEDED,
             duration_ms=25,
@@ -181,17 +176,15 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
         observed = adapter.bind(
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             step_id="basic-info",
         )
 
         observed.record_tool_audit(ToolAuditEvent(
             request_id="request-raw-0001",
-            plan_id="plan-request-raw-0001",
             task_id="task-1",
             step_id="basic-info",
-            task_type="lookup_retirement_gap",
-            tool_name="get_dashboard_metric",
+            task_type="lookup_reference_value",
+            tool_name="get_approved_reference_value",
             tool_version="1.0",
             agent="qa",
             decision="denied",
@@ -199,7 +192,7 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
             duration_ms=0,
             argument_classes=("financial_metric_identifier",),
             call_source="graph_task",
-            error_code="TOOL_CONTEXT_MISMATCH",
+            error_code="TOOL_ARGUMENT_SCHEMA_INVALID",
         ))
 
         self.assertEqual(sink.dropped_exports, 0)

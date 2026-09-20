@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from typing import Any
-from uuid import uuid4
 
 from core.step_registry import load_step_candidates
 from graph.planner import TASK_TYPE_CONTRACTS
@@ -19,7 +18,6 @@ from graph.planner import TASK_TYPE_CONTRACTS
 
 TASK_TYPE_DEFAULT_AGENTS = {
     "answer_question": "qa",
-    "answer_dashboard_metric": "qa",
     "propose_form_change": "input_assist",
     "review_validation_error": "error_review",
     "interpret_chart": "chart_interpret",
@@ -103,7 +101,6 @@ def enrich_route_plan(
     raw_plan: Any,
     step_id: str,
     registered_tool_capabilities: Sequence[str] = (),
-    plan_id: str | None = None,
 ) -> dict[str, Any]:
     """Attach untrusted route proposals while preserving raw planner output."""
 
@@ -120,7 +117,6 @@ def enrich_route_plan(
                 if isinstance(task, Mapping)
             ]
     return {
-        "plan_id": plan_id or f"plan-{uuid4()}",
         "step_id": step_id,
         "planner_plan": deepcopy(raw_plan),
         "route_enrichments": routes,

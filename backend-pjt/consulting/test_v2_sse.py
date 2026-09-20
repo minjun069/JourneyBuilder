@@ -35,7 +35,6 @@ def ai_payload():
         'message': '은퇴 준비를 알려줘',
         'deadline_at': '2026-09-08T00:01:00Z',
         'customer_info': {'saved_data': {}, 'current_form': {}},
-        'field_registry': [],
         'chart_payload': None,
     }
     from .ai_lifecycle import canonical_digest

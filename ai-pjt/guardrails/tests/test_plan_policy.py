@@ -53,7 +53,6 @@ def candidate(raw_plan: dict, *, step_id: str, tools: tuple[str, ...] = ()) -> d
         raw_plan=raw_plan,
         step_id=step_id,
         registered_tool_capabilities=tools,
-        plan_id="plan-test",
     )
 
 

@@ -11,12 +11,12 @@ from langgraph.graph import END, START, StateGraph
 from core.context import (
     ConversationContext,
     ConversationTurn,
-    ContextScope,
     RetrievedMemory,
     advance_context,
     build_context_window,
     resolve_confirmed_facts,
 )
+from core.field_registry import load_field_registry
 from core.model_boundary import bind_model_call_recorder
 from core.operation_observation import bind_operation_recorder
 from core.observability_masking import (
@@ -34,11 +34,6 @@ from graph.executor import (
     failure_response,
     validate_agent_executor_registry,
 )
-from graph.elicit_context import (
-    ELICIT_STEP_ID,
-    elicit_context_index,
-    load_elicit_contexts,
-)
 from graph.planner import context_window_payload, create_route_plan, plan_tasks_with_model
 from graph.router import allowed_task_types_for, enrich_route_plan
 from graph.state import ChatState
@@ -49,7 +44,6 @@ from guardrails.boundary_policy import (
 )
 from guardrails.plan_policy import evaluate_route_plan
 from tools.output_validation import validate_form_update, validate_form_update_contract
-from tools.runtime import ToolCallBudget
 
 
 logger = logging.getLogger(__name__)
@@ -75,39 +69,35 @@ def _direct_planner_output(
 def _policy_blocked_result(
     *,
     state: Mapping[str, Any],
-    plan_id: str,
     reason_code: str,
 ) -> dict[str, Any]:
     return {
         "route_plan": {
             "schema_version": "1.0",
-            "plan_id": plan_id,
             "tasks": [],
         },
         "plan_issues": [{
             "code": reason_code,
             "path": "security_policy",
             "message": "보안 정책이 요청의 실행을 차단했습니다.",
+            "security_blocked": True,
         }],
         "output": {
             "response": "요청에 포함된 지시를 안전하게 처리할 수 없어 실행하지 않았습니다.",
             "step_id": str(state.get("step_id", "step-unknown")),
             "action": None,
         },
-        "security_blocked": True,
     }
 
 
 def _plan_failure_result(
     *,
     state: Mapping[str, Any],
-    plan_id: str,
     issues: list[dict[str, str]],
 ) -> dict[str, Any]:
     return {
         "route_plan": {
             "schema_version": "1.0",
-            "plan_id": plan_id,
             "tasks": [],
         },
         "plan_issues": issues,
@@ -120,20 +110,6 @@ def _plan_failure_result(
             "action": None,
         },
     }
-
-
-def _planner_budget_update(
-    state: Mapping[str, Any],
-    *,
-    retries_used: int,
-) -> dict[str, Any]:
-    current = state.get("execution_budget")
-    budget = dict(current) if isinstance(current, Mapping) else {}
-    prior = budget.get("retries_used", 0)
-    if isinstance(prior, bool) or not isinstance(prior, int):
-        prior = 0
-    budget["retries_used"] = prior + retries_used
-    return budget
 
 
 def _default_agent_graphs() -> dict[str, Any]:
@@ -157,15 +133,9 @@ def _agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
             "message": payload["message"],
             "step_id": payload["step_id"],
             "customer_info": payload["customer_info"],
-            "field_registry": payload["field_registry"],
-            "bound_inputs": payload["bound_inputs"],
-            "current_task": deepcopy(task),
-            "next": payload["next"],
+            "task_input": deepcopy(payload["task_input"]),
             "chart_payload": payload.get("chart_payload"),
             "request_mode": payload.get("request_mode", "chat"),
-            "elicit_routing": deepcopy(payload.get("elicit_routing", {})),
-            "elicit_contexts": deepcopy(payload.get("elicit_contexts", {})),
-            "context_scope": deepcopy(payload.get("context_scope", {})),
             "conversation_context": deepcopy(payload.get("conversation_context", {})),
             "request_id": payload.get("request_id"),
         }
@@ -202,24 +172,6 @@ def _agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
         for key in ("review",):
             if isinstance(output.get(key), Mapping):
                 task_result[key] = deepcopy(dict(output[key]))
-        if isinstance(output.get("elicit_capture"), Mapping):
-            capture_validation = validate_form_update_contract({
-                **agent_state,
-                "output": {
-                    "response": output["response"],
-                    "step_id": payload["step_id"],
-                    "action": dict(output["elicit_capture"]),
-                },
-            })
-            if not capture_validation.valid:
-                return failed_task_result(task_id, "artifact_invalid")
-            task_result["elicit_capture"] = deepcopy(dict(output["elicit_capture"]))
-        if isinstance(result, Mapping) and isinstance(
-            result.get("elicit_contexts"), Mapping
-        ):
-            task_result["state_update"] = {
-                "elicit_contexts": deepcopy(dict(result["elicit_contexts"]))
-            }
         return task_result
 
     return execute
@@ -304,17 +256,11 @@ def build_graph(
 
     def plan_request(state: ChatState) -> dict[str, Any]:
         request_id = str(state.get("request_id") or "request-unknown")
-        plan_id = f"plan-{request_id}"
-        scope = state.get("context_scope", {})
-        thread_id = str(
-            state.get("thread_id")
-            or (scope.get("thread_id") if isinstance(scope, Mapping) else None)
-            or "thread-unknown"
-        )
+        thread_id = str(state.get("thread_id") or "thread-unknown")
+        field_registry = load_field_registry(state["step_id"])
         observed = instrumentation.bind(
             request_id=request_id,
             thread_id=thread_id,
-            plan_id=plan_id,
             step_id=str(state.get("step_id") or "step-unknown"),
         )
         planner_input = {
@@ -322,13 +268,11 @@ def build_graph(
             "step_id": str(state.get("step_id") or "step-unknown"),
             "request_mode": str(state.get("request_mode", "chat")),
             "customer_info": deepcopy(state.get("customer_info", {})),
-            "field_registry": deepcopy(state.get("field_registry", [])),
             "context": {
                 "conversation": deepcopy(state.get("conversation_context", {})),
                 "retrieved_memories": deepcopy(
                     state.get("retrieved_memories", [])
                 ),
-                "elicit": deepcopy(state.get("elicit_contexts", {})),
             },
         }
         def guard_plan(plan: Mapping[str, Any]):
@@ -373,7 +317,6 @@ def build_graph(
         if not input_decision.allowed:
             return _policy_blocked_result(
                 state=state,
-                plan_id=plan_id,
                 reason_code=input_decision.reason_code,
             )
         planner_span = observed.start(
@@ -388,11 +331,10 @@ def build_graph(
                 else ConversationContext()
             )
             customer_info = state.get("customer_info", {})
-            registry = state.get("field_registry", [])
             confirmed_facts = (
                 _flatten_customer_info(
                     customer_info,
-                    field_registry=registry if isinstance(registry, list) else [],
+                    field_registry=field_registry,
                     step_id=state["step_id"],
                 )
                 if isinstance(customer_info, Mapping)
@@ -407,17 +349,6 @@ def build_graph(
                     if isinstance(item, Mapping)
                 ),
             )
-            if state["step_id"] == ELICIT_STEP_ID:
-                elicit_contexts = load_elicit_contexts(state)
-                planner_elicit_index = elicit_context_index(elicit_contexts)
-            else:
-                stored_contexts = state.get("elicit_contexts")
-                elicit_contexts = (
-                    deepcopy(stored_contexts)
-                    if isinstance(stored_contexts, Mapping)
-                    else {}
-                )
-                planner_elicit_index = {}
         except (TypeError, ValueError) as error:
             error_identity = exception_identity_fields(error)
             validation_span = observed.start(RuntimeStage.PLAN_VALIDATION)
@@ -435,7 +366,6 @@ def build_graph(
             )
             return _plan_failure_result(
                 state=state,
-                plan_id=plan_id,
                 issues=[{
                     "code": "CONTEXT_INVALID",
                     "path": "conversation_context",
@@ -464,7 +394,6 @@ def build_graph(
                 raw_plan=direct_output,
                 step_id=state["step_id"],
                 registered_tool_capabilities=tuple(active_tools),
-                plan_id=plan_id,
             )
             validation_span = observed.start(RuntimeStage.PLAN_VALIDATION)
             decision = guard_plan(direct_candidate)
@@ -486,7 +415,6 @@ def build_graph(
                 )
                 return _plan_failure_result(
                     state=state,
-                    plan_id=plan_id,
                     issues=[
                         violation.to_dict()
                         for violation in decision.violations
@@ -496,8 +424,6 @@ def build_graph(
             direct_plan.update({
                 "chart_payload": deepcopy(state.get("chart_payload")),
                 "request_mode": state.get("request_mode", "chat"),
-                "elicit_contexts": deepcopy(elicit_contexts),
-                "context_scope": deepcopy(state.get("context_scope", {})),
                 "conversation_context": context_window_payload(window),
             })
             observed.succeed(planner_span, output=direct_plan)
@@ -523,8 +449,6 @@ def build_graph(
                                 registered_tool_capabilities=tuple(active_tools),
                             ),
                             registered_tool_capabilities=tuple(active_tools),
-                            plan_id=plan_id,
-                            elicit_context_index=planner_elicit_index,
                         )
         except Exception as error:
             error_identity = exception_identity_fields(error)
@@ -535,7 +459,6 @@ def build_graph(
                     "detail": masked_exception_fields(
                         error,
                         request_id=request_id,
-                        plan_id=plan_id,
                         step_id=str(state.get("step_id", "step-unknown")),
                     ),
                 },
@@ -596,20 +519,13 @@ def build_graph(
                 observed.succeed(planner_span, output=failure_output)
             failure = _plan_failure_result(
                 state=state,
-                plan_id=plan_id,
                 issues=[issue.to_dict() for issue in validation.issues],
-            )
-            failure["execution_budget"] = _planner_budget_update(
-                state,
-                retries_used=validation.retries_used,
             )
             return failure
         plan = deepcopy(validation.plan)
         plan.update({
             "chart_payload": deepcopy(state.get("chart_payload")),
             "request_mode": state.get("request_mode", "chat"),
-            "elicit_contexts": deepcopy(elicit_contexts),
-            "context_scope": deepcopy(state.get("context_scope", {})),
             "conversation_context": context_window_payload(window),
         })
         planner_output = {
@@ -624,98 +540,43 @@ def build_graph(
         return {
             "route_plan": plan,
             "plan_issues": [],
-            "execution_budget": _planner_budget_update(
-                state,
-                retries_used=validation.retries_used,
-            ),
         }
 
     async def execute_plan(state: ChatState) -> dict[str, Any]:
         if state.get("plan_issues") and not state.get("route_plan", {}).get("tasks"):
             return {"task_results": {}, "output": state["output"]}
         customer_info = state.get("customer_info", {})
-        registry = state.get("field_registry", [])
-        budget_state = state.get("execution_budget", {})
-        task_limit = (
-            budget_state.get("task_limit", 3)
-            if isinstance(budget_state, Mapping)
-            else 3
-        )
         plan = state["route_plan"]
-        scope = state.get("context_scope", {})
         observed = instrumentation.bind(
             request_id=str(state.get("request_id") or "request-unknown"),
-            thread_id=str(
-                state.get("thread_id")
-                or (scope.get("thread_id") if isinstance(scope, Mapping) else None)
-                or "thread-unknown"
-            ),
-            plan_id=str(plan.get("plan_id") or "plan-unknown"),
+            thread_id=str(state.get("thread_id") or "thread-unknown"),
             step_id=str(state.get("step_id") or "step-unknown"),
         )
         report = await execute_route_plan(
             plan=plan,
             step_id=state["step_id"],
             customer_info=customer_info if isinstance(customer_info, Mapping) else {},
-            field_registry=registry if isinstance(registry, list) else [],
             agent_executors=agent_executors,
             tool_executors=active_tools,
-            task_limit=task_limit,
             request_id=str(state.get("request_id", "request-unknown")),
-            deadline_at=(
-                str(budget_state.get("deadline_at"))
-                if isinstance(budget_state, Mapping)
-                and budget_state.get("deadline_at") is not None
-                else None
-            ),
-            tool_context=(
-                state.get("tool_context", {})
-                if isinstance(state.get("tool_context", {}), Mapping)
-                else {}
-            ),
-            tool_call_budget=ToolCallBudget(
-                limit=(
-                    int(budget_state.get("tool_call_limit", 3))
-                    if isinstance(budget_state, Mapping)
-                    else 3
-                ),
-                used=(
-                    int(budget_state.get("tool_calls_used", 0))
-                    if isinstance(budget_state, Mapping)
-                    else 0
-                ),
-            ),
             instrumentation=observed,
             response_composer=response_composer,
         )
-        updated_budget = (
-            {
-                **budget_state,
-                "tasks_used": report.tasks_used,
-                "tool_calls_used": report.tool_calls_used,
-            }
-            if isinstance(budget_state, Mapping)
-            else {"task_limit": task_limit, "tasks_used": report.tasks_used}
-        )
-        state_update = report.state_update or {}
         return {
             "task_results": report.task_results,
             "output": report.output,
-            "execution_budget": updated_budget,
-            **state_update,
         }
 
     def persist_context(state: ChatState) -> dict[str, Any]:
-        if state.get("security_blocked") is True:
-            return {}
-        scope_payload = state.get("context_scope")
-        context_payload = state.get("conversation_context")
-        if not isinstance(scope_payload, Mapping) or not isinstance(
-            context_payload,
-            Mapping,
+        issues = state.get("plan_issues", [])
+        if any(
+            isinstance(issue, Mapping) and issue.get("security_blocked") is True
+            for issue in issues
         ):
             return {}
-        ContextScope.from_state(scope_payload)
+        context_payload = state.get("conversation_context")
+        if not isinstance(context_payload, Mapping):
+            return {}
         context = ConversationContext.from_state(context_payload)
         output = state.get("output", {})
         response = output.get("response", "") if isinstance(output, Mapping) else ""

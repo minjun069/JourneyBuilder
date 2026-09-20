@@ -6,8 +6,7 @@
     "sse.json",
     "step-registry.json",
     "form-actions.json",
-    "chart-payloads.json",
-    "tool-contexts.json"
+    "chart-payloads.json"
   ],
   "required_case_categories": [
     "normal",
@@ -284,7 +283,7 @@
         "body": {
           "contract_version": "2.0",
           "request_id": "ai_req_fixture_001",
-          "payload_digest": "0616fe5c966adb0a23ba3fee68b265ea5e68c20293323aa96fa6ae4cd465b8a7",
+          "payload_digest": "a898eeb97e4ac236e0ecfe707877e30973e3aa80f1ae378639d6dcd4c366423a",
           "session_id": 1,
           "thread_id": "user-3-session-1",
           "step_id": "basic-info",
@@ -294,8 +293,6 @@
             "saved_data": {},
             "current_form": {}
           },
-          "field_registry": [],
-          "tool_context": null,
           "chart_payload": null
         }
       },
@@ -326,7 +323,6 @@
             "saved_data": {},
             "current_form": {}
           },
-          "field_registry": [],
           "chart_payload": null
         }
       },
@@ -364,7 +360,6 @@
             "saved_data": {},
             "current_form": {}
           },
-          "field_registry": [],
           "chart_payload": null
         }
       },
@@ -579,7 +574,6 @@
             "saved_data": {},
             "current_form": {}
           },
-          "field_registry": [],
           "chart_payload": null
         }
       },

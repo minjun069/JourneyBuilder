@@ -56,11 +56,6 @@ def request_digest(request: ChatV2Request) -> str:
 class ExecutionBudget:
     deadline_at: datetime
     started_at_monotonic: float
-    task_limit: int = 3
-    tasks_used: int = 0
-    tool_calls_used: int = 0
-    tool_call_limit: int = 3
-    retries_used: int = 0
 
     @classmethod
     def from_request(cls, request: ChatV2Request) -> "ExecutionBudget":
@@ -76,28 +71,6 @@ class ExecutionBudget:
     def require_time(self) -> None:
         if self.remaining_seconds() <= 0:
             raise TimeoutError("request deadline exceeded")
-
-    def consume_task(self) -> "ExecutionBudget":
-        if self.tasks_used >= self.task_limit:
-            raise RuntimeError("task execution budget exhausted")
-        return replace(self, tasks_used=self.tasks_used + 1)
-
-    def consume_tool_call(self) -> "ExecutionBudget":
-        return replace(self, tool_calls_used=self.tool_calls_used + 1)
-
-    def consume_retry(self) -> "ExecutionBudget":
-        return replace(self, retries_used=self.retries_used + 1)
-
-    def to_state(self) -> dict[str, Any]:
-        return {
-            "deadline_at": self.deadline_at.astimezone(timezone.utc).isoformat(),
-            "task_limit": self.task_limit,
-            "tasks_used": self.tasks_used,
-            "tool_calls_used": self.tool_calls_used,
-            "tool_call_limit": self.tool_call_limit,
-            "retries_used": self.retries_used,
-        }
-
 
 @dataclass(frozen=True)
 class RequestCheckpoint:
@@ -118,7 +91,6 @@ class ClaimResult:
 class CallbackDeliveryContext:
     request_id: str
     thread_id: str
-    plan_id: str
     step_id: str
 
     @classmethod
@@ -126,7 +98,6 @@ class CallbackDeliveryContext:
         return cls(
             request_id=request.request_id,
             thread_id=request.thread_id,
-            plan_id=f"plan-{request.request_id}",
             step_id=request.step_id,
         )
 
@@ -482,7 +453,6 @@ class CallbackClient:
         self._instrumentation.record_callback_attempt(
             request_id=context.request_id,
             thread_id=context.thread_id,
-            plan_id=context.plan_id,
             step_id=context.step_id,
             status=status,
             duration_ms=duration_ms,
@@ -540,7 +510,6 @@ class AsyncChatTransport:
             observed = self._instrumentation.bind(
                 request_id=request.request_id,
                 thread_id=request.thread_id,
-                plan_id=f"plan-{request.request_id}",
                 step_id=request.step_id,
             )
             request_span = observed.start(RuntimeStage.REQUEST_PROCESSING)

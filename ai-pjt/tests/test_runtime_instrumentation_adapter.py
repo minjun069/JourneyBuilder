@@ -36,7 +36,6 @@ def _bound_adapter() -> tuple[object, FakeInstrumentationSink]:
         adapter.bind(
             request_id="request-test",
             thread_id="thread-test",
-            plan_id="plan-test",
             step_id="step-test",
         ),
         sink,
@@ -59,7 +58,6 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         observed = adapter.bind(
             request_id="request-test",
             thread_id="thread-test",
-            plan_id="plan-test",
             step_id="step-test",
         )
         span = observed.start(RuntimeStage.PLANNER)
@@ -79,7 +77,6 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter.record_callback_attempt(
             request_id="request-test",
             thread_id="thread-test",
-            plan_id="plan-test",
             step_id="step-test",
             status=OperationStatus.TIMEOUT,
             duration_ms=125,
@@ -181,7 +178,6 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         report = await execute_route_plan(
             plan={
-                "plan_id": "plan-test",
                 "tasks": [{
                     "id": "task-1",
                     "type": "answer_question",
@@ -198,9 +194,9 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }],
             },
+            request_id="request-test",
             step_id="step-test",
             customer_info={},
-            field_registry=[],
             agent_executors={"qa": qa},
             tool_executors={},
             instrumentation=observed,  # type: ignore[arg-type]

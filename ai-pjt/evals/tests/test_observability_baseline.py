@@ -140,7 +140,7 @@ def synthetic_events():
             OperationStage.TOOL,
             OperationStatus.TIMEOUT,
             300,
-            "get_dashboard_metric",
+            "get_form_field_spec",
             error_code="TOOL_TIMEOUT",
         ),
         operation_event(

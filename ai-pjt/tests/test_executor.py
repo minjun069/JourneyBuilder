@@ -13,9 +13,9 @@ from tests.instrumentation import bound_fake_instrumentation
 
 
 FIELD_SPEC = {
-    "step_id": "financial-goals",
-    "section": "financial_goals",
-    "path": "monthly_target_expense",
+    "step_id": "basic-info",
+    "section": "basic_info",
+    "path": "monthly_income",
     "value_type": "integer",
     "unit": "KRW",
     "constraints": {"min": 0, "period": "month"},
@@ -73,7 +73,7 @@ def reference_result() -> dict:
             "type": "reference_value",
             "schema_version": "1.0",
             "producer_task_id": "task-1",
-            "reference_id": "monthly_target_expense",
+            "reference_id": "monthly_income",
             "age": 45,
             "value": 2_500_000,
             "unit": "KRW",
@@ -99,8 +99,8 @@ def form_result(task_id: str, value: int = 2_500_000) -> dict:
             "user_requested": True,
             "confidence": 1.0,
             "changes": [{
-                "section": "financial_goals",
-                "path": "monthly_target_expense",
+                "section": "basic_info",
+                "path": "monthly_income",
                 "operation": "set",
                 "value": value,
                 "unit": "KRW",
@@ -120,7 +120,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         async def qa(payload: dict) -> dict:
             calls.append(("qa", payload))
-            self.assertEqual(payload["bound_inputs"], {
+            self.assertEqual(payload["task_input"]["bindings"], {
                 "value": 2_500_000,
                 "unit": "KRW",
             })
@@ -146,9 +146,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         ]
         report = await execute_route_plan(
             plan={"tasks": tasks},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"qa": qa, "input_assist": input_assist},
             tool_executors={"lookup_reference_value": lookup},
             instrumentation=bound_fake_instrumentation()[0],
@@ -205,9 +205,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
                 consumer_task("task-2", "propose_form_change", "input_assist"),
                 independent_task,
             ]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": dependent, "qa": independent},
             tool_executors={"lookup_reference_value": failing_lookup},
             instrumentation=bound_fake_instrumentation()[0],
@@ -230,9 +230,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
                 reference_task(),
                 consumer_task("task-2", "propose_form_change", "input_assist"),
             ]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": input_assist},
             tool_executors={"lookup_reference_value": lookup},
             instrumentation=bound_fake_instrumentation()[0],
@@ -258,9 +258,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
                 lookup,
                 consumer_task("task-2", "propose_form_change", "input_assist"),
             ]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": dependent},
             tool_executors={},
             instrumentation=bound_fake_instrumentation()[0],
@@ -305,12 +305,11 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         ]
         report = await execute_route_plan(
             plan={"tasks": tasks},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"qa": qa},
             tool_executors={},
-            task_limit=3,
             instrumentation=bound_fake_instrumentation()[0],
         )
 
@@ -331,9 +330,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         task["bindings"] = {}
         report = await execute_route_plan(
             plan={"tasks": [task]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={"sensitive": "must-not-leave-executor"},
-            field_registry=[FIELD_SPEC],
             agent_executors={"qa": invalid_qa},
             tool_executors={},
             instrumentation=bound_fake_instrumentation()[0],
@@ -361,9 +360,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         successful_task["bindings"] = {}
         report = await execute_route_plan(
             plan={"tasks": [failed_task, successful_task]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={
                 "input_assist": failing,
                 "qa": succeeding,
@@ -393,7 +392,7 @@ class AggregationTests(unittest.TestCase):
                 "task-1": form_result("task-1", 2_500_000),
                 "task-2": form_result("task-2", 3_000_000),
             },
-            step_id="financial-goals",
+            step_id="basic-info",
             field_registry=[FIELD_SPEC],
         )
         self.assertEqual(
@@ -422,7 +421,7 @@ class AggregationTests(unittest.TestCase):
                 "task-1": form_result("task-1"),
                 "task-2": duplicate,
             },
-            step_id="financial-goals",
+            step_id="basic-info",
             field_registry=[FIELD_SPEC],
         )
 
