@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, patch
@@ -11,15 +12,14 @@ from langchain_core.messages import AIMessage
 from core.context import ContextScope, ContextStateAPI
 from core.context_store import InMemoryCommittedContextStore
 from graph.builder import build_graph
-from main import _process_v2_graph, app
+from main import _stream_v2_chat_events
 from tests.test_graph_execution import (
     FIELD_SPEC,
     FakePlanner,
     all_agent_graphs,
 )
-from tests.instrumentation import fake_instrumentation
-from transport.contracts import ChatV2Request, CompletedCallback
-from transport.runtime import ExecutionBudget, utc_now
+from tests.instrumentation import fake_instrumentation, fake_terminal_masker
+from transport.contracts import ChatV2Request
 
 
 def make_request(request_id: str, session_id: int = 301) -> ChatV2Request:
@@ -41,24 +41,10 @@ def make_request(request_id: str, session_id: int = 301) -> ChatV2Request:
 
 
 class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
-        self.previous_graph = getattr(app.state, "chat_graph", None)
-        self.previous_context_api = getattr(app.state, "context_api", None)
-
-    def tearDown(self) -> None:
-        if self.previous_graph is None:
-            del app.state.chat_graph
-        else:
-            app.state.chat_graph = self.previous_graph
-        if self.previous_context_api is None:
-            del app.state.context_api
-        else:
-            app.state.context_api = self.previous_context_api
-
     def install_graph(self, *, planner, tool_executors=None, agent_graphs=None):
         checkpointer = MemorySaver()
         context_api = ContextStateAPI(checkpointer, InMemoryCommittedContextStore())
-        app.state.chat_graph = build_graph(
+        self.graph = build_graph(
             checkpointer,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
@@ -66,20 +52,29 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             tool_executors=tool_executors,
             response_composer=None,
         )
-        app.state.context_api = context_api
+        self.context_api = context_api
         return context_api
 
     async def run_stream_execution(self, request):
-        processor = AsyncMock(side_effect=_process_v2_graph)
-        output = await processor(request, ExecutionBudget.from_request(request))
-        terminal = CompletedCallback(
-            request_id=request.request_id,
-            session_id=request.session_id,
-            thread_id=request.thread_id,
-            completed_at=utc_now(),
-            output=output,
-        ).model_dump(mode="json")
-        return processor, terminal
+        with patch("main.get_callbacks", return_value=[]):
+            frames = [
+                frame
+                async for frame in _stream_v2_chat_events(
+                    self.graph,
+                    self.context_api,
+                    request,
+                    fake_terminal_masker(),
+                )
+            ]
+        events = [
+            (
+                frame.splitlines()[0].removeprefix("event: "),
+                json.loads(frame.splitlines()[1].removeprefix("data: ")),
+            )
+            for frame in frames
+        ]
+        self.assertEqual([event for event, _ in events], ["start", "done"])
+        return events[-1][1]
 
     async def test_context_plan_binding_aggregation_and_terminal_output(self):
         planner = FakePlanner({
@@ -137,11 +132,10 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             tool_executors={"lookup_reference_value": lookup},
         )
         request = make_request("ai_req_vertical_success")
-        processor, first = await self.run_stream_execution(request)
+        first = await self.run_stream_execution(request)
 
         self.assertEqual(first["status"], "completed")
         self.assertEqual(first["output"]["action"]["changes"][0]["value"], 2_500_000)
-        processor.assert_awaited_once()
 
         scope = ContextScope(request.session_id, request.thread_id)
         context = await context_api.read_context(scope)
@@ -196,13 +190,12 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             tool_executors={"lookup_reference_value": unavailable_lookup},
         )
         request = make_request("ai_req_vertical_partial")
-        processor, terminal = await self.run_stream_execution(request)
+        terminal = await self.run_stream_execution(request)
 
         self.assertEqual(terminal["status"], "completed")
         self.assertIsNone(terminal["output"]["action"])
         self.assertIn("선행 작업", terminal["output"]["response"])
         self.assertIn("qa 응답", terminal["output"]["response"])
-        processor.assert_awaited_once()
 
 
     async def test_household_reference_lookup_binds_exact_existing_row(self):
@@ -290,7 +283,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         with patch.object(input_assist, "_classify_chain", classify), patch.object(
             input_assist, "llm", merge_model
         ):
-            processor, first = await self.run_stream_execution(request)
+            first = await self.run_stream_execution(request)
 
         self.assertEqual(first["status"], "completed")
         change = first["output"]["action"]["changes"][0]
@@ -308,4 +301,3 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
             change["reference"]["calculation_policy_version"],
             "2026-09-12.v1",
         )
-        processor.assert_awaited_once()

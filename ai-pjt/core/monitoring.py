@@ -28,7 +28,6 @@ class OperationStage(str, Enum):
     TOOL = "tool"
     MODEL = "model"
     OUTPUT_VALIDATION = "output_validation"
-    CALLBACK = "callback"
 
 
 class OperationStatus(str, Enum):
@@ -120,7 +119,7 @@ def _validate_observation_content(value: Any, field_name: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class OperationTraceEvent:
-    """One route/search/tool/model/validation/callback measurement.
+    """One route/search/tool/model/validation measurement.
 
     IDs must already be pseudonymized. Search events may contain approved
     document IDs and scores, never excerpts or queries. Costs use integer

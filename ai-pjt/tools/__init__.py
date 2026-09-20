@@ -3,8 +3,6 @@
 from .catalog import build_default_registry, default_tool_definitions
 from .contracts import ToolCallResult, ToolExecutionContext
 from .output_validation import (
-    validate_agent_output,
-    validate_agent_output_contract,
     validate_form_update,
     validate_form_update_contract,
 )
@@ -24,8 +22,6 @@ __all__ = [
     "build_production_tool_runtime",
     "build_default_registry",
     "default_tool_definitions",
-    "validate_agent_output",
-    "validate_agent_output_contract",
     "validate_form_update",
     "validate_form_update_contract",
 ]

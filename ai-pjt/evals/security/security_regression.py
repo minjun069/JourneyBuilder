@@ -30,7 +30,6 @@ from graph.task_contracts import (  # noqa: E402
 )
 from guardrails.boundary_policy import (  # noqa: E402
     BoundaryDecision,
-    evaluate_callback_payload,
     evaluate_financial_output,
     evaluate_rag_content,
     evaluate_resource_usage,
@@ -53,7 +52,6 @@ SUPPORTED_CATEGORIES = {
     "indirect_rag_injection",
     "tool_manipulation",
     "approval_bypass",
-    "callback_integrity",
     "resource_abuse",
     "financial_overclaim",
     "obfuscated_bypass",
@@ -73,7 +71,6 @@ SUPPORTED_SURFACES = {
     "rag_document",
     "tool_call",
     "form_change",
-    "callback",
     "runtime_limits",
     "model_output",
     "route_plan",
@@ -308,8 +305,6 @@ class ProductionSecurityEvaluator:
             return self._evaluate_tool(payload)
         if category == "approval_bypass":
             return self._evaluate_form_change(payload)
-        if category == "callback_integrity":
-            return _from_boundary(evaluate_callback_payload(payload))
         if category == "resource_abuse":
             return _from_boundary(evaluate_resource_usage(payload))
         if category == "financial_overclaim":

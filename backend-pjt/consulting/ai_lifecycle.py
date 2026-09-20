@@ -78,14 +78,6 @@ class LifecycleError(Exception):
         return body
 
 
-def v2_success(data):
-    return {
-        'contract_version': CONTRACT_VERSION,
-        'success': True,
-        'data': data,
-    }
-
-
 def validate_browser_message(payload):
     if not isinstance(payload, dict):
         raise LifecycleError(400, 'REQUEST_INVALID', '요청 본문은 객체여야 합니다.')

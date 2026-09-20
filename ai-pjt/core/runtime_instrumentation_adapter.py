@@ -120,37 +120,6 @@ class RuntimeInstrumentationAdapter:
             monotonic_clock=self._monotonic,
         )
 
-    def record_callback_attempt(
-        self,
-        *,
-        request_id: str,
-        thread_id: str,
-        step_id: str,
-        status: OperationStatus,
-        duration_ms: int,
-        error_code: str | None = None,
-    ) -> None:
-        """Translate one transport-owned callback attempt into the shared port."""
-
-        if status not in {
-            OperationStatus.SUCCEEDED,
-            OperationStatus.FAILED,
-            OperationStatus.TIMEOUT,
-        }:
-            raise ValueError("callback attempt status must be terminal")
-        self.bind(
-            request_id=request_id,
-            thread_id=thread_id,
-            step_id=step_id,
-        ).record_operation(
-            stage=OperationStage.CALLBACK,
-            status=status,
-            operation_name="backend_callback",
-            duration_ms=duration_ms,
-            error_code=error_code,
-        )
-
-
 class BoundRuntimeInstrumentation:
     """Instrumentation API bound to one request, thread, plan, and step."""
 

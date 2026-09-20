@@ -8,8 +8,9 @@ from unittest.mock import patch
 import httpx
 
 from main import app, _stream_v2_chat_events
+from core.model_boundary import ModelOutputBlockedError
 from core.runtime_instrumentation import RuntimeStage, RuntimeStatus
-from tests.instrumentation import fake_callback_masker, fake_instrumentation
+from tests.instrumentation import fake_instrumentation, fake_terminal_masker
 from transport.contracts import ChatV2Request
 
 
@@ -145,6 +146,12 @@ class FailingV2Graph:
         raise RuntimeError("외부에 노출하면 안 되는 오류")
 
 
+class PolicyBlockedV2Graph:
+    async def astream_events(self, input_data, *, config, version):
+        raise ModelOutputBlockedError("민감정보가 포함된 모델 응답")
+        yield  # pragma: no cover - keep this an async generator
+
+
 class EmptyResponseV2Graph:
     async def astream_events(self, input_data, *, config, version):
         yield {
@@ -200,7 +207,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FakeV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
             )
         ]
 
@@ -223,7 +230,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FakeV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
                 instrumentation=instrumentation,
             )
         ]
@@ -249,7 +256,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FailingV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
             )
         ]
 
@@ -260,6 +267,24 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertNotIn("외부에 노출하면 안 되는 오류", str(frames))
 
     @patch("main.get_callbacks", return_value=[])
+    async def test_policy_block_returns_policy_terminal_error(self, _callbacks):
+        frames = [
+            parse_frame(frame)
+            async for frame in _stream_v2_chat_events(
+                PolicyBlockedV2Graph(),
+                FakeContextAPI(),
+                v2_request(),
+                fake_terminal_masker(),
+            )
+        ]
+
+        self.assertEqual([name for name, _ in frames], ["start", "error"])
+        terminal = frames[-1][1]
+        self.assertEqual(terminal["status"], "failed")
+        self.assertEqual(terminal["error"]["code"], "POLICY_BLOCKED")
+        self.assertNotIn("민감정보가 포함된 모델 응답", str(frames))
+
+    @patch("main.get_callbacks", return_value=[])
     async def test_empty_response_returns_error_instead_of_done(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -267,7 +292,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 EmptyResponseV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
             )
         ]
 
@@ -282,7 +307,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FakeErrorReviewGraph(),
                 FakeContextAPI(),
                 error_review_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
             )
         ]
 
@@ -296,7 +321,7 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         app.state.chat_graph = FakeV2Graph()
         app.state.context_api = FakeContextAPI()
-        app.state.callback_masker = fake_callback_masker()
+        app.state.terminal_masker = fake_terminal_masker()
         app.state.instrumentation = fake_instrumentation()[0]
 
     async def _post(self, payload, authorization=None, *, sign=True):

@@ -70,24 +70,6 @@
       },
       "impact_boundary": "검증 당시와 다른 artifact는 binding 직전 거부되어 후속 task에 노출되지 않아야 한다.",
       "owner_paths": ["ai-pjt/graph/task_contracts.py", "ai-pjt/graph/executor.py"]
-    },
-    {
-      "id": "F14-ATK-005",
-      "title": "동일 요청 재접수와 callback 재전송으로 graph 재실행 유도",
-      "category": "callback_reexecution",
-      "severity": "critical",
-      "scenario": "callback_replay",
-      "input": {"accept_count": 2, "run_count": 2, "request_id": "f14-attack-replay"},
-      "expected": {
-        "scheduled_runs": 1,
-        "processor_calls": 1,
-        "callback_calls": 2,
-        "identical_callbacks": true,
-        "checkpoint_status": "completed",
-        "callback_delivered": true
-      },
-      "impact_boundary": "재접수·callback 재시도는 확정 checkpoint만 재전송하고 graph의 도구·Agent 부작용을 반복하면 안 된다.",
-      "owner_paths": ["ai-pjt/transport/runtime.py", "backend-pjt/apps/consulting/services.py"]
     }
   ]
 }

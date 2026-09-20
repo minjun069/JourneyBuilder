@@ -21,10 +21,6 @@ class RuntimeObservabilityBaselineTests(unittest.TestCase):
         self.assertEqual(baseline.task_outcomes.blocked, 1)
         self.assertEqual(baseline.all_tasks_failed_response_rate.value, 1 / 3)
         self.assertEqual(baseline.aggregation_success_rate.value, 1.0)
-        self.assertEqual(baseline.callback_delivery.attempts, 8)
-        self.assertEqual(baseline.callback_delivery.retried_requests, 2)
-        self.assertEqual(baseline.callback_delivery.eventually_succeeded, 2)
-        self.assertEqual(baseline.callback_delivery.exhausted, 1)
 
     def test_stage_latency_and_reasons_are_reported_without_targets(self) -> None:
         payload = build_runtime_observability_baseline(

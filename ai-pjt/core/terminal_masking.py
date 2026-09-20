@@ -1,4 +1,4 @@
-"""Contract-preserving masking adapter for terminal callback payloads."""
+"""Contract-preserving masking adapter for SSE terminal payloads."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from core.masking import MaskingPath, MaskingPolicy, MaskingSink, mask_payload
-from transport.contracts import CompletedCallback, FailedCallback
+from transport.contracts import CompletedTerminal, FailedTerminal
 
 
-class CallbackPayloadMasker:
-    """Validate, mask, and revalidate one completed or failed v2 callback."""
+class TerminalPayloadMasker:
+    """Validate, mask, and revalidate one completed or failed SSE terminal."""
 
     __slots__ = ("_pseudonym_key",)
 
@@ -20,31 +20,31 @@ class CallbackPayloadMasker:
 
     def mask(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, Mapping):
-            raise TypeError("callback payload must be a mapping")
-        model = _callback_model(payload)
+            raise TypeError("terminal payload must be a mapping")
+        model = _terminal_model(payload)
         canonical = model.model_validate(payload).model_dump(mode="json")
-        allowed = _callback_business_value_paths(canonical)
+        allowed = _terminal_business_value_paths(canonical)
         masked = mask_payload(
             canonical,
-            sink=MaskingSink.CALLBACK,
+            sink=MaskingSink.TERMINAL,
             policy=MaskingPolicy(
                 pseudonym_key=self._pseudonym_key,
-                allowed_callback_paths=frozenset(allowed),
+                allowed_terminal_paths=frozenset(allowed),
             ),
         )
         return model.model_validate(masked).model_dump(mode="json")
 
 
-def _callback_model(payload: Mapping[str, Any]) -> type[CompletedCallback] | type[FailedCallback]:
+def _terminal_model(payload: Mapping[str, Any]) -> type[CompletedTerminal] | type[FailedTerminal]:
     status = payload.get("status")
     if status == "completed":
-        return CompletedCallback
+        return CompletedTerminal
     if status == "failed":
-        return FailedCallback
-    raise ValueError("callback status must be completed or failed")
+        return FailedTerminal
+    raise ValueError("terminal status must be completed or failed")
 
 
-def _callback_business_value_paths(payload: Mapping[str, Any]) -> set[MaskingPath]:
+def _terminal_business_value_paths(payload: Mapping[str, Any]) -> set[MaskingPath]:
     output = payload.get("output")
     if not isinstance(output, Mapping):
         return set()

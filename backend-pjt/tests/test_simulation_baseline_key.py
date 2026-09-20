@@ -24,7 +24,6 @@ from simulations.baseline import (  # noqa: E402
     BASELINE_KEY_PATTERN,
     has_baseline_key_shape,
     issue_baseline_key,
-    verify_baseline_key,
 )
 
 MATERIAL = {
@@ -75,15 +74,6 @@ class BaselineKeyTests(unittest.TestCase):
         for candidate in (None, 1, '', 'bk1.', 'bk2.' + 'a' * 43, 'a' * 47):
             with self.subTest(candidate=candidate):
                 self.assertFalse(has_baseline_key_shape(candidate))
-
-    def test_verify_accepts_only_the_matching_key(self) -> None:
-        key = issue_baseline_key(**MATERIAL)
-        self.assertTrue(verify_baseline_key(key, **MATERIAL))
-        self.assertFalse(
-            verify_baseline_key(key, **{**MATERIAL, 'snapshot_digest': 'c' * 64})
-        )
-        self.assertFalse(verify_baseline_key(None, **MATERIAL))
-        self.assertFalse(verify_baseline_key(key[:-1] + 'X', **MATERIAL))
 
     def test_field_boundaries_are_not_ambiguous(self) -> None:
         """재료를 이어붙일 때 구분자가 섞여 서로 다른 입력이 같은 키가 되면 안 된다."""

@@ -87,7 +87,7 @@ class RecursiveMaskingTests(unittest.TestCase):
         sink_pairs = (
             (MaskingSink.MODEL_INPUT, ContractSink.MODEL_INPUT),
             (MaskingSink.MODEL_OUTPUT, ContractSink.MODEL_OUTPUT),
-            (MaskingSink.CALLBACK, ContractSink.CALLBACK),
+            (MaskingSink.TERMINAL, ContractSink.TERMINAL),
             (MaskingSink.APPLICATION_LOG, ContractSink.APPLICATION_LOG),
             (MaskingSink.TRACE_EXPORT, ContractSink.TRACE_EXPORT),
         )
@@ -101,11 +101,11 @@ class RecursiveMaskingTests(unittest.TestCase):
             with self.subTest(sink=production_sink.value):
                 assert_no_raw_sentinels(rendered, contract_sink)
 
-    def test_callback_preserves_only_root_transport_correlation_ids(self) -> None:
+    def test_terminal_preserves_only_root_transport_correlation_ids(self) -> None:
         payload = {
-            "request_id": "callback-request-0001",
+            "request_id": "terminal-request-0001",
             "session_id": 731,
-            "thread_id": "callback-thread-0001",
+            "thread_id": "terminal-thread-0001",
             "output": {
                 "request_id": "nested-request-raw-0001",
                 "task_id": "task-1",
@@ -119,7 +119,7 @@ class RecursiveMaskingTests(unittest.TestCase):
 
         masked = mask_payload(
             payload,
-            sink=MaskingSink.CALLBACK,
+            sink=MaskingSink.TERMINAL,
             policy=_policy(),
         )
 
@@ -134,15 +134,15 @@ class RecursiveMaskingTests(unittest.TestCase):
             "[FINANCIAL_VALUE_MASKED]",
         )
 
-    def test_callback_removes_every_p13_sentinel_from_nested_output(self) -> None:
+    def test_terminal_removes_every_p13_sentinel_from_nested_output(self) -> None:
         masked = mask_payload(
             {
-                "request_id": "callback-request-0001",
+                "request_id": "terminal-request-0001",
                 "session_id": 731,
-                "thread_id": "callback-thread-0001",
+                "thread_id": "terminal-thread-0001",
                 "output": _sentinel_payload(),
             },
-            sink=MaskingSink.CALLBACK,
+            sink=MaskingSink.TERMINAL,
             policy=_policy(),
         )
         rendered = json.dumps(masked, ensure_ascii=False, sort_keys=True)

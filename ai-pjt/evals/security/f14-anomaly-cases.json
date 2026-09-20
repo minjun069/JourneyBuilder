@@ -21,33 +21,9 @@
       "expected": {
         "processor_started": true,
         "processor_cancelled": true,
-        "callback_calls": 1,
         "terminal_status": "failed",
         "error_code": "LLM_TIMEOUT",
         "retryable": true
-      }
-    },
-    {
-      "id": "F14-OPS-003",
-      "title": "retryable callback 응답 뒤 동일 payload 재전송",
-      "scenario": "callback_retry",
-      "expected": {
-        "attempts": 3,
-        "statuses": [503, 503, 200],
-        "identical_payloads": true,
-        "backoffs": [1, 2],
-        "attempt_events": ["failed", "failed", "succeeded"]
-      }
-    },
-    {
-      "id": "F14-OPS-004",
-      "title": "동시 동일 request 접수",
-      "scenario": "concurrent_accept",
-      "expected": {
-        "accepts": 20,
-        "scheduled_runs": 1,
-        "unique_request_ids": 1,
-        "checkpoint_status": "accepted"
       }
     },
     {
@@ -60,9 +36,5 @@
         "effects": ["block_consumer_task", "audit_artifact_denial"]
       }
     }
-  ],
-  "backend_concurrency_check": {
-    "command": "python manage.py test consulting.test_f12_callback_security.F12CallbackSecurityTests.test_simultaneous_identical_callbacks_share_one_receipt_and_message",
-    "expected": "두 동시 callback 중 하나만 최초 처리되고 receipt와 assistant message가 각각 1개"
-  }
+  ]
 }

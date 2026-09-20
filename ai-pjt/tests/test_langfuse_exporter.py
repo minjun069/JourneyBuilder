@@ -185,7 +185,7 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertEqual(args["level"], "ERROR")
         self.assertEqual(args["status_message"], "TOOL_CONTEXT_MISMATCH")
 
-    def test_late_callback_reuses_the_ended_request_root(self) -> None:
+    def test_late_operation_reuses_the_ended_request_root(self) -> None:
         client = _FakeClient()
         exporter = LangfuseInstrumentationExporter(client)
         request_event = {
@@ -209,22 +209,22 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "masking_status": "applied",
             "trace_id": "trace_0123456789abcdef01234567",
             "attempt_id": "attempt_maskedvalue0001",
-            "stage": "callback",
+            "stage": "tool",
             "status": "succeeded",
             "duration_ms": 5,
-            "operation_name": "backend_callback",
+            "operation_name": "approved_reference_lookup",
         })
 
         self.assertEqual(len(client.calls), 2)
         root = client.calls[0][1]
-        callback_args, callback = client.calls[1]
+        operation_args, operation = client.calls[1]
         self.assertTrue(root.ended)
-        self.assertIs(callback.parent, root)
+        self.assertIs(operation.parent, root)
         self.assertEqual(
-            callback_args["name"],
-            "retirewise.callback.backend_callback",
+            operation_args["name"],
+            "retirewise.tool.approved_reference_lookup",
         )
-        self.assertNotIn("trace_context", callback_args)
+        self.assertNotIn("trace_context", operation_args)
 
     def test_projects_planner_task_and_agent_step_hierarchy(self) -> None:
         client = _FakeClient()

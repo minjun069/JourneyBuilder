@@ -10,7 +10,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
-from core.callback_masking import CallbackPayloadMasker
+from core.terminal_masking import TerminalPayloadMasker
 from core.checkpointer import (
     build_committed_context_store,
     build_context_state_api,
@@ -22,6 +22,7 @@ from core.context_summary import ConversationMemoryManager, ModelSummaryGenerato
 from core.logging_setup import configure_logging
 from core.langfuse_exporter import build_langfuse_instrumentation_exporter
 from core.masking import MaskingSink
+from core.model_boundary import ModelOutputBlockedError
 from core.monitoring import get_callbacks
 from core.observability_masking import (
     StructuredLogInstrumentationExporter,
@@ -34,11 +35,11 @@ from graph.builder import build_graph
 from tools.graph_adapter import build_graph_tool_executors
 from tools.runtime import build_production_tool_runtime
 from transport.contracts import (
-    CallbackError,
     ChatV2Request,
-    CompletedCallback,
-    FailedCallback,
+    CompletedTerminal,
+    FailedTerminal,
     ServiceContractError,
+    TerminalError,
     verify_service_authorization,
 )
 from transport.runtime import (
@@ -105,10 +106,10 @@ async def lifespan(app: FastAPI):
             app.state.instrumentation = instrumentation
             app.state.instrumentation_sink = instrumentation_sink
             app.state.instrumentation_exporter = instrumentation_exporter
-            callback_masker = CallbackPayloadMasker(
+            terminal_masker = TerminalPayloadMasker(
                 pseudonym_key=settings.masking_pseudonym_key_bytes,
             )
-            app.state.callback_masker = callback_masker
+            app.state.terminal_masker = terminal_masker
             app.state.chat_graph = build_graph(
                 checkpointer,
                 instrumentation=instrumentation,
@@ -209,63 +210,6 @@ def _graph_input(request: ChatV2Request) -> dict[str, Any]:
     return payload
 
 
-async def _process_v2_graph(
-    request: ChatV2Request,
-    budget: ExecutionBudget,
-) -> dict[str, Any]:
-    budget.require_time()
-    scope = ContextScope(request.session_id, request.thread_id)
-    context_api = app.state.context_api
-    await context_api.begin_execution(scope, request.request_id)
-    try:
-        context = await context_api.read_context(scope)
-        memory_manager = getattr(app.state, "context_memory", None)
-        memories = (
-            await memory_manager.retrieve(scope, request.message, context)
-            if memory_manager is not None
-            else ()
-        )
-        graph_input = {
-            **_graph_input(request),
-            **context_api.state_channels(scope, context, memories),
-        }
-        graph_config = {
-            **context_api.config_for(scope, request.request_id),
-            "callbacks": get_callbacks(),
-        }
-        result = await app.state.chat_graph.ainvoke(
-            graph_input,
-            config=graph_config,
-        )
-        output = result.get("output", {})
-        if not isinstance(output, dict):
-            raise ValueError("graph output must be an object")
-        context_payload = result.get("conversation_context")
-        if not isinstance(context_payload, dict):
-            raise ValueError("completed graph state must include conversation_context")
-        await context_api.commit(
-            scope,
-            request.request_id,
-            request.payload_digest,
-            ConversationContext.from_state(context_payload),
-            CompletedCallback(
-                request_id=request.request_id,
-                session_id=request.session_id,
-                thread_id=request.thread_id,
-                completed_at=utc_now(),
-                output=output,
-            ).model_dump(mode="json"),
-            ConversationTurn(
-                turn_id=request.request_id,
-                user_message=request.message,
-                assistant_message=str(output.get("response", "")),
-            ),
-        )
-        return output
-    finally:
-        await asyncio.shield(context_api.delete_execution(scope, request.request_id))
-
-
 @app.exception_handler(ServiceContractError)
 async def service_contract_error_handler(
     _request: Request,
@@ -315,7 +259,7 @@ async def _stream_v2_chat_events(
     graph,
     context_api,
     request: ChatV2Request,
-    callback_masker: CallbackPayloadMasker,
+    terminal_masker: TerminalPayloadMasker,
     memory_manager: ConversationMemoryManager | None = None,
     instrumentation: RuntimeInstrumentationAdapter | None = None,
 ) -> AsyncIterator[str]:
@@ -401,8 +345,8 @@ async def _stream_v2_chat_events(
         response = output.get("response")
         if not isinstance(response, str) or not response:
             raise ValueError("graph output response must be a non-empty string")
-        terminal = callback_masker.mask(
-            CompletedCallback(
+        terminal = terminal_masker.mask(
+            CompletedTerminal(
                 request_id=request.request_id,
                 session_id=request.session_id,
                 thread_id=request.thread_id,
@@ -436,6 +380,37 @@ async def _stream_v2_chat_events(
             request_span = None
         logger.info("AI v2 stream 연결 종료")
         raise
+    except ModelOutputBlockedError:
+        if observed is not None and request_span is not None:
+            observed.fail(
+                request_span,
+                reason_code="policy_blocked",
+                output={"error_code": "POLICY_BLOCKED"},
+            )
+            request_span = None
+        terminal = terminal_masker.mask(
+            FailedTerminal(
+                request_id=request.request_id,
+                session_id=request.session_id,
+                thread_id=request.thread_id,
+                completed_at=utc_now(),
+                error=TerminalError(
+                    code="POLICY_BLOCKED",
+                    message="AI 응답이 보안 정책을 통과하지 못했습니다.",
+                    retryable=False,
+                ),
+            ).model_dump(mode="json")
+        )
+        try:
+            terminal = dict(await context_api.commit_terminal(
+                scope,
+                request.request_id,
+                request.payload_digest,
+                terminal,
+            ))
+        except Exception:  # noqa: BLE001 - still return a bounded terminal error
+            logger.exception("terminal_receipt_commit_failed")
+        yield _encode_sse("error", terminal)
     except (TimeoutError, asyncio.TimeoutError):
         if observed is not None and request_span is not None:
             observed.fail(
@@ -444,13 +419,13 @@ async def _stream_v2_chat_events(
                 output={"error_code": "LLM_TIMEOUT"},
             )
             request_span = None
-        terminal = callback_masker.mask(
-            FailedCallback(
+        terminal = terminal_masker.mask(
+            FailedTerminal(
                 request_id=request.request_id,
                 session_id=request.session_id,
                 thread_id=request.thread_id,
                 completed_at=utc_now(),
-                error=CallbackError(
+                error=TerminalError(
                     code="LLM_TIMEOUT",
                     message="AI 응답 생성 시간이 초과되었습니다.",
                     retryable=True,
@@ -485,13 +460,13 @@ async def _stream_v2_chat_events(
                 ),
             },
         )
-        terminal = callback_masker.mask(
-            FailedCallback(
+        terminal = terminal_masker.mask(
+            FailedTerminal(
                 request_id=request.request_id,
                 session_id=request.session_id,
                 thread_id=request.thread_id,
                 completed_at=utc_now(),
-                error=CallbackError(
+                error=TerminalError(
                     code="INTERNAL_ERROR",
                     message="AI 응답 생성에 실패했습니다.",
                     retryable=False,
@@ -533,7 +508,7 @@ async def chat_v2_stream(
             app.state.chat_graph,
             app.state.context_api,
             request,
-            app.state.callback_masker,
+            app.state.terminal_masker,
             getattr(app.state, "context_memory", None),
             instrumentation=app.state.instrumentation,
         ),

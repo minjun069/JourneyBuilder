@@ -1,4 +1,4 @@
-"""Frozen v2 request, callback, and error contracts."""
+"""Frozen v2 request, SSE terminal, and error contracts."""
 
 from __future__ import annotations
 
@@ -41,13 +41,8 @@ class ChatV2Request(BaseModel):
     chart_payload: dict[str, Any] | None = None
     request_mode: Literal["chat", "error_review", "presentation_entry"] = "chat"
 
-class ChatAccepted(BaseModel):
-    contract_version: Literal["2.0"] = CONTRACT_VERSION
-    request_id: str
-    status: Literal["accepted"] = "accepted"
 
-
-class CallbackError(BaseModel):
+class TerminalError(BaseModel):
     code: Literal[
         "LLM_TIMEOUT",
         "UPSTREAM_UNAVAILABLE",
@@ -59,7 +54,7 @@ class CallbackError(BaseModel):
     retryable: bool
 
 
-class CompletedCallback(BaseModel):
+class CompletedTerminal(BaseModel):
     contract_version: Literal["2.0"] = CONTRACT_VERSION
     request_id: str
     session_id: int
@@ -69,14 +64,14 @@ class CompletedCallback(BaseModel):
     output: dict[str, Any]
 
 
-class FailedCallback(BaseModel):
+class FailedTerminal(BaseModel):
     contract_version: Literal["2.0"] = CONTRACT_VERSION
     request_id: str
     session_id: int
     thread_id: str
     status: Literal["failed"] = "failed"
     completed_at: datetime
-    error: CallbackError
+    error: TerminalError
 
 
 class ServiceContractError(Exception):

@@ -5,7 +5,6 @@ from pathlib import Path
 import unittest
 
 from core.masking import MaskingPolicy, MaskingSink
-from core.monitoring import OperationStage, OperationStatus
 from core.observability_masking import (
     FakeSerializedInstrumentationSink,
     MaskedInstrumentationSink,
@@ -135,36 +134,6 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "task-1",
         ):
             self.assertNotIn(raw, rendered)
-
-    def test_callback_attempt_uses_same_masked_correlation(self) -> None:
-        downstream = FakeSerializedInstrumentationSink()
-        adapter, sink = build_masked_runtime_instrumentation(
-            pseudonym_key=TEST_MASKING_KEY,
-            downstream=downstream,
-            sink=MaskingSink.TRACE_EXPORT,
-        )
-        observed = adapter.bind(
-            request_id="request-raw-0001",
-            thread_id="thread-raw-0001",
-            step_id="basic-info",
-        )
-        span = observed.start(RuntimeStage.PLANNER)
-        observed.succeed(span)
-        adapter.record_callback_attempt(
-            request_id="request-raw-0001",
-            thread_id="thread-raw-0001",
-            step_id="basic-info",
-            status=OperationStatus.SUCCEEDED,
-            duration_ms=25,
-        )
-
-        self.assertEqual(sink.dropped_exports, 0)
-        self.assertEqual(len(downstream.payloads), 3)
-        trace_ids = {payload["trace_id"] for payload in downstream.payloads}
-        self.assertEqual(len(trace_ids), 1)
-        callback = downstream.payloads[-1]
-        self.assertEqual(callback["stage"], OperationStage.CALLBACK.value)
-        self.assertEqual(callback["status"], OperationStatus.SUCCEEDED.value)
 
     def test_tool_authorization_audit_uses_masked_typed_port(self) -> None:
         downstream = FakeSerializedInstrumentationSink()

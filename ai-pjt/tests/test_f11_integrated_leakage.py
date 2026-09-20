@@ -8,10 +8,8 @@ import logging
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import patch
 
-import httpx
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from core.callback_masking import CallbackPayloadMasker
 from core.masking import MaskingSink
 from core.model_boundary import ModelPurpose, secure_ainvoke, secure_system_prompt
 from core.observability_masking import (
@@ -20,6 +18,7 @@ from core.observability_masking import (
     build_masked_runtime_instrumentation,
 )
 from core.runtime_instrumentation import RuntimeStage
+from core.terminal_masking import TerminalPayloadMasker
 from graph.executor import execute_route_plan
 from graph.planner import TASK_TYPE_CONTRACTS
 from main import _stream_v2_chat_events
@@ -29,12 +28,6 @@ from tests.security.masking_contract import (
     assert_no_raw_sentinels,
 )
 from transport.contracts import ChatV2Request
-from transport.runtime import (
-    AsyncChatTransport,
-    CallbackClient,
-    InMemoryRequestCheckpointStore,
-    request_digest,
-)
 
 
 TEST_KEY = b"f11-t04-integrated-leakage-key-32bytes"
@@ -394,162 +387,7 @@ class SerializedBoundaryTests(TestCase):
         assert_no_raw_sentinels(rendered, ContractSink.TRACE_EXPORT)
 
 
-class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
-    async def test_actual_callback_body_checkpoint_and_attempt_trace_are_safe(self):
-        downstream = FakeSerializedInstrumentationSink()
-        instrumentation, _sink = build_masked_runtime_instrumentation(
-            pseudonym_key=TEST_KEY,
-            downstream=downstream,
-            sink=MaskingSink.TRACE_EXPORT,
-        )
-        received: list[dict] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            received.append(json.loads(request.content))
-            return httpx.Response(200, request=request)
-
-        callback_client = CallbackClient(
-            url="http://backend.test/api/v2/internal/ai/callback/",
-            bearer_token="test-token",
-            instrumentation=instrumentation,
-            client_factory=lambda **kwargs: httpx.AsyncClient(
-                transport=httpx.MockTransport(handler),
-                **kwargs,
-            ),
-        )
-
-        async def processor(request: ChatV2Request, _budget) -> dict:
-            observed = instrumentation.bind(
-                request_id=request.request_id,
-                thread_id=request.thread_id,
-                step_id=request.step_id,
-            )
-            span = observed.start(RuntimeStage.AGGREGATION)
-            observed.succeed(span)
-            return {
-                "response": (
-                    "p13-user@example.invalid와 010-0000-0000으로 안내했습니다."
-                ),
-                "step_id": request.step_id,
-                "action": {
-                    "type": "form_change",
-                    "target": "draft_form",
-                    "user_requested": False,
-                    "confidence": 0.9,
-                    "changes": [{
-                        "section": "basic_info",
-                        "path": "monthly_income",
-                        "operation": "set",
-                        "value": 3_000_000,
-                        "unit": "KRW",
-                        "reason": "검증된 금융 입력",
-                    }],
-                },
-            }
-
-        store = InMemoryRequestCheckpointStore()
-        request = _request("P13-REQUEST-RAW-0001")
-        transport = AsyncChatTransport(
-            checkpoint_store=store,
-            processor=processor,
-            callback_client=callback_client,
-            callback_masker=CallbackPayloadMasker(pseudonym_key=TEST_KEY),
-            instrumentation=instrumentation,
-        )
-        await store.claim(request, request_digest(request))
-
-        terminal = await transport.run(request)
-        checkpoint = await store.get(request.request_id)
-
-        self.assertEqual(received, [terminal])
-        self.assertEqual(checkpoint.terminal_payload, terminal)
-        self.assertEqual(terminal["request_id"], request.request_id)
-        self.assertEqual(
-            terminal["output"]["action"]["changes"][0]["value"],
-            3_000_000,
-        )
-        callback_rendered = json.dumps(received, ensure_ascii=False, sort_keys=True)
-        assert_no_raw_sentinels(callback_rendered, ContractSink.CALLBACK)
-
-        trace_ids = {payload["trace_id"] for payload in downstream.payloads}
-        self.assertEqual(len(trace_ids), 1)
-        trace_rendered = json.dumps(
-            downstream.payloads,
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        assert_no_raw_sentinels(trace_rendered, ContractSink.TRACE_EXPORT)
-        self.assertTrue(any(
-            payload.get("stage") == "callback"
-            for payload in downstream.payloads
-        ))
-
-    async def test_malicious_model_output_becomes_safe_policy_callback(self):
-        downstream = FakeSerializedInstrumentationSink()
-        instrumentation, _sink = build_masked_runtime_instrumentation(
-            pseudonym_key=TEST_KEY,
-            downstream=downstream,
-            sink=MaskingSink.TRACE_EXPORT,
-        )
-        received: list[dict] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            received.append(json.loads(request.content))
-            return httpx.Response(200, request=request)
-
-        callback_client = CallbackClient(
-            url="http://backend.test/api/v2/internal/ai/callback/",
-            bearer_token="test-token",
-            instrumentation=instrumentation,
-            client_factory=lambda **kwargs: httpx.AsyncClient(
-                transport=httpx.MockTransport(handler),
-                **kwargs,
-            ),
-        )
-
-        class MaliciousModel:
-            async def ainvoke(self, _messages) -> AIMessage:
-                return AIMessage(
-                    content="p13-user@example.invalid 010-0000-0000"
-                )
-
-        async def processor(_request: ChatV2Request, _budget) -> dict:
-            with patch("core.model_boundary._runtime_key", return_value=TEST_KEY):
-                await secure_ainvoke(
-                    MaliciousModel(),
-                    [
-                        SystemMessage(content=secure_system_prompt("테스트 역할")),
-                        HumanMessage(content="안전한 질문"),
-                    ],
-                    purpose=ModelPurpose.QA,
-                )
-            raise AssertionError("blocked model output must not continue")
-
-        store = InMemoryRequestCheckpointStore()
-        request = _request("policy-blocked-request")
-        transport = AsyncChatTransport(
-            checkpoint_store=store,
-            processor=processor,
-            callback_client=callback_client,
-            callback_masker=CallbackPayloadMasker(pseudonym_key=TEST_KEY),
-            instrumentation=instrumentation,
-        )
-        await store.claim(request, request_digest(request))
-
-        terminal = await transport.run(request)
-
-        self.assertEqual(terminal["status"], "failed")
-        self.assertEqual(terminal["error"]["code"], "POLICY_BLOCKED")
-        output_audits = [
-            payload for payload in downstream.payloads
-            if payload.get("boundary") == "output_guardrail"
-        ]
-        self.assertEqual(len(output_audits), 1)
-        self.assertEqual(output_audits[0]["decision"], "denied")
-        rendered = json.dumps(received, ensure_ascii=False, sort_keys=True)
-        self.assertNotIn("p13-user@example.invalid", rendered)
-        self.assertNotIn("010-0000-0000", rendered)
-
+class StreamLeakageTests(IsolatedAsyncioTestCase):
     @patch("main.get_callbacks", return_value=[])
     async def test_sse_discards_unchecked_chunks_and_masks_terminal(self, _callbacks):
         class ContextAPI:
@@ -631,7 +469,7 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                 Graph(),
                 ContextAPI(),
                 _request("sse-request-safe-root"),
-                CallbackPayloadMasker(pseudonym_key=TEST_KEY),
+                TerminalPayloadMasker(pseudonym_key=TEST_KEY),
             )
         ])
         self.assertNotIn("p13-user@example.invalid", rendered)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
 from core.runtime_instrumentation import (
     RuntimeStage,
     RuntimeStatus,
@@ -11,12 +10,11 @@ from core.runtime_instrumentation import (
 )
 
 
-def reference_runtime_events() -> tuple[RuntimeTraceEvent | OperationTraceEvent, ...]:
-    events: list[RuntimeTraceEvent | OperationTraceEvent] = []
+def reference_runtime_events() -> tuple[RuntimeTraceEvent, ...]:
+    events: list[RuntimeTraceEvent] = []
     events.extend(_successful_partial_request(1))
     events.extend(_all_tasks_failed_request(2))
     events.extend(_timeout_request(3))
-    events.extend(_callback_attempts())
     return tuple(events)
 
 
@@ -190,31 +188,4 @@ def _timeout_request(number: int):
             duration_ms=200,
             reason_code="request_timeout",
         ),
-    )
-
-
-def _callback_attempts():
-    specs = (
-        (1, 1, OperationStatus.FAILED, "callback_http_503", 10),
-        (1, 2, OperationStatus.FAILED, "callback_http_503", 12),
-        (1, 3, OperationStatus.SUCCEEDED, None, 8),
-        (2, 1, OperationStatus.TIMEOUT, "callback_timeout", 50),
-        (2, 2, OperationStatus.TIMEOUT, "callback_timeout", 50),
-        (2, 3, OperationStatus.TIMEOUT, "callback_timeout", 50),
-        (2, 4, OperationStatus.TIMEOUT, "callback_timeout", 50),
-        (3, 1, OperationStatus.SUCCEEDED, None, 7),
-    )
-    return tuple(
-        OperationTraceEvent(
-            trace_id=f"trace_{number:08d}",
-            attempt_id=f"attempt_{number:08d}",
-            occurred_at_epoch_ms=4_000 + number * 100 + attempt,
-            stage=OperationStage.CALLBACK,
-            status=status,
-            duration_ms=duration,
-            operation_name="backend_callback",
-            step_id="basic-info",
-            error_code=error_code,
-        )
-        for number, attempt, status, error_code, duration in specs
     )

@@ -71,24 +71,6 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         observed.succeed(span, output={"ok": True})
         self.assertEqual(sink.runtime_events[0].input, large_context)
 
-    def test_callback_adapter_emits_only_typed_terminal_operation(self) -> None:
-        sink = FakeInstrumentationSink()
-        adapter = RuntimeInstrumentationAdapter(InstrumentationPort(sink))
-        adapter.record_callback_attempt(
-            request_id="request-test",
-            thread_id="thread-test",
-            step_id="step-test",
-            status=OperationStatus.TIMEOUT,
-            duration_ms=125,
-            error_code="callback_timeout",
-        )
-
-        event = sink.baseline_events[0]
-        self.assertIsInstance(event, OperationTraceEvent)
-        self.assertEqual(event.stage, OperationStage.CALLBACK)
-        self.assertEqual(event.status, OperationStatus.TIMEOUT)
-        self.assertEqual(event.error_code, "callback_timeout")
-
     def test_actual_model_call_recorder_emits_generation_content(self) -> None:
         observed, sink = _bound_adapter()
         prompt = [

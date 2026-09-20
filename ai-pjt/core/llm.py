@@ -1,14 +1,12 @@
 import asyncio
 
-from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
 
 from core.config import RuntimeConfigurationError, settings
 
 
 from llama_index.core.base.embeddings.base import BaseEmbedding
-from llama_index.core import Settings
 
 
 settings.validate_runtime()
@@ -102,23 +100,6 @@ def _create_llm() -> BaseChatModel:
 # ==========================================
 
 
-def _create_embeddings() -> Embeddings:
-    provider = settings.llm_provider
-
-    if provider == "gemini":
-        from langchain_google_genai import GoogleGenerativeAIEmbeddings
-        return GoogleGenerativeAIEmbeddings(
-            model=settings.embedding_model,
-            google_api_key=settings.gemini_api_key,
-        )
-
-    return OpenAIEmbeddings(
-        model=settings.embedding_model,
-        base_url=settings.llm_base_url or None,
-        api_key=settings.openai_api_key or "not-needed",
-    )
-
-
 def _create_llamaindex_embedding() -> BaseEmbedding:
     provider = settings.embedding_provider
 
@@ -135,7 +116,5 @@ def _create_llamaindex_embedding() -> BaseEmbedding:
     raise RuntimeConfigurationError("EMBEDDING_PROVIDER is unsupported")
 
 llm: BaseChatModel = _create_llm()
-# embeddings: Embeddings = _create_embeddings()
-
 embed_model: BaseEmbedding = _create_llamaindex_embedding()
 # Settings.embed_model = _create_llamaindex_embedding()

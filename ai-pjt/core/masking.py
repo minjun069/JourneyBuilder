@@ -2,7 +2,7 @@
 
 The core accepts JSON-like values and returns a new value with the same
 container shape. Runtime adapters remain responsible for serializing that
-value immediately before a model, callback, log, or trace boundary.
+value immediately before a model, SSE terminal, log, or trace boundary.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class MaskingSink(str, Enum):
 
     MODEL_INPUT = "model_input"
     MODEL_OUTPUT = "model_output"
-    CALLBACK = "callback"
+    TERMINAL = "terminal"
     APPLICATION_LOG = "application_log"
     TRACE_EXPORT = "trace_export"
 
@@ -49,20 +49,20 @@ class MaskingPolicyError(ValueError):
 class MaskingPolicy:
     """Required key material and explicit model-use exceptions.
 
-    Model and callback exceptions contain exact leaf paths. Direct identifiers,
+    Model and terminal exceptions contain exact leaf paths. Direct identifiers,
     secrets, and operational identifiers cannot be allowed through either list.
     """
 
     pseudonym_key: bytes = field(repr=False)
     allowed_model_paths: frozenset[MaskingPath] = frozenset()
-    allowed_callback_paths: frozenset[MaskingPath] = frozenset()
+    allowed_terminal_paths: frozenset[MaskingPath] = frozenset()
 
     def __post_init__(self) -> None:
         if not isinstance(self.pseudonym_key, bytes) or len(self.pseudonym_key) < 32:
             raise MaskingPolicyError("pseudonym_key must contain at least 32 bytes")
         for field_name, paths in (
             ("allowed_model_paths", self.allowed_model_paths),
-            ("allowed_callback_paths", self.allowed_callback_paths),
+            ("allowed_terminal_paths", self.allowed_terminal_paths),
         ):
             if not isinstance(paths, frozenset):
                 raise MaskingPolicyError(f"{field_name} must be a frozenset")
@@ -108,7 +108,7 @@ _OBSERVABILITY_SINKS = frozenset(
     {MaskingSink.APPLICATION_LOG, MaskingSink.TRACE_EXPORT}
 )
 _MODEL_SINKS = frozenset({MaskingSink.MODEL_INPUT, MaskingSink.MODEL_OUTPUT})
-_CALLBACK_ROOT_CORRELATION_PATHS = frozenset(
+_TERMINAL_ROOT_CORRELATION_PATHS = frozenset(
     {("request_id",), ("session_id",), ("thread_id",)}
 )
 
@@ -545,9 +545,9 @@ class _PayloadMasker:
             return _DIRECT_IDENTIFIER_TOKEN
         if data_class is DataClass.OPERATIONAL_INFORMATION:
             if (
-                self._sink is MaskingSink.CALLBACK
+                self._sink is MaskingSink.TERMINAL
                 and (
-                    path in _CALLBACK_ROOT_CORRELATION_PATHS
+                    path in _TERMINAL_ROOT_CORRELATION_PATHS
                     or self._is_allowed_sink_path(path)
                 )
             ):
@@ -575,8 +575,8 @@ class _PayloadMasker:
     def _is_allowed_sink_path(self, path: MaskingPath) -> bool:
         if self._sink in _MODEL_SINKS:
             return path in self._policy.allowed_model_paths
-        if self._sink is MaskingSink.CALLBACK:
-            return path in self._policy.allowed_callback_paths
+        if self._sink is MaskingSink.TERMINAL:
+            return path in self._policy.allowed_terminal_paths
         return False
 
     def _should_mask_sensitive_path(self, path: MaskingPath) -> bool:

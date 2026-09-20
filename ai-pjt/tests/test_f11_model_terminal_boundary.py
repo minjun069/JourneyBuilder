@@ -10,7 +10,7 @@ import unittest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
-from core.callback_masking import CallbackPayloadMasker
+from core.terminal_masking import TerminalPayloadMasker
 from core.config import settings
 from core.model_boundary import (
     DATA_HANDLING_PROMPT,
@@ -26,10 +26,10 @@ from core.model_boundary import (
 )
 from core.prompt_registry import bind_prompt_trace_sink
 from prompts import get_prompt
-from transport.contracts import CompletedCallback
+from transport.contracts import CompletedTerminal
 
 
-TEST_MASKING_KEY = b"f11-t02-model-callback-test-key-32bytes"
+TEST_MASKING_KEY = b"f11-t02-model-terminal-test-key-32bytes"
 AI_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -343,7 +343,7 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(artifact["email"], "[DIRECT_IDENTIFIER]")
 
 
-class CallbackBoundaryTests(unittest.TestCase):
+class TerminalBoundaryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.previous_key = settings.masking_pseudonym_key
         settings.masking_pseudonym_key = TEST_MASKING_KEY.decode()
@@ -351,13 +351,13 @@ class CallbackBoundaryTests(unittest.TestCase):
     def tearDown(self) -> None:
         settings.masking_pseudonym_key = self.previous_key
 
-    def test_normal_financial_output_preserves_completed_callback_contract(self) -> None:
+    def test_normal_financial_output_preserves_completed_terminal_contract(self) -> None:
         model_result = secure_invoke(
             FakeModel("월 소득 3,000,000원 변경안을 만들었습니다."),
             [SystemMessage(content=secure_system_prompt("입력 보조 응답 규칙"))],
             purpose=ModelPurpose.INPUT_ASSIST,
         )
-        raw = CompletedCallback(
+        raw = CompletedTerminal(
             request_id="request-test",
             session_id=731,
             thread_id="thread-test",
@@ -381,7 +381,7 @@ class CallbackBoundaryTests(unittest.TestCase):
             },
         ).model_dump(mode="json")
 
-        masked = CallbackPayloadMasker(
+        masked = TerminalPayloadMasker(
             pseudonym_key=TEST_MASKING_KEY,
         ).mask(raw)
 
@@ -393,11 +393,11 @@ class CallbackBoundaryTests(unittest.TestCase):
             3_000_000,
         )
         self.assertEqual(
-            CompletedCallback.model_validate(masked).model_dump(mode="json"),
+            CompletedTerminal.model_validate(masked).model_dump(mode="json"),
             masked,
         )
 
-    def test_callback_masks_direct_identifier_but_keeps_business_shape(self) -> None:
+    def test_terminal_masks_direct_identifier_but_keeps_business_shape(self) -> None:
         raw = {
             "contract_version": "2.0",
             "request_id": "request-test",
@@ -411,13 +411,13 @@ class CallbackBoundaryTests(unittest.TestCase):
                 "action": None,
             },
         }
-        masked = CallbackPayloadMasker(
+        masked = TerminalPayloadMasker(
             pseudonym_key=TEST_MASKING_KEY,
         ).mask(raw)
         self.assertNotIn("010-9876-5432", masked["output"]["response"])
         self.assertEqual(masked["output"]["action"], None)
 
-    def test_callback_preserves_reference_tokens_for_django_validation(self) -> None:
+    def test_terminal_preserves_reference_tokens_for_django_validation(self) -> None:
         token = "[[EMAIL_ADDRESS_a1b2c3d4e5f6_1]]"
         raw = {
             "contract_version": "2.0",
@@ -434,15 +434,15 @@ class CallbackBoundaryTests(unittest.TestCase):
             },
         }
 
-        masked = CallbackPayloadMasker(
+        masked = TerminalPayloadMasker(
             pseudonym_key=TEST_MASKING_KEY,
         ).mask(raw)
 
         self.assertEqual(masked["output"]["email"], token)
         self.assertIn(token, masked["output"]["response"])
 
-    def test_callback_preserves_only_form_target_identities_needed_by_backend(self) -> None:
-        raw = CompletedCallback(
+    def test_terminal_preserves_only_form_target_identities_needed_by_backend(self) -> None:
+        raw = CompletedTerminal(
             request_id="request-test",
             session_id=731,
             thread_id="thread-test",
@@ -469,7 +469,7 @@ class CallbackBoundaryTests(unittest.TestCase):
             },
         ).model_dump(mode="json")
 
-        masker = CallbackPayloadMasker(pseudonym_key=TEST_MASKING_KEY)
+        masker = TerminalPayloadMasker(pseudonym_key=TEST_MASKING_KEY)
         first = masker.mask(raw)
         replay = masker.mask(first)
 

@@ -160,53 +160,6 @@ def evaluate_session_access(payload: Mapping[str, Any]) -> BoundaryDecision:
     )
 
 
-def evaluate_callback_payload(payload: Mapping[str, Any]) -> BoundaryDecision:
-    """Apply the production bearer, binding, expiry, and replay invariants."""
-
-    from transport.contracts import ServiceContractError, verify_service_authorization
-
-    try:
-        verify_service_authorization(
-            payload.get("authorization"),
-            str(payload.get("expected_token", "")),
-        )
-    except ServiceContractError:
-        return BoundaryDecision(
-            "block",
-            "CALLBACK_AUTH_INVALID",
-            ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
-        )
-    if payload.get("supplied_binding") != payload.get("expected_binding"):
-        return BoundaryDecision(
-            "block",
-            "CALLBACK_BINDING_MISMATCH",
-            ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
-        )
-    if payload.get("expired") is True:
-        return BoundaryDecision(
-            "block",
-            "CALLBACK_EXPIRED",
-            ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
-        )
-    if payload.get("terminal_exists") is True:
-        if payload.get("stored_digest") == payload.get("request_digest"):
-            return BoundaryDecision(
-                "allow",
-                "CALLBACK_REPLAY_IDEMPOTENT",
-                ("return_existing_result", "no_duplicate_side_effect"),
-            )
-        return BoundaryDecision(
-            "block",
-            "CALLBACK_REPLAY_CONFLICT",
-            ("reject_callback", "preserve_terminal_state", "audit_callback_denial"),
-        )
-    return BoundaryDecision(
-        "allow",
-        "CALLBACK_ACCEPTED",
-        ("record_terminal_result",),
-    )
-
-
 def evaluate_resource_usage(payload: Mapping[str, Any]) -> BoundaryDecision:
     """Enforce the request's concrete input, retry, and tool-call limits."""
 

@@ -52,22 +52,6 @@ def read_bool(
     raise RuntimeConfigurationError(f"{name} must be true or false")
 
 
-def read_positive_int(
-    name: str,
-    default: int,
-    environ: Mapping[str, str] | None = None,
-) -> int:
-    active_environ = os.environ if environ is None else environ
-    raw_value = active_environ.get(name, str(default))
-    try:
-        value = int(raw_value)
-    except ValueError as exc:
-        raise RuntimeConfigurationError(f"{name} must be an integer") from exc
-    if value <= 0:
-        raise RuntimeConfigurationError(f"{name} must be greater than 0")
-    return value
-
-
 def read_positive_float(
     name: str,
     default: float,

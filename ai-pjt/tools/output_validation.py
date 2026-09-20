@@ -42,17 +42,11 @@ def validate_form_update(state: Mapping[str, Any]) -> dict[str, Any]:
     Despite the historical name, this node validates every response, including
     responses without form changes. The integration owner connects it after every
     Agent. It returns only the public output key, so validation diagnostics do not
-    cross the callback contract boundary.
+    cross the SSE terminal contract boundary.
     """
 
     result = validate_form_update_contract(state)
     return {"output": result.output}
-
-
-def validate_agent_output(state: Mapping[str, Any]) -> dict[str, Any]:
-    """Compatibility alias with a name that describes the broader validation."""
-
-    return validate_form_update(state)
 
 
 def validate_form_update_contract(
@@ -174,14 +168,6 @@ def _validate_error_review(review: Any) -> list[ValidationIssue]:
                 "낮은 신뢰도이거나 confidence와 일치하지 않는 review item은 노출할 수 없습니다.",
             ))
     return issues
-
-
-def validate_agent_output_contract(
-    state: Mapping[str, Any],
-) -> OutputValidationResult:
-    """Compatibility alias for callers using the broader validator name."""
-
-    return validate_form_update_contract(state)
 
 
 def _validate_form_change(

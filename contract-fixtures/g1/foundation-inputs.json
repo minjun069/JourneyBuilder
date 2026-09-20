@@ -3,6 +3,7 @@
   "fixture_kind": "g1-foundation-inputs",
   "gate": "G1",
   "consistency_manifest": "contract-fixtures/g1/artifact-consistency.json",
+  "retired_inputs": ["P05"],
   "inputs": [
     {
       "id": "D1-G0",
@@ -34,11 +35,6 @@
       "id": "P04",
       "commits": ["2eb9897675cb56f696cae52541a22429b697d308"],
       "required_paths": ["ai-pjt/readiness.py", "backend-pjt/readiness.py", "docker-compose.yml"]
-    },
-    {
-      "id": "P05",
-      "commits": ["b8d2931c82cd11afe12005681a29e24a07610455"],
-      "required_paths": ["ai-pjt/core/context.py", "ai-pjt/tests/fixtures/context_scenarios.json"]
     },
     {
       "id": "P06",

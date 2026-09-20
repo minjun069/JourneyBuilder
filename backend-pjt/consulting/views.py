@@ -6,11 +6,9 @@ from rest_framework.permissions import IsAuthenticated
 import logging
 
 from .models import (
-    ConsultingSession, Message,
+    ConsultingSession,
     BasicInfo, FinancialMindset, FinancialSatisfaction,
-    FinancialAsset, PensionAsset, RealEstateAsset,
-    Liability, Income, Expense,
-    FinancialGoalPeriod, FinancialGoalPeriodItem, FinancialGoalMilestone,
+    FinancialGoalPeriod, FinancialGoalPeriodItem,
 )
 from .serializers import (
     ConsultingSessionSerializer,
