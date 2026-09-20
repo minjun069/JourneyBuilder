@@ -22,10 +22,12 @@ from core.observability_masking import (  # noqa: E402
     FakeSerializedInstrumentationSink,
     build_masked_runtime_instrumentation,
 )
-from graph.task_contracts import (  # noqa: E402
+from graph.binding_policy import (  # noqa: E402
     BindingResolutionError,
     resolve_task_bindings,
     seal_validated_artifact,
+)
+from graph.task_contracts import (  # noqa: E402
     validate_task_result,
 )
 from guardrails.boundary_policy import (  # noqa: E402
@@ -327,47 +329,45 @@ class ProductionSecurityEvaluator:
         payload: dict[str, Any],
     ) -> Decision:
         planner_tasks: list[Any] = []
-        route_enrichments: list[Any] = []
+        declared_routes: list[Any] = []
         raw_tasks = payload.get("tasks")
         if isinstance(raw_tasks, list):
             for task in raw_tasks:
                 if not isinstance(task, dict):
                     planner_tasks.append(copy.deepcopy(task))
-                    route_enrichments.append(None)
+                    declared_routes.append(None)
                     continue
                 planner_tasks.append({
                     key: copy.deepcopy(value)
                     for key, value in task.items()
                     if key in PLANNER_TASK_FIELDS
                 })
-                route = task.get("route")
-                if isinstance(route, dict):
-                    route_enrichments.append({
-                        "source_task_id": route.get("task_id"),
-                        "executor_kind": route.get("executor_kind"),
-                        "executor": route.get("executor"),
-                        "reason_code": route.get("reason_code"),
-                    })
-                else:
-                    route_enrichments.append(copy.deepcopy(route))
+                declared_routes.append(copy.deepcopy(task.get("route")))
 
         planner_plan: dict[str, Any] = {
             "status": payload.get("status", "executable"),
             "tasks": planner_tasks,
         }
-        candidate = {
-            "step_id": case_input["step_id"],
-            "planner_plan": planner_plan,
-            "route_enrichments": route_enrichments,
-        }
         result = evaluate_route_plan(
-            candidate,
+            planner_plan,
             step_id=case_input["step_id"],
             step_candidates=self._step_candidates,
             registered_tool_capabilities=tuple(
                 case_input.get("registered_tool_capabilities", ())
             ),
         )
+        if result.allowed:
+            trusted_tasks = result.plan.get("tasks", [])
+            for index, declared in enumerate(declared_routes):
+                if not isinstance(declared, dict) or index >= len(trusted_tasks):
+                    continue
+                canonical = trusted_tasks[index].get("route")
+                if declared != canonical:
+                    return Decision(
+                        "block",
+                        "ROUTE_EXECUTOR_MISMATCH",
+                        ("deny_plan_execution", "audit_security_event"),
+                    )
         effects = (
             ("execute_validated_plan",)
             if result.allowed

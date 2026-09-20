@@ -56,7 +56,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         return context_api
 
     async def run_stream_execution(self, request):
-        with patch("main.get_callbacks", return_value=[]):
+        with patch("transport.chat_service.get_callbacks", return_value=[]):
             frames = [
                 frame
                 async for frame in _stream_v2_chat_events(
@@ -200,6 +200,7 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
 
     async def test_household_reference_lookup_binds_exact_existing_row(self):
         from agents import input_assist
+        from agents.input_assist import service as input_assist_service
         from tools.catalog import build_default_registry
         from tools.graph_adapter import build_graph_tool_executors
         from tools.runtime import FunctionToolRuntime
@@ -273,15 +274,15 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         request_payload["step_id"] = "financial-goals"
         request = ChatV2Request.model_validate(request_payload)
 
-        classify = SimpleNamespace(ainvoke=AsyncMock(return_value=input_assist.ClassifyResult(
+        classify = SimpleNamespace(ainvoke=AsyncMock(return_value=input_assist_service.ClassifyResult(
             intent="fill_avg",
             user_requested_change=True,
         )))
         merge_model = SimpleNamespace(ainvoke=AsyncMock(return_value=AIMessage(
             content="승인된 주거비 기준으로 기존 빈 항목 변경안을 만들었습니다.",
         )))
-        with patch.object(input_assist, "_classify_chain", classify), patch.object(
-            input_assist, "llm", merge_model
+        with patch.object(input_assist_service, "_classify_chain", classify), patch.object(
+            input_assist_service, "llm", merge_model
         ):
             first = await self.run_stream_execution(request)
 

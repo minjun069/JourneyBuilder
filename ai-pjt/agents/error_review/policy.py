@@ -1,4 +1,4 @@
-"""Advisory Error Review over a valid draft and a directly mapped manual."""
+"""Deterministic Error Review candidate validation."""
 
 from __future__ import annotations
 
@@ -6,87 +6,11 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field
-
-from agents.error_review_confidence import confidence_level, visible_review_items
-from agents.error_review_manuals import load_error_review_manual
-from core.llm import llm
-from core.field_registry import load_field_registry
-from core.model_boundary import (
-    ModelPurpose,
-    prompt_messages,
-    secure_ainvoke,
-)
-from graph.state import ChatState
-from tools.output_validation import validate_form_update_contract
-from prompts import get_prompt
+from agents.error_review.confidence import confidence_level
+from tools.output_policy import validate_form_update_contract
 
 
-class ReviewItem(BaseModel):
-    section: str
-    path: str
-    item_id: int | None = None
-    client_item_id: str | None = None
-    parent_item_id: int | None = None
-    parent_client_item_id: str | None = None
-    current_value_json: str
-    reason: str = Field(min_length=1)
-    suggested_value_json: str | None = None
-    confidence: float = Field(ge=0, le=1)
-
-
-class ReviewResult(BaseModel):
-    items: list[ReviewItem]
-
-
-_review_chain = llm.with_structured_output(ReviewResult)
-
-REVIEW_PROMPT = get_prompt("error_review.analyze")
-
-
-async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, Any]]]:
-    """Run the production review once and retain low-confidence items for evals."""
-
-    manual = load_error_review_manual(state["step_id"])
-    current_form = state.get("customer_info", {}).get("current_form", {})
-    registry = [
-        field for field in load_field_registry(state["step_id"])
-        if isinstance(field, dict) and field.get("step_id") == state["step_id"]
-        and field.get("sensitivity") != "operational"
-    ]
-    prompt_payload = {
-        "step_id": state["step_id"],
-        "field_registry": registry,
-        "current_form": current_form,
-        "manual_id": manual.document_id,
-        "manual_version": manual.version,
-        "manual_text": manual.text,
-    }
-    if "trigger" in REVIEW_PROMPT.required_input_keys:
-        prompt_payload["trigger"] = "save"
-    result = await secure_ainvoke(
-        _review_chain,
-        prompt_messages(REVIEW_PROMPT, prompt_payload),
-        purpose=ModelPurpose.ERROR_REVIEW,
-        operation_name="error_review.review",
-        sensitive_payload={"current_form": current_form},
-        prompt=REVIEW_PROMPT,
-    )
-    validated_items = [
-        item for raw in result.items
-        if (normalized := _decode_review_item(raw.model_dump())) is not None
-        if (item := _validated_item(
-            normalized,
-            step_id=state["step_id"],
-            current_form=current_form,
-            field_registry=registry,
-        )) is not None
-    ]
-    return manual, validated_items
-
-
-def _decode_review_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
+def decode_review_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
     try:
         current_value = json.loads(item["current_value_json"])
         suggested_raw = item.get("suggested_value_json")
@@ -105,31 +29,7 @@ def _decode_review_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
     }
 
 
-async def _run(state: ChatState) -> dict:
-    manual, all_items = await analyze_review_items(state)
-    validated_items = visible_review_items(all_items)
-    if validated_items:
-        response = f"입력값에서 확인이 필요한 항목 {len(validated_items)}개를 찾았습니다."
-    else:
-        response = "현재 입력값에서 별도로 확인을 권할 만한 항목을 찾지 못했습니다."
-    return {
-        "output": {
-            "response": response,
-            "step_id": state["step_id"],
-            "action": None,
-            "review": {
-                "type": "error_review",
-                "manual": {
-                    "document_id": manual.document_id,
-                    "version": manual.version,
-                },
-                "items": validated_items,
-            },
-        }
-    }
-
-
-def _validated_item(
+def validated_item(
     item: Mapping[str, Any],
     *,
     step_id: str,
@@ -165,7 +65,7 @@ def _validated_item(
         change = {
             "section": item["section"],
             "path": item["path"],
-            "operation": "set" if registry_spec.get("cardinality") == "single" else "update",
+            "operation": "set" if cardinality == "single" else "update",
             "value": candidate,
             "reason": item["reason"],
         }
@@ -226,11 +126,10 @@ def _current_value(
         return None, False
     if section == "goal_periods" and str(item.get("path", "")).startswith("items[]."):
         for parent in rows:
-            if not isinstance(parent, Mapping):
+            if not isinstance(parent, Mapping) or not _parent_identity_matches(parent, item):
                 continue
-            if not _parent_identity_matches(parent, item):
-                continue
-            for child in parent.get("items", []) if isinstance(parent.get("items"), list) else []:
+            children = parent.get("items", [])
+            for child in children if isinstance(children, list) else []:
                 if isinstance(child, Mapping) and _identity_matches(child, item):
                     key = str(item["path"]).split(".", 1)[1]
                     return child.get(key), key in child
@@ -254,14 +153,3 @@ def _parent_identity_matches(row: Mapping[str, Any], item: Mapping[str, Any]) ->
         return str(row.get("id")) == str(item["parent_item_id"])
     client_id = item.get("parent_client_item_id")
     return isinstance(client_id, str) and row.get("client_item_id") == client_id
-
-
-def _build():
-    g = StateGraph(ChatState)
-    g.add_node("run", _run)
-    g.add_edge(START, "run")
-    g.add_edge("run", END)
-    return g.compile()
-
-
-graph = _build()

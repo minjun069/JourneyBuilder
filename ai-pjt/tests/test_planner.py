@@ -7,13 +7,10 @@ from core.context import (
     ConversationTurn,
     StructuredConversationState,
 )
-from graph.planner import (
-    PlannerModelOutput,
-    _validate_plan_structure,
-    create_route_plan,
-    planner_route_constraints,
-)
-from graph.router import allowed_task_types_for, enrich_route_plan
+from graph.plan_validation import validate_plan_structure
+from graph.planner import PlannerModelOutput
+from graph.planning_service import create_route_plan, planner_route_constraints
+from graph.task_catalog import allowed_task_types_for
 from guardrails.plan_policy import evaluate_route_plan
 
 
@@ -74,7 +71,7 @@ class RoutePlanValidationTests(unittest.TestCase):
 
         self.assertNotIn("arguments", route_plan["tasks"][0])
         self.assertNotIn("elicit_routing", route_plan)
-        self.assertTrue(_validate_plan_structure(route_plan, step_id="basic-info").valid)
+        self.assertTrue(validate_plan_structure(route_plan, step_id="basic-info").valid)
 
     def test_qualitative_task_needs_no_special_routing_contract(self) -> None:
         elicit_task = task(
@@ -82,7 +79,7 @@ class RoutePlanValidationTests(unittest.TestCase):
             "collect_qualitative_info",
             "미래 목표 답변을 이어서 정리",
         )
-        missing = _validate_plan_structure(
+        missing = validate_plan_structure(
             {"tasks": [elicit_task]},
             step_id="financial-mindset",
         )
@@ -101,7 +98,7 @@ class RoutePlanValidationTests(unittest.TestCase):
                 "population": "kr_general_households_1plus",
             },
         )
-        incomplete = _validate_plan_structure({"tasks": [
+        incomplete = validate_plan_structure({"tasks": [
             lookup,
             task(
                 "fill",
@@ -122,7 +119,7 @@ class RoutePlanValidationTests(unittest.TestCase):
             "comparator", "source_id", "source_version", "as_of",
             "calculation_policy_version",
         )
-        complete = _validate_plan_structure({"tasks": [
+        complete = validate_plan_structure({"tasks": [
             lookup,
             task(
                 "fill",
@@ -145,7 +142,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         )
         del raw_task["arguments"]["population"]
 
-        validation = _validate_plan_structure(
+        validation = validate_plan_structure(
             {"tasks": [raw_task]},
             step_id="basic-info",
         )
@@ -157,7 +154,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         )
 
     def test_dependency_and_binding_are_normalized_to_runtime_ids(self) -> None:
-        validation = _validate_plan_structure({
+        validation = validate_plan_structure({
             "tasks": [
                 task(
                     "lookup",
@@ -190,7 +187,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         self.assertEqual(fill["produces"], "form_change")
 
     def test_one_artifact_can_feed_two_explicit_consumers(self) -> None:
-        validation = _validate_plan_structure({
+        validation = validate_plan_structure({
             "tasks": [
                 task("lookup", "lookup_reference_value", "40대 평균 비용 조회"),
                 task(
@@ -228,7 +225,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         )
 
     def test_more_than_three_tasks_is_rejected(self) -> None:
-        validation = _validate_plan_structure({
+        validation = validate_plan_structure({
             "tasks": [
                 task(str(index), "answer_question", f"질문 {index}")
                 for index in range(4)
@@ -238,7 +235,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         self.assertEqual(validation.issues[0].code, "INVALID_TASK_COUNT")
 
     def test_forward_or_cyclic_dependency_is_rejected(self) -> None:
-        validation = _validate_plan_structure({
+        validation = validate_plan_structure({
             "tasks": [
                 task(
                     "first",
@@ -261,7 +258,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         )
 
     def test_binding_requires_declared_dependency_and_matching_path(self) -> None:
-        undeclared = _validate_plan_structure({
+        undeclared = validate_plan_structure({
             "tasks": [
                 task("lookup", "lookup_reference_value", "평균값 조회"),
                 task(
@@ -280,7 +277,7 @@ class RoutePlanValidationTests(unittest.TestCase):
             {issue.code for issue in undeclared.issues},
         )
 
-        wrong_path = _validate_plan_structure({
+        wrong_path = validate_plan_structure({
             "tasks": [
                 task("lookup", "lookup_reference_value", "평균값 조회"),
                 task(
@@ -304,7 +301,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         injected = task("one", "answer_question", "질문")
         injected["agent"] = "input_assist"
         injected["produces"] = "form_change"
-        validation = _validate_plan_structure({"tasks": [injected]}, step_id="intro")
+        validation = validate_plan_structure({"tasks": [injected]}, step_id="intro")
         self.assertFalse(validation.valid)
         self.assertIn(
             "PLANNER_EXECUTOR_INJECTION",
@@ -344,7 +341,6 @@ class ContextAwarePlanningTests(unittest.TestCase):
             step_id="intro",
             context_window=self._empty_window(),
             planner=planner,
-            enricher=enrich_route_plan,
             evaluator=lambda candidate: evaluate_route_plan(
                 candidate,
                 step_id="intro",
@@ -367,7 +363,6 @@ class ContextAwarePlanningTests(unittest.TestCase):
             step_id="intro",
             context_window=self._empty_window(),
             planner=planner,
-            enricher=enrich_route_plan,
             evaluator=lambda candidate: evaluate_route_plan(
                 candidate,
                 step_id="intro",
@@ -437,7 +432,6 @@ class ContextAwarePlanningTests(unittest.TestCase):
             step_id="financial-goals",
             context_window=window,
             planner=planner,
-            enricher=enrich_route_plan,
             evaluator=lambda candidate: evaluate_route_plan(
                 candidate,
                 step_id="financial-goals",
@@ -483,7 +477,6 @@ class ContextAwarePlanningTests(unittest.TestCase):
             step_id="basic-info",
             context_window=window,
             planner=planner,
-            enricher=enrich_route_plan,
             evaluator=lambda candidate: evaluate_route_plan(
                 candidate,
                 step_id="basic-info",
@@ -519,7 +512,6 @@ class ContextAwarePlanningTests(unittest.TestCase):
                     step_id="basic-info",
                     context_window=window,
                     planner=unavailable_planner,
-                    enricher=enrich_route_plan,
                     evaluator=lambda candidate: evaluate_route_plan(
                         candidate,
                         step_id="basic-info",

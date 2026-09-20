@@ -202,7 +202,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_current_form_overrides_saved_fact_only_for_active_fields(self) -> None:
         from core.field_registry import load_field_registry
-        from graph.builder import _flatten_customer_info
+        from graph.plan_node import _flatten_customer_info
 
         facts = _flatten_customer_info(
             {

@@ -199,7 +199,7 @@ class FakeErrorReviewGraph:
 
 
 class V2SSEStreamTests(IsolatedAsyncioTestCase):
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_stream_uses_v2_identity_and_terminal_done(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -220,7 +220,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(frames[-1][1]["output"]["response"], "안녕하세요")
         self.assertIn("completed_at", frames[-1][1])
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_stream_emits_one_request_root_lifecycle_with_io(self, _callbacks):
         instrumentation, sink = fake_instrumentation()
 
@@ -248,7 +248,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(request_events[0].input["message"], "은퇴 준비를 알려줘")
         self.assertEqual(request_events[1].output["response"], "안녕하세요")
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_failure_returns_safe_v2_terminal_error(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -266,7 +266,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(terminal["error"]["code"], "INTERNAL_ERROR")
         self.assertNotIn("외부에 노출하면 안 되는 오류", str(frames))
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_policy_block_returns_policy_terminal_error(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -284,7 +284,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(terminal["error"]["code"], "POLICY_BLOCKED")
         self.assertNotIn("민감정보가 포함된 모델 응답", str(frames))
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_empty_response_returns_error_instead_of_done(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -299,7 +299,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual([name for name, _ in frames], ["start", "error"])
         self.assertNotIn("event: done", str(frames))
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_error_review_is_preserved_in_sse_done(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -351,7 +351,7 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["error"]["code"], "SERVICE_UNAUTHORIZED")
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_valid_request_returns_v2_event_stream(self, _callbacks):
         with patch("main.settings.ai_service_bearer_token", "test-token"):
             response = await self._post(

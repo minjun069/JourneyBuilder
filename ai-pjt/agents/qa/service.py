@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from math import isfinite
 from time import monotonic
-from typing import Any, Literal, NotRequired, TypedDict
-
-from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel
+from typing import Any, NotRequired, TypedDict
 
 from core.llm import llm
 from core.model_boundary import (
@@ -18,8 +14,28 @@ from core.model_boundary import (
 from core.monitoring import OperationStage, OperationStatus
 from core.observability_masking import exception_identity_fields
 from core.operation_observation import record_operation_observation
-from prompts import get_prompt
 from rag.retriever import format_docs, get_retriever
+from .model import (
+    ANSWER_PROMPT as _ANSWER_PROMPT,
+    DECIDE_PROMPT as _DECIDE_PROMPT,
+    DIRECT_ANSWER_PROMPT as _DIRECT_ANSWER_PROMPT,
+    JUDGE_PROMPT as _JUDGE_PROMPT,
+    MERGE_PROMPT as _MERGE_PROMPT,
+    REFINE_PROMPT as _REFINE_PROMPT,
+    SPECIFY_PROMPT as _SPECIFY_PROMPT,
+    JudgeResult,
+    RefineResult,
+    RetrievalDecision,
+    SpecifyResult,
+    decision_chain as _decision_chain,
+    judge_chain as _judge_chain,
+    refine_chain as _refine_chain,
+    specify_chain as _specify_chain,
+)
+from .policy import (
+    requests_unbound_official_value,
+    strip_retrieval_source_disclosure,
+)
 
 MAX_RETRIES = 2
 
@@ -52,42 +68,6 @@ class QAState(TypedDict):
     partial_answers: list[str]
     # 최종 출력 — ChatState 의 output 필드로 전파
     output: dict  # {"response": str, "update": {}}
-
-
-# ---------------------------------------------------------------------------
-# 구조화 출력 스키마
-# ---------------------------------------------------------------------------
-
-class SpecifyResult(BaseModel):
-    queries: list[str]
-
-
-class RetrievalDecision(BaseModel):
-    need_retrieval: bool
-    requests_new_official_value: bool = False
-
-class JudgeResult(BaseModel):
-    verdict: Literal["good", "bad"]
-    failure_kind: Literal["none", "answer_quality", "evidence_insufficient"] = "none"
-    reason: str
-
-
-class RefineResult(BaseModel):
-    query: str
-
-
-_specify_chain = llm.with_structured_output(SpecifyResult)
-_decision_chain = llm.with_structured_output(RetrievalDecision)
-_judge_chain = llm.with_structured_output(JudgeResult)
-_refine_chain = llm.with_structured_output(RefineResult)
-
-_SPECIFY_PROMPT = get_prompt("qa.specify")
-_DECIDE_PROMPT = get_prompt("qa.decide_retrieval")
-_ANSWER_PROMPT = get_prompt("qa.answer_with_evidence")
-_DIRECT_ANSWER_PROMPT = get_prompt("qa.answer_direct")
-_MERGE_PROMPT = get_prompt("qa.merge")
-_JUDGE_PROMPT = get_prompt("qa.judge")
-_REFINE_PROMPT = get_prompt("qa.refine_query")
 
 
 def _bindings(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -399,13 +379,10 @@ def _search_result_metadata(
 def _requests_unbound_official_value(state: QAState) -> bool:
     """Fail closed only for a *new* official numeric value without a tool binding."""
 
-    if _bindings(state):
-        return False
-    text = f"{state.get('message', '')} {state.get('current_query', '')}".replace(" ", "")
-    official_tokens = ("공식값", "기준값", "한도", "법정", "공단", "세율", "평균금액", "최신값")
-    value_tokens = ("얼마", "수치", "금액", "비율", "몇", "%", "원")
-    return any(token in text for token in official_tokens) and any(
-        token in text for token in value_tokens
+    return requests_unbound_official_value(
+        message=str(state.get("message", "")),
+        current_query=str(state.get("current_query", "")),
+        has_bindings=bool(_bindings(state)),
     )
 
 
@@ -419,78 +396,5 @@ def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
     }
 
 
-_SOURCE_BLOCK_HEADING = re.compile(
-    r"^\s{0,3}(?:#{1,6}\s*)?(?:\*\*|__)?"
-    r"(?:출처|참고\s*문서|검색\s*문서|sources?)"
-    r"\s*:?\s*(?:\*\*|__)?\s*:?\s*$",
-    re.IGNORECASE,
-)
-_SOURCE_DISCLOSURE_LINE = re.compile(
-    r"^\s*(?:[-*+]\s+)?(?:#{1,6}\s*)?(?:\*\*|__)?"
-    r"(?:출처|참고\s*문서|검색\s*문서|원문\s*위치|source_id|문서\s*제목|sources?)"
-    r"\s*:?\s*(?:\*\*|__)?\s*:?\s*.+$",
-    re.IGNORECASE,
-)
-_CONTEXT_METADATA_LINE = re.compile(
-    r"^\s*(?:\*\*|__)?\[(?:근거|source_id|원문\s*위치)\s*:.*\]"
-    r"(?:\*\*|__)?\s*$",
-    re.IGNORECASE,
-)
-_SOURCE_LIST_ITEM = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)")
-_INLINE_SOURCE_NOTE = re.compile(
-    r"\s*\((?:출처|원문\s*위치|source_id)\s*:[^)]*\)",
-    re.IGNORECASE,
-)
-
-
 def _strip_retrieval_source_disclosure(answer: str) -> str:
-    """Keep grounded prose while removing retrieved-document source disclosure."""
-
-    kept: list[str] = []
-    dropping_source_list = False
-    for line in answer.splitlines():
-        stripped = line.strip()
-        if _SOURCE_BLOCK_HEADING.fullmatch(line):
-            dropping_source_list = True
-            continue
-        if dropping_source_list:
-            if not stripped or _SOURCE_LIST_ITEM.match(line):
-                continue
-            dropping_source_list = False
-        if (
-            _SOURCE_DISCLOSURE_LINE.fullmatch(line)
-            or _CONTEXT_METADATA_LINE.fullmatch(line)
-        ):
-            continue
-        kept.append(_INLINE_SOURCE_NOTE.sub("", line).rstrip())
-    return "\n".join(kept).strip()
-
-
-# ---------------------------------------------------------------------------
-# 그래프 빌드
-# ---------------------------------------------------------------------------
-
-def _build():
-    g = StateGraph(QAState)
-
-    g.add_node("init", _init)
-    g.add_node("specify", _specify)
-    g.add_node("next_query", _next_query)
-    g.add_node("decide", _decide)
-    g.add_node("generate", _generate)
-    g.add_node("judge", _judge)
-    g.add_node("merge", _merge)
-
-    g.add_edge(START, "init")
-    g.add_edge("init", "specify")
-    g.add_edge("specify", "next_query")
-    g.add_edge("next_query", "decide")
-    g.add_edge("decide", "generate")
-    g.add_edge("generate", "judge")
-    g.add_conditional_edges("judge", _route_after_judge)
-    g.add_edge("merge", END)
-
-    return g.compile()
-
-
-graph = _build()
+    return strip_retrieval_source_disclosure(answer)

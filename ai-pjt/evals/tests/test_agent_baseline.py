@@ -47,7 +47,7 @@ class AgentEvaluationContractTests(unittest.TestCase):
         self.assertEqual(load_fixture()["chart_quality_disposition"], "quality_gate")
 
     def test_confidence_fixture_matches_runtime_and_low_is_hidden(self) -> None:
-        from agents.error_review_confidence import confidence_level, visible_review_items
+        from agents.error_review.confidence import confidence_level, visible_review_items
 
         for case in self.contract["error_review_confidence_cases"]:
             with self.subTest(confidence=case["confidence"]):
@@ -59,7 +59,7 @@ class AgentEvaluationContractTests(unittest.TestCase):
                 self.assertEqual(bool(visible_review_items([item])), case["expected_visible"])
 
     def test_failure_responder_messages_match_contract_exactly(self) -> None:
-        from graph.executor import failure_response
+        from graph.aggregation import failure_response
 
         expected = self.contract["failure_responder_exact_messages"]
         self.assertEqual(
@@ -132,7 +132,8 @@ class ModelBudgetTests(unittest.IsolatedAsyncioTestCase):
 
 class ErrorReviewVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_production_review_hides_low_and_returns_derived_high_level(self) -> None:
-        from agents import error_review
+        from agents.error_review import service as error_review
+        from agents.error_review import model as error_review_model
 
         result = error_review.ReviewResult(items=[
             error_review.ReviewItem(
@@ -153,7 +154,7 @@ class ErrorReviewVisibilityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ),
         ])
         with patch.object(
-            error_review,
+            error_review_model,
             "_review_chain",
             SimpleNamespace(ainvoke=AsyncMock(return_value=result)),
         ):

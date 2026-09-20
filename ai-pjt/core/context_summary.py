@@ -10,16 +10,16 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.context import (
-    ApproximateUnitCounter,
+from core.context_domain import (
     ContextScope,
-    ContextStateAPI,
     ContextSummary,
     ConversationContext,
     RetrievedMemory,
     StructuredConversationState,
     SummaryJob,
 )
+from core.context_service import ContextStateAPI
+from core.context_window import ApproximateUnitCounter
 from core.model_boundary import (
     ModelPurpose,
     bind_model_call_recorder,

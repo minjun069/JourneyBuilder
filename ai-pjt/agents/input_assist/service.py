@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
-from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel
-
-from agents.input_assist_defaults import (
+from agents.input_assist.defaults import (
     ReferenceTargetNotAllowed,
     build_bound_reference_proposals,
     build_default_proposals,
@@ -19,7 +16,22 @@ from core.model_boundary import (
     prompt_messages,
     secure_ainvoke,
 )
-from prompts import get_prompt
+from .model import (
+    CLASSIFY_PROMPT as _CLASSIFY_PROMPT,
+    ERROR_CHECK_2_PROMPT as _ERROR_CHECK_2_PROMPT,
+    IDENTIFY_PROMPT as _IDENTIFY_PROMPT,
+    MERGE_PROMPT as _MERGE_PROMPT,
+    RESOLVE_PROMPT as _RESOLVE_PROMPT,
+    ClassifyResult,
+    ErrorCheck2Result,
+    IdentificationItem,
+    IdentifyResult,
+    ResolveResult,
+    classify_chain as _classify_chain,
+    error_check_2_chain as _error_check_2_chain,
+    identify_chain as _identify_chain,
+    resolve_chain as _resolve_chain,
+)
 
 MAX_RETRIES = 2
 
@@ -56,54 +68,6 @@ class InputAssistState(TypedDict):
     # 최종 출력 — ChatState 의 output 필드로 전파
     output: dict                 # 자연어 응답과 FormChangeAction
     reason_code: NotRequired[str]
-# ---------------------------------------------------------------------------
-# 구조화 출력 스키마
-# ---------------------------------------------------------------------------
-
-class ClassifyResult(BaseModel):
-    intent: Literal["fill_avg", "find_field", "organize", "other"]
-
-    user_requested_change: bool
-
-class IdentificationItem(BaseModel):
-    section: str
-    path: str
-    operation: Literal["set", "add", "update", "remove"]
-    item_id: int | None = None
-    client_item_id: str | None = None
-    parent_item_id: int | None = None
-    parent_client_item_id: str | None = None
-    label: str | None = None
-    excerpt: str
-
-
-class IdentifyResult(BaseModel):
-    items: list[IdentificationItem]
-
-
-
-class ResolveResult(BaseModel):
-    value_json: str
-    confidence: float
-
-
-class ErrorCheck2Result(BaseModel):
-    error_type: Literal["ok", "hallucination", "unorganized", "type_unit", "unreasonable"]
-    reason: str
-
-
-_classify_chain      = llm.with_structured_output(ClassifyResult)
-_identify_chain      = llm.with_structured_output(IdentifyResult)
-_resolve_chain       = llm.with_structured_output(ResolveResult)
-_error_check_2_chain = llm.with_structured_output(ErrorCheck2Result)
-
-
-_CLASSIFY_PROMPT = get_prompt("input_assist.classify")
-_IDENTIFY_PROMPT = get_prompt("input_assist.identify")
-_RESOLVE_PROMPT = get_prompt("input_assist.resolve")
-_ERROR_CHECK_2_PROMPT = get_prompt("input_assist.validate_resolution")
-_MERGE_PROMPT = get_prompt("input_assist.merge")
-
 _RESOLVE_INTENT_INSTRUCTIONS: dict[str, str] = {
     "fill_avg": "executor가 검증해 전달한 binding 값만 사용하세요. binding 값이 없으면 평균값·추천값을 임의로 생성하지 마세요.",
     "find_field": "발췌 내용에서 이 항목에 해당하는 값을 직접 추출하여 반환하세요.",
@@ -601,35 +565,3 @@ def _model_sensitive_payload(state: InputAssistState) -> dict[str, Any]:
         "resolution": state.get("resolution"),
         "partial_results": state.get("partial_results", []),
     }
-
-
-# ---------------------------------------------------------------------------
-# 그래프 빌드
-# ---------------------------------------------------------------------------
-
-def _build():
-    g = StateGraph(InputAssistState)
-
-    g.add_node("init", _init)
-    g.add_node("classify", _classify)
-    g.add_node("identify", _identify)
-    g.add_node("next_field", _next_field)
-    g.add_node("error_check_1", _error_check_1)
-    g.add_node("resolve", _resolve)
-    g.add_node("error_check_2", _error_check_2)
-    g.add_node("merge", _merge)
-
-    g.add_edge(START, "init")
-    g.add_edge("init", "classify")
-    g.add_edge("classify", "identify")
-    g.add_conditional_edges("identify", _route_after_identify)
-    g.add_edge("next_field", "error_check_1")
-    g.add_conditional_edges("error_check_1", _route_after_error_check_1)
-    g.add_edge("resolve", "error_check_2")
-    g.add_conditional_edges("error_check_2", _route_after_error_check_2)
-    g.add_edge("merge", END)
-
-    return g.compile()
-
-
-graph = _build()

@@ -32,7 +32,7 @@ def configure_disposable_runtime() -> None:
 class InputAssistBindingTests(unittest.IsolatedAsyncioTestCase):
     async def test_bound_value_bypasses_model_resolution_and_review(self) -> None:
         configure_disposable_runtime()
-        from agents import input_assist
+        from agents.input_assist import service as input_assist
 
         state = {
             "step_id": "financial-goals",
@@ -66,7 +66,7 @@ class InputAssistBindingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_fill_avg_without_binding_returns_no_generated_value(self) -> None:
         configure_disposable_runtime()
-        from agents import input_assist
+        from agents.input_assist import service as input_assist
 
         state = {
             "step_id": "financial-goals",
@@ -96,7 +96,7 @@ class InputAssistBindingTests(unittest.IsolatedAsyncioTestCase):
 class QABindingTests(unittest.IsolatedAsyncioTestCase):
     async def test_bound_reference_still_allows_explanation_retrieval(self) -> None:
         configure_disposable_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
         with patch.object(
             qa,

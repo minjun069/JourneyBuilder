@@ -483,11 +483,11 @@ class ProductionModelCallAuditTests(unittest.TestCase):
     TARGETS = (
         "graph/planner.py",
         "graph/executor.py",
-        "agents/qa.py",
-        "agents/input_assist.py",
-        "agents/error_review.py",
-        "agents/chart_interpret.py",
-        "agents/elicit.py",
+        "agents/qa/service.py",
+        "agents/input_assist/service.py",
+        "agents/error_review/model.py",
+        "agents/chart_interpret/model.py",
+        "agents/elicit/model.py",
         "core/context_summary.py",
     )
 
@@ -507,25 +507,25 @@ class ProductionModelCallAuditTests(unittest.TestCase):
     def test_all_model_roles_register_versioned_prompt_specs(self) -> None:
         expected = {
             "graph/planner.py": {"PLANNER_PROMPT"},
-            "agents/qa.py": {
-                "_SPECIFY_PROMPT",
-                "_DECIDE_PROMPT",
-                "_ANSWER_PROMPT",
-                "_DIRECT_ANSWER_PROMPT",
-                "_MERGE_PROMPT",
-                "_JUDGE_PROMPT",
-                "_REFINE_PROMPT",
+            "agents/qa/model.py": {
+                "SPECIFY_PROMPT",
+                "DECIDE_PROMPT",
+                "ANSWER_PROMPT",
+                "DIRECT_ANSWER_PROMPT",
+                "MERGE_PROMPT",
+                "JUDGE_PROMPT",
+                "REFINE_PROMPT",
             },
-            "agents/input_assist.py": {
-                "_CLASSIFY_PROMPT",
-                "_IDENTIFY_PROMPT",
-                "_RESOLVE_PROMPT",
-                "_ERROR_CHECK_2_PROMPT",
-                "_MERGE_PROMPT",
+            "agents/input_assist/model.py": {
+                "CLASSIFY_PROMPT",
+                "IDENTIFY_PROMPT",
+                "RESOLVE_PROMPT",
+                "ERROR_CHECK_2_PROMPT",
+                "MERGE_PROMPT",
             },
-            "agents/error_review.py": {"REVIEW_PROMPT"},
-            "agents/chart_interpret.py": {"CHART_PROMPT"},
-            "agents/elicit.py": {"RESPOND_PROMPT"},
+            "agents/error_review/model.py": {"REVIEW_PROMPT"},
+            "agents/chart_interpret/model.py": {"CHART_PROMPT"},
+            "agents/elicit/model.py": {"RESPOND_PROMPT"},
             "core/context_summary.py": {"SUMMARY_PROMPT"},
         }
         for relative, required_names in expected.items():

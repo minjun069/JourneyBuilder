@@ -20,7 +20,7 @@ from core.observability_masking import (
 from core.runtime_instrumentation import RuntimeStage
 from core.terminal_masking import TerminalPayloadMasker
 from graph.executor import execute_route_plan
-from graph.planner import TASK_TYPE_CONTRACTS
+from graph.task_catalog import TASK_TYPE_CONTRACTS
 from main import _stream_v2_chat_events
 from tests.security.masking_contract import (
     MASKING_SENTINELS,
@@ -388,7 +388,7 @@ class SerializedBoundaryTests(TestCase):
 
 
 class StreamLeakageTests(IsolatedAsyncioTestCase):
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_sse_discards_unchecked_chunks_and_masks_terminal(self, _callbacks):
         class ContextAPI:
             terminal = None

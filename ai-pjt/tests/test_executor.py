@@ -3,9 +3,11 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from graph.executor import (
+from graph.aggregation import (
     aggregate_task_results,
     compose_aggregate_response,
+)
+from graph.executor import (
     execute_route_plan,
     validate_agent_executor_registry,
 )

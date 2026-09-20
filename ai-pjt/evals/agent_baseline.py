@@ -111,7 +111,14 @@ class BudgetedRunnable:
 def instrument_agent_models(budget: ModelCallBudget):
     """Count each production LangChain invocation without changing its prompt."""
 
-    from agents import chart_interpret, elicit, error_review, input_assist, qa
+    from agents.chart_interpret import service as chart_interpret
+    from agents.chart_interpret import model as chart_model
+    from agents.elicit import service as elicit
+    from agents.elicit import model as elicit_model
+    from agents.error_review import service as error_review
+    from agents.error_review import model as error_review_model
+    from agents.input_assist import service as input_assist
+    from agents.qa import service as qa
 
     targets = (
         (qa, "_specify_chain"),
@@ -124,9 +131,9 @@ def instrument_agent_models(budget: ModelCallBudget):
         (input_assist, "_resolve_chain"),
         (input_assist, "_error_check_2_chain"),
         (input_assist, "llm"),
-        (error_review, "_review_chain"),
-        (chart_interpret, "llm"),
-        (elicit, "llm"),
+        (error_review_model, "_review_chain"),
+        (chart_model, "llm"),
+        (elicit_model, "llm"),
     )
     originals: list[tuple[Any, str, Any]] = []
     try:
@@ -307,7 +314,7 @@ def _contains_number(text: str, expected: int | float) -> bool:
 
 @asynccontextmanager
 async def _qa_retriever(budget: ModelCallBudget) -> AsyncIterator[RecordingRetriever]:
-    from agents import qa
+    from agents.qa import service as qa
     from rag.retriever import get_retriever
 
     recorder = RecordingRetriever(get_retriever(), budget)
@@ -320,7 +327,7 @@ async def _qa_retriever(budget: ModelCallBudget) -> AsyncIterator[RecordingRetri
 
 
 async def _run_qa_cases(cases: list[dict[str, Any]], budget: ModelCallBudget) -> dict[str, Any]:
-    from agents import qa
+    from agents.qa import service as qa
 
     results = []
     for case in cases:
@@ -418,7 +425,7 @@ async def _run_error_review_cases(
     fixture: dict[str, Any], budget: ModelCallBudget
 ) -> dict[str, Any]:
     from agents.error_review import analyze_review_items
-    from agents.error_review_confidence import visible_review_items
+    from agents.error_review.confidence import visible_review_items
 
     normal_results = []
     for case in fixture["normal_cases"]:

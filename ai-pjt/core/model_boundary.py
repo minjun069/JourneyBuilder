@@ -5,10 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from enum import Enum
-import json
 import logging
-import re
 from time import perf_counter
 from typing import Any, TypeVar
 
@@ -18,9 +15,15 @@ from core.masking import (
     MaskingPath,
     MaskingPolicy,
     MaskingSink,
-    is_reference_token,
     mask_payload,
 )
+from core.model_contracts import (
+    ModelOutputBlockedError,
+    ModelPurpose,
+    StructuredModelOutputError,
+)
+from core.model_input_policy import ALLOWED_INPUT_PREFIXES
+from core.model_output_policy import block_forbidden_output, redact_direct_text
 from core.prompt_registry import (
     PromptInvocationRecord,
     PromptSpec,
@@ -37,29 +40,6 @@ PROMPT_POLICY_VERSION = prompt_policy_version
 DATA_HANDLING_PROMPT = COMMON_PRINCIPLES
 
 
-class ModelPurpose(str, Enum):
-    PLANNER = "planner"
-    AGGREGATOR = "aggregator"
-    QA = "qa"
-    INPUT_ASSIST = "input_assist"
-    ERROR_REVIEW = "error_review"
-    CHART_INTERPRET = "chart_interpret"
-    ELICIT = "elicit"
-    SUMMARY = "summary"
-
-
-class ModelOutputBlockedError(ValueError):
-    """Raised when a model attempts to return direct identifiers or secrets."""
-
-    def __init__(self, message: str, *, reason_code: str = "DATA_POLICY_BLOCKED") -> None:
-        super().__init__(message)
-        self.reason_code = reason_code
-
-
-class StructuredModelOutputError(RuntimeError):
-    """Raised after bounded structured-output attempts are exhausted."""
-
-
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 ModelCallRecorder = Callable[..., None]
 
@@ -69,58 +49,6 @@ _MODEL_CALL_RECORDER: ContextVar[ModelCallRecorder | None] = ContextVar(
     default=None,
 )
 logger = logging.getLogger(__name__)
-
-
-_ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
-    ModelPurpose.PLANNER: (),
-    ModelPurpose.AGGREGATOR: (("response_blocks",),),
-    ModelPurpose.QA: (("customer_info",), ("bindings",), ("evidence",)),
-    ModelPurpose.INPUT_ASSIST: (("customer_info",), ("bindings",)),
-    ModelPurpose.ERROR_REVIEW: (("current_form",),),
-    ModelPurpose.CHART_INTERPRET: (("chart_payload",),),
-    ModelPurpose.ELICIT: (),
-    ModelPurpose.SUMMARY: (),
-}
-_DIRECT_TEXT_PATTERNS = (
-    re.compile(
-        r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+"
-        r"@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
-    ),
-    re.compile(r"(?<!\d)(?:\+?82[- .]?)?0?1[016789][- .]?\d{3,4}[- .]?\d{4}(?!\d)"),
-    re.compile(r"(?<!\d)\d{6}[- ]?[1-4]\d{6}(?!\d)"),
-)
-_SECRET_TEXT_PATTERNS = (
-    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
-    re.compile(
-        r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\."
-        r"[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])"
-    ),
-)
-_FORBIDDEN_OUTPUT_FIELDS = frozenset({
-    "account_identifier",
-    "account_id",
-    "account_number",
-    "address",
-    "authorization",
-    "bearer",
-    "cookie",
-    "customer_id",
-    "customer_name",
-    "date_of_birth",
-    "email",
-    "email_address",
-    "full_name",
-    "name",
-    "password",
-    "phone",
-    "phone_number",
-    "resident_registration_number",
-    "rrn",
-    "secret",
-    "token",
-    "user_id",
-    "user_name",
-})
 
 
 def secure_system_prompt(role_prompt: str) -> str:
@@ -157,7 +85,7 @@ def mask_model_payload(
     allowed_paths = frozenset(
         path
         for path in _leaf_paths(payload)
-        if any(path[: len(prefix)] == prefix for prefix in _ALLOWED_INPUT_PREFIXES[purpose])
+        if any(path[: len(prefix)] == prefix for prefix in ALLOWED_INPUT_PREFIXES[purpose])
     )
     return mask_payload(
         payload,
@@ -207,7 +135,7 @@ def secure_invoke(
     started = perf_counter()
     try:
         result = runnable.invoke(safe_messages)
-        _block_forbidden_output(result)
+        block_forbidden_output(result)
     except Exception as error:
         _record_model_call(
             purpose=purpose,
@@ -317,7 +245,7 @@ async def secure_ainvoke(
     started = perf_counter()
     try:
         result = await runnable.ainvoke(safe_messages)
-        _block_forbidden_output(result)
+        block_forbidden_output(result)
     except Exception as error:
         _record_model_call(
             purpose=purpose,
@@ -653,7 +581,7 @@ def _mask_message_content(
         sink=MaskingSink.MODEL_INPUT,
         policy=policy,
     )["content"]
-    return _redact_direct_text(masked)
+    return redact_direct_text(masked)
 
 
 def _replace_literals(
@@ -730,94 +658,3 @@ def _leaf_paths(value: Any, path: MaskingPath = ()) -> tuple[MaskingPath, ...]:
             paths.extend(_leaf_paths(child, (*path, index)))
         return tuple(paths)
     return (path,) if path else ()
-
-
-def _block_forbidden_output(result: Any) -> None:
-    payload = _serializable_output(result)
-    if _contains_forbidden_text(payload) or _contains_forbidden_field(payload):
-        raise ModelOutputBlockedError(
-            "model output contained a direct identifier or secret"
-        )
-    from guardrails.boundary_policy import evaluate_financial_output
-
-    decision = evaluate_financial_output(payload)
-    if not decision.allowed:
-        raise ModelOutputBlockedError(
-            "model output contained unsupported financial certainty",
-            reason_code=decision.reason_code,
-        )
-
-
-def _serializable_output(result: Any) -> Any:
-    dumper = getattr(result, "model_dump", None)
-    if callable(dumper):
-        return dumper(mode="json")
-    if isinstance(result, (str, bytes, int, float, bool)) or result is None:
-        return result
-    if isinstance(result, Mapping):
-        return dict(result)
-    if isinstance(result, Sequence):
-        return list(result)
-    raise ModelOutputBlockedError("model output could not be inspected safely")
-
-
-def _redact_direct_text(value: Any) -> Any:
-    if isinstance(value, str):
-        for pattern in _DIRECT_TEXT_PATTERNS:
-            value = pattern.sub("[DIRECT_IDENTIFIER]", value)
-        for pattern in _SECRET_TEXT_PATTERNS:
-            value = pattern.sub("[SECRET]", value)
-        return value
-    if isinstance(value, Mapping):
-        return {key: _redact_direct_text(child) for key, child in value.items()}
-    if isinstance(value, list):
-        return [_redact_direct_text(child) for child in value]
-    return value
-
-
-def _contains_forbidden_text(value: Any) -> bool:
-    if isinstance(value, bytes):
-        value = value.decode("utf-8", errors="replace")
-    if isinstance(value, str):
-        patterns = (*_DIRECT_TEXT_PATTERNS, *_SECRET_TEXT_PATTERNS)
-        if any(pattern.search(value) for pattern in patterns):
-            return True
-        stripped = value.strip()
-        if stripped.startswith(("{", "[")):
-            import json
-
-            try:
-                decoded = json.loads(stripped)
-            except json.JSONDecodeError:
-                return False
-            return _contains_forbidden_field(decoded)
-        return False
-    if isinstance(value, Mapping):
-        return any(_contains_forbidden_text(child) for child in value.values())
-    if isinstance(value, Sequence):
-        return any(_contains_forbidden_text(child) for child in value)
-    return False
-
-
-def _contains_forbidden_field(value: Any) -> bool:
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            normalized = str(key).lower().replace("-", "_")
-            forbidden = (
-                normalized in _FORBIDDEN_OUTPUT_FIELDS
-                or normalized.endswith("_email")
-                or normalized.endswith("_phone")
-                or normalized.endswith("_account_number")
-                or normalized.endswith("_api_key")
-                or normalized.endswith("_password")
-                or normalized.endswith("_secret")
-                or normalized.endswith("_token")
-            )
-            if forbidden and child not in (None, "") and not is_reference_token(child):
-                return True
-            if _contains_forbidden_field(child):
-                return True
-        return False
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        return any(_contains_forbidden_field(child) for child in value)
-    return False

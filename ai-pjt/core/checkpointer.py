@@ -5,7 +5,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 # from langgraph.checkpoint.redis.aio import AsyncRedisSaver  # Redis 전환 시 활성화
 
 from core.config import settings
-from core.context import ContextStateAPI
+from core.context_service import ContextStateAPI
 from core.context_store import PostgresCommittedContextStore
 
 
