@@ -208,7 +208,7 @@ class ProductionPromptCallAuditTests(unittest.TestCase):
                     # provider boundary. Every model call inside it is audited
                     # in the registered Agent modules.
                     if (
-                        path.name == "builder.py"
+                        path.name in {"builder.py", "agent_registry.py"}
                         and isinstance(node.func.value, ast.Name)
                         and node.func.value.id == "agent_graph"
                     ):

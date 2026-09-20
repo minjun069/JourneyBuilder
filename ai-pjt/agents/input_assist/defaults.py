@@ -48,8 +48,8 @@ REFERENCE_BINDING_FIELDS = frozenset({
 def _repo_file(relative_path: Path) -> Path:
     module_path = Path(__file__).resolve()
     candidates = (
+        module_path.parents[3] / relative_path,
         module_path.parents[2] / relative_path,
-        module_path.parents[1] / relative_path,
     )
     for candidate in candidates:
         if candidate.is_file():

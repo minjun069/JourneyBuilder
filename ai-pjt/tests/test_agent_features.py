@@ -30,7 +30,7 @@ def configure_runtime() -> None:
 class InputAssistDefaultPolicyTests(unittest.TestCase):
     def test_only_empty_existing_household_rows_receive_benchmarks(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import build_default_proposals
+        from agents.input_assist.defaults import build_default_proposals
 
         proposals = build_default_proposals(
             step_id="expenses",
@@ -51,7 +51,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
     def test_unmapped_step_and_unconfirmed_birth_year_do_not_generate_values(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import build_default_proposals
+        from agents.input_assist.defaults import build_default_proposals
 
         self.assertEqual(build_default_proposals(
             step_id="income",
@@ -92,7 +92,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
     def test_all_household_references_target_only_the_matching_existing_before_row(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import (
+        from agents.input_assist.defaults import (
             build_bound_reference_proposals,
             load_default_policy,
         )
@@ -136,7 +136,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
     def test_bound_reference_target_mismatches_fail_closed(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import (
+        from agents.input_assist.defaults import (
             ReferenceTargetNotAllowed,
             build_bound_reference_proposals,
         )
@@ -197,7 +197,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
     def test_expired_benchmark_and_inconsistent_age_range_fail_closed(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import build_default_proposals
+        from agents.input_assist.defaults import build_default_proposals
 
         self.assertEqual(build_default_proposals(
             step_id="expenses",
@@ -231,7 +231,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
 class ErrorReviewManualTests(unittest.TestCase):
     def test_confidence_bands_are_exact_and_low_is_hidden(self) -> None:
-        from agents.error_review_confidence import confidence_level, visible_review_items
+        from agents.error_review.confidence import confidence_level, visible_review_items
 
         self.assertEqual(confidence_level(0.59), "low")
         self.assertEqual(confidence_level(0.60), "medium")
@@ -248,7 +248,7 @@ class ErrorReviewManualTests(unittest.TestCase):
 
     def test_every_supported_step_has_one_hash_verified_manual(self) -> None:
         configure_runtime()
-        from agents.error_review_manuals import SUPPORTED_STEPS, load_error_review_manual
+        from agents.error_review.manuals import SUPPORTED_STEPS, load_error_review_manual
 
         loaded = [load_error_review_manual(step_id) for step_id in sorted(SUPPORTED_STEPS)]
         self.assertEqual(len(loaded), 10)
@@ -303,7 +303,7 @@ class ErrorReviewManualTests(unittest.TestCase):
 class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_retrieval_records_only_safe_result_metadata(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
         from core.operation_observation import bind_operation_recorder
         from langchain_core.messages import AIMessage
 
@@ -352,7 +352,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_product_term_explanation_uses_specify_model(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
         specify_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.SpecifyResult(
             queries=["유동성 중시 유동성 정의"],
@@ -373,7 +373,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_product_term_explanation_retrieves_then_uses_model(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[object()]))
         state = {
@@ -415,7 +415,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
         answer = qa._strip_retrieval_source_disclosure(
             "핵심 설명입니다. (출처: 제품 용어 문서)\n"
@@ -431,7 +431,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     def test_qa_contains_no_fixed_product_term_answer_path(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
         source = Path(qa.__file__).read_text(encoding="utf-8")
         forbidden = (
@@ -451,7 +451,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_product_term_explanation_is_classified_for_retrieval(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
         decision_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RetrievalDecision(
             need_retrieval=True,
@@ -470,7 +470,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_official_value_fails_closed_even_with_unrelated_binding(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
         decision_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RetrievalDecision(
             need_retrieval=True,
@@ -495,7 +495,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_evidence_shortage_refreshes_query_once_but_quality_retry_keeps_context(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
         base = {
             "message": "기준의 의미를 설명해줘",
@@ -535,7 +535,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
 class ChartAndFailureResponderTests(unittest.IsolatedAsyncioTestCase):
     async def test_chart_without_contract_is_treated_as_unsupported_without_model(self) -> None:
         configure_runtime()
-        from agents import chart_interpret
+        from agents.chart_interpret import service as chart_interpret
 
         result = await chart_interpret._run({
             "message": "차트를 설명해줘",
@@ -547,7 +547,7 @@ class ChartAndFailureResponderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failure_responder_has_four_stable_categories(self) -> None:
         configure_runtime()
-        from graph.executor import failure_response
+        from graph.aggregation import failure_response
 
         for category in (
             "ambiguous_intent",
@@ -565,14 +565,15 @@ class ChartAndFailureResponderTests(unittest.IsolatedAsyncioTestCase):
 class ElicitStateTests(unittest.IsolatedAsyncioTestCase):
     async def test_plain_agent_answers_from_conversation_context(self) -> None:
         configure_runtime()
-        from agents import elicit
+        from agents.elicit import model as elicit_model
+        from agents.elicit import service as elicit
         from langchain_core.messages import AIMessage
 
         context = {"summary": {"text": "안정적인 생활을 중요하게 생각한다."}}
         model = SimpleNamespace(
             ainvoke=AsyncMock(return_value=AIMessage(content="그 기준을 이어서 살펴볼게요."))
         )
-        with patch.object(elicit, "llm", model):
+        with patch.object(elicit_model, "llm", model):
             result = await elicit._run({
                 "request_id": "turn-chat",
                 "message": "앞서 말한 기준으로 이야기해 줘.",

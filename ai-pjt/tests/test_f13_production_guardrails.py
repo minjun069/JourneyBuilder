@@ -158,7 +158,7 @@ class ProductionGraphGuardrailTests(unittest.IsolatedAsyncioTestCase):
             ),),
             plan={"schema_version": "1.0", "tasks": []},
         )
-        with patch("graph.builder.evaluate_route_plan", return_value=denied):
+        with patch("graph.plan_node.evaluate_route_plan", return_value=denied):
             result = await graph.ainvoke({
                 "request_id": "req-plan-guardrail",
                 "message": "현재 은퇴 준비 상태를 설명해 줘",

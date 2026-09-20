@@ -1,23 +1,15 @@
-"""Sequential execution and aggregation for validated F03 route plans."""
+"""Sequential execution for validated route plans."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
 import logging
-import re
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
-
-from core.model_boundary import (
-    ModelPurpose,
-    bind_model_call_recorder,
-    prompt_messages,
-    secure_ainvoke,
-)
+from core.model_boundary import bind_model_call_recorder
 from core.field_registry import load_field_registry
 from core.monitoring import OperationStage, OperationStatus
 from core.operation_observation import bind_operation_recorder
@@ -29,70 +21,25 @@ from core.observability_masking import (
 from core.runtime_instrumentation import RuntimeStage, build_artifact_id
 from core.runtime_instrumentation_adapter import BoundRuntimeInstrumentation
 from core.step_registry import load_agent_descriptions
-from graph.planner import binding_expectations_for
-from graph.task_contracts import (
+from graph.aggregation import AggregateComposer, aggregate_task_results
+from graph.binding_policy import (
     BindingResolutionError,
-    blocked_task_result,
-    failed_task_result,
     resolve_task_bindings,
     seal_validated_artifact,
+)
+from graph.runtime_types import RuntimeExecutor
+from graph.task_catalog import binding_expectations_for
+from graph.task_contracts import (
+    blocked_task_result,
+    failed_task_result,
     validate_task_result,
 )
-from prompts import get_prompt
-from tools.output_validation import validate_form_update_contract
 from tools.runtime import ToolCallBudget
 
 
 logger = logging.getLogger(__name__)
-_NUMBER_TOKEN = re.compile(r"(?<![A-Za-z0-9])[-+]?\d[\d,.]*(?:%|원|개월|년)?")
 TASK_LIMIT = 3
 TOOL_CALL_LIMIT = 3
-
-
-class AggregatorModelOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    response: str = Field(min_length=1)
-    source_ids: list[str]
-
-
-def failure_response(
-    reason_code: str,
-    *,
-    detail_codes: Sequence[str] = (),
-) -> str:
-    """Render the deterministic recovery policy owned by the Aggregator."""
-
-    if reason_code == "ambiguous_intent":
-        return (
-            "요청의 뜻을 하나로 확정하기 어렵습니다. 궁금한 내용이나 바꾸려는 "
-            "입력 항목을 한 가지씩 구체적으로 말씀해 주세요."
-        )
-    if reason_code == "unsupported_intent":
-        return (
-            "현재 상담은 재무정보 입력, 재무진단 결과 설명과 은퇴설계 질문을 "
-            "지원합니다. 이 범위 안의 요청으로 바꾸어 말씀해 주세요."
-        )
-    if reason_code == "all_tasks_failed":
-        return (
-            "실행한 작업에서 전달할 수 있는 검증된 결과를 만들지 못했습니다. "
-            "위 실패 원인을 확인한 뒤 다시 시도해 주세요."
-        )
-    if reason_code == "plan_invalid":
-        categories = _plan_failure_categories(detail_codes)
-        detail = " ".join(categories)
-        if detail:
-            detail = f" {detail}"
-        return (
-            "요청을 안전한 실행 계획으로 확정하지 못했습니다."
-            f"{detail} 요청을 한 가지씩 나누거나 필요한 대상을 더 구체적으로 "
-            "적어 다시 시도해 주세요."
-        )
-    return "요청을 안전하게 처리하지 못했습니다. 내용을 확인해 다시 시도해 주세요."
-
-RuntimeExecutor = Callable[[dict[str, Any]], Awaitable[Mapping[str, Any]]]
-AggregateComposer = Callable[..., Awaitable[dict[str, Any]]]
-
 
 @dataclass(frozen=True)
 class ExecutionReport:
@@ -486,178 +433,6 @@ async def execute_route_plan(
     )
 
 
-def aggregate_task_results(
-    *,
-    tasks: list[Any],
-    task_results: Mapping[str, Mapping[str, Any]],
-    step_id: str,
-    field_registry: list[dict[str, Any]],
-    outcome_reason: str | None = None,
-) -> dict[str, Any]:
-    """Collapse internal results into one public response and at most one action."""
-
-    responses: list[str] = []
-    form_changes: list[Mapping[str, Any]] = []
-    reviews: list[dict[str, Any]] = []
-    completed_count = 0
-
-    for task in tasks:
-        if not isinstance(task, Mapping):
-            continue
-        result = task_results.get(str(task.get("id")))
-        if not isinstance(result, Mapping):
-            continue
-        status = result.get("status")
-        if status == "failed":
-            responses.append(_failure_message(str(result.get("reason_code", ""))))
-            continue
-        if status == "blocked":
-            responses.append("선행 작업이 완료되지 않아 연결된 요청은 실행하지 않았습니다.")
-            continue
-        if status != "completed":
-            continue
-        completed_count += 1
-
-        if isinstance(result.get("review"), Mapping):
-            reviews.append(deepcopy(dict(result["review"])))
-
-        response = result.get("response")
-        artifact = result.get("artifact")
-        if isinstance(response, str) and response.strip():
-            responses.append(response.strip())
-        elif isinstance(artifact, Mapping) and artifact.get("type") == "text_response":
-            text = artifact.get("text")
-            if isinstance(text, str) and text.strip():
-                responses.append(text.strip())
-
-        if isinstance(artifact, Mapping) and artifact.get("type") == "reference_value":
-            responses.append(_reference_value_message(artifact))
-        form_artifact = (
-            artifact
-            if isinstance(artifact, Mapping) and artifact.get("type") == "form_change"
-            else None
-        )
-        if not isinstance(form_artifact, Mapping) or form_artifact.get("type") != "form_change":
-            continue
-        form_changes.append(form_artifact)
-
-    action, has_alternatives = _merge_form_changes(form_changes)
-    if has_alternatives:
-        responses.append(
-            "같은 입력 항목에 서로 다른 변경안이 있어 선택지로 각각 제시했습니다."
-        )
-
-    if outcome_reason is not None:
-        responses.append(failure_response(outcome_reason))
-    elif tasks and completed_count == 0:
-        responses.append(failure_response("all_tasks_failed"))
-
-    output = {
-        "response": "\n\n".join(_deduplicate(responses))
-        or "요청을 처리할 수 있는 결과를 만들지 못했습니다. 내용을 확인해 다시 요청해 주세요.",
-        "step_id": step_id,
-        "action": action,
-    }
-    if len(reviews) == 1:
-        output["review"] = reviews[0]
-    validation = validate_form_update_contract({
-        "step_id": step_id,
-        "output": output,
-    })
-    return validation.output
-
-
-async def compose_aggregate_response(
-    *,
-    output: Mapping[str, Any],
-    step_id: str,
-    field_registry: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """Naturalize multiple verified text blocks without changing structures."""
-
-    response = output.get("response")
-    if not isinstance(response, str):
-        return deepcopy(dict(output))
-    blocks = [block.strip() for block in response.split("\n\n") if block.strip()]
-    if len(blocks) < 2:
-        return deepcopy(dict(output))
-    prompt = get_prompt("aggregator.compose")
-
-    from core.llm import llm
-
-    source_blocks = [
-        {"source_id": f"result-{index + 1}", "text": block}
-        for index, block in enumerate(blocks)
-    ]
-    source_ids = [block["source_id"] for block in source_blocks]
-    try:
-        runnable = llm.with_structured_output(AggregatorModelOutput)
-        raw = await secure_ainvoke(
-            runnable,
-            prompt_messages(prompt, {
-                "step_id": step_id,
-                "response_blocks": source_blocks,
-            }),
-            purpose=ModelPurpose.AGGREGATOR,
-            operation_name="aggregator.compose",
-            sensitive_payload={"response_blocks": source_blocks},
-            prompt=prompt,
-        )
-        composed = (
-            raw
-            if isinstance(raw, AggregatorModelOutput)
-            else AggregatorModelOutput.model_validate(raw)
-        )
-        if composed.source_ids != source_ids:
-            raise ValueError("aggregator omitted or reordered source blocks")
-        source_numbers = _NUMBER_TOKEN.findall(response)
-        composed_numbers = _NUMBER_TOKEN.findall(composed.response)
-        if composed_numbers != source_numbers:
-            raise ValueError("aggregator changed verified numeric tokens or order")
-        validation = validate_form_update_contract({
-            "step_id": step_id,
-            "output": {
-                **deepcopy(dict(output)),
-                "response": composed.response.strip(),
-            },
-        })
-        if not validation.valid:
-            raise ValueError("aggregator response failed output validation")
-        return validation.output
-    except Exception as error:  # noqa: BLE001 - deterministic join is authoritative
-        logger.warning(
-            "aggregate response composer fell back to deterministic join",
-            extra={
-                "event": "aggregation_composer_fallback",
-                "detail": masked_exception_fields(error, step_id=step_id),
-            },
-        )
-        return deepcopy(dict(output))
-
-
-def _plan_failure_categories(detail_codes: Sequence[str]) -> list[str]:
-    categories: list[str] = []
-    for raw_code in detail_codes:
-        code = str(raw_code).upper()
-        if code in {"PLANNER_ERROR", "STRUCTURED_MODEL_OUTPUT_ERROR"}:
-            message = "계획 생성 모델이 유효한 구조를 반환하지 못했습니다."
-        elif "BINDING" in code or "DEPENDENCY" in code or "CYCLIC" in code:
-            message = "작업 간 순서와 결과 연결 관계를 안전하게 구성하지 못했습니다."
-        elif "TASK_TYPE" in code or code == "UNSUPPORTED_TASK_TYPE":
-            message = "현재 단계에서 지원되는 작업 유형으로 요청을 변환하지 못했습니다."
-        elif "ROUTE" in code or "AGENT" in code or "TOOL" in code:
-            message = "현재 단계에서 허용된 실행 경로를 확정하지 못했습니다."
-        elif "CONTEXT" in code:
-            message = "안전한 대화 문맥을 복원하지 못했습니다."
-        else:
-            message = "계획의 필수 구조가 실행 계약과 일치하지 않았습니다."
-        if message not in categories:
-            categories.append(message)
-        if len(categories) == 2:
-            break
-    return categories
-
-
 def _binding_source_ids(task: Mapping[str, Any]) -> list[str]:
     bindings = task.get("bindings")
     if not isinstance(bindings, Mapping):
@@ -689,128 +464,3 @@ def _uses_bound_values(
                 continue
             return True
     return False
-
-
-def _change_key(
-    change: Mapping[str, Any],
-    task_index: int,
-    change_index: int,
-) -> tuple[Any, ...]:
-    if change.get("operation") == "add":
-        return ("add", task_index, change_index)
-    return (
-        change.get("section"),
-        change.get("path"),
-        change.get("item_id"),
-        change.get("client_item_id"),
-    )
-
-
-def _merge_form_changes(
-    form_changes: list[Mapping[str, Any]],
-) -> tuple[dict[str, Any] | None, bool]:
-    if not form_changes:
-        return None, False
-
-    merged_changes: list[dict[str, Any]] = []
-    changes_by_key: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
-    user_requested_values: list[bool] = []
-    confidences: list[float] = []
-    has_alternatives = False
-
-    for form_index, form_change in enumerate(form_changes):
-        user_requested_values.append(form_change.get("user_requested") is True)
-        confidence = form_change.get("confidence")
-        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
-            confidences.append(float(confidence))
-
-        for change_index, raw_change in enumerate(form_change.get("changes", [])):
-            if not isinstance(raw_change, Mapping):
-                continue
-            change = deepcopy(dict(raw_change))
-            key = _change_key(change, form_index, change_index)
-            existing_options = changes_by_key.setdefault(key, [])
-            if any(
-                _changes_equivalent(existing, change)
-                for existing in existing_options
-            ):
-                continue
-            if existing_options:
-                has_alternatives = True
-            existing_options.append(change)
-            merged_changes.append(change)
-
-    return {
-        "type": "form_change",
-        "target": "draft_form",
-        "user_requested": all(user_requested_values),
-        "confidence": min(confidences) if confidences else 0.0,
-        "changes": merged_changes,
-    }, has_alternatives
-
-
-def _failure_message(reason_code: str) -> str:
-    messages = {
-        "capability_unavailable": (
-            "승인된 기준값 조회 도구가 아직 연결되지 않아 해당 조회를 완료하지 못했습니다."
-        ),
-        "binding_not_consumed": (
-            "조회 결과와 입력 변경안의 값이 일치하지 않아 변경 제안을 제외했습니다."
-        ),
-        "reference_target_not_allowed": (
-            "조회 기준값을 현재 폼의 승인된 기존 항목에 안전하게 연결할 수 없어 변경 제안을 제외했습니다."
-        ),
-        "reference_contract_mismatch": (
-            "요청한 기준값과 조회 결과의 식별 조건이 일치하지 않아 결과를 폐기했습니다."
-        ),
-        "output_schema_invalid": (
-            "작업 결과가 안전성 검증을 통과하지 못해 응답에서 제외했습니다."
-        ),
-        "artifact_invalid": (
-            "작업 결과가 안전성 검증을 통과하지 못해 응답에서 제외했습니다."
-        ),
-        "dependency_failed": "선행 작업이 실패해 연결된 요청은 실행하지 않았습니다.",
-        "executor_unavailable": "요청을 처리할 실행 기능이 연결되지 않았습니다.",
-        "executor_error": "요청 처리 중 오류가 발생해 해당 결과를 제외했습니다.",
-        "route_missing": "안전한 실행 경로를 확인하지 못해 해당 요청을 처리하지 않았습니다.",
-        "binding_resolution_failed": "선행 결과를 후속 입력으로 안전하게 연결하지 못했습니다.",
-        "task_budget_exhausted": "요청당 실행 가능한 작업 수를 초과했습니다.",
-        "tool_resource_not_found": "검증된 조회 결과를 찾지 못했습니다.",
-        "tool_dependency_unavailable": "검증된 조회 결과를 현재 사용할 수 없습니다.",
-        "invalid_tool_arguments": "도구 조회 조건이 안전한 계약과 일치하지 않습니다.",
-        "invalid_tool_result": "도구 조회 결과가 artifact 계약을 통과하지 못했습니다.",
-        "invalid_tool_task": "도구 task가 허용된 실행 계약과 일치하지 않습니다.",
-    }
-    return messages.get(reason_code, "요청의 일부를 완료하지 못했습니다.")
-
-
-def _deduplicate(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        result.append(value)
-    return result
-
-
-def _changes_equivalent(
-    left: Mapping[str, Any],
-    right: Mapping[str, Any],
-) -> bool:
-    return {
-        key: value for key, value in left.items() if key != "reason"
-    } == {
-        key: value for key, value in right.items() if key != "reason"
-    }
-
-
-def _reference_value_message(artifact: Mapping[str, Any]) -> str:
-    value = artifact.get("value")
-    rendered_value = f"{value:,}" if isinstance(value, (int, float)) else str(value)
-    return (
-        f"{artifact.get('population')} 기준 {artifact.get('period')} 값은 "
-        f"{rendered_value} {artifact.get('unit')}입니다. "
-        f"출처는 {artifact.get('source_id')}, 기준일은 {artifact.get('as_of')}입니다."
-    )

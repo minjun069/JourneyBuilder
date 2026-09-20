@@ -3,8 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import unittest
 
-from graph.router import enrich_route_plan
-from guardrails.plan_policy import evaluate_route_plan
+from guardrails.plan_policy import evaluate_and_route
 
 
 STEP_CANDIDATES = {
@@ -48,134 +47,90 @@ def raw_tool_plan() -> dict:
     }
 
 
-def candidate(raw_plan: dict, *, step_id: str, tools: tuple[str, ...] = ()) -> dict:
-    return enrich_route_plan(
-        raw_plan=raw_plan,
-        step_id=step_id,
-        registered_tool_capabilities=tools,
-    )
-
-
 class PlanGuardrailPolicyTests(unittest.TestCase):
     def test_allows_agent_and_registered_tool_routes(self) -> None:
-        agent_decision = evaluate_route_plan(
-            candidate(raw_agent_plan(), step_id="intro"),
+        agent = evaluate_and_route(
+            raw_agent_plan(),
             step_id="intro",
             step_candidates=STEP_CANDIDATES,
         )
-        tool_decision = evaluate_route_plan(
-            candidate(
-                raw_tool_plan(),
-                step_id="financial-goals",
-                tools=("lookup_reference_value",),
-            ),
+        tool = evaluate_and_route(
+            raw_tool_plan(),
             step_id="financial-goals",
             step_candidates=STEP_CANDIDATES,
             registered_tool_capabilities=("lookup_reference_value",),
         )
 
-        self.assertTrue(agent_decision.allowed)
-        self.assertEqual(agent_decision.reason_code, "PLAN_GUARDRAIL_ALLOWED")
-        self.assertEqual(
-            agent_decision.plan["tasks"][0]["route"]["executor"],
-            "qa",
-        )
-        self.assertTrue(tool_decision.allowed)
+        self.assertTrue(agent.allowed)
+        self.assertEqual(agent.plan["tasks"][0]["route"]["executor"], "qa")
+        self.assertTrue(tool.allowed)
 
-    def test_structural_validation_runs_before_route_validation(self) -> None:
-        decision = evaluate_route_plan(
-            candidate(raw_agent_plan(count=4), step_id="intro"),
+    def test_structural_validation_runs_before_route_creation(self) -> None:
+        decision = evaluate_and_route(
+            raw_agent_plan(count=4),
             step_id="intro",
             step_candidates=STEP_CANDIDATES,
         )
 
         self.assertEqual(decision.reason_code, "INVALID_TASK_COUNT")
-        self.assertEqual(
-            {violation.code for violation in decision.violations},
-            {"INVALID_TASK_COUNT"},
-        )
 
-    def test_blocks_untrusted_route_enrichment_tampering(self) -> None:
-        tampered = candidate(raw_agent_plan(), step_id="intro")
-        tampered["route_enrichments"][0].update({
-            "source_task_id": "forged",
+    def test_blocks_planner_route_injection(self) -> None:
+        tampered = raw_agent_plan()
+        tampered["tasks"][0]["route"] = {
             "executor_kind": "tool",
             "executor": "input_assist",
-        })
+        }
 
-        decision = evaluate_route_plan(
+        decision = evaluate_and_route(
             tampered,
             step_id="intro",
             step_candidates=STEP_CANDIDATES,
         )
 
-        self.assertEqual(decision.reason_code, "ROUTE_SOURCE_TASK_MISMATCH")
-        self.assertEqual(
-            [violation.code for violation in decision.violations],
-            [
-                "ROUTE_SOURCE_TASK_MISMATCH",
-                "ROUTE_EXECUTOR_KIND_MISMATCH",
-                "ROUTE_EXECUTOR_MISMATCH",
-                "AGENT_NOT_ALLOWLISTED",
-            ],
+        self.assertEqual(decision.reason_code, "UNKNOWN_TASK_FIELDS")
+        self.assertIn(
+            "PLANNER_EXECUTOR_INJECTION",
+            {item.code for item in decision.violations},
         )
 
-    def test_rejects_extra_candidate_or_enrichment_fields(self) -> None:
-        extra_candidate = candidate(raw_agent_plan(), step_id="intro")
-        extra_candidate["trusted"] = True
-        candidate_decision = evaluate_route_plan(
-            extra_candidate,
+    def test_rejects_extra_root_fields(self) -> None:
+        candidate = raw_agent_plan()
+        candidate["trusted"] = True
+
+        decision = evaluate_and_route(
+            candidate,
             step_id="intro",
             step_candidates=STEP_CANDIDATES,
         )
 
-        extra_route = candidate(raw_agent_plan(), step_id="intro")
-        extra_route["route_enrichments"][0]["scope"] = "admin"
-        route_decision = evaluate_route_plan(
-            extra_route,
-            step_id="intro",
-            step_candidates=STEP_CANDIDATES,
-        )
-
-        self.assertEqual(
-            candidate_decision.reason_code,
-            "INVALID_PLAN_CANDIDATE_FIELDS",
-        )
-        self.assertEqual(route_decision.reason_code, "INVALID_ROUTE_FIELDS")
+        self.assertEqual(decision.reason_code, "INVALID_PLAN_FIELDS")
 
     def test_empty_trusted_registries_fail_in_structural_stage(self) -> None:
-        agent_decision = evaluate_route_plan(
-            candidate(raw_agent_plan(), step_id="intro"),
+        agent = evaluate_and_route(
+            raw_agent_plan(),
             step_id="intro",
             step_candidates={},
         )
-        tool_decision = evaluate_route_plan(
-            candidate(raw_tool_plan(), step_id="financial-goals"),
+        tool = evaluate_and_route(
+            raw_tool_plan(),
             step_id="financial-goals",
             step_candidates=STEP_CANDIDATES,
-            registered_tool_capabilities=(),
         )
 
-        self.assertEqual(
-            agent_decision.reason_code,
-            "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
-        )
-        self.assertEqual(
-            tool_decision.reason_code,
-            "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
-        )
+        self.assertEqual(agent.reason_code, "TASK_TYPE_NOT_ALLOWED_FOR_STEP")
+        self.assertEqual(tool.reason_code, "TASK_TYPE_NOT_ALLOWED_FOR_STEP")
 
-    def test_input_candidate_is_not_mutated(self) -> None:
-        route_candidate = candidate(raw_agent_plan(), step_id="intro")
-        original = deepcopy(route_candidate)
+    def test_input_plan_is_not_mutated(self) -> None:
+        raw_plan = raw_agent_plan()
+        original = deepcopy(raw_plan)
 
-        evaluate_route_plan(
-            route_candidate,
+        evaluate_and_route(
+            raw_plan,
             step_id="intro",
             step_candidates=STEP_CANDIDATES,
         )
 
-        self.assertEqual(route_candidate, original)
+        self.assertEqual(raw_plan, original)
 
 
 if __name__ == "__main__":

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from graph.task_contracts import (
+from graph.binding_policy import (
     BindingResolutionError,
-    blocked_task_result,
     resolve_task_bindings,
     seal_validated_artifact,
+)
+from graph.task_contracts import (
+    blocked_task_result,
     validate_task_result,
 )
 

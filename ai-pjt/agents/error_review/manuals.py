@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-CATALOG_PATH = Path(__file__).resolve().parents[1] / "rag" / "data" / "catalog.json"
+CATALOG_PATH = Path(__file__).resolve().parents[2] / "rag" / "data" / "catalog.json"
 SUPPORTED_STEPS = frozenset({
     "basic-info",
     "financial-mindset",

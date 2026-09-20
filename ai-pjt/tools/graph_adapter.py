@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-from graph.executor import RuntimeExecutor
+from graph.runtime_types import RuntimeExecutor
 from graph.task_contracts import TOOL_ARTIFACT_SCHEMA_VERSION, failed_task_result
 
 from .contracts import ToolCallResult, ToolErrorCode

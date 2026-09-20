@@ -19,9 +19,11 @@ os.environ.setdefault(
 
 
 try:
-    from agents import chart_interpret
+    from agents.chart_interpret import service as chart_interpret
+    from agents.chart_interpret import model as chart_model
 except ModuleNotFoundError:
     chart_interpret = None
+    chart_model = None
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,8 +43,8 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
             content="핵심 결론입니다.\n\n- 첫 흐름\n- 둘째 흐름\n\n주의: 장기 가정을 확인하세요.",
         ))
         with (
-            patch.object(chart_interpret, "secure_ainvoke", model),
-            patch.object(chart_interpret, "load_chart_knowledge", return_value="승인된 의미"),
+            patch.object(chart_model, "secure_ainvoke", model),
+            patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
         ):
             result = await chart_interpret._run({
                 "message": "이 보고서의 핵심을 먼저 안내해 주세요.",
@@ -58,11 +60,11 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_numeric_claim_is_removed_by_deterministic_fallback(self):
         with (
             patch.object(
-                chart_interpret,
+                chart_model,
                 "secure_ainvoke",
                 AsyncMock(return_value=SimpleNamespace(content="근거 없는 999999원입니다.")),
             ),
-            patch.object(chart_interpret, "load_chart_knowledge", return_value="승인된 의미"),
+            patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
         ):
             result = await chart_interpret._run({
                 "message": "원인을 설명해줘",
@@ -80,11 +82,11 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_guidance_only_never_exposes_model_number(self):
         with (
             patch.object(
-                chart_interpret,
+                chart_model,
                 "secure_ainvoke",
                 AsyncMock(return_value=SimpleNamespace(content="준비 전이지만 42원으로 보입니다.")),
             ),
-            patch.object(chart_interpret, "load_chart_knowledge", return_value="승인된 의미"),
+            patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
         ):
             result = await chart_interpret._run({
                 "message": "처음 안내해줘",
@@ -106,13 +108,13 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_unsupported_cause_falls_back_to_payload_only(self):
         with (
             patch.object(
-                chart_interpret,
+                chart_model,
                 "secure_ainvoke",
                 AsyncMock(return_value=SimpleNamespace(
                     content="시장 폭락 때문에 현금흐름이 바뀌었습니다.",
                 )),
             ),
-            patch.object(chart_interpret, "load_chart_knowledge", return_value="승인된 의미"),
+            patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
         ):
             result = await chart_interpret._run({
                 "message": "원인을 설명해줘",
@@ -125,8 +127,8 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_customer_info_is_not_used_for_personalization(self):
         model = AsyncMock(return_value=SimpleNamespace(content="검증 결과를 확인했습니다."))
         with (
-            patch.object(chart_interpret, "secure_ainvoke", model),
-            patch.object(chart_interpret, "load_chart_knowledge", return_value="승인된 의미"),
+            patch.object(chart_model, "secure_ainvoke", model),
+            patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
         ):
             await chart_interpret._run({
                 "message": "제 상황에 맞춰 설명해줘",

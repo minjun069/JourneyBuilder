@@ -1,4 +1,4 @@
-"""Explanation-only consumer for Backend-verified chart payloads."""
+"""Deterministic Chart Interpret response policy."""
 
 from __future__ import annotations
 
@@ -7,20 +7,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from langgraph.graph import END, START, StateGraph
 
-from core.llm import llm
-from core.model_boundary import (
-    ModelPurpose,
-    prompt_messages,
-    secure_ainvoke,
-)
-from graph.state import ChatState
-from prompts import get_prompt
-from rag.chart_knowledge import ChartKnowledgeError, load_chart_knowledge
-
-
-CHART_PROMPT = get_prompt("chart_interpret.explain")
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 _CAUSE_MARKER = re.compile(r"원인|때문|영향|따라|로 인해|에서 비롯|기여|증가해|감소해")
 _RECALC_MARKER = re.compile(r"계산하면|빼면|더하면|나누면|곱하면|차액은|합계는")
@@ -47,8 +34,6 @@ def _walk_numbers(value: Any):
 
 def _authorized_numbers(payload: Mapping[str, Any]) -> set[str]:
     allowed = {_normalized_number(value) for value in _walk_numbers(payload)}
-    # Percent display is a deterministic Backend display convention for
-    # fraction/decimal values, not a value the model is asked to calculate.
     for value in _walk_numbers(payload):
         if isinstance(value, float) and 0 < abs(value) <= 1:
             allowed.add(_normalized_number(value * 100))
@@ -99,7 +84,6 @@ def unsupported_causal_claims(
     response: str,
     payload: Mapping[str, Any],
 ) -> list[str]:
-    """Reject causal prose that cannot be tied to structured payload evidence."""
     evidence = _evidence_terms(payload)
     sentences = re.split(r"(?:[.!?。]\s+|\n+)", response)
     return [
@@ -114,7 +98,7 @@ def recalculation_claims(response: str) -> list[str]:
     return [match.group(0) for match in _RECALC_MARKER.finditer(response)]
 
 
-def _fallback_response(payload: Mapping[str, Any], *, entry: bool) -> str:
+def fallback_response(payload: Mapping[str, Any], *, entry: bool) -> str:
     title = str(payload.get("title") or "현재 보고서")
     if payload.get("status") != "ready":
         return (
@@ -129,8 +113,7 @@ def _fallback_response(payload: Mapping[str, Any], *, entry: bool) -> str:
     if highlights:
         conclusion = f"{title}의 우선 확인 항목은 {highlights[0]['label']} {highlights[0]['display']}입니다."
         bullets = "\n".join(
-            f"- {item['label']}: {item['display']}"
-            for item in highlights
+            f"- {item['label']}: {item['display']}" for item in highlights
         )
     else:
         conclusion = f"{title}의 검증 결과를 확인했습니다."
@@ -146,84 +129,18 @@ def _fallback_response(payload: Mapping[str, Any], *, entry: bool) -> str:
     return f"{conclusion}\n\n{bullets}\n\n해석 한계: {caution}"
 
 
-def _is_progressive_entry(response: str) -> bool:
+def response_is_allowed(
+    response: str,
+    payload: Mapping[str, Any],
+    *,
+    entry: bool,
+) -> bool:
     bullet_count = sum(
-        line.lstrip().startswith(("- ", "* "))
-        for line in response.splitlines()
+        line.lstrip().startswith(("- ", "* ")) for line in response.splitlines()
     )
-    return len(response) <= 1_200 and bullet_count <= 3
-
-
-async def _run(state: ChatState) -> dict:
-    payload = state.get("chart_payload")
-    if payload is None:
-        return {
-            "output": {
-                "response": (
-                    "현재 단계는 Chart Agent 설명 대상이 아닙니다. "
-                    "해당 화면의 일반 질문으로 다시 요청해 주세요."
-                ),
-                "step_id": state["step_id"],
-                "action": None,
-            }
-        }
-    if (
-        not isinstance(payload, Mapping)
-        or payload.get("chart_id") != state.get("step_id")
-        or payload.get("status") not in {"ready", "guidance_only"}
-        or payload.get("read_only") is not True
-    ):
-        raise ValueError("invalid chart payload contract")
-    try:
-        knowledge = load_chart_knowledge(
-            state["step_id"],
-            payload.get("knowledge_scope", {}).get("source_ids"),
-        )
-    except ChartKnowledgeError:
-        knowledge = "승인 문서 주입을 확인할 수 없어 payload 사실만 설명합니다."
-
-    entry = state.get("request_mode") == "presentation_entry"
-    result = await secure_ainvoke(
-        llm,
-        prompt_messages(CHART_PROMPT, {
-            "user_request": state["message"],
-            "chart_payload": payload,
-            "approved_chart_knowledge": knowledge,
-            "response_mode": "initial_entry" if entry else "detail",
-        }),
-        purpose=ModelPurpose.CHART_INTERPRET,
-        operation_name="chart_interpret.generate",
-        sensitive_payload={
-            "message": state["message"],
-            "chart_payload": payload,
-        },
-        prompt=CHART_PROMPT,
-    )
-    response = str(result.content)
-    if (
+    progressive = not entry or (len(response) <= 1_200 and bullet_count <= 3)
+    return not (
         unauthorized_numeric_claims(response, payload)
         or unsupported_causal_claims(response, payload)
         or recalculation_claims(response)
-        or (
-        entry and not _is_progressive_entry(response)
-        )
-    ):
-        response = _fallback_response(payload, entry=entry)
-    return {
-        "output": {
-            "response": response,
-            "step_id": state["step_id"],
-            "action": None,
-        }
-    }
-
-
-def _build():
-    graph_builder = StateGraph(ChatState)
-    graph_builder.add_node("run", _run)
-    graph_builder.add_edge(START, "run")
-    graph_builder.add_edge("run", END)
-    return graph_builder.compile()
-
-
-graph = _build()
+    ) and progressive

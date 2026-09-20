@@ -15,7 +15,7 @@ import json
 import re
 from typing import Any, Mapping
 
-from core.context import (
+from core.context_domain import (
     CONTEXT_SCHEMA_VERSION,
     ArchivedConversationTurn,
     ContextSummary,
