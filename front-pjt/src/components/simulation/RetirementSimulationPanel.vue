@@ -135,7 +135,6 @@ async function recalculate() {
     <header class="panel-header">
       <div>
         <h2>은퇴 시뮬레이션</h2>
-        <p class="subtitle">결과는 서버에 저장하지 않으며 화면을 새로 열 때 최신 정보로 다시 계산합니다.</p>
       </div>
       <button
         v-if="reportStore.activeSessionId"
@@ -156,8 +155,7 @@ async function recalculate() {
         상담 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
       </div>
       <div v-else class="state-card">
-        <p class="state-message">AI 상담을 완료하면 은퇴 시뮬레이션을 여기에서 확인할 수 있습니다.</p>
-        <RouterLink class="state-link" :to="CONSULTATION_PATH">AI 상담 시작하기</RouterLink>
+        AI 상담을 완료하면 은퇴 시뮬레이션 결과를 여기에서 확인할 수 있습니다.
       </div>
     </template>
 
@@ -276,7 +274,6 @@ async function recalculate() {
 .simulation-panel { display: flex; flex-direction: column; gap: 18px; color: #1a1f3c; }
 .panel-header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
 .panel-header h2 { margin: 2px 0 6px; font-size: 26px; font-weight: 800; letter-spacing: -0.4px; color: #1a1a2e; }
-.subtitle { margin: 0; color: #6b7280; font-size: 13px; }
 .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .result-card { border: 1px solid #e9eaf2; border-radius: 12px; padding: 16px; background: #fff; box-shadow: 0 1px 3px rgba(20, 20, 43, 0.06); display: flex; flex-direction: column; gap: 6px; }
 .result-card span, .result-card small { color: #6b7280; font-size: 13px; font-weight: 600; }
@@ -329,7 +326,6 @@ th:first-child, td:first-child { text-align: left; }
 .notices summary { cursor: pointer; font-weight: 800; }
 .compact { gap: 9px; height: 100%; overflow-y: auto; }
 .compact .panel-header h2 { font-size: 18px; }
-.compact .subtitle { display: none; }
 .compact .result-grid { gap: 6px; }
 .compact .result-card { padding: 8px; }
 .compact .result-card strong { font-size: 18px; }
