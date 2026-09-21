@@ -14,6 +14,7 @@ from .models import Comment, Post
 from .serializers import (
     COMMENT_CONTENT_MAX_LENGTH,
     POST_CONTENT_MAX_LENGTH,
+    SECTION_DATA_MAX_LENGTH,
     SECTION_MAX_COUNT,
     SECTION_TEXT_MAX_LENGTH,
 )
@@ -137,6 +138,66 @@ class PostCreateTests(TestCase):
         pk = response.json()['id']
         response = self.client.patch(f'{POSTS}{pk}/', {
             'sections': [{'type': 'text', 'content': '본문'}] * (SECTION_MAX_COUNT + 1),
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_component_section_accepts_report_snapshot_data(self):
+        # 작성 시점의 리포트 스냅샷을 그대로 저장한다 (렌더 시 정규화 없이 통과)
+        snapshot = {
+            'total_assets': 420_000_000,
+            'asset_groups': [
+                {'key': 'cash', 'label': '현금/저축성 자산', 'total': 50_000_000,
+                 'items': [{'label': '정기예금', 'value': 50_000_000}]},
+            ],
+        }
+        response = self.client.post(POSTS, {
+            'title': '글', 'content': '내용',
+            'sections': [{
+                'type': 'component', 'name': 'BalanceSheetSlide',
+                'caption': '재무상태표', 'data': snapshot,
+            }],
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        post = Post.objects.get(pk=response.json()['id'])
+        self.assertEqual(post.sections[0]['data'], snapshot)
+
+    def test_component_section_without_data_still_passes(self):
+        # 하위호환 — data 없는 기존 형태의 component 섹션은 그대로 통과한다
+        response = self.client.post(POSTS, {
+            'title': '글', 'content': '내용',
+            'sections': [{'type': 'component', 'name': 'CashFlowSlide'}],
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertNotIn('data', response.json()['sections'][0])
+
+    def test_component_section_data_must_be_object(self):
+        response = self.client.post(POSTS, {
+            'title': '글', 'content': '내용',
+            'sections': [{
+                'type': 'component', 'name': 'BalanceSheetSlide', 'data': ['배열은 불가'],
+            }],
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_component_section_data_length_is_capped(self):
+        response = self.client.post(POSTS, {
+            'title': '글', 'content': '내용',
+            'sections': [{
+                'type': 'component', 'name': 'BalanceSheetSlide',
+                'data': {'blob': 'a' * (SECTION_DATA_MAX_LENGTH + 1)},
+            }],
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_patch_cannot_bypass_section_data_cap(self):
+        # data 는 본문 길이 제한 우회 경로라 PATCH 에도 같은 상한이 걸려야 한다
+        response = self.client.post(POSTS, {'title': '글', 'content': '내용'}, format='json')
+        pk = response.json()['id']
+        response = self.client.patch(f'{POSTS}{pk}/', {
+            'sections': [{
+                'type': 'component', 'name': 'BalanceSheetSlide',
+                'data': {'blob': 'a' * (SECTION_DATA_MAX_LENGTH + 1)},
+            }],
         }, format='json')
         self.assertEqual(response.status_code, 400)
 

@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useCommunityStore, CATEGORY_STYLE, formatViews } from './communityStore.js'
+import { useReportStore } from '@/stores/report'
 
 const communityStore = useCommunityStore()
 const { posts, detailLoading } = storeToRefs(communityStore)
@@ -26,6 +27,38 @@ const COMPONENT_MAP = {
   PensionScheduleSlide,
   LifetimeCashflowSlide,
   RequiredSavingsSlide,
+}
+
+// store를 읽어 그리는 5종 — 첨부 스냅샷도 뷰어 리포트도 없으면 0원 표가 떠서 안내로 대신한다.
+// 나머지 4종은 하드코딩 정적 마크업이라 데이터와 무관하게 그대로 그린다
+const DATA_DRIVEN_SLIDES = {
+  BalanceSheetSlide:        'asset_statement',
+  CashFlowSlide:            'cash_flow',
+  FinancialIndicatorsSlide: 'financial-indicators',
+  FinancialGoalSlide:       'financial-goal-result',
+  LifetimeCashflowSlide:    'lifetime-cashflow',
+}
+
+// 내용만큼 세로로 늘어나는 슬라이드 — .slide 가 min-height:100% + overflow-y:auto 라
+// 본문에서 고정 높이 상자에 넣으면 차트 절반이 잘린 채 스크롤도 안 된다.
+// 나머지 슬라이드는 height:100% + overflow:hidden 이라 고정 높이 상자가 있어야 제대로 그려진다
+const AUTO_HEIGHT_SLIDES = new Set([
+  'BalanceSheetSlide',
+  'CashFlowSlide',
+  'FinancialIndicatorsSlide',
+])
+
+function isAutoHeightSlide(section) {
+  return AUTO_HEIGHT_SLIDES.has(section.name)
+}
+
+const reportStore = useReportStore()
+
+// 판정은 화면에서 한다 — 컴포넌트는 data가 없으면 store를 보는 기존 동작을 유지한다
+function hasSlideData(section) {
+  const reportKey = DATA_DRIVEN_SLIDES[section.name]
+  if (!reportKey) return true
+  return !!section.data || !!reportStore.reports?.[reportKey]
 }
 
 const route  = useRoute()
@@ -285,8 +318,16 @@ async function removeComment(commentId) {
                 </svg>
                 {{ section.caption }}
               </div>
-              <div class="component-wrap">
-                <component :is="COMPONENT_MAP[section.name]" />
+              <div
+                class="component-wrap"
+                :class="{ 'component-wrap--auto': isAutoHeightSlide(section) }"
+              >
+                <component
+                  :is="COMPONENT_MAP[section.name]"
+                  v-if="hasSlideData(section)"
+                  :data="section.data ?? null"
+                />
+                <p v-else class="component-empty">작성자가 첨부한 재무 정보가 없습니다</p>
               </div>
             </div>
 
@@ -608,6 +649,42 @@ async function removeComment(commentId) {
   height: 220px;
   overflow: hidden;
   background: #ffffff;
+}
+
+/* 고정 높이 슬라이드는 좁은 화면에서 요약 카드가 세로로 접히며 차트 자리가 사라진다 — 상자를 더 준다 */
+@media (max-width: 600px) {
+  .component-wrap:not(.component-wrap--auto) {
+    height: 420px;
+  }
+}
+
+/* 늘어나는 슬라이드는 높이를 내용에 맡겨 전부 보여준다.
+   커뮤니티 본문 전용 override — 대시보드·AI·발표 화면은 각자 고정 높이 컨테이너를 쓴다 */
+.component-wrap--auto {
+  height: auto;
+  min-height: 220px;
+  overflow: visible;
+}
+
+/* 부모가 auto 가 되면 .slide 의 min-height:100% 가 0 이 되고
+   overflow-y:auto 는 이중 스크롤을 만든다 — 이 화면에서만 풀어준다 */
+.component-wrap--auto :deep(.slide) {
+  min-height: 220px;
+  overflow-y: visible;
+}
+
+.component-wrap--auto .component-empty {
+  min-height: 220px;
+}
+
+.component-empty {
+  height: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #9ca3af;
 }
 
 /* ── Like ────────────────────────────────────────── */

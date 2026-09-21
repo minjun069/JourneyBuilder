@@ -56,6 +56,41 @@ test('sections가 없거나 빈 배열이면 content 텍스트 섹션으로 fall
   assert.deepEqual(notArray.sections, [{ type: 'text', content: '본문' }])
 })
 
+test('component 섹션에 첨부된 data 스냅샷을 손실 없이 보존한다', () => {
+  const snapshot = {
+    total_assets: 420000000,
+    total_liabilities: 300000000,
+    asset_groups: [
+      { key: 'cash', label: '현금성자산', total: 20000000, items: [{ label: '예금', value: 20000000 }] },
+    ],
+  }
+
+  const view = toViewPost({
+    id: 9,
+    title: 't',
+    content: '본문',
+    sections: [
+      { type: 'text', content: '본문' },
+      { type: 'component', name: 'BalanceSheetSlide', caption: '재무상태표', data: snapshot },
+    ],
+  })
+
+  assert.deepEqual(view.sections[1].data, snapshot)
+  assert.equal(view.sections[1].data.asset_groups[0].items[0].value, 20000000)
+})
+
+test('data 없는 component 섹션은 그대로 통과한다 — 하위호환', () => {
+  const view = toViewPost({
+    id: 10,
+    title: 't',
+    content: '본문',
+    sections: [{ type: 'component', name: 'RetirementFundSlide', caption: '은퇴 필요자금' }],
+  })
+
+  assert.equal(view.sections[0].data, undefined)
+  assert.equal(view.sections[0].name, 'RetirementFundSlide')
+})
+
 test('작성자·밴드·플래그 기본값 — 빈 문자열 author는 익명으로 방어한다', () => {
   const view = toViewPost({ id: 1, title: 't', author: '' })
 

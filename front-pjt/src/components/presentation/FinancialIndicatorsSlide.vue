@@ -4,20 +4,35 @@ import { useReportStore } from '@/stores/report'
 import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue'
 import { makeIndicator } from '@/components/charts/financialIndicatorSchema'
 
+// 글에 첨부된 스냅샷을 받는다. 없으면 기존처럼 store 를 본다(대시보드·AI 화면 동작 유지)
+const props = defineProps({
+  data: { type: Object, default: null },
+})
+
 const reportStore = useReportStore()
 
-const fi = computed(() => reportStore.reports?.['financial-indicators'])
+const fi = computed(() => props.data ?? reportStore.reports?.['financial-indicators'])
 
 const GROUP_LABEL = { cashflow: '현금흐름', assets: '자산', risk: '리스크 대비' }
 
+// 표시 순서는 라벨 맵 순서로 고정한다 — 글에 첨부된 스냅샷은 jsonb 로 저장돼
+// 키 순서가 보존되지 않아 들어온 순서를 믿으면 리스크 대비가 먼저 뜨기도 한다
+const GROUP_ORDER = Object.keys(GROUP_LABEL)
+
 const groups = computed(() => {
   const data = fi.value
-  if (!data) return []
+  if (!data?.groups) return []
   const age = data.age
-  return Object.entries(data.groups).map(([key, items]) => ({
+  const incoming = data.groups
+  // 없는 그룹은 건너뛰고, 맵에 없는 그룹은 버리지 않고 뒤에 들어온 순서대로 붙인다
+  const keys = [
+    ...GROUP_ORDER.filter(key => key in incoming),
+    ...Object.keys(incoming).filter(key => !(key in GROUP_LABEL)),
+  ]
+  return keys.map(key => ({
     key,
     label: GROUP_LABEL[key] ?? key,
-    items: items.map(i => makeIndicator(i.key, i.value, age)),
+    items: (incoming[key] ?? []).map(i => makeIndicator(i.key, i.value, age)),
   }))
 })
 </script>

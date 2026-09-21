@@ -3,8 +3,13 @@ import { computed } from 'vue'
 import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
 
+// 글에 첨부된 스냅샷을 받는다. 없으면 기존처럼 store 를 본다(대시보드·AI 화면 동작 유지)
+const props = defineProps({
+  data: { type: Object, default: null },
+})
+
 const reportStore = useReportStore()
-const report = computed(() => reportStore.reports?.['lifetime-cashflow'])
+const report = computed(() => props.data ?? reportStore.reports?.['lifetime-cashflow'])
 
 const rows = computed(() => report.value?.chart_data ?? [])
 const sampledRows = computed(() => {
@@ -29,7 +34,8 @@ const maxAsset = computed(() => Math.max(
   ...sampledRows.value.map(row => Math.abs(row.total_net_worth ?? 0)),
 ))
 
-const data = computed(() => sampledRows.value.map(row => ({
+// data 는 prop 이름이 되었으므로 막대 배열은 columns 로 둔다
+const columns = computed(() => sampledRows.value.map(row => ({
   age: `${row.age}세`,
   income: height(row.cash_inflow, maxCash.value),
   expense: height(Math.abs(row.cash_outflow ?? 0), maxCash.value),
@@ -81,7 +87,7 @@ function label(col) {
       <span class="dot asset-dot"></span>순자산
     </div>
     <div class="chart">
-      <div v-for="(col, i) in data" :key="i" class="col" :title="label(col)">
+      <div v-for="(col, i) in columns" :key="i" class="col" :title="label(col)">
         <div class="bar-group">
           <div class="bar income-bar" :style="{ height: col.income + '%' }"></div>
           <div class="bar expense-bar" :style="{ height: col.expense + '%' }"></div>

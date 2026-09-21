@@ -3,8 +3,13 @@ import { computed } from 'vue'
 import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
 
+// 글에 첨부된 스냅샷을 받는다. 없으면 기존처럼 store 를 본다(대시보드·AI 화면 동작 유지)
+const props = defineProps({
+  data: { type: Object, default: null },
+})
+
 const reportStore = useReportStore()
-const gd = computed(() => reportStore.reports?.['financial-goal-result'])
+const gd = computed(() => props.data ?? reportStore.reports?.['financial-goal-result'])
 
 const prePhases  = computed(() => gd.value?.pre_retirement ?? [])
 const postPhases = computed(() => gd.value?.post_retirement_phases ?? [])

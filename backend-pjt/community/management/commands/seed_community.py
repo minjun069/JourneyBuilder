@@ -26,6 +26,7 @@ cascade 로 소멸하므로 seed_community 를 다시 실행해야 한다
    고객 수(40명)에서는 일치가 보장되며, 이를 테스트로 고정해 두었다
    (community/tests.py SeedCommunityCommandTests).
 """
+import copy
 import json
 import random
 from datetime import timedelta
@@ -101,7 +102,10 @@ class Command(BaseCommand):
                 content=entry['content'],
                 category=entry['category'],
                 is_anonymous=False,
-                sections=entry['sections'],
+                # 섹션은 리포트 스냅샷(data)까지 담은 중첩 구조라 깊은 복사로 저장한다.
+                # entries 를 그대로 넘기면 같은 dict 객체가 글마다 공유돼
+                # 한 글의 수정이 다른 글로 새어나갈 수 있다.
+                sections=copy.deepcopy(entry['sections']),
                 is_recommended=entry['is_recommended'],
                 author_age_band=entry['age_band'],
                 author_asset_band=entry['asset_band'],

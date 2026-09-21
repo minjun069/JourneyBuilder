@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import serializers
 
 from .models import Comment, Like, Post
@@ -22,6 +24,9 @@ POST_CONTENT_MAX_LENGTH = 5000
 COMMENT_CONTENT_MAX_LENGTH = 1000
 SECTION_MAX_COUNT = 30
 SECTION_TEXT_MAX_LENGTH = 5000
+# component 섹션의 data(리포트 스냅샷) 직렬화 길이 상한.
+# data 는 본문 길이 제한을 우회하는 경로이고 상세는 비인증 GET 이므로 별도 상한을 둔다.
+SECTION_DATA_MAX_LENGTH = 100_000
 
 
 class IsMineMixin:
@@ -163,6 +168,17 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
                 if caption is not None and len(caption) > SECTION_TEXT_MAX_LENGTH:
                     raise serializers.ValidationError(
                         f'component 섹션의 caption은 {SECTION_TEXT_MAX_LENGTH}자 이내여야 합니다.')
+                # data 는 작성 시점의 리포트 스냅샷 — 없어도 되고(기존 글 하위호환),
+                # 있으면 객체여야 한다. 렌더 측은 이 값을 그대로 컴포넌트에 넘긴다.
+                data = section.get('data')
+                if data is not None:
+                    if not isinstance(data, dict):
+                        raise serializers.ValidationError(
+                            'component 섹션의 data는 객체여야 합니다.')
+                    # 한글이 대부분이라 ensure_ascii=False 로 실제 전송 문자 수를 잰다
+                    if len(json.dumps(data, ensure_ascii=False)) > SECTION_DATA_MAX_LENGTH:
+                        raise serializers.ValidationError(
+                            f'component 섹션의 data는 {SECTION_DATA_MAX_LENGTH}자 이내여야 합니다.')
             else:
                 raise serializers.ValidationError(
                     "섹션 type은 'text' 또는 'component'여야 합니다.")
