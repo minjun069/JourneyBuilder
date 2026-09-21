@@ -1098,7 +1098,7 @@ onBeforeUnmount(() => {
                         <div class="update-change-copy">
                           <strong>{{ `${item.section}.${item.path}` }}</strong>
                           <span>현재 값: {{ formatActionValue(item.current_value, item.unit) }}</span>
-                          <small>{{ item.reason }} · 신뢰도 {{ item.confidence_level === 'high' ? '높음' : '보통' }}</small>
+                          <small>{{ item.reason }}</small>
                           <span v-if="item.suggested_value != null">수정 후보: {{ formatActionValue(item.suggested_value, item.unit) }}</span>
                         </div>
                         <div v-if="item.decision === 'pending'" class="update-actions">

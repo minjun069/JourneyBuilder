@@ -7,7 +7,6 @@ import {
   applyErrorReviewSuggestion,
   cancelErrorReviewSuggestion,
   continueSaveAfterOptionalReview,
-  errorReviewConfidenceLevel,
   readCanonicalValue,
   visibleErrorReviewItems,
 } from './formChanges.js'
@@ -110,19 +109,14 @@ test('Error Review 후보는 검토 당시 canonical 값과 현재 draft가 같�
   )
 })
 
-test('Error Review confidence는 세 등급으로 나누고 낮음은 숨긴다', () => {
-  assert.equal(errorReviewConfidenceLevel(0.59), 'low')
-  assert.equal(errorReviewConfidenceLevel(0.60), 'medium')
-  assert.equal(errorReviewConfidenceLevel(0.849), 'medium')
-  assert.equal(errorReviewConfidenceLevel(0.85), 'high')
+test('Error Review는 점수 없이 검증된 이유가 있는 후보를 표시한다', () => {
   assert.deepEqual(
     visibleErrorReviewItems([
-      { confidence: 0.59, confidence_level: 'low' },
-      { confidence: 0.75, confidence_level: 'medium' },
-      { confidence: 0.91, confidence_level: 'high' },
-      { confidence: 0.91, confidence_level: 'medium' },
-    ]).map((item) => item.confidence_level),
-    ['medium', 'high'],
+      { reason: '입력 단위를 확인해 주세요.' },
+      { reason: '' },
+      null,
+    ]).map((item) => item.reason),
+    ['입력 단위를 확인해 주세요.'],
   )
 })
 

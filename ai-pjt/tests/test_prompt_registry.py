@@ -39,15 +39,15 @@ class PromptRegistryTests(unittest.TestCase):
             if path.stem not in {"__init__", "_factory"}
         }
         self.assertEqual(len(modules), len(prompt_ids()))
-        self.assertEqual(len(prompt_ids()), 18)
-        self.assertTrue(all(get_prompt(prompt_id).version == "3.0.0" for prompt_id in prompt_ids()))
+        self.assertEqual(len(prompt_ids()), 12)
+        self.assertTrue(all(get_prompt(prompt_id).version == "4.0.0" for prompt_id in prompt_ids()))
 
     def test_prompt_payload_contract_rejects_missing_and_unknown_fields(self) -> None:
-        prompt = get_prompt("qa.specify")
+        prompt = get_prompt("qa.plan")
         payload = {
             "step_id": "basic-info",
-            "message": "질문",
-            "bindings": {},
+            "question": "질문",
+            "feedback": "",
         }
         self.assertEqual(prompt.validate_payload(payload), payload)
         with self.assertRaisesRegex(ValueError, "missing keys"):
@@ -55,29 +55,19 @@ class PromptRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown keys"):
             prompt.validate_payload({**payload, "extra": True})
 
-    def test_role_prompts_encode_authority_and_action_boundaries(self) -> None:
-        planner = get_prompt("planner.plan").system_text
-        qa = get_prompt("qa.answer_with_evidence").system_text
-        input_resolver = get_prompt("input_assist.resolve").system_text
-        elicit = get_prompt("elicit.respond").system_text
-        chart = get_prompt("chart_interpret.explain").system_text
-
-        self.assertIn("depends_on", planner)
-        self.assertIn("bindings", planner)
-        self.assertIn("내부 문서 ID", qa)
-        self.assertIn("경계값에 맞추지 않습니다", input_resolver)
-        self.assertIn("과거 대화 문맥", elicit)
-        self.assertIn("자연스럽고 간결하게", elicit)
-        self.assertIn("새로운 계산", chart)
-        self.assertIn("입력 변경안", chart)
+    def test_model_contracts_keep_only_task_specific_inputs(self) -> None:
+        self.assertEqual(get_prompt("aggregator.compose").required_input_keys, {"answer"})
+        self.assertEqual(get_prompt("error_review.analyze").required_input_keys, {"fields", "review_rules"})
+        self.assertNotIn("route_constraints", get_prompt("planner.plan").required_input_keys)
+        self.assertEqual((get_prompt("qa.answer").required_input_keys - {"feedback"}) | {"answer"}, get_prompt("qa.judge").required_input_keys)
 
     def test_common_principles_persona_and_readable_sections_are_composed(self) -> None:
-        answer = get_prompt("qa.answer_direct")
-        classifier = get_prompt("qa.specify")
+        answer = get_prompt("qa.answer")
+        classifier = get_prompt("qa.plan")
         rendered = render_prompt_payload(classifier, {
             "step_id": "basic-info",
-            "message": "질문",
-            "bindings": {},
+            "question": "질문",
+            "feedback": "",
         })
 
         self.assertIn(COMMON_PRINCIPLES, answer.system_text)
@@ -90,7 +80,7 @@ class PromptRegistryTests(unittest.TestCase):
     def test_invocation_metadata_rejects_incomplete_failed_records(self) -> None:
         with self.assertRaisesRegex(ValueError, "error_code"):
             PromptInvocationRecord(
-                prompt_id="qa.specify",
+                prompt_id="qa.plan",
                 prompt_version="1.0.0",
                 prompt_hash="a" * 64,
                 prompt_release=PROMPT_RELEASE,
@@ -110,16 +100,8 @@ class PromptRegistryTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertTrue(all(len(prompt.content_hash) == 64 for prompt in specs))
 
-    def test_current_qa_prompts_require_product_term_rag_without_source_metadata(self) -> None:
-        decide = get_prompt("qa.decide_retrieval").system_text
-        answer = get_prompt("qa.answer_with_evidence").system_text
-        merge = get_prompt("qa.merge").system_text
-
-        self.assertIn("금융 개념, 제도, 제품 용어", decide)
-        self.assertIn("need_retrieval=true", decide)
-        self.assertIn("참고자료가 직접 뒷받침하는 내용", answer)
-        self.assertIn("내부 문서 ID", answer)
-        self.assertIn("내부 문서 정보는 노출하지 않습니다", merge)
+    def test_qa_has_one_planning_answering_and_review_prompt(self) -> None:
+        self.assertEqual({key for key in prompt_ids() if key.startswith("qa.")}, {"qa.plan", "qa.answer", "qa.judge"})
 
 
 class ProductionPromptCallAuditTests(unittest.TestCase):

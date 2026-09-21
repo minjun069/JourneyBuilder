@@ -18,16 +18,17 @@
 
 ```text
 Browser
-  → Django API: 사용자 인증·세션·업무 데이터·AI 작업 상태·승인
+  → Django API: 사용자 인증·세션·업무 데이터·AI 작업 상태
       → Redis: AI 요청 상태와 TTL
       → PostgreSQL: 업무 데이터
-      → AI FastAPI: 문맥·6-Agent·RAG·도구 오케스트레이션
+      → AI FastAPI: 문맥·Planner 요청 분해·코드 실행 계획·5-Agent·RAG·도구
           → PostgreSQL: AI checkpoint
           → 승인된 LLM·Embedding provider
           → RAG index: 승인 금융 지식·인터페이스 가이드
           → MCP server: 검색·검증·결정론적 계산
-      ← v2 SSE: 일반 채팅·Elicit·Error Review의 답변·인용·변경 제안 또는 실패
+      ← v2 SSE: 일반 채팅·Elicit·Error Review의 답변·변경 제안·검토 결과 또는 실패
   ← 모든 대화형 AI 응답은 v2 SSE
+  → Frontend 로컬 UI: change별 승인·거절과 draft 적용
 ```
 
 Browser는 AI·MCP를 직접 호출하지 않는다. AI는 Django 업무 DB를 직접 수정하지 않으며 사용자 승인 전 변경은 제안 상태로 유지한다.
@@ -52,12 +53,14 @@ Frontend 개발 서버의 Compose 포함 여부와 개발용 host port override�
 - Django는 사용자·세션·업무 데이터와 AI 작업 상태의 단일 소유자다.
 - AI FastAPI는 Django가 전달한 snapshot과 AI 전용 checkpoint·RAG·MCP에 의존한다.
 - MCP 도구는 Agent별 allowlist와 최소 권한을 따르고 Browser에 노출되지 않는다.
-- 6-Agent는 공통 상태·라우터·평가·보안 기반을 공유한다. 세부 역할은 [`AI 시스템 명세`](../ai/specification.md)를 따른다.
+- 다섯 Agent는 공통 상태·평가·보안 기반을 공유한다. Planner의 의미 중심 요청을 코드가 task ID·의존성·binding을 가진 실행 계획으로 변환한다. 세부 역할은 [`AI 시스템 명세`](../ai/specification.md)를 따른다.
+- QA는 계획·전체 검색·답변·동일 근거 평가, Input Assist는 일괄 추출·코드 검증·필요시 의미 검토·안내로 실행한다. Error Review는 짧은 필드 참조키를 사용하고 내부 식별자는 코드가 복원한다.
+- Aggregator는 성공 task가 하나여도 최종 답변을 다듬는다. 모델은 `answer`를 받아 `response` 한 필드를 반환하며 코드가 수치·조건·승인·저장 안내의 보존을 검사한다.
 - SSE terminal과 도구 결과를 포함한 모든 경계 입력은 schema·인증·권한을 다시 검증한다.
 
 ## 5. 데이터 소유권
 
-상담·메시지·확정 재무 데이터는 Django가 소유한다. AI는 요청 시점 snapshot만 받고 업무 데이터에 직접 쓰지 않는다. AI 대화 checkpoint와 RAG 인덱스는 AI 서비스가 소유한다. 상세 소유권과 변경 제안 계약은 [`데이터 스키마`](../data/schema.md)를 따른다.
+상담·메시지·확정 재무 데이터는 Django가 소유한다. AI는 요청 시점 snapshot을 받고 업무 데이터에 직접 쓰지 않는다. AI 대화 checkpoint·archive·요약과 RAG 인덱스는 AI 서비스가 소유한다. 대화 기억은 같은 scope의 사용자·AI·기존 요약을 포함하며 현재 금융값은 Backend snapshot을 우선한다. 상세 소유권과 변경 제안 계약은 [`데이터 스키마`](../data/schema.md)를 따른다.
 
 로컬 F01-T03 Compose는 F01 범위를 위해 Django와 AI checkpoint가 한 PostgreSQL service를 사용한다. 운영 환경에서 DB instance·role·backup을 물리적으로 분리할지는 별도 배포 설계에서 결정한다.
 

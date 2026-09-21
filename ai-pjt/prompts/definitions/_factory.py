@@ -15,7 +15,7 @@ def define_prompt(
     output_schema: str | None = None,
     risk: str = "standard",
     advisor: bool = False,
-    version: str = "3.0.0",
+    version: str = "4.0.0",
 ) -> PromptSpec:
     return PromptSpec(
         prompt_id=prompt_id,

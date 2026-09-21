@@ -35,7 +35,6 @@ class FakeAgentGraph:
                         "type": "form_change",
                         "target": "draft_form",
                         "user_requested": True,
-                        "confidence": 1.0,
                         "changes": [{
                             "section": "basic_info",
                             "path": "monthly_income",
@@ -94,6 +93,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=planner_must_not_run,
             agent_graphs=agents,
@@ -122,6 +122,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=FakePlanner({
                 "tasks": [{
@@ -171,6 +172,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                 instrumentation, sink = fake_instrumentation()
                 graph = build_graph(
                     None,
+                    response_composer=None,
                     instrumentation=instrumentation,
                     planner=unavailable_planner,
                     agent_graphs=agents,
@@ -182,17 +184,15 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
                     "customer_info": {"saved_data": {}, "current_form": {}},
                 })
 
-                self.assertEqual(result["output"]["response"], "qa 응답")
-                self.assertEqual(result["route_plan"]["tasks"][0]["type"], "answer_question")
-                self.assertEqual(
-                    result["route_plan"]["tasks"][0]["route"]["executor"],
-                    "qa",
-                )
-                self.assertEqual(len(agents["qa"].calls), 1)
+                self.assertIn("실행 계획", result["output"]["response"])
+                self.assertIsNone(result["output"]["action"])
+                self.assertEqual(result["route_plan"]["tasks"], [])
+                self.assertEqual(result["plan_issues"][0]["code"], "PLANNER_ERROR")
+                self.assertEqual(sum(len(agent.calls) for agent in agents.values()), 0)
                 planner_terminal = next(
                     event
                     for event in sink.runtime_events
-                    if event.stage.value == "planner" and event.status.value == "succeeded"
+                    if event.stage.value == "planner" and event.status.value == "failed"
                 )
                 components = {
                     item["component"]
@@ -283,11 +283,11 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
             agent_graphs=agents,
             tool_executors={"lookup_reference_value": lookup},
-            response_composer=None,
         )
         result = await graph.ainvoke({
             "request_id": "req-1",
@@ -311,6 +311,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=FakePlanner({"tasks": []}),
             agent_graphs=agents,
@@ -339,6 +340,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
         instrumentation, sink = fake_instrumentation()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=instrumentation,
             planner=FakePlanner({"tasks": []}),
             agent_graphs=all_agent_graphs(),

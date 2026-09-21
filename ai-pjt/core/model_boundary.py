@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
+from copy import deepcopy
 import logging
+import re
 from time import perf_counter
 from typing import Any, TypeVar
 
@@ -51,6 +53,14 @@ _MODEL_CALL_RECORDER: ContextVar[ModelCallRecorder | None] = ContextVar(
 logger = logging.getLogger(__name__)
 
 
+class _PromptMessages(list[Any]):
+    """Keep trusted structure until masking; only plain messages reach a provider."""
+
+    def __init__(self, messages: list[Any], payload: Mapping[str, Any]) -> None:
+        super().__init__(messages)
+        self.payload = deepcopy(dict(payload))
+
+
 def secure_system_prompt(role_prompt: str) -> str:
     if not isinstance(role_prompt, str) or not role_prompt.strip():
         raise ValueError("role_prompt must be a non-empty string")
@@ -65,10 +75,10 @@ def prompt_messages(prompt: PromptSpec, payload: Mapping[str, Any]) -> list[Any]
     from langchain_core.messages import HumanMessage, SystemMessage
 
     human_content = render_prompt_payload(prompt, payload)
-    return [
+    return _PromptMessages([
         SystemMessage(content=secure_system_prompt(prompt.system_text)),
         HumanMessage(content=human_content),
-    ]
+    ], payload)
 
 
 def mask_model_payload(
@@ -484,6 +494,7 @@ def _prepare_call(
     key = _runtime_key()
     policy = MaskingPolicy(pseudonym_key=key)
     replacements: tuple[tuple[str, str], ...] = ()
+    numeric_tokens: dict[str, str] = {}
     if sensitive_payload is not None:
         safe_payload = mask_model_payload(
             sensitive_payload,
@@ -491,6 +502,18 @@ def _prepare_call(
             pseudonym_key=key,
         )
         replacements = _replacement_pairs(sensitive_payload, safe_payload)
+        if isinstance(messages, _PromptMessages) and prompt is not None:
+            protected_payload, numeric_tokens = _protect_model_numbers(
+                messages.payload,
+                sensitive_payload=sensitive_payload,
+                safe_sensitive_payload=safe_payload,
+                purpose=purpose,
+                key=key,
+                original_content=message_list[1].content,
+            )
+            message_list[1] = _copy_message(
+                message_list[1], render_prompt_payload(prompt, protected_payload)
+            )
     return [
         _copy_message(
             message,
@@ -498,6 +521,7 @@ def _prepare_call(
                 getattr(message, "content", ""),
                 policy=policy,
                 replacements=replacements,
+                numeric_tokens=numeric_tokens,
             ),
         )
         for message in message_list
@@ -574,6 +598,7 @@ def _mask_message_content(
     *,
     policy: MaskingPolicy,
     replacements: tuple[tuple[str, str], ...],
+    numeric_tokens: Mapping[str, str] | None = None,
 ) -> Any:
     replaced = _replace_literals(content, replacements)
     masked = mask_payload(
@@ -581,7 +606,75 @@ def _mask_message_content(
         sink=MaskingSink.MODEL_INPUT,
         policy=policy,
     )["content"]
-    return redact_direct_text(masked)
+    result = redact_direct_text(masked)
+    if isinstance(result, str):
+        for token, original in (numeric_tokens or {}).items():
+            result = result.replace(token, original)
+    return result
+
+
+_MONEY_LITERAL = re.compile(r"(?<![\d.])\d[\d,]*(?:\.\d+)?(?=\s*(?:원|달러|KRW|USD)(?![A-Za-z]))")
+_IDENTIFIER_CONTEXT = re.compile(
+    r"계좌|전화|휴대폰|연락처|주민|식별|이름|성명|account|phone|contact|identifier|resident|name|token|secret|password",
+    re.IGNORECASE,
+)
+
+
+def _protect_model_numbers(
+    payload: Mapping[str, Any], *, sensitive_payload: Any,
+    safe_sensitive_payload: Any, purpose: ModelPurpose, key: bytes, original_content: str,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Preserve allowed business numbers without unmasking identifier occurrences."""
+
+    allowed: set[str] = set()
+
+    def collect(raw: Any, safe: Any, path: MaskingPath = ()) -> None:
+        if isinstance(raw, Mapping) and isinstance(safe, Mapping):
+            for name, value in raw.items():
+                collect(value, safe.get(name), (*path, name))
+        elif isinstance(raw, (list, tuple)) and isinstance(safe, (list, tuple)):
+            for index, (value, sanitized) in enumerate(zip(raw, safe)):
+                collect(value, sanitized, (*path, index))
+        elif raw == safe and any(path[:len(prefix)] == prefix for prefix in ALLOWED_INPUT_PREFIXES[purpose]):
+            if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+                allowed.add(str(raw))
+            elif isinstance(raw, str):
+                allowed.update(match.group().replace(",", "") for match in _MONEY_LITERAL.finditer(raw))
+
+    collect(sensitive_payload, safe_sensitive_payload)
+    safe_input = mask_model_payload(payload, purpose=purpose, pseudonym_key=key)
+    tokens: dict[str, str] = {}
+    prefix = "\x00RWALLOWEDNUMBER"
+    while prefix in original_content:
+        prefix += "X"
+
+    def protect(text: str) -> str:
+        token = f"{prefix}{len(tokens)}\x00"
+        tokens[token] = text
+        return token
+
+    def visit(raw: Any, safe: Any, path: MaskingPath = ()) -> Any:
+        if isinstance(raw, Mapping) and isinstance(safe, Mapping):
+            return {name: visit(value, safe.get(name), (*path, name)) for name, value in raw.items()}
+        if isinstance(raw, list) and isinstance(safe, list):
+            return [visit(value, sanitized, (*path, index)) for index, (value, sanitized) in enumerate(zip(raw, safe))]
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            return protect(str(raw)) if raw == safe and str(raw) in allowed else raw
+        if isinstance(raw, str) and path and path[-1] in {
+            "message", "question", "answer", "text", "reference", "description",
+        }:
+            # Treat each line separately so a financial value cannot authorize
+            # a matching phone/account number in another line of the request.
+            return "\n".join(
+                line if _IDENTIFIER_CONTEXT.search(line) else _MONEY_LITERAL.sub(
+                    lambda match: protect(match.group())
+                    if match.group().replace(",", "") in allowed else match.group(),
+                    line,
+                ) for line in raw.split("\n")
+            )
+        return raw
+
+    return visit(payload, safe_input), tokens
 
 
 def _replace_literals(

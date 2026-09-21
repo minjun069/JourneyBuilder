@@ -94,12 +94,11 @@ class ZeroNullContractTests(SimpleTestCase):
 
 
 class FormActionPolicyTests(SimpleTestCase):
-    def action(self, *, confidence, requested):
+    def action(self, *, requested):
         return normalize_form_action({
             'action': {
                 'type': 'form_change',
                 'target': 'draft_form',
-                'confidence': confidence,
                 'user_requested': requested,
                 'changes': [{
                     'section': 'basic_info',
@@ -110,28 +109,28 @@ class FormActionPolicyTests(SimpleTestCase):
             },
         }, 'basic-info')
 
-    def test_explicit_high_confidence_request_still_requires_approval(self):
-        action = self.action(confidence=0.90, requested=True)
+    def test_explicit_request_still_requires_approval(self):
+        action = self.action(requested=True)
         self.assertEqual(action['mode'], 'proposal')
         self.assertEqual(action['changes'][0]['value'], 0)
 
     def test_every_ai_generated_change_is_proposal(self):
         self.assertEqual(
-            self.action(confidence=0.89, requested=True)['mode'],
+            self.action(requested=True)['mode'],
             'proposal',
         )
         self.assertEqual(
-            self.action(confidence=1.0, requested=False)['mode'],
+            self.action(requested=False)['mode'],
             'proposal',
         )
 
     def test_malformed_metadata_does_not_bypass_approval(self):
         self.assertEqual(
-            self.action(confidence='nan', requested=True)['mode'],
+            self.action(requested=True)['mode'],
             'proposal',
         )
         self.assertEqual(
-            self.action(confidence=1.0, requested='true')['mode'],
+            self.action(requested='true')['mode'],
             'proposal',
         )
 
@@ -140,7 +139,6 @@ class FormActionPolicyTests(SimpleTestCase):
             normalize_form_action({
                 'action': {
                     'type': 'form_change',
-                    'confidence': 1,
                     'user_requested': True,
                     'changes': [{
                         'section': 'basic_info',

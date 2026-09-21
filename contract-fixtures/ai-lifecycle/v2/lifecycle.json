@@ -249,7 +249,10 @@
         "new_user_message_count": 0,
         "new_ai_request_count": 0,
         "graph_execution_count": 0,
-        "replay_events": ["start", "done"],
+        "replay_events": [
+          "start",
+          "done"
+        ],
         "same_assistant_message_id": true,
         "recover_from_terminal_receipt_when_redis_missing": true
       }
@@ -299,7 +302,10 @@
       "response": {
         "status": 200,
         "content_type": "text/event-stream",
-        "terminal_events": ["done", "error"]
+        "terminal_events": [
+          "done",
+          "error"
+        ]
       }
     },
     "django_ai_stream_missing_request_id": {
@@ -450,7 +456,6 @@
                 "mode": "proposal",
                 "status": "pending",
                 "user_requested": false,
-                "confidence": 0.85,
                 "changes": [
                   {
                     "change_id": "chg_fixture_income",

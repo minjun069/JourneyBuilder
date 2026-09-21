@@ -6,6 +6,7 @@ import json
 import re
 from collections.abc import Mapping
 from typing import Any
+from .context import project_chart_facts
 
 
 _NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
@@ -33,11 +34,11 @@ def _walk_numbers(value: Any):
 
 
 def _authorized_numbers(payload: Mapping[str, Any]) -> set[str]:
-    allowed = {_normalized_number(value) for value in _walk_numbers(payload)}
-    for value in _walk_numbers(payload):
-        if isinstance(value, float) and 0 < abs(value) <= 1:
-            allowed.add(_normalized_number(value * 100))
-    for token in _NUMBER.findall(json.dumps(payload, ensure_ascii=False).replace(",", "")):
+    if payload.get("status") != "ready":
+        return set()
+    facts = project_chart_facts(payload)
+    allowed = {_normalized_number(value) for value in _walk_numbers(facts)}
+    for token in _NUMBER.findall(json.dumps(facts, ensure_ascii=False).replace(",", "")):
         allowed.add(_normalized_number(token))
     return allowed
 
@@ -52,6 +53,7 @@ def unauthorized_numeric_claims(response: str, payload: Mapping[str, Any]) -> se
 
 
 def _evidence_terms(payload: Mapping[str, Any]) -> set[str]:
+    payload = project_chart_facts(payload)
     evidence_roots = (
         payload.get("highlights", []),
         payload.get("events", []),
@@ -123,7 +125,7 @@ def fallback_response(payload: Mapping[str, Any], *, entry: bool) -> str:
         for item in payload.get("warnings", [])
         if isinstance(item, Mapping) and item.get("message")
     ]
-    caution = warnings[0] if warnings else "적용 가정이나 입력 snapshot이 바뀌면 보고서를 다시 계산해야 합니다."
+    caution = warnings[0] if warnings else "적용 가정이나 입력값이 바뀌면 보고서를 다시 계산해야 합니다."
     if entry:
         return f"{conclusion}\n\n{bullets}\n\n주의: {caution}"
     return f"{conclusion}\n\n{bullets}\n\n해석 한계: {caution}"

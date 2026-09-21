@@ -17,6 +17,7 @@ from graph.plan_contracts import (
     issue,
 )
 from graph.task_catalog import planning_guidance_for
+from graph.request_plan import compile_request_plan, reference_options
 
 
 TaskPlanner = Callable[..., Mapping[str, Any]]
@@ -44,14 +45,11 @@ def create_route_plan(
     )
     diagnostics: list[dict[str, str]] = []
     last_issues: tuple[PlanIssue, ...] = ()
-    planner_failed = False
 
     for attempt in range(2):
         try:
             raw_plan = planner(message=message, step_id=step_id, context=context)
-            planner_failed = False
         except Exception as error:
-            planner_failed = True
             diagnostic = {
                 "component": "planner",
                 "attempt": str(attempt + 1),
@@ -68,12 +66,30 @@ def create_route_plan(
             last_issues = (issue(
                 "PLANNER_ERROR",
                 "plan",
-                "planner가 실행 계획을 만들지 못했습니다.",
+                "요청을 작업으로 정리하지 못했습니다.",
             ),)
             if attempt == 0:
                 context["validation_feedback"] = [item.to_dict() for item in last_issues]
                 continue
             break
+
+        if isinstance(raw_plan, Mapping) and "requests" in raw_plan:
+            try:
+                raw_plan = compile_request_plan(raw_plan)
+            except Exception as error:  # noqa: BLE001 - compilation never permits a partial execution
+                diagnostics.append({
+                    "component": "plan_compile",
+                    "attempt": str(attempt + 1),
+                    **exception_identity_fields(error),
+                })
+                last_issues = (issue(
+                    "INVALID_REQUEST_PLAN", "plan.requests",
+                    str(error) if isinstance(error, ValueError) else "요청을 실행 가능한 작업으로 구성하지 못했습니다.",
+                ),)
+                if attempt == 0:
+                    context["validation_feedback"] = [item.to_dict() for item in last_issues]
+                    continue
+                break
 
         decision = evaluator(raw_plan)
         if decision.allowed:
@@ -98,28 +114,6 @@ def create_route_plan(
             continue
         break
 
-    if planner_failed and _looks_like_explanatory_question(message):
-        recovery_plan = {
-            "status": "executable",
-            "tasks": [{
-                "id": "answer",
-                "type": "answer_question",
-                "description": message,
-                "depends_on": [],
-                "bindings": {},
-            }],
-        }
-        decision = evaluator(recovery_plan)
-        if decision.allowed:
-            diagnostics.append({"component": "planner", "recovery": "single_qa_plan"})
-            return RoutePlanValidation(
-                valid=True,
-                plan=deepcopy(decision.plan),
-                issues=(),
-                diagnostics=tuple(diagnostics),
-                retries_used=1,
-            )
-
     return RoutePlanValidation(
         valid=False,
         plan={"schema_version": PLAN_SCHEMA_VERSION, "tasks": []},
@@ -142,16 +136,8 @@ def planner_route_constraints(
         "step_id": step_id,
         "available_tool_capabilities": sorted(set(registered_tool_capabilities)),
         "allowed_task_types": ordered,
-        "task_type_guidance": planning_guidance_for(ordered),
+        "task_type_guidance": planning_guidance_for([
+            task_type for task_type in ordered if task_type != "lookup_reference_value"
+        ]),
+        "reference_options": reference_options() if "lookup_reference_value" in ordered else [],
     }
-
-
-def _looks_like_explanatory_question(message: str) -> bool:
-    compact = message.strip().replace(" ", "")
-    if not compact:
-        return False
-    return (
-        "?" in compact
-        or compact.endswith(("뭐야", "무엇인가요", "뜻이야", "말하는거야", "인가요", "나요", "까요"))
-        or any(token in compact for token in ("설명해줘", "알려줘", "무슨뜻", "어느정도기간"))
-    )

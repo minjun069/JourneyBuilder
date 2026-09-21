@@ -40,7 +40,7 @@
       "id": "P06",
       "commits": ["512f6489cced44a74ee25a0b32d434812009d9bf"],
       "required_paths": [
-        "ai-pjt/graph/router.py",
+        "ai-pjt/graph/task_catalog.py",
         "ai-pjt/guardrails/plan_policy.py",
         "ai-pjt/tests/test_routing_policy.py",
         "ai-pjt/guardrails/tests/test_plan_policy.py"

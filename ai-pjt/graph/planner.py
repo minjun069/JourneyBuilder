@@ -3,57 +3,44 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from copy import deepcopy
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.model_boundary import ModelPurpose, prompt_messages, secure_structured_invoke
 from graph.plan_contracts import MAX_PLAN_TASKS
+from core.prompt_inputs import conversation_for_model
 from prompts import get_prompt
 
 
 PLANNER_PROMPT = get_prompt("planner.plan")
 
 
-class PlannerBindingOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    task_id: str
-    path: str
-
-
 class PlannerTaskOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str
     type: str
-    description: str
-    depends_on: list[str] = Field(default_factory=list)
-    bindings: dict[str, PlannerBindingOutput] = Field(default_factory=dict)
-    arguments: dict[str, Any] | None = None
+    description: str = Field(min_length=1)
+    reference_id: str | None = None
+    reference_age: int | None = Field(default=None, ge=0, le=120)
 
 
 class PlannerModelOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["executable", "ambiguous", "unsupported"] = "executable"
-    tasks: list[PlannerTaskOutput] = Field(default_factory=list)
+    requests: list[PlannerTaskOutput] = Field(default_factory=list, max_length=MAX_PLAN_TASKS)
 
     @model_validator(mode="after")
     def validate_status_contract(self) -> "PlannerModelOutput":
-        if self.status == "executable" and not self.tasks:
-            raise ValueError("executable planner output requires tasks")
-        if self.status != "executable" and self.tasks:
-            raise ValueError("non-executable planner output must not include tasks")
+        if self.status == "executable" and not self.requests:
+            raise ValueError("executable planner output requires requests")
+        if self.status != "executable" and self.requests:
+            raise ValueError("non-executable planner output must not include requests")
         return self
 
-    def to_route_plan(self) -> dict[str, Any]:
-        payload = self.model_dump(mode="json")
-        for task in payload["tasks"]:
-            if task.get("arguments") in ({}, None):
-                task.pop("arguments")
-        return payload
+    def to_request_plan(self) -> dict[str, Any]:
+        return self.model_dump(mode="json", exclude_none=True)
 
 
 def invoke_planner_model(
@@ -76,11 +63,17 @@ def invoke_planner_model(
         llm,
         PlannerModelOutput,
         prompt_messages(PLANNER_PROMPT, {
-            "max_tasks": MAX_PLAN_TASKS,
-            "task_types": list(allowed_task_types),
-            "route_constraints": deepcopy(dict(route_constraints)),
+            "tasks": route_constraints["task_type_guidance"],
+            "references": route_constraints.get("reference_options", []),
             "step_id": step_id,
-            "context": dict(context),
+            "context": {
+                **conversation_for_model(context),
+                "current_age": next((
+                    value for path, value in context.get("confirmed_facts", {}).items()
+                    if path in {"age", "basic_info.age"}
+                ), None),
+            },
+            "feedback": context.get("validation_feedback", []),
             "message": message,
         }),
         purpose=ModelPurpose.PLANNER,
@@ -89,7 +82,7 @@ def invoke_planner_model(
         prompt=PLANNER_PROMPT,
         max_attempts=1,
     )
-    return response.to_route_plan()
+    return response.to_request_plan()
 
 
 # Existing injection sites keep this callable name while the module owns only LLM work.

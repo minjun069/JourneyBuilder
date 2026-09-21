@@ -1,41 +1,53 @@
-"""QA model schemas, prompt contracts, and structured runnables."""
+"""QA planning and review outputs; answers remain plain text."""
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.llm import llm
 from prompts import get_prompt
 
 
-class SpecifyResult(BaseModel):
-    queries: list[str]
+class QuestionPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-
-class RetrievalDecision(BaseModel):
+    question: str = Field(min_length=1)
     need_retrieval: bool
-    requests_new_official_value: bool = False
+    query: str | None = None
+
+    @model_validator(mode="after")
+    def validate_query(self):
+        if self.need_retrieval and not self.query:
+            raise ValueError("a question requiring retrieval needs a search query")
+        if not self.need_retrieval:
+            self.query = None
+        return self
+
+
+class PlanResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    questions: list[QuestionPlan] = Field(min_length=1, max_length=3)
 
 
 class JudgeResult(BaseModel):
-    verdict: Literal["good", "bad"]
-    failure_kind: Literal["none", "answer_quality", "evidence_insufficient"] = "none"
-    reason: str
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    status: Literal["good", "answer_quality", "evidence_insufficient"]
+    reason: str = ""
+
+    @model_validator(mode="after")
+    def validate_reason(self):
+        if self.status != "good" and not self.reason:
+            raise ValueError("a failed review needs an actionable reason")
+        if self.status == "good":
+            self.reason = ""
+        return self
 
 
-class RefineResult(BaseModel):
-    query: str
-
-
-specify_chain = llm.with_structured_output(SpecifyResult)
-decision_chain = llm.with_structured_output(RetrievalDecision)
+plan_chain = llm.with_structured_output(PlanResult)
 judge_chain = llm.with_structured_output(JudgeResult)
-refine_chain = llm.with_structured_output(RefineResult)
 
-SPECIFY_PROMPT = get_prompt("qa.specify")
-DECIDE_PROMPT = get_prompt("qa.decide_retrieval")
-ANSWER_PROMPT = get_prompt("qa.answer_with_evidence")
-DIRECT_ANSWER_PROMPT = get_prompt("qa.answer_direct")
-MERGE_PROMPT = get_prompt("qa.merge")
+PLAN_PROMPT = get_prompt("qa.plan")
+ANSWER_PROMPT = get_prompt("qa.answer")
 JUDGE_PROMPT = get_prompt("qa.judge")
-REFINE_PROMPT = get_prompt("qa.refine_query")

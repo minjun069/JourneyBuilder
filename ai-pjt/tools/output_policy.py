@@ -4,13 +4,13 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date
 from math import isfinite
+import re
 from typing import Any, Mapping
 
-from agents.error_review.confidence import (
-    VISIBLE_CONFIDENCE_LEVELS,
-    confidence_level,
-)
 from core.field_registry import load_field_registry
+
+
+_FINANCIAL_REFERENCE_TOKEN = re.compile(r"\[\[FINANCIAL_VALUE_[0-9a-f]{12}_[1-9][0-9]*\]\]")
 
 
 SAFE_VALIDATION_FAILURE_RESPONSE = (
@@ -136,8 +136,7 @@ def _validate_error_review(review: Any) -> list[ValidationIssue]:
         return issues + [_issue("INVALID_REVIEW_ITEMS", "output.review.items", "review items는 array여야 합니다.")]
     allowed = {
         "section", "path", "item_id", "client_item_id", "parent_item_id",
-        "parent_client_item_id", "current_value", "reason", "suggested_value", "confidence",
-        "confidence_level",
+        "parent_client_item_id", "current_value", "reason", "suggested_value",
     }
     for index, item in enumerate(items):
         path = f"output.review.items[{index}]"
@@ -148,25 +147,6 @@ def _validate_error_review(review: Any) -> list[ValidationIssue]:
             issues.append(_issue("INVALID_REVIEW_ITEM", path, "review item에 현재 값이 필요합니다."))
         if not all(isinstance(item.get(key), str) and item[key].strip() for key in ("section", "path", "reason")):
             issues.append(_issue("INVALID_REVIEW_ITEM", path, "review field와 이유가 필요합니다."))
-        confidence = item.get("confidence")
-        if (
-            isinstance(confidence, bool)
-            or not isinstance(confidence, (int, float))
-            or not isfinite(float(confidence))
-            or not 0 <= float(confidence) <= 1
-        ):
-            issues.append(_issue("INVALID_REVIEW_CONFIDENCE", f"{path}.confidence", "review confidence가 올바르지 않습니다."))
-            continue
-        level = item.get("confidence_level")
-        if (
-            level not in VISIBLE_CONFIDENCE_LEVELS
-            or level != confidence_level(float(confidence))
-        ):
-            issues.append(_issue(
-                "INVALID_REVIEW_CONFIDENCE_LEVEL",
-                f"{path}.confidence_level",
-                "낮은 신뢰도이거나 confidence와 일치하지 않는 review item은 노출할 수 없습니다.",
-            ))
     return issues
 
 
@@ -210,19 +190,6 @@ def _validate_form_change(
             "output.action.user_requested",
             "user_requested는 boolean이어야 합니다.",
         ))
-    confidence = action.get("confidence")
-    if (
-        isinstance(confidence, bool)
-        or not isinstance(confidence, (int, float))
-        or not isfinite(float(confidence))
-        or not 0 <= float(confidence) <= 1
-    ):
-        issues.append(_issue(
-            "INVALID_CONFIDENCE",
-            "output.action.confidence",
-            "confidence는 0부터 1 사이의 유한한 수여야 합니다.",
-        ))
-
     if not isinstance(field_registry, list):
         issues.append(_issue(
             "INVALID_FIELD_REGISTRY",
@@ -521,6 +488,15 @@ def _validate_value(
         return []
 
     value_type = spec.get("value_type")
+    if (
+        isinstance(value, str)
+        and _FINANCIAL_REFERENCE_TOKEN.fullmatch(value)
+        and value_type in {"integer", "decimal", "number"}
+        and spec.get("unit") == "KRW"
+    ):
+        # Only Django owns the request vault. It must restore an issued token
+        # and validate the canonical amount before persisting this proposal.
+        return []
     type_is_valid = {
         "string": isinstance(value, str),
         "integer": isinstance(value, int) and not isinstance(value, bool),
@@ -537,6 +513,9 @@ def _validate_value(
             path,
             "value 자료형이 canonical field 계약과 일치하지 않습니다.",
         )]
+
+    if isinstance(value, float) and not isfinite(value):
+        return [_issue("NON_FINITE_NUMBER", path, "금융 수치는 유한한 숫자여야 합니다.")]
 
     constraints = spec.get("constraints") or {}
     issues: list[ValidationIssue] = []

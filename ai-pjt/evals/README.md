@@ -1,26 +1,28 @@
-# P11 관측·AX baseline
+# AI 동작·관측 평가
+
+현재 프롬프트 개선 기준은 F24다. `tests/test_qa_refactor.py`,
+`tests/test_input_assist_refactor.py`, `tests/test_request_plan_refactor.py`,
+`tests/test_explanation_memory_refactor.py`가 요청 조건·질문별 근거·현재값·코드 소유 실행
+정보·대화 기억·최종 다듬기를 검증한다. 정상 Agent 호출 상한은 QA 3회,
+직접 입력 변경 2회, 의미 검토가 필요한 변경 3회다. Planner와 최종 다듬기는 별도다.
+실제 provider 품질 평가는 mock 회귀와 구분하며, 새 모델 실행 없이 과거 보고서를
+현재 release의 품질 증거로 사용하지 않는다.
 
 이 디렉터리는 AI 평가 지표를 실행 가능한 측정 계약으로 옮긴다. 제품 인수
 기준과 SLO는 별도 합의가 소유하며, 여기서는 임계값이나 provider 가격표를
 확정하지 않는다.
 
-현재 단계는 P11 합성 이벤트와 F10-T01의 sink-independent
-`InstrumentationPort`·`FakeInstrumentationSink`에 F10-T02 runtime adapter가 연결되고,
-F10-T03·F11-T04 수직 경로와 누출 회귀까지 완료된 상태다. `build_graph`는 adapter를
-필수로 받으며 planner·plan
-검증·binding·task·artifact·dependency·aggregation·Agent/tool producer가 typed
-event를 전송한다. callback transport도 같은 port에 연결되어 각 HTTP 성공·실패·timeout
-시도를 graph와 같은 correlation으로 기록한다. terminal
-callback은 frozen schema 검증 뒤 마스킹된 payload만 checkpoint에 저장하고 동일 값을
-재전송한다. F11-T03의 `MaskedInstrumentationSink`는 production 직렬화 경계에서
-typed event를 trace 정책으로 마스킹한 뒤 structured application log exporter에만
-전달한다. Langfuse·LangSmith exporter는 별도 검토 전까지 활성화하지 않는다.
+`build_graph`는 관측 adapter를 필수로 받는다. Planner·계획 검증·binding·task·artifact·
+dependency·최종 다듬기와 Agent/tool 호출은 같은 요청의 typed event로 기록한다.
+`MaskedInstrumentationSink`가 직렬화 전에 관측 데이터를 마스킹한다. 설정에 따라
+structured log와 Langfuse exporter를 사용하며, exporter 실패가 상담 결과를 바꾸지 않는다.
+현재 전송 계약은 v2 SSE다.
 
-F11-T04 통합 누출 회귀는 등록된 task type 전체를 실제 executor 경계까지 실행하고,
-model input, completed/failed callback HTTP body와 checkpoint, v2 SSE, application log,
-trace exporter의 최종 직렬화 값을 P13 sentinel 계약으로 검사한다. 실패·dependency
-blocked·악성 model output 경로도 포함하며, callback 최상위 correlation과 허용된
-금융 business value를 제외한 금지 원문은 어느 sink에도 도달하면 안 된다.
+통합 누출 회귀는 등록된 task를 실제 executor 경계까지 실행하고 model input,
+checkpoint, v2 SSE, application log와 trace exporter의 최종 직렬화 값을 검사한다.
+실패·dependency blocked·악성 출력도 포함한다. 허용된 업무값 이외의 금지 원문은
+해당 sink에 노출되면 안 된다. 과거 전송 방식의 보관된 평가 결과는 현재 release의
+완료 증거와 구분한다.
 
 ## 이벤트와 측정 단위
 
@@ -35,7 +37,7 @@ blocked·악성 model output 경로도 포함하며, callback 최상위 correlat
   전에 Frontend·Backend owner가 확정한다.
 - `user_turn`은 사용자 발화만 세며 assistant·system·tool 호출은 포함하지 않는다.
 
-route·검색·도구·모델·공통 출력 검증·callback은 `OperationTraceEvent`로 측정한다.
+route·검색·도구·모델·공통 출력 검증은 `OperationTraceEvent`로 측정한다.
 검색 이벤트는 승인된 문서 ID와 점수만 가지며 query·excerpt는 기록하지 않는다.
 토큰은 모델 이벤트에만 기록하고, 비용은 고정 가격표가 아니라 해당 실행에
 적용된 provider 가격 버전이 계산한 `cost_microusd`를 받는다.
@@ -44,7 +46,7 @@ route·검색·도구·모델·공통 출력 검증·callback은 `OperationTrace
 dependency 차단의 `blocked_by`, typed artifact 식별자만 기록한다. artifact 식별자는
 TaskResult schema를 바꾸지 않고 `request_id:producer_task_id:artifact_type`으로 만든다.
 task 실행 event는 executor 종류·이름과 최종 응답 owner를 제한된 token으로
-기록하며, 실제 Agent·tool 호출과 callback adapter 입력은 같은 trace의
+기록하며, 실제 Agent·tool 호출은 같은 trace의
 `OperationTraceEvent` 계약을 사용한다.
 이벤트에는 사용자 메시지, 고객 snapshot, 도구 인자나 artifact 값 같은 자유 형식
 payload를 넣지 않는다. P11 이벤트와 runtime 이벤트는 같은 `InstrumentationPort`로
@@ -85,7 +87,7 @@ trace 저장소가 일시적으로 실패하면 해당 export만 폐기하고 ra
 않으며, 업무 graph 결과에는 실패를 전파하지 않는다.
 
 F10 runtime baseline은 request 처리와 planner·binding·task·artifact·dependency·
-aggregation span, Agent·tool operation, callback 시도를 하나의 닫힌 cohort로
+aggregation span과 Agent·tool operation을 하나의 닫힌 cohort로
 검증한다. 시작만 있고 종료가 없거나 같은 span의 terminal이 중복된 입력은 보고서를
 만들지 않는다. 저장소에 고정한 합성 baseline은 임계값이나 SLO가 아니라 현재 측정
 형태와 산출 재현성을 확인하는 기준이다.
@@ -104,10 +106,10 @@ PYTHONPATH=. python -m evals.runtime_observability_report \
 중단된 선행 시도는 `--prior-model-calls`로 누적한다. fixture와 러너 모두
 총 200회를 상한으로 강제한다.
 
-Error Review의 false positive는 정상 입력에 존재하는 canonical field instance를
-분모로 계산하고 low·medium·high 건수와 field별 비율을 모두 남긴다. low는
-실제 사용자 표시에서 숨기므로 raw와 visible 비율을 따로 보고한다. 허용률은
-아직 두지 않으며, 모델 결과는 합격 기준이 아닌 baseline이다. 합격·불합격은
+Error Review의 false positive는 실제 검토에 성공한 정상 입력의 field instance를
+분모로 계산하고, 같은 항목의 중복 경고는 한 번만 집계한다. 신뢰도 점수·등급과
+표시 여부에 따른 이중 집계는 사용하지 않는다. 경험적 오탐 허용률은 별도로 정하며,
+합격·불합격은
 `contract-fixtures/ai-lifecycle/v2/agent-evaluations.json`이 가리키는 명확한 계약과
 결정론적 회귀 테스트만 판정한다.
 
@@ -117,7 +119,7 @@ Error Review의 false positive는 정상 입력에 존재하는 canonical field 
 ```bash
 PYTHONPATH=. python -m evals.agent_baseline \
   --prior-model-calls 0 \
-  --output evals/artifacts/f07-f08-production-model-baseline.json
+  --output /tmp/current-agent-model-evaluation.json
 ```
 
 ## Prompt image candidate gate
@@ -131,10 +133,10 @@ Planner 계약 평가 결과를 아래 정규화된 비교 artifact로 모은 �
 {
   "corpus_id": "prompt-candidate-v1",
   "model_config": {"provider": "gemini", "name": "...", "temperature": 0.0},
-  "prompt_release": "2026-09-17.3",
+  "prompt_release": "2026-09-21.1",
   "prompt_manifest": {
-    "release": "2026-09-17.3",
-    "prompts": [{"id": "planner.plan", "version": "1.0.0", "sha256": "..."}]
+    "release": "2026-09-21.1",
+    "prompts": [{"id": "planner.plan", "version": "4.0.0", "sha256": "..."}]
   },
   "quality_metrics": {
     "planner_contract_pass_rate": 0.95,
@@ -142,7 +144,13 @@ Planner 계약 평가 결과를 아래 정규화된 비교 artifact로 모은 �
     "grounded_answer_rate": 0.0,
     "form_action_exact_rate": 0.0,
     "error_review_false_positive_rate": 0.0,
-    "average_model_calls": 0.0
+    "average_model_calls": 0.0,
+    "qa_normal_max_calls": 3,
+    "input_direct_max_calls": 2,
+    "input_review_max_calls": 3,
+    "request_conditions_preserved_rate": 1.0,
+    "question_coverage_rate": 1.0,
+    "plain_language_pass_rate": 1.0
   }
 }
 ```
@@ -158,3 +166,8 @@ PYTHONPATH=. python evals/prompt_release_gate.py \
 form field/value exact match와 false positive는 악화되면 안 되며, provider call budget은
 baseline보다 최대 1회 또는 25% 중 큰 값까지만 허용한다. 실패한 candidate는 현재
 prompt manifest를 포함한 새 배포 이미지로 승격하지 않는다.
+
+F24의 기본 Agent 호출 상한은 QA 3회·직접 입력 변경 2회·의미 검토 변경 3회이며
+평균 호출 수가 낮아도 각 상한을 넘으면 실패한다. 요청 조건 보존·부분 질문 누락 없음·
+쉬운 표현은 평가셋의 모든 사례에서 충족해야 한다. 후자의 세 rate는 실제 답변을 정해진
+사례별 기준으로 검토한 결과이며 mock PASS만으로 채우지 않는다.

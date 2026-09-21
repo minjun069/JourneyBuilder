@@ -263,10 +263,11 @@ class V2SSEProxyTests(SimpleTestCase):
         debt_token = tokenized['total_debt']
         upstream.return_value = async_items([
             'event: done',
-            f'data: {json.dumps({"contract_version": "2.0", "request_id": "ai_req_v2_stream", "session_id": 12, "thread_id": "user-3-session-12", "status": "completed", "completed_at": "2026-09-08T00:00:01Z", "output": {"response": response, "step_id": "basic-info", "action": {"type": "form_change", "target": "draft_form", "user_requested": True, "confidence": 1.0, "changes": [{"section": "liabilities", "path": "balance", "operation": "set", "value": debt_token, "reason": "사용자 요청"}]}}}, ensure_ascii=False)}',
+            f'data: {json.dumps({"contract_version": "2.0", "request_id": "ai_req_v2_stream", "session_id": 12, "thread_id": "user-3-session-12", "status": "completed", "completed_at": "2026-09-08T00:00:01Z", "output": {"response": response, "step_id": "liabilities", "action": {"type": "form_change", "target": "draft_form", "user_requested": True, "changes": [{"section": "liabilities", "path": "balance", "operation": "set", "value": debt_token, "reason": "사용자 요청"}]}}}, ensure_ascii=False)}',
             '',
         ])
         restored_response = '네, 이름은 홍길동이고 희망 월소득은 350만원입니다.'
+        state = {**processing_state(), 'step_id': 'liabilities'}
         message = SimpleNamespace(
             id=99,
             role='assistant',
@@ -284,7 +285,7 @@ class V2SSEProxyTests(SimpleTestCase):
             proxy_v2_ai_stream(
                 SimpleNamespace(id=12),
                 ai_payload(),
-                processing_state(),
+                state,
                 store,
                 token_vault=vault,
             )

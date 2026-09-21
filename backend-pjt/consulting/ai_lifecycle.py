@@ -207,8 +207,7 @@ def _validate_error_review_output(output):
         raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review items가 올바르지 않습니다.')
     allowed = {
         'section', 'path', 'item_id', 'client_item_id', 'parent_item_id',
-        'parent_client_item_id', 'current_value', 'reason', 'suggested_value', 'confidence',
-        'confidence_level',
+        'parent_client_item_id', 'current_value', 'reason', 'suggested_value',
     }
     for item in items:
         if not isinstance(item, dict) or set(item) - allowed:
@@ -217,16 +216,6 @@ def _validate_error_review_output(output):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review item에 현재 값이 필요합니다.')
         if not all(isinstance(item.get(key), str) and item.get(key) for key in ('section', 'path', 'reason')):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review item이 올바르지 않습니다.')
-        confidence = item.get('confidence')
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review confidence가 올바르지 않습니다.')
-        expected_level = (
-            'high' if confidence >= 0.85
-            else 'medium' if confidence >= 0.60
-            else 'low'
-        )
-        if item.get('confidence_level') not in ('medium', 'high') or item.get('confidence_level') != expected_level:
-            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review confidence 등급이 올바르지 않습니다.')
 
 
 def _validate_error_review_fields(output, step_id):

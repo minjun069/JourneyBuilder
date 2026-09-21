@@ -1,6 +1,6 @@
 """Input Assist Agent package public surface, loaded without import cycles."""
 
-__all__ = ["ResolveResult", "build_graph", "graph"]
+__all__ = ["build_graph", "graph"]
 
 
 def __getattr__(name: str):
@@ -8,8 +8,4 @@ def __getattr__(name: str):
         from . import builder
 
         return getattr(builder, name)
-    if name == "ResolveResult":
-        from .service import ResolveResult
-
-        return ResolveResult
     raise AttributeError(name)

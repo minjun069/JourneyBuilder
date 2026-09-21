@@ -44,7 +44,6 @@ def state_with_change(change, *, step_id="basic-info"):
                 "type": "form_change",
                 "target": "draft_form",
                 "user_requested": True,
-                "confidence": 0.95,
                 "changes": [change],
             },
         },
@@ -216,15 +215,13 @@ class OutputValidationTests(unittest.TestCase):
         self.assertFalse(result.valid)
         self.assertIn("INVALID_CURRENT_STEP", {issue.code for issue in result.issues})
 
-    def test_error_review_requires_visible_matching_confidence_level(self):
+    def test_error_review_requires_a_reason_without_scores(self):
         item = {
             "section": "basic_info",
             "path": "monthly_income",
             "current_value": 20_000,
             "reason": "단위 착오가 의심됩니다.",
             "suggested_value": 2_000_000,
-            "confidence": 0.91,
-            "confidence_level": "high",
         }
         state = {
             "step_id": "basic-info",
@@ -245,14 +242,14 @@ class OutputValidationTests(unittest.TestCase):
                 **state["output"],
                 "review": {
                     **state["output"]["review"],
-                    "items": [{**item, "confidence": 0.59, "confidence_level": "low"}],
+                    "items": [{**item, "reason": ""}],
                 },
             },
         }
         result = validate_form_update_contract(low)
         self.assertFalse(result.valid)
         self.assertIn(
-            "INVALID_REVIEW_CONFIDENCE_LEVEL",
+            "INVALID_REVIEW_ITEM",
             {issue.code for issue in result.issues},
         )
 

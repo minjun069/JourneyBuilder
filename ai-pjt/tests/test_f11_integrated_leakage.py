@@ -97,7 +97,6 @@ def _completed_result(task_type: str, task_id: str) -> dict:
             "type": "form_change",
             "target": "draft_form",
             "user_requested": False,
-            "confidence": 0.9,
             "changes": [{
                 "section": "basic_info",
                 "path": "monthly_income",

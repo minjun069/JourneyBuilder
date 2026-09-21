@@ -2,30 +2,105 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any
 
-from agents.error_review.confidence import confidence_level
 from tools.output_policy import validate_form_update_contract
 
 
-def decode_review_item(item: Mapping[str, Any]) -> dict[str, Any] | None:
-    try:
-        current_value = json.loads(item["current_value_json"])
-        suggested_raw = item.get("suggested_value_json")
-        suggested_value = (
-            json.loads(suggested_raw) if suggested_raw is not None else None
-        )
-    except (KeyError, TypeError, json.JSONDecodeError):
+_UNIT_LABELS = {"none": "", "KRW": "원", "age": "세", "year": "년", "percent": "%", "score": "점", "date": "날짜"}
+
+
+def _unit_label(spec: Mapping[str, Any]) -> str:
+    unit = _UNIT_LABELS.get(spec["unit"], spec["unit"])
+    period = spec.get("constraints", {}).get("period")
+    return unit + {"month": "/월", "year": "/년"}.get(period, "")
+
+
+def _identity(row: Mapping[str, Any], *, parent: bool = False) -> dict[str, Any]:
+    prefix = "parent_" if parent else ""
+    if row.get("id") is not None:
+        return {prefix + "item_id": row["id"]}
+    if row.get("client_item_id"):
+        return {prefix + "client_item_id": row["client_item_id"]}
+    return {}
+
+
+def _field_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            key: _field_value(child) for key, child in value.items()
+            if key not in {"id", "client_item_id", "created_at", "updated_at"}
+        }
+    if isinstance(value, list):
+        return [_field_value(child) for child in value]
+    return value
+
+
+def build_review_fields(
+    current_form: Any,
+    registry: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Give the model short references; keep paths and row identities locally."""
+    fields: list[dict[str, Any]] = []
+    references: dict[str, dict[str, Any]] = {}
+    if not isinstance(current_form, Mapping):
+        return fields, references
+
+    def add(spec: Mapping[str, Any], row: Mapping[str, Any], key: str,
+            identity: Mapping[str, Any], group: str = "") -> None:
+        if key not in row:
+            return
+        ref = f"f{len(fields) + 1}"
+        fields.append({
+            "ref": ref,
+            "name": group + str(spec["label"]),
+            "unit": _unit_label(spec),
+            "value": _field_value(row[key]),
+        })
+        references[ref] = {
+            "section": spec["section"], "path": spec["path"],
+            **identity, "current_value": deepcopy(row[key]),
+        }
+
+    for spec in registry:
+        if spec.get("sensitivity") == "operational":
+            continue
+        path, section = str(spec["path"]), spec["section"]
+        if spec["cardinality"] == "single":
+            if "." not in path:
+                add(spec, current_form, path, {})
+            continue
+        rows = current_form.get(section if section in {"goal_periods", "goal_milestones"} else "assets", [])
+        for index, row in enumerate(rows if isinstance(rows, list) else []):
+            if not isinstance(row, Mapping) or not _identity(row):
+                continue
+            group_name = {"goal_periods": "기간", "goal_milestones": "목표"}.get(section, "항목")
+            group = f"{group_name} {index + 1} · "
+            if path.startswith("items[]."):
+                children = row.get("items", [])
+                for child_index, child in enumerate(children if isinstance(children, list) else []):
+                    if isinstance(child, Mapping) and _identity(child):
+                        add(spec, child, path.split(".", 1)[1],
+                            {**_identity(child), **_identity(row, parent=True)},
+                            group + f"세부 항목 {child_index + 1} · ")
+            elif "." not in path and path != "items":
+                add(spec, row, path, _identity(row), group)
+    return fields, references
+
+
+def decode_review_item(
+    item: Mapping[str, Any],
+    references: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    reference = references.get(item.get("field_ref"))
+    if reference is None:
         return None
     return {
-        **{
-            key: value for key, value in item.items()
-            if key not in {"current_value_json", "suggested_value_json"}
-        },
-        "current_value": current_value,
-        "suggested_value": suggested_value,
+        **reference,
+        "reason": item["reason"],
+        "suggested_value": item.get("suggested_value"),
     }
 
 
@@ -61,6 +136,12 @@ def validated_item(
     if not found or actual != item.get("current_value"):
         return None
     candidate = item.get("suggested_value")
+    if (
+        registry_spec.get("value_type") in {"integer", "decimal", "number"}
+        and isinstance(candidate, str)
+    ):
+        # Review suggestions have no amount-token restoration path in the backend.
+        candidate = None
     if candidate is not None:
         change = {
             "section": item["section"],
@@ -83,7 +164,6 @@ def validated_item(
                     "type": "form_change",
                     "target": "draft_form",
                     "user_requested": False,
-                    "confidence": item["confidence"],
                     "changes": [change],
                 },
             },
@@ -101,8 +181,6 @@ def validated_item(
         "current_value": actual,
         "reason": item["reason"],
         "suggested_value": candidate,
-        "confidence": item["confidence"],
-        "confidence_level": confidence_level(float(item["confidence"])),
     }
 
 

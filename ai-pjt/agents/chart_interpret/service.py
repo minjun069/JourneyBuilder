@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from graph.state import ChatState
 
 from .model import explain_chart
+from .context import project_chart_facts
 from .policy import (
     fallback_response,
     recalculation_claims,
@@ -42,9 +43,10 @@ async def _run(state: ChatState) -> dict:
         raise ValueError("invalid chart payload contract")
 
     entry = state.get("request_mode") == "presentation_entry"
+    facts = project_chart_facts(payload, entry=entry)
     response = await explain_chart(state, payload, entry=entry)
-    if not response_is_allowed(response, payload, entry=entry):
-        response = fallback_response(payload, entry=entry)
+    if not response_is_allowed(response, facts, entry=entry):
+        response = fallback_response(facts, entry=entry)
     return {
         "output": {
             "response": response,

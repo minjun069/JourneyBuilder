@@ -69,7 +69,7 @@
       "current_consumers": [
         "ai-pjt/tests/test_routing_policy.py",
         "ai-pjt/guardrails/tests/test_plan_policy.py",
-        "ai-pjt/graph/router.py",
+        "ai-pjt/graph/task_catalog.py",
         "ai-pjt/guardrails/plan_policy.py"
       ],
       "next_activation": [],

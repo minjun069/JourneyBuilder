@@ -1,51 +1,41 @@
-"""Input Assist model schemas, prompt contracts, and structured runnables."""
+"""Structured extraction and optional batch review for form changes."""
 
 from typing import Literal
 
-from pydantic import BaseModel
-
+from pydantic import BaseModel, JsonValue
+from core.json_response import json_response_chain
 from core.llm import llm
 from prompts import get_prompt
 
 
-class ClassifyResult(BaseModel):
-    intent: Literal["fill_avg", "find_field", "organize", "other"]
-    user_requested_change: bool
-
-
-class IdentificationItem(BaseModel):
-    section: str
-    path: str
+class ExtractedChange(BaseModel):
+    field_ref: str
+    item_ref: str | None = None
     operation: Literal["set", "add", "update", "remove"]
-    item_id: int | None = None
-    client_item_id: str | None = None
-    parent_item_id: int | None = None
-    parent_client_item_id: str | None = None
-    label: str | None = None
-    excerpt: str
+    value: JsonValue = None
 
 
-class IdentifyResult(BaseModel):
-    items: list[IdentificationItem]
+class ExtractResult(BaseModel):
+    request: Literal["change", "fill_defaults", "none"]
+    changes: list[ExtractedChange]
+    questions: list[str]
 
 
-class ResolveResult(BaseModel):
-    value_json: str
-    confidence: float
+class ChangeReview(BaseModel):
+    change_ref: str
+    accepted: bool
+    reason: str = ""
 
 
-class ErrorCheck2Result(BaseModel):
-    error_type: Literal["ok", "hallucination", "unorganized", "type_unit", "unreasonable"]
-    reason: str
+class ReviewResult(BaseModel):
+    items: list[ChangeReview]
 
 
-classify_chain = llm.with_structured_output(ClassifyResult)
-identify_chain = llm.with_structured_output(IdentifyResult)
-resolve_chain = llm.with_structured_output(ResolveResult)
-error_check_2_chain = llm.with_structured_output(ErrorCheck2Result)
+# Gemini's function schema converter narrows JSON unions to one type. Request
+# plain JSON and validate it locally so numbers, booleans and objects survive.
+extract_chain = json_response_chain(llm, ExtractResult)
+review_chain = llm.with_structured_output(ReviewResult)
 
-CLASSIFY_PROMPT = get_prompt("input_assist.classify")
-IDENTIFY_PROMPT = get_prompt("input_assist.identify")
-RESOLVE_PROMPT = get_prompt("input_assist.resolve")
-ERROR_CHECK_2_PROMPT = get_prompt("input_assist.validate_resolution")
-MERGE_PROMPT = get_prompt("input_assist.merge")
+EXTRACT_PROMPT = get_prompt("input_assist.extract")
+REVIEW_PROMPT = get_prompt("input_assist.review")
+RESPOND_PROMPT = get_prompt("input_assist.respond")

@@ -45,5 +45,5 @@ PYTHONPATH=. python -m unittest discover -s tools/tests -p 'test_*.py' -v
 ```
 
 F07-T04·F08-T04 평가는 `test_agent_features.py`와
-`evals/tests/test_agent_baseline.py`에서 QA binding, Error Review confidence, chart
+`evals/tests/test_agent_baseline.py`에서 QA binding·호출 수, Error Review 필드별 오탐, chart
 payload, Elicit context, Aggregator 실패 응답 계약을 결정론적으로 검증한다.
