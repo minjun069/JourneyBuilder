@@ -24,7 +24,6 @@ SECRET_KEY 로테이션은 전체 무효화가 되는데, 이는 "재배포 시 
 from __future__ import annotations
 
 import base64
-import hmac
 import re
 
 from django.utils.crypto import salted_hmac
@@ -64,12 +63,6 @@ def issue_baseline_key(**material) -> str:
     digest = salted_hmac(_SALT, _material(**material), algorithm='sha256').digest()
     body = base64.urlsafe_b64encode(digest).decode('ascii').rstrip('=')
     return f'{BASELINE_KEY_VERSION}.{body}'
-
-
-def verify_baseline_key(key: object, **material) -> bool:
-    if not isinstance(key, str):
-        return False
-    return hmac.compare_digest(key, issue_baseline_key(**material))
 
 
 def has_baseline_key_shape(key: object) -> bool:

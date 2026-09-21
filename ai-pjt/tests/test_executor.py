@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
-from graph.executor import (
+from graph.aggregation import (
     aggregate_task_results,
+    compose_aggregate_response,
+)
+from graph.executor import (
     execute_route_plan,
     validate_agent_executor_registry,
 )
@@ -11,9 +15,9 @@ from tests.instrumentation import bound_fake_instrumentation
 
 
 FIELD_SPEC = {
-    "step_id": "financial-goals",
-    "section": "financial_goals",
-    "path": "monthly_target_expense",
+    "step_id": "basic-info",
+    "section": "basic_info",
+    "path": "monthly_income",
     "value_type": "integer",
     "unit": "KRW",
     "constraints": {"min": 0, "period": "month"},
@@ -71,7 +75,7 @@ def reference_result() -> dict:
             "type": "reference_value",
             "schema_version": "1.0",
             "producer_task_id": "task-1",
-            "reference_id": "monthly_target_expense",
+            "reference_id": "monthly_income",
             "age": 45,
             "value": 2_500_000,
             "unit": "KRW",
@@ -95,10 +99,9 @@ def form_result(task_id: str, value: int = 2_500_000) -> dict:
             "type": "form_change",
             "target": "draft_form",
             "user_requested": True,
-            "confidence": 1.0,
             "changes": [{
-                "section": "financial_goals",
-                "path": "monthly_target_expense",
+                "section": "basic_info",
+                "path": "monthly_income",
                 "operation": "set",
                 "value": value,
                 "unit": "KRW",
@@ -118,7 +121,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         async def qa(payload: dict) -> dict:
             calls.append(("qa", payload))
-            self.assertEqual(payload["bound_inputs"], {
+            self.assertEqual(payload["task_input"]["bindings"], {
                 "value": 2_500_000,
                 "unit": "KRW",
             })
@@ -144,9 +147,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         ]
         report = await execute_route_plan(
             plan={"tasks": tasks},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"qa": qa, "input_assist": input_assist},
             tool_executors={"lookup_reference_value": lookup},
             instrumentation=bound_fake_instrumentation()[0],
@@ -203,9 +206,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
                 consumer_task("task-2", "propose_form_change", "input_assist"),
                 independent_task,
             ]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": dependent, "qa": independent},
             tool_executors={"lookup_reference_value": failing_lookup},
             instrumentation=bound_fake_instrumentation()[0],
@@ -228,9 +231,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
                 reference_task(),
                 consumer_task("task-2", "propose_form_change", "input_assist"),
             ]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": input_assist},
             tool_executors={"lookup_reference_value": lookup},
             instrumentation=bound_fake_instrumentation()[0],
@@ -256,9 +259,9 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
                 lookup,
                 consumer_task("task-2", "propose_form_change", "input_assist"),
             ]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"input_assist": dependent},
             tool_executors={},
             instrumentation=bound_fake_instrumentation()[0],
@@ -303,12 +306,11 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         ]
         report = await execute_route_plan(
             plan={"tasks": tasks},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={"qa": qa},
             tool_executors={},
-            task_limit=3,
             instrumentation=bound_fake_instrumentation()[0],
         )
 
@@ -320,46 +322,27 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             "task_budget_exhausted",
         )
 
-    async def test_all_failed_keeps_aggregator_reason_and_adds_one_fallback(self) -> None:
-        fallback_calls: list[dict] = []
-
+    async def test_all_failed_is_closed_by_aggregator_without_virtual_task(self) -> None:
         async def invalid_qa(_: dict) -> dict:
             return {}
-
-        async def fallback(payload: dict) -> dict:
-            fallback_calls.append(payload)
-            return {
-                "task_id": "task-fallback-all-failed",
-                "status": "completed",
-                "response": "입력과 요청을 확인한 뒤 다시 시도해 주세요.",
-                "artifact": {
-                    "type": "text_response",
-                    "text": "입력과 요청을 확인한 뒤 다시 시도해 주세요.",
-                },
-            }
 
         task = consumer_task("task-1", "answer_question", "qa")
         task["depends_on"] = []
         task["bindings"] = {}
         report = await execute_route_plan(
             plan={"tasks": [task]},
-            step_id="financial-goals",
-            customer_info={"sensitive": "must-not-reach-fallback"},
-            field_registry=[FIELD_SPEC],
-            agent_executors={"qa": invalid_qa, "fallback": fallback},
+            request_id="request-test",
+            step_id="basic-info",
+            customer_info={"sensitive": "must-not-leave-executor"},
+            agent_executors={"qa": invalid_qa},
             tool_executors={},
             instrumentation=bound_fake_instrumentation()[0],
         )
 
-        self.assertEqual(len(fallback_calls), 1)
-        self.assertEqual(fallback_calls[0]["task"]["route"]["reason_code"], "all_tasks_failed")
-        self.assertEqual(fallback_calls[0]["customer_info"], {})
         self.assertIn("안전성 검증", report.output["response"])
         self.assertIn("다시 시도", report.output["response"])
 
-    async def test_partial_success_does_not_call_fallback(self) -> None:
-        fallback_calls = 0
-
+    async def test_partial_success_keeps_verified_result_without_failure_responder(self) -> None:
         async def failing(_: dict) -> dict:
             raise RuntimeError("expected failure")
 
@@ -370,11 +353,6 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
                 "artifact": {"type": "text_response", "text": "검증된 독립 결과"},
             }
 
-        async def fallback(_: dict) -> dict:
-            nonlocal fallback_calls
-            fallback_calls += 1
-            return {}
-
         failed_task = consumer_task("task-1", "answer_question", "input_assist")
         failed_task["depends_on"] = []
         failed_task["bindings"] = {}
@@ -383,19 +361,17 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         successful_task["bindings"] = {}
         report = await execute_route_plan(
             plan={"tasks": [failed_task, successful_task]},
-            step_id="financial-goals",
+            request_id="request-test",
+            step_id="basic-info",
             customer_info={},
-            field_registry=[FIELD_SPEC],
             agent_executors={
                 "input_assist": failing,
                 "qa": succeeding,
-                "fallback": fallback,
             },
             tool_executors={},
             instrumentation=bound_fake_instrumentation()[0],
         )
 
-        self.assertEqual(fallback_calls, 0)
         self.assertIn("검증된 독립 결과", report.output["response"])
 
 
@@ -417,7 +393,7 @@ class AggregationTests(unittest.TestCase):
                 "task-1": form_result("task-1", 2_500_000),
                 "task-2": form_result("task-2", 3_000_000),
             },
-            step_id="financial-goals",
+            step_id="basic-info",
             field_registry=[FIELD_SPEC],
         )
         self.assertEqual(
@@ -446,14 +422,14 @@ class AggregationTests(unittest.TestCase):
                 "task-1": form_result("task-1"),
                 "task-2": duplicate,
             },
-            step_id="financial-goals",
+            step_id="basic-info",
             field_registry=[FIELD_SPEC],
         )
 
         self.assertEqual(len(output["action"]["changes"]), 1)
         self.assertNotIn("선택지로 각각", output["response"])
 
-    def test_agent_registry_requires_all_six_roles(self) -> None:
+    def test_agent_registry_requires_all_five_roles(self) -> None:
         async def executor(_: dict) -> dict:
             return {}
 
@@ -465,13 +441,92 @@ class AggregationTests(unittest.TestCase):
                 "error_review",
                 "chart_interpret",
                 "elicit",
-                "fallback",
             )
         }
         validate_agent_executor_registry(full)
         del full["qa"]
         with self.assertRaises(ValueError):
             validate_agent_executor_registry(full)
+
+
+class AggregationComposerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_composer_naturalizes_verified_blocks(self) -> None:
+        class Runnable:
+            async def ainvoke(self, _messages: list) -> dict:
+                return {
+                    "response": "첫 번째 결과와 두 번째 결과를 함께 안내합니다.",
+                }
+
+        class Provider:
+            def with_structured_output(self, _schema: object) -> Runnable:
+                return Runnable()
+
+        output = {
+            "response": "첫 번째 결과\n\n두 번째 결과",
+            "step_id": "intro",
+            "action": None,
+        }
+        with patch("core.llm.llm", Provider()):
+            composed = await compose_aggregate_response(
+                output=output,
+                step_id="intro",
+                field_registry=[],
+            )
+
+        self.assertEqual(
+            composed["response"],
+            "첫 번째 결과와 두 번째 결과를 함께 안내합니다.",
+        )
+
+    async def test_composer_new_number_falls_back_to_deterministic_join(self) -> None:
+        class Runnable:
+            async def ainvoke(self, _messages: list) -> dict:
+                return {
+                    "response": "검증되지 않은 999원을 추가합니다.",
+                }
+
+        class Provider:
+            def with_structured_output(self, _schema: object) -> Runnable:
+                return Runnable()
+
+        output = {
+            "response": "100원\n\n200원",
+            "step_id": "intro",
+            "action": None,
+        }
+        with patch("core.llm.llm", Provider()):
+            composed = await compose_aggregate_response(
+                output=output,
+                step_id="intro",
+                field_registry=[],
+            )
+
+        self.assertEqual(composed, output)
+
+    async def test_composer_omitted_number_falls_back_to_deterministic_join(self) -> None:
+        class Runnable:
+            async def ainvoke(self, _messages: list) -> dict:
+                return {
+                    "response": "100원 결과만 안내합니다.",
+                }
+
+        class Provider:
+            def with_structured_output(self, _schema: object) -> Runnable:
+                return Runnable()
+
+        output = {
+            "response": "100원\n\n200원",
+            "step_id": "intro",
+            "action": None,
+        }
+        with patch("core.llm.llm", Provider()):
+            composed = await compose_aggregate_response(
+                output=output,
+                step_id="intro",
+                field_registry=[],
+            )
+
+        self.assertEqual(composed, output)
 
 
 if __name__ == "__main__":

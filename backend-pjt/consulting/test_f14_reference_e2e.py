@@ -57,7 +57,6 @@ class F14ReferenceProposalSaveE2ETests(TestCase):
                 "type": "form_change",
                 "target": "draft_form",
                 "user_requested": True,
-                "confidence": 1.0,
                 "changes": [{
                     "section": "goal_periods",
                     "path": "items[].amount",

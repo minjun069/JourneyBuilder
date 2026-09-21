@@ -4,6 +4,7 @@ import importlib.util
 import os
 import unittest
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -29,7 +30,7 @@ def configure_runtime() -> None:
 class InputAssistDefaultPolicyTests(unittest.TestCase):
     def test_only_empty_existing_household_rows_receive_benchmarks(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import build_default_proposals
+        from agents.input_assist.defaults import build_default_proposals
 
         proposals = build_default_proposals(
             step_id="expenses",
@@ -50,7 +51,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
     def test_unmapped_step_and_unconfirmed_birth_year_do_not_generate_values(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import build_default_proposals
+        from agents.input_assist.defaults import build_default_proposals
 
         self.assertEqual(build_default_proposals(
             step_id="income",
@@ -91,7 +92,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
     def test_all_household_references_target_only_the_matching_existing_before_row(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import (
+        from agents.input_assist.defaults import (
             build_bound_reference_proposals,
             load_default_policy,
         )
@@ -115,7 +116,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
                         "phase": "before",
                         "items": [{"id": 501, "name": name, "amount": None}],
                     }]},
-                    bound_inputs=reference,
+                    bindings=reference,
                     user_requested_change=True,
                     today=date(2026, 9, 12),
                 )
@@ -135,7 +136,7 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
     def test_bound_reference_target_mismatches_fail_closed(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import (
+        from agents.input_assist.defaults import (
             ReferenceTargetNotAllowed,
             build_bound_reference_proposals,
         )
@@ -168,13 +169,13 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
             {"current_form": form(amount=1)},
             {"current_form": {"goal_periods": []}},
             {"current_form": {"goal_periods": form()["goal_periods"] * 2}},
-            {"bound_inputs": {**reference, "unit": "USD"}},
+            {"bindings": {**reference, "unit": "USD"}},
         )
         defaults = {
             "step_id": "financial-goals",
             "message": "전국 가구 평균으로 이 기존 항목을 채워줘",
             "current_form": form(),
-            "bound_inputs": reference,
+            "bindings": reference,
             "user_requested_change": True,
             "today": date(2026, 9, 12),
         }
@@ -192,11 +193,11 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
             effective_on=date(2026, 9, 12),
         )
         with self.assertRaises(ReferenceTargetNotAllowed):
-            build_bound_reference_proposals(**{**defaults, "bound_inputs": old_reference})
+            build_bound_reference_proposals(**{**defaults, "bindings": old_reference})
 
     def test_expired_benchmark_and_inconsistent_age_range_fail_closed(self) -> None:
         configure_runtime()
-        from agents.input_assist_defaults import build_default_proposals
+        from agents.input_assist.defaults import build_default_proposals
 
         self.assertEqual(build_default_proposals(
             step_id="expenses",
@@ -229,25 +230,9 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
 
 class ErrorReviewManualTests(unittest.TestCase):
-    def test_confidence_bands_are_exact_and_low_is_hidden(self) -> None:
-        from agents.error_review_confidence import confidence_level, visible_review_items
-
-        self.assertEqual(confidence_level(0.59), "low")
-        self.assertEqual(confidence_level(0.60), "medium")
-        self.assertEqual(confidence_level(0.849), "medium")
-        self.assertEqual(confidence_level(0.85), "high")
-        self.assertEqual(
-            [item["confidence_level"] for item in visible_review_items([
-                {"confidence_level": "low"},
-                {"confidence_level": "medium"},
-                {"confidence_level": "high"},
-            ])],
-            ["medium", "high"],
-        )
-
     def test_every_supported_step_has_one_hash_verified_manual(self) -> None:
         configure_runtime()
-        from agents.error_review_manuals import SUPPORTED_STEPS, load_error_review_manual
+        from agents.error_review.manuals import SUPPORTED_STEPS, load_error_review_manual
 
         loaded = [load_error_review_manual(step_id) for step_id in sorted(SUPPORTED_STEPS)]
         self.assertEqual(len(loaded), 10)
@@ -281,7 +266,6 @@ class ErrorReviewManualTests(unittest.TestCase):
             "current_value": 20_000,
             "reason": "단위 착오가 의심됩니다.",
             "suggested_value": 2_000_000,
-            "confidence": 0.9,
         }
 
         self.assertIsNotNone(_validated_item(
@@ -300,289 +284,198 @@ class ErrorReviewManualTests(unittest.TestCase):
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_qualitative_choice_answers_do_not_invent_thresholds(self) -> None:
+    async def test_retrieval_records_only_safe_result_metadata(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
+        from core.operation_observation import bind_operation_recorder
 
-        cases = (
-            (
-                "단기 지향의 기간에 대해 설명",
-                "단기 지향 기간",
-                "고정된 연수 기준이 정의되어 있지 않",
+        records: list[dict] = []
+        results = [SimpleNamespace(
+            chunk=SimpleNamespace(
+                metadata=SimpleNamespace(source_id="approved-pension-guide")
             ),
-            (
-                "안정추구의 정의에 대해 설명합니다.",
-                "안정 추구 정의",
-                "높은 수익보다 원금 손실 가능성",
+            score=0.91,
+        )]
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=results))
+        with (
+            bind_operation_recorder(
+                lambda **event: records.append(dict(event))
             ),
-        )
-        for message, query, expected in cases:
-            with self.subTest(message=message):
-                state = {
-                    "message": message,
-                    "current_query": query,
-                    "customer_info": {},
-                    "bound_inputs": {},
-                    "current_context": "",
-                    "current_answer": "",
-                    "need_retrieval": False,
-                    "retry_hint": "",
-                    "official_value_unavailable": False,
-                    "partial_answers": [],
-                    "query_index": 0,
-                    "retries": 0,
-                }
-                model = SimpleNamespace(ainvoke=AsyncMock())
-                judge_chain = SimpleNamespace(ainvoke=AsyncMock())
-                with (
-                    patch.object(qa, "llm", model),
-                    patch.object(qa, "_judge_chain", judge_chain),
-                ):
-                    generated = await qa._generate(state)
-                    judged = await qa._judge({
-                        **state,
-                        "current_answer": generated["current_answer"],
-                    })
-
-                self.assertIn(expected, generated["current_answer"])
-                self.assertEqual(judged["partial_answers"], [generated["current_answer"]])
-                model.ainvoke.assert_not_awaited()
-                judge_chain.ainvoke.assert_not_awaited()
-
-    async def test_qualitative_choice_explanations_skip_official_value_rag(self) -> None:
-        configure_runtime()
-        from agents import qa
-
-        for message, query in (
-            ("단기 지향이면 어느정도 기간을 말하지?", "단기 지향 기간"),
-            ("안정추구란 정확히 뭘 말하는거야?", "안정 추구 의미"),
-            ("단기 지향의 기간에 대해 설명", "단기 지향 기간"),
-            ("안정추구의 정의에 대해 설명합니다.", "안정 추구 정의"),
+            patch.object(qa, "get_retriever", return_value=retriever),
+            patch.object(qa, "format_docs", return_value="승인 문서 context"),
         ):
-            with self.subTest(message=message):
-                decision_chain = SimpleNamespace(ainvoke=AsyncMock())
-                with patch.object(qa, "_decision_chain", decision_chain):
-                    decision = await qa._decide({
-                        "message": message,
-                        "current_query": query,
-                        "customer_info": {},
-                        "bound_inputs": {},
-                    })
+            result = await qa._search("연금 제도 승인 근거")
 
-                self.assertEqual(decision, {"need_retrieval": False})
-                decision_chain.ainvoke.assert_not_awaited()
+        self.assertEqual(result, "승인 문서 context")
+        self.assertEqual(len(records), 1)
+        event = records[0]
+        self.assertEqual(event["operation_name"], "qa.search")
+        self.assertEqual(event["resource_ids"], ("approved-pension-guide",))
+        self.assertEqual(event["scores"], (0.91,))
+        self.assertEqual(event["result_count"], 1)
+        self.assertNotIn("query", repr(event).lower())
+        self.assertNotIn("연금 제도 승인 근거", repr(event))
 
-    async def test_new_official_value_fails_closed_even_with_unrelated_binding(self) -> None:
+    async def test_product_term_question_and_search_are_planned_in_one_model_call(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
-        decision_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RetrievalDecision(
-            need_retrieval=True,
-            requests_new_official_value=True,
+        plan_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.PlanResult(
+            questions=[qa.QuestionPlan(
+                question="유동성 중시에서 유동성이란?", need_retrieval=True,
+                query="유동성 중시 유동성 정의",
+            )],
         )))
-        with patch.object(qa, "_decision_chain", decision_chain):
-            decision = await qa._decide({
-                "message": "연금저축 공식 한도는 얼마인가요?",
-                "current_query": "연금저축 공식 한도",
-                "customer_info": {},
-                "bound_inputs": {
-                    "retirement_gap": {"value": 100_000, "unit": "KRW"},
-                },
+        message = "유동성 중시에서 유동성이 뭐야?"
+        with patch.object(qa, "_plan_chain", plan_chain):
+            planned = await qa._plan({
+                "step_id": "financial-mindset",
+                "message": message,
+                "feedback": "",
+                "task_input": {"description": message, "bindings": {}},
             })
 
-        self.assertFalse(decision["need_retrieval"])
-        self.assertTrue(decision["official_value_unavailable"])
+        self.assertEqual(
+            planned["questions"],
+            [{"question": "유동성 중시에서 유동성이란?", "need_retrieval": True,
+              "query": "유동성 중시 유동성 정의"}],
+        )
+        plan_chain.ainvoke.assert_awaited_once()
 
-    async def test_evidence_shortage_refreshes_query_once_but_quality_retry_keeps_context(self) -> None:
+    async def test_product_term_explanation_retrieves_then_uses_model(self) -> None:
         configure_runtime()
-        from agents import qa
+        from agents.qa import service as qa
 
-        base = {
-            "message": "기준의 의미를 설명해줘",
-            "bound_inputs": {"value": 100, "unit": "KRW", "source_id": "approved"},
-            "current_answer": "답변",
-            "current_context": "cached-context",
-            "current_query": "원래 검색어",
-            "partial_answers": [],
-            "query_index": 0,
-            "retries": 0,
-            "retrieval_refreshes": 0,
-            "need_retrieval": True,
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[object()]))
+        state = {
+            "step_id": "financial-mindset",
+            "message": "안정 추구가 정확히 뭐야?",
+            "customer_info": {},
+            "customer_context": {},
+            "task_input": {"description": "용어 설명", "bindings": {}},
+            "questions": [{"question": "안정 추구란?", "need_retrieval": True,
+                           "query": "안정 추구 정의"}],
+            "current_answer": "",
+            "feedback": "",
         }
-        evidence_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.JudgeResult(
-            verdict="bad", failure_kind="evidence_insufficient", reason="근거 부족"
-        )))
-        refine_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RefineResult(query="보정 검색어")))
-        with patch.object(qa, "_judge_chain", evidence_chain), patch.object(qa, "_refine_chain", refine_chain):
-            refreshed = await qa._judge(base)
-        self.assertEqual(refreshed["current_context"], "")
-        self.assertEqual(refreshed["current_query"], "보정 검색어")
-        self.assertEqual(refreshed["retrieval_refreshes"], 1)
+        answer = "손실 가능성과 자산 가치 변동을 낮추는 것을 우선한다는 뜻입니다."
+        generated_with_source = (
+            f"{answer}\n\n출처:\n"
+            "- RetireWise 제품 용어 설명 "
+            "(ai-pjt/rag/data/financial-knowledge/product-terms.md)"
+        )
+        invoke = AsyncMock(
+            return_value=SimpleNamespace(content=generated_with_source)
+        )
+        with (
+            patch.object(qa, "get_retriever", return_value=retriever),
+            patch.object(qa, "format_docs", return_value="승인된 안정 추구 용어 절"),
+            patch.object(qa, "secure_ainvoke", invoke),
+        ):
+            retrieved = await qa._retrieve(state)
+            generated = await qa._generate({**state, **retrieved})
 
-        quality_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.JudgeResult(
-            verdict="bad", failure_kind="answer_quality", reason="표현 부족"
-        )))
-        with patch.object(qa, "_judge_chain", quality_chain):
-            quality_retry = await qa._judge(base)
-        self.assertNotIn("current_context", quality_retry)
-        self.assertEqual(quality_retry["retry_hint"], "표현 부족")
+        retriever.aretrieve.assert_awaited_once_with("안정 추구 정의")
+        invoke.assert_awaited_once()
+        self.assertEqual(retrieved["evidence"], [
+            {"question": "안정 추구란?", "reference": "승인된 안정 추구 용어 절"},
+        ])
+        self.assertEqual(generated["current_answer"], answer)
+        self.assertNotIn("출처", generated["current_answer"])
+        self.assertNotIn("product-terms.md", generated["current_answer"])
 
+    def test_retrieval_source_disclosure_is_removed_without_losing_answer(
+        self,
+    ) -> None:
+        configure_runtime()
+        from agents.qa import service as qa
+
+        answer = qa.strip_retrieval_source_disclosure(
+            "핵심 설명입니다. (출처: 제품 용어 문서)\n"
+            "[근거: RetireWise 제품 용어 설명 | 발행: S15P21B109]\n"
+            "[source_id: retirewise-product-terms-2026-09-17 | "
+            "chunk_id: term-liquidity]\n"
+            "[원문 위치: ai-pjt/rag/data/financial-knowledge/product-terms.md]\n"
+            "\n**참고 문서:**\n"
+            "- RetireWise 제품 용어 설명\n"
+        )
+
+        self.assertEqual(answer, "핵심 설명입니다.")
+
+    def test_qa_contains_no_fixed_product_term_answer_path(self) -> None:
+        configure_runtime()
+        from agents.qa import service as qa
+
+        source = Path(qa.__file__).read_text(encoding="utf-8")
+        forbidden = (
+            "_QUALITATIVE_CHOICE_ANSWERS",
+            "_TERM_EXPLANATION_CUES",
+            "_qualitative_choice_answer",
+            "_is_qualitative_choice_explanation",
+            "안정추구",
+            "균형추구",
+            "위험감수",
+            "단기지향",
+            "장기지향",
+        )
+        for token in forbidden:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
-class ChartAndFallbackTests(unittest.IsolatedAsyncioTestCase):
-    async def test_chart_without_verified_payload_explains_readiness_without_model(self) -> None:
+class ChartAndFailureResponderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_chart_without_contract_is_treated_as_unsupported_without_model(self) -> None:
         configure_runtime()
-        from agents import chart_interpret
+        from agents.chart_interpret import service as chart_interpret
 
         result = await chart_interpret._run({
             "message": "차트를 설명해줘",
             "step_id": "lifetime-cashflow",
             "chart_payload": None,
         })
-        self.assertIn("준비되지", result["output"]["response"])
+        self.assertIn("설명 대상이 아닙니다", result["output"]["response"])
         self.assertIsNone(result["output"]["action"])
 
-    async def test_fallback_accepts_only_four_categories(self) -> None:
+    async def test_failure_responder_has_four_stable_categories(self) -> None:
         configure_runtime()
-        from agents import fallback
+        from graph.aggregation import failure_response
 
-        for category in fallback.MESSAGES:
-            result = await fallback.graph.ainvoke({
-                "message": "",
-                "step_id": "intro",
-                "customer_info": {},
-                "field_registry": [],
-                "bound_inputs": {},
-                "current_task": {"id": "task-1", "type": "fallback"},
-                "next": "fallback",
-                "fallback_category": category,
-            })
-            self.assertEqual(
-                result["output"]["response"],
-                fallback.MESSAGES[category],
-            )
-        with self.assertRaises(ValueError):
-            fallback._run({"step_id": "intro", "fallback_category": "capability_unavailable"})
+        for category in (
+            "ambiguous_intent",
+            "unsupported_intent",
+            "plan_invalid",
+            "all_tasks_failed",
+        ):
+            self.assertTrue(failure_response(category))
+        self.assertEqual(
+            failure_response("capability_unavailable"),
+            "요청을 안전하게 처리하지 못했습니다. 내용을 확인해 다시 시도해 주세요.",
+        )
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class ElicitStateTests(unittest.IsolatedAsyncioTestCase):
-    def state(self, request_id: str, message: str, **extra) -> dict:
-        return {
-            "request_id": request_id,
-            "message": message,
-            "step_id": "financial-mindset",
-            "customer_info": {"saved_data": {}, "current_form": {}},
-            "context_scope": {
-                "schema_version": "1.0",
-                "session_id": 12,
-                "thread_id": "user-3-session-12",
-            },
-            **extra,
-        }
-
-    @staticmethod
-    def routing(field: str, turn_kind: str) -> dict:
-        return {
-            "is_related": True,
-            "field": field,
-            "turn_kind": turn_kind,
-            "confidence_sufficient": True,
-        }
-
-    async def test_field_context_confirmation_creates_deterministic_capture(self) -> None:
+    async def test_plain_agent_answers_from_conversation_context(self) -> None:
         configure_runtime()
-        from agents import elicit
+        from agents.elicit import model as elicit_model
+        from agents.elicit import service as elicit
+        from langchain_core.messages import AIMessage
 
-        started = await elicit._run(self.state(
-            "turn-start",
-            "가치관부터 질문해 줘",
-            elicit_routing=self.routing("values", "new"),
-        ))
-        values = started["elicit_contexts"]["contexts"]["values"]
-        self.assertEqual(values["status"], "open")
-        self.assertEqual(started["output"]["response"].count("?"), 1)
-        next_field = await elicit._run(self.state(
-            "turn-next-field",
-            "과거 경험도 질문해 줘",
-            elicit_routing=self.routing("past_experience", "new"),
-            elicit_contexts=started["elicit_contexts"],
-        ))
-        self.assertNotIn(
-            "재무계획에 담을 고객님의 기준",
-            next_field["output"]["response"],
+        context = {"summary": {"text": "안정적인 생활을 중요하게 생각한다."}}
+        model = SimpleNamespace(
+            ainvoke=AsyncMock(return_value=AIMessage(content="그 기준을 이어서 살펴볼게요."))
         )
+        with patch.object(elicit_model, "llm", model):
+            result = await elicit._run({
+                "request_id": "turn-chat",
+                "message": "앞서 말한 기준으로 이야기해 줘.",
+                "step_id": "financial-mindset",
+                "customer_info": {"saved_data": {}, "current_form": {}},
+                "conversation_context": context,
+            })
 
-        analysis = SimpleNamespace(ainvoke=AsyncMock(return_value=elicit.ElicitAnalysis(
-            response_class="substantive",
-            captured_text="안정적인 생활을 우선한다",
-        )))
-        with patch.object(elicit, "_analysis_chain", analysis):
-            pending = await elicit._run(self.state(
-                "turn-answer",
-                "안정적인 생활이 제일 중요해요",
-                elicit_routing=self.routing("values", "answer"),
-                elicit_contexts=started["elicit_contexts"],
-            ))
-        values = pending["elicit_contexts"]["contexts"]["values"]
-        self.assertEqual(values["status"], "awaiting_confirmation")
-        self.assertIn("가치관 항목", pending["output"]["response"])
-        self.assertNotIn("elicit_capture", pending["output"])
-        rejected = await elicit._run(self.state(
-            "turn-reject",
-            "아니요",
-            elicit_routing=self.routing("values", "confirmation"),
-            elicit_contexts=pending["elicit_contexts"],
-        ))
-        self.assertEqual(
-            rejected["elicit_contexts"]["contexts"]["values"]["source_turns"],
-            [],
-        )
-
-        confirmed = await elicit._run(self.state(
-            "turn-confirm",
-            "네",
-            elicit_routing=self.routing("values", "confirmation"),
-            elicit_contexts=pending["elicit_contexts"],
-        ))
-        capture = confirmed["output"]["elicit_capture"]["changes"][0]
-        self.assertEqual(capture["path"], "values")
-        self.assertEqual(capture["value"], "안정적인 생활을 우선한다")
-        self.assertEqual(
-            capture["source_turn_ids"],
-            ["turn-answer", "turn-confirm"],
-        )
-        contexts = confirmed["elicit_contexts"]["contexts"]
-        self.assertEqual(contexts["values"]["status"], "completed")
-        self.assertEqual(contexts["past_experience"]["status"], "unstarted")
-        self.assertNotIn("phase", confirmed["elicit_contexts"])
-
-    async def test_corrupted_field_context_is_rejected(self) -> None:
-        configure_runtime()
-        from agents import elicit
-
-        started = await elicit._run(self.state(
-            "turn-start",
-            "가치관부터 질문해 줘",
-            elicit_routing=self.routing("values", "new"),
-        ))
-        corrupted = {
-            **started["elicit_contexts"],
-            "scope": {"session_id": 999, "thread_id": "other", "step_id": "financial-mindset"},
-        }
-        with self.assertRaises(ValueError):
-            await elicit._run(self.state(
-                "turn-answer",
-                "안정이 중요해요",
-                elicit_routing=self.routing("values", "answer"),
-                elicit_contexts=corrupted,
-            ))
-
-    async def test_agent_requires_planner_routing(self) -> None:
-        configure_runtime()
-        from agents import elicit
-
-        with self.assertRaises(ValueError):
-            await elicit._run(self.state("turn-chat", "질문을 시작해줘"))
+        self.assertEqual(result["output"]["response"], "그 기준을 이어서 살펴볼게요.")
+        self.assertIsNone(result["output"]["action"])
+        self.assertNotIn("elicit_capture", result["output"])
 
 
 if __name__ == "__main__":

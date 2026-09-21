@@ -19,8 +19,14 @@ import {
   replaceFormState,
   resolveResumeStep,
 } from '@/utils/consultationState'
-import { PROCESS_STEPS, STEP_IDS } from './data/processSteps.js'
+import { PROCESS_STEPS, PRESENTATION_STEP_IDS, STEP_IDS } from './data/processSteps.js'
 import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.js'
+import { createPresentationEntryIdempotencyKey } from '@/api/aiLifecycle'
+import {
+  hasPresentationEntryReceipt,
+  presentationEntryReceiptKey,
+  savePresentationEntryReceipt,
+} from '@/utils/presentationEntry'
 import BasicInfoForm from '@/components/forms/BasicInfoForm.vue'
 import FinancialMindsetForm from '@/components/forms/FinancialMindsetForm.vue'
 import FinancialSatisfactionForm from '@/components/forms/FinancialSatisfactionForm.vue'
@@ -125,6 +131,12 @@ async function navigateToStep(stepId) {
   const step = PROCESS_STEPS.find((s) => s.id === stepId)
   if (step) {
     messages.value.push({ role: 'divider', stepId, label: step.label?.replace('\n', ' ') ?? stepId })
+  }
+
+  if (PRESENTATION_STEP_IDS.includes(stepId)) {
+    scrollToStepStart(stepId, true)
+    void maybeSendPresentationEntryGuide(stepId)
+    return
   }
 
   const guide = STEP_GUIDE_MESSAGES[stepId]
@@ -362,7 +374,6 @@ function toChatMessage(message, { interactive = true } = {}) {
     const visibleItems = visibleErrorReviewItems(review.items)
     bubble.action = {
       type: 'error-review',
-      trigger: review.trigger,
       items: visibleItems.map((item) => ({ ...item, decision: 'pending' })),
     }
   }
@@ -370,9 +381,12 @@ function toChatMessage(message, { interactive = true } = {}) {
 }
 
 function restoreStoredMessages() {
-  messages.value = consultationStore.chatMessages.map((message) => (
-    toChatMessage(message, { interactive: false })
-  ))
+  messages.value = consultationStore.chatMessages
+    .filter((message) => !(
+      message.role === 'user'
+      && message.extracted_data?.system_event === 'presentation_entry'
+    ))
+    .map((message) => toChatMessage(message, { interactive: false }))
 }
 
 async function startNewConsultation() {
@@ -433,6 +447,73 @@ async function streamAssistantMessage(text, options) {
     }
   }
   throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
+}
+
+const presentationGuideConsumed = new Set()
+const presentationGuideInFlight = new Set()
+
+function presentationGuideStorageKey(stepId, reportVersion) {
+  return presentationEntryReceiptKey({
+    sessionId: consultationStore.sessionId,
+    stepId,
+    reportVersion,
+  })
+}
+
+function wasPresentationGuideConsumed(key) {
+  return hasPresentationEntryReceipt(presentationGuideConsumed, sessionStorage, key)
+}
+
+function rememberPresentationGuide(key) {
+  savePresentationEntryReceipt(presentationGuideConsumed, sessionStorage, key)
+}
+
+async function maybeSendPresentationEntryGuide(stepId) {
+  const sessionId = consultationStore.sessionId
+  if (!sessionId || !PRESENTATION_STEP_IDS.includes(stepId)) return
+
+  if (
+    !reportStore.reports
+    || (stepId === 'retirement-simulation' && !reportStore.simulation && !reportStore.simulationError)
+  ) {
+    await reportStore.calculatePresentation(sessionId)
+  }
+  if (currentStepId.value !== stepId) return
+
+  const reportVersion = reportStore.presentationReportVersion(stepId)
+  const storageKey = presentationGuideStorageKey(stepId, reportVersion)
+  if (wasPresentationGuideConsumed(storageKey) || presentationGuideInFlight.has(storageKey)) return
+
+  presentationGuideInFlight.add(storageKey)
+  isTyping.value = true
+  isStreamingResponse.value = true
+  try {
+    const idempotencyKey = await createPresentationEntryIdempotencyKey({
+      sessionId,
+      stepId,
+      reportVersion,
+    })
+    await streamAssistantMessage('이 보고서의 핵심을 먼저 안내해 주세요.', {
+      stepId,
+      form: null,
+      requestMode: 'presentation_entry',
+      idempotencyKey,
+    })
+    rememberPresentationGuide(storageKey)
+  } catch (error) {
+    if (error?.name !== 'AbortError' && currentStepId.value === stepId) {
+      const fallback = STEP_GUIDE_MESSAGES[stepId]
+      if (fallback) {
+        await streamAiMessages(Array.isArray(fallback) ? fallback : [fallback], {
+          typingDelay: 100,
+        })
+      }
+    }
+  } finally {
+    presentationGuideInFlight.delete(storageKey)
+    isTyping.value = false
+    isStreamingResponse.value = false
+  }
 }
 
 async function sendMessage() {
@@ -859,12 +940,27 @@ watch(currentStepId, async (stepId) => {
   }
 })
 
-watch(isPresentationPhase, (val) => {
+watch(isPresentationPhase, async (val) => {
   if (!val || !consultationStore.sessionId) return
   if (!reportStore.loading && !reportStore.simulationLoading && (!reportStore.reports || !reportStore.simulation)) {
-    void reportStore.calculatePresentation(consultationStore.sessionId)
+    await reportStore.calculatePresentation(consultationStore.sessionId)
+  }
+  if (PRESENTATION_STEP_IDS.includes(currentStepId.value)) {
+    void maybeSendPresentationEntryGuide(currentStepId.value)
   }
 })
+
+watch(
+  () => (
+    PRESENTATION_STEP_IDS.includes(currentStepId.value)
+      ? reportStore.presentationReportVersion(currentStepId.value)
+      : null
+  ),
+  (nextVersion, previousVersion) => {
+    if (!nextVersion || !previousVersion || nextVersion === previousVersion) return
+    void maybeSendPresentationEntryGuide(currentStepId.value)
+  },
+)
 
 async function restoreMountedConsultation() {
   sessionLoading.value = true
@@ -1002,7 +1098,7 @@ onBeforeUnmount(() => {
                         <div class="update-change-copy">
                           <strong>{{ `${item.section}.${item.path}` }}</strong>
                           <span>현재 값: {{ formatActionValue(item.current_value, item.unit) }}</span>
-                          <small>{{ item.reason }} · 신뢰도 {{ item.confidence_level === 'high' ? '높음' : '보통' }}</small>
+                          <small>{{ item.reason }}</small>
                           <span v-if="item.suggested_value != null">수정 후보: {{ formatActionValue(item.suggested_value, item.unit) }}</span>
                         </div>
                         <div v-if="item.decision === 'pending'" class="update-actions">

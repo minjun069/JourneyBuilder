@@ -80,16 +80,53 @@ class MonitoringContractTests(unittest.TestCase):
                 resource_ids=("raw-result",),
             )
 
+    def test_model_event_serializes_complete_prompt_identity(self):
+        event = OperationTraceEvent(
+            trace_id=TRACE_ID,
+            attempt_id=ATTEMPT_ID,
+            occurred_at_epoch_ms=2,
+            stage=OperationStage.MODEL,
+            status=OperationStatus.SUCCEEDED,
+            duration_ms=15,
+            operation_name="qa.answer_direct",
+            model_provider="gemini",
+            model_name="gemini-2.5-flash-lite",
+            model_temperature=0.0,
+            prompt_id="qa.answer_direct",
+            prompt_version="1.0.0",
+            prompt_hash="a" * 64,
+            prompt_release="2026-09-17.1",
+            prompt_policy_version="1.1",
+        )
+
+        payload = event.to_dict()
+        self.assertEqual(payload["prompt_id"], "qa.answer_direct")
+        self.assertEqual(payload["prompt_hash"], "a" * 64)
+        self.assertEqual(payload["model_temperature"], 0.0)
+
+    def test_prompt_metadata_is_rejected_on_non_model_stage(self):
+        with self.assertRaisesRegex(ValueError, "model metadata"):
+            OperationTraceEvent(
+                trace_id=TRACE_ID,
+                attempt_id=ATTEMPT_ID,
+                occurred_at_epoch_ms=2,
+                stage=OperationStage.TOOL,
+                status=OperationStatus.SUCCEEDED,
+                duration_ms=15,
+                operation_name="tool",
+                prompt_id="qa.answer_direct",
+            )
+
     def test_failed_operation_requires_stable_error_code(self):
         with self.assertRaisesRegex(ValueError, "stable error_code"):
             OperationTraceEvent(
                 trace_id=TRACE_ID,
                 attempt_id=ATTEMPT_ID,
                 occurred_at_epoch_ms=2,
-                stage=OperationStage.CALLBACK,
+                stage=OperationStage.TOOL,
                 status=OperationStatus.FAILED,
                 duration_ms=15,
-                operation_name="django_callback",
+                operation_name="tool",
             )
 
     def test_survey_keeps_only_recommended_sampled_dimensions(self):

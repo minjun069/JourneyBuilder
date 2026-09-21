@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --test vite.config.test.js src/api/aiLifecycle.test.js src/api/aiLifecycleContract.test.js src/api/consultingMapping.test.js src/api/domainClients.test.js src/api/simulations.test.js src/api/sse.test.js src/api/sseV2Contract.test.js src/components/charts/financialIndicatorSchema.test.js src/stores/storeBoundaries.test.js src/utils/canonicalMoney.test.js src/utils/chatMarkdown.test.js src/utils/consultationState.test.js src/utils/formActionsContract.test.js src/utils/formDecision.test.js src/utils/formValidation.test.js src/utils/financialGoalData.test.js src/utils/reportData.test.js src/utils/simulationData.test.js src/utils/stepRegistryContract.test.js src/views/ai/chatUxContract.test.js src/views/community/postMapper.test.js",
+    "test": "node --test vite.config.test.js src/api/aiLifecycle.test.js src/api/aiLifecycleContract.test.js src/api/consultingMapping.test.js src/api/domainClients.test.js src/api/simulations.test.js src/api/sse.test.js src/api/sseV2Contract.test.js src/components/charts/financialIndicatorSchema.test.js src/stores/storeBoundaries.test.js src/utils/canonicalMoney.test.js src/utils/chatMarkdown.test.js src/utils/consultationState.test.js src/utils/financialGoalData.test.js src/utils/formActionsContract.test.js src/utils/formDecision.test.js src/utils/formValidation.test.js src/utils/presentationEntry.test.js src/utils/reportData.test.js src/utils/simulationData.test.js src/utils/stepRegistryContract.test.js src/views/ai/chatUxContract.test.js src/views/community/postMapper.test.js",
     "test:e2e:f05": "playwright test --config tests/e2e/f05/playwright.config.mjs",
     "preview": "vite preview",
     "lint": "run-s lint:oxlint lint:eslint",
@@ -18,16 +18,12 @@
     "format": "prettier --write --experimental-cli src/"
   },
   "dependencies": {
-    "apexcharts": "^5.14.0",
     "axios": "^1.17.0",
-    "chart.js": "^4.5.1",
     "echarts": "^6.1.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.32",
-    "vue-chartjs": "^5.3.3",
     "vue-echarts": "^8.0.1",
-    "vue-router": "^5.0.4",
-    "vue3-apexcharts": "^1.11.1"
+    "vue-router": "^5.0.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

@@ -29,13 +29,37 @@ const PRESENTATION_REPORT_TYPES = [
   'required-savings',
 ]
 
+const PRESENTATION_REPORT_BY_STEP = {
+  'balance-sheet': 'asset_statement',
+  'cash-flow': 'cash_flow',
+  'financial-indicators': 'financial-indicators',
+  'financial-goal-result': 'financial-goal-result',
+  'retirement-fund': 'retirement-fund',
+  'retirement-readiness': 'retirement-readiness',
+  'pension-schedule': 'pension-schedule',
+  'lifetime-cashflow': 'lifetime-cashflow',
+  'required-savings': 'required-savings',
+}
+
 function reportCacheKey(sessionId) {
   return `session:${sessionId}`
 }
 
 function mapReports(rows) {
   const mapped = {}
-  for (const report of rows ?? []) mapped[report.report_type] = report.content
+  for (const report of rows ?? []) {
+    if (report?.status !== 'ready' || !report.content || typeof report.content !== 'object') continue
+    mapped[report.report_type] = {
+      ...report.content,
+      _report_meta: {
+        id: report.id,
+        reportType: report.report_type,
+        version: report.version,
+        status: report.status,
+        generatedAt: report.generated_at,
+      },
+    }
+  }
   return normalizePresentationData(mapped)
 }
 
@@ -317,6 +341,19 @@ export const useReportStore = defineStore('report', () => {
     return Boolean(reports.value?.[reportKey])
   }
 
+  function presentationReportVersion(stepId) {
+    if (stepId === 'retirement-simulation') {
+      return simulation.value?.baselineKey
+        ? `simulation:${simulation.value.baselineKey}`
+        : `guidance-only:${simulationError.value?.code ?? 'unavailable'}`
+    }
+    const reportType = PRESENTATION_REPORT_BY_STEP[stepId]
+    const meta = reportType ? reports.value?.[reportType]?._report_meta : null
+    return meta?.status === 'ready' && meta?.id != null && meta?.version != null
+      ? `report:${meta.id}:v${meta.version}`
+      : 'guidance-only:unavailable'
+  }
+
   function dashboardOverview(period = PERIODS[PERIODS.length - 1]) {
     return buildDashboardOverview(reports.value, periodData[period])
   }
@@ -375,6 +412,7 @@ export const useReportStore = defineStore('report', () => {
     runWhatIfSimulation,
     invalidateSimulation,
     hasReport,
+    presentationReportVersion,
     dashboardOverview,
     dashboardCashflow,
     clearActiveReport,

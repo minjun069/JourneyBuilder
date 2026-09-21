@@ -1,8 +1,7 @@
 """Container readiness probe for the AI service.
 
-The probe deliberately avoids calling an LLM or the Backend. It verifies only
-the local HTTP service and the PostgreSQL dependency required by the current
-LangGraph checkpointer.
+The probe deliberately avoids calling an LLM or the Backend. It verifies the
+local HTTP service, PostgreSQL, and the two active RAG indexes required by QA.
 """
 
 from __future__ import annotations
@@ -19,6 +18,9 @@ from urllib.request import urlopen
 DEFAULT_HTTP_URL = "http://127.0.0.1:8001/api/system/v1/health"
 DEFAULT_TIMEOUT_SECONDS = 2.0
 MAX_TIMEOUT_SECONDS = 10.0
+REQUIRED_RAG_COLLECTIONS = frozenset(
+    {"financial-knowledge", "interface-guides"}
+)
 
 
 class ReadinessConfigurationError(ValueError):
@@ -54,7 +56,7 @@ def check_http(url: str, timeout: float) -> None:
 
 
 def check_postgres(database_url: str, timeout: float) -> None:
-    """Run a lightweight query against the active checkpointer database."""
+    """Require PostgreSQL and both populated operational RAG indexes."""
 
     import psycopg
 
@@ -64,6 +66,30 @@ def check_postgres(database_url: str, timeout: float) -> None:
             cursor.execute("SELECT 1")
             if cursor.fetchone() != (1,):
                 raise RuntimeError("PostgreSQL readiness query returned an unexpected result")
+            cursor.execute(
+                """
+                SELECT active.logical_collection,
+                       active.physical_collection,
+                       COUNT(chunks.chunk_id)
+                FROM rag_active_indexes AS active
+                JOIN rag_index_manifests AS manifests
+                  ON manifests.physical_collection = active.physical_collection
+                 AND manifests.logical_collection = active.logical_collection
+                 AND manifests.retired_at IS NULL
+                LEFT JOIN rag_index_chunks AS chunks
+                  ON chunks.physical_collection = active.physical_collection
+                WHERE active.logical_collection = ANY(%s)
+                GROUP BY active.logical_collection, active.physical_collection
+                """,
+                (sorted(REQUIRED_RAG_COLLECTIONS),),
+            )
+            active_rows = cursor.fetchall()
+
+    active_collections = {row[0] for row in active_rows}
+    if active_collections != REQUIRED_RAG_COLLECTIONS:
+        raise RuntimeError("required active RAG indexes are missing")
+    if any(int(row[2]) < 1 for row in active_rows):
+        raise RuntimeError("an active RAG index contains no chunks")
 
 
 def check_readiness(

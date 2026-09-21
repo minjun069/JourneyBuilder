@@ -4,43 +4,34 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-import json
 import logging
-import re
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.context import (
-    ApproximateUnitCounter,
+from core.context_domain import (
     ContextScope,
-    ContextStateAPI,
     ContextSummary,
     ConversationContext,
     RetrievedMemory,
     StructuredConversationState,
     SummaryJob,
 )
-from core.model_boundary import ModelPurpose, secure_ainvoke, secure_system_prompt
+from core.context_service import ContextStateAPI
+from core.context_window import ApproximateUnitCounter
+from core.model_boundary import (
+    ModelPurpose,
+    bind_model_call_recorder,
+    prompt_messages,
+    secure_ainvoke,
+)
+from core.prompt_registry import bind_prompt_trace_sink
+from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
+from prompts import get_prompt
 
 
 logger = logging.getLogger(__name__)
-
-_DIRECT_IDENTIFIER = re.compile(
-    r"(?:[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)"
-    r"|(?:(?:\+?82[- .]?)?0?1[016789][- .]?\d{3,4}[- .]?\d{4})"
-    r"|(?:\d{6}[- ]?[1-4]\d{6})"
-)
-_SECRET = re.compile(
-    r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+|"
-    r"[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
-)
-_REFERENCE_TOKEN = re.compile(r"\[\[[^\[\]\r\n]{1,256}\]\]")
-_FINANCIAL_MEMORY = re.compile(
-    r"(?i)(?:소득|연봉|월급|자산|부채|대출|잔액|저축|연금|보험|지출|금액|수익률|"
-    r"income|salary|asset|debt|loan|balance|saving|pension|expense|amount|return)"
-)
-
+SUMMARY_PROMPT = get_prompt("summary.extract")
 
 class SummaryValidationError(ValueError):
     """Raised when a model summary cannot be proven from its source archive."""
@@ -55,6 +46,7 @@ class SummaryClaim(BaseModel):
         "decision",
         "open_question",
         "entity",
+        "context",
     ]
     value: str = Field(min_length=1, max_length=280)
     evidence_quote: str = Field(min_length=3, max_length=500)
@@ -74,32 +66,45 @@ class SummaryGenerator(Protocol):
 class ModelSummaryGenerator:
     """Provider adapter; deterministic verification remains a separate step."""
 
-    def __init__(self, model: Any) -> None:
+    def __init__(
+        self,
+        model: Any,
+        *,
+        instrumentation: RuntimeInstrumentationAdapter | None = None,
+    ) -> None:
         self._model = model
+        self._instrumentation = instrumentation
 
     async def generate(self, job: SummaryJob) -> SummaryCandidate:
-        from langchain_core.messages import HumanMessage, SystemMessage
-
         source = _summary_source(job)
-        system = SystemMessage(content=secure_system_prompt("""
-당신은 대화 메모리 추출기입니다. 아래 source에 문자 그대로 근거가 있는 비금융 대화
-정보만 claims로 반환하세요. goal, 응답 형식 선호, 확정된 의사결정, 미해결 질문,
-프로젝트·기술 같은 개체만 허용됩니다. 금액·소득·자산·부채·연금·개인 식별정보·secret·
-참조 token은 절대 추출하지 마세요. value는 evidence_quote 안에 그대로 존재해야 하고,
-evidence_quote도 source에서 그대로 복사해야 합니다. 근거가 없으면 claims를 비워 두세요.
-"""))
-        human = HumanMessage(content=json.dumps(
-            {"source": source},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ))
         runnable = self._model.with_structured_output(SummaryCandidate)
-        result = await secure_ainvoke(
-            runnable,
-            [system, human],
-            purpose=ModelPurpose.SUMMARY,
-        )
+        messages = prompt_messages(SUMMARY_PROMPT, {"source": source})
+        if self._instrumentation is None:
+            result = await secure_ainvoke(
+                runnable,
+                messages,
+                purpose=ModelPurpose.SUMMARY,
+                operation_name="summary.extract",
+                prompt=SUMMARY_PROMPT,
+            )
+        else:
+            observed = self._instrumentation.bind(
+                request_id=(
+                    f"summary-{job.scope.session_id}-{job.target_cursor}-"
+                    f"{job.attempts}"
+                ),
+                thread_id=job.scope.thread_id,
+                step_id=f"summary-{job.target_cursor}",
+            )
+            with bind_model_call_recorder(observed.record_model_call):
+                with bind_prompt_trace_sink(observed.record_prompt_invocation):
+                    result = await secure_ainvoke(
+                        runnable,
+                        messages,
+                        purpose=ModelPurpose.SUMMARY,
+                        operation_name="summary.extract",
+                        prompt=SUMMARY_PROMPT,
+                    )
         return result if isinstance(result, SummaryCandidate) else SummaryCandidate.model_validate(result)
 
 
@@ -109,9 +114,9 @@ def verify_summary_candidate(
     *,
     max_summary_units: int = 600,
 ) -> tuple[ContextSummary, StructuredConversationState]:
-    """Build persisted state only from exact, safe source quotations."""
+    """Check source quotations and retain who supplied each remembered claim."""
 
-    source = _summary_source(job)
+    sources = _summary_sources(job)
     state = job.existing_structured_state
     goal = state.current_goal
     preferences = list(state.response_preferences)
@@ -122,10 +127,13 @@ def verify_summary_candidate(
     for claim in candidate.claims:
         value = " ".join(claim.value.split())
         quote = " ".join(claim.evidence_quote.split())
-        if not value or quote not in source or value not in quote:
+        origins = {origin for origin, text in sources if quote in text}
+        if not value or not origins:
             raise SummaryValidationError("summary claim is not grounded in its source")
-        if _unsafe_memory_text(value):
-            raise SummaryValidationError("summary claim contains forbidden memory data")
+        # A source quote validates where the claim came from, not that an AI
+        # suggestion is a user decision or a currently saved financial value.
+        origin = next(iter(origins)) if len(origins) == 1 else "대화"
+        value = f"{origin}: {value}"
         if claim.kind == "goal":
             goal = value
         elif claim.kind == "response_preference":
@@ -134,7 +142,7 @@ def verify_summary_candidate(
             _append_unique(decisions, value, limit=12)
         elif claim.kind == "open_question":
             _append_unique(questions, value, limit=12)
-        elif claim.kind == "entity":
+        elif claim.kind in {"entity", "context"}:
             _append_unique(entities, value, limit=12)
 
     verified_state = StructuredConversationState(
@@ -248,28 +256,18 @@ class ConversationMemoryManager:
         return await asyncio.to_thread(self._embedding_model.get_text_embedding, text)
 
 
-def _summary_source(job: SummaryJob) -> str:
-    sections: list[str] = []
+def _summary_sources(job: SummaryJob) -> list[tuple[str, str]]:
+    sources: list[tuple[str, str]] = []
     if job.existing_summary is not None and job.existing_summary.text:
-        sections.append("기존 검증 요약:\n" + " ".join(job.existing_summary.text.split()))
+        sources.append(("이전 요약", " ".join(job.existing_summary.text.split())))
     for turn in job.source_turns:
-        sections.append(
-            "사용자: "
-            + " ".join(turn.user_message.split())
-            + "\nAI: "
-            + " ".join(turn.assistant_message.split())
-        )
-    return "\n\n".join(sections)
+        sources.append(("사용자", " ".join(turn.user_message.split())))
+        sources.append(("AI", " ".join(turn.assistant_message.split())))
+    return sources
 
 
-def _unsafe_memory_text(value: str) -> bool:
-    return bool(
-        any(character.isdigit() for character in value)
-        or _DIRECT_IDENTIFIER.search(value)
-        or _SECRET.search(value)
-        or _REFERENCE_TOKEN.search(value)
-        or _FINANCIAL_MEMORY.search(value)
-    )
+def _summary_source(job: SummaryJob) -> str:
+    return "\n\n".join(f"{origin}: {text}" for origin, text in _summary_sources(job))
 
 
 def _append_unique(items: list[str], value: str, *, limit: int) -> None:
@@ -291,7 +289,7 @@ def _render_summary(state: StructuredConversationState) -> str:
     if state.open_questions:
         sentences.append("미해결 질문: " + "; ".join(state.open_questions) + ".")
     if state.entities:
-        sentences.append("주요 개체: " + "; ".join(state.entities) + ".")
+        sentences.append("대화 맥락: " + "; ".join(state.entities) + ".")
     return " ".join(sentences)
 
 

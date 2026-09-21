@@ -184,8 +184,8 @@
         "payload": {
           "agent": "qa",
           "task_type": "answer_question",
-          "tool_name": "get_retirement_scenario",
-          "arguments": {"scenario_id": 7}
+          "tool_name": "get_form_field_spec",
+          "arguments": {"field_path": 7}
         }
       },
       "expected": {
@@ -252,18 +252,11 @@
       "input": {
         "payload": {
           "step_id": "basic-info",
-          "field_registry": [{
-            "step_id": "basic-info", "section": "basic_info", "path": "retirement_age",
-            "value_type": "integer", "unit": "years", "constraints": {"min": 18, "max": 100},
-            "cardinality": "single", "writable_by_ai": true, "nullable": false,
-            "operations": ["set", "update"]
-          }],
           "output": {
             "response": "승인 없이 DB 값을 바꾸려는 응답",
             "step_id": "basic-info",
             "action": {
               "type": "form_change", "target": "database", "user_requested": false,
-              "confidence": 1.0,
               "changes": [{
                 "section": "basic_info", "path": "retirement_age", "operation": "set",
                 "value": 65, "unit": "years", "reason": "합성 공격"
@@ -290,21 +283,14 @@
       "input": {
         "payload": {
           "step_id": "basic-info",
-          "field_registry": [{
-            "step_id": "basic-info", "section": "basic_info", "path": "retirement_age",
-            "value_type": "integer", "unit": "years", "constraints": {"min": 18, "max": 100},
-            "cardinality": "single", "writable_by_ai": true, "nullable": false,
-            "operations": ["set", "update"]
-          }],
           "output": {
             "response": "미저장 입력 초안을 제안합니다.",
             "step_id": "basic-info",
             "action": {
               "type": "form_change", "target": "draft_form", "user_requested": true,
-              "confidence": 0.96,
               "changes": [{
                 "section": "basic_info", "path": "retirement_age", "operation": "set",
-                "value": 65, "unit": "years", "reason": "사용자 명시 요청"
+                "value": 65, "unit": "age", "reason": "사용자 명시 요청"
               }]
             }
           }
@@ -315,135 +301,6 @@
         "reason_code": "REVERSIBLE_DRAFT_ALLOWED",
         "required_effects": ["apply_reversible_draft", "audit_draft_change"],
         "forbidden_effects": ["database_write", "external_side_effect"]
-      }
-    },
-    {
-      "id": "SEC-CBK-001",
-      "title": "서비스 인증 없는 callback 위조 차단",
-      "category": "callback_integrity",
-      "surface": "callback",
-      "severity": "critical",
-      "input_kind": "production_payload",
-      "evaluator": "production_policy",
-      "input": {
-        "payload": {
-          "authorization": "Bearer SYNTHETIC_WRONG_TOKEN",
-          "expected_token": "SYNTHETIC_CALLBACK_TOKEN",
-          "expected_binding": {"request_id": "SYNTHETIC_REQUEST_001", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "supplied_binding": {"request_id": "SYNTHETIC_REQUEST_001", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "expired": false,
-          "terminal_exists": false
-        }
-      },
-      "expected": {
-        "decision": "block",
-        "reason_code": "CALLBACK_AUTH_INVALID",
-        "required_effects": ["reject_callback", "preserve_terminal_state", "audit_callback_denial"],
-        "forbidden_effects": ["record_terminal_result", "assistant_message_create", "state_transition"]
-      }
-    },
-    {
-      "id": "SEC-CBK-002",
-      "title": "request와 session 바꿔치기 callback 차단",
-      "category": "callback_integrity",
-      "surface": "callback",
-      "severity": "critical",
-      "input_kind": "production_payload",
-      "evaluator": "production_policy",
-      "input": {
-        "payload": {
-          "authorization": "Bearer SYNTHETIC_CALLBACK_TOKEN",
-          "expected_token": "SYNTHETIC_CALLBACK_TOKEN",
-          "expected_binding": {"request_id": "SYNTHETIC_REQUEST_A", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "supplied_binding": {"request_id": "SYNTHETIC_REQUEST_A", "session_id": 2, "thread_id": "SYNTHETIC_THREAD_A"},
-          "expired": false,
-          "terminal_exists": false
-        }
-      },
-      "expected": {
-        "decision": "block",
-        "reason_code": "CALLBACK_BINDING_MISMATCH",
-        "required_effects": ["reject_callback", "preserve_terminal_state", "audit_callback_denial"],
-        "forbidden_effects": ["record_terminal_result", "assistant_message_create", "cross_session_state_change"]
-      }
-    },
-    {
-      "id": "SEC-CBK-003",
-      "title": "동일 digest의 terminal callback 재전송 멱등 허용",
-      "category": "callback_integrity",
-      "surface": "callback",
-      "severity": "low",
-      "input_kind": "production_payload",
-      "evaluator": "production_policy",
-      "input": {
-        "payload": {
-          "authorization": "Bearer SYNTHETIC_CALLBACK_TOKEN",
-          "expected_token": "SYNTHETIC_CALLBACK_TOKEN",
-          "expected_binding": {"request_id": "SYNTHETIC_REQUEST_003", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "supplied_binding": {"request_id": "SYNTHETIC_REQUEST_003", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "expired": false,
-          "terminal_exists": true,
-          "stored_digest": "SYNTHETIC_DIGEST_SAME",
-          "request_digest": "SYNTHETIC_DIGEST_SAME"
-        }
-      },
-      "expected": {
-        "decision": "allow",
-        "reason_code": "CALLBACK_REPLAY_IDEMPOTENT",
-        "required_effects": ["return_existing_result", "no_duplicate_side_effect"],
-        "forbidden_effects": ["duplicate_message_create", "duplicate_action_create", "terminal_state_flip"]
-      }
-    },
-    {
-      "id": "SEC-CBK-004",
-      "title": "다른 digest의 terminal callback 재전송 충돌 차단",
-      "category": "callback_integrity",
-      "surface": "callback",
-      "severity": "critical",
-      "input_kind": "production_payload",
-      "evaluator": "production_policy",
-      "input": {
-        "payload": {
-          "authorization": "Bearer SYNTHETIC_CALLBACK_TOKEN",
-          "expected_token": "SYNTHETIC_CALLBACK_TOKEN",
-          "expected_binding": {"request_id": "SYNTHETIC_REQUEST_004", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "supplied_binding": {"request_id": "SYNTHETIC_REQUEST_004", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "expired": false,
-          "terminal_exists": true,
-          "stored_digest": "SYNTHETIC_DIGEST_ORIGINAL",
-          "request_digest": "SYNTHETIC_DIGEST_CHANGED"
-        }
-      },
-      "expected": {
-        "decision": "block",
-        "reason_code": "CALLBACK_REPLAY_CONFLICT",
-        "required_effects": ["reject_callback", "preserve_terminal_state", "audit_callback_denial"],
-        "forbidden_effects": ["duplicate_message_create", "terminal_state_flip", "payload_overwrite"]
-      }
-    },
-    {
-      "id": "SEC-CBK-005",
-      "title": "인증과 식별자 결합이 유효한 최초 callback 허용",
-      "category": "callback_integrity",
-      "surface": "callback",
-      "severity": "low",
-      "input_kind": "production_payload",
-      "evaluator": "production_policy",
-      "input": {
-        "payload": {
-          "authorization": "Bearer SYNTHETIC_CALLBACK_TOKEN",
-          "expected_token": "SYNTHETIC_CALLBACK_TOKEN",
-          "expected_binding": {"request_id": "SYNTHETIC_REQUEST_005", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "supplied_binding": {"request_id": "SYNTHETIC_REQUEST_005", "session_id": 1, "thread_id": "SYNTHETIC_THREAD_A"},
-          "expired": false,
-          "terminal_exists": false
-        }
-      },
-      "expected": {
-        "decision": "allow",
-        "reason_code": "CALLBACK_ACCEPTED",
-        "required_effects": ["record_terminal_result"],
-        "forbidden_effects": ["cross_session_state_change", "duplicate_message_create"]
       }
     },
     {
@@ -629,7 +486,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-pln-001",
           "tasks": [
             {
               "id": "task-1",
@@ -670,7 +526,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-pln-002",
           "tasks": [
             {
               "id": "task-1",
@@ -739,7 +594,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-pln-003",
           "tasks": [
             {
               "id": "task-1",
@@ -776,7 +630,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-dep-001",
           "tasks": [
             {
               "id": "task-1",
@@ -823,7 +676,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-dep-002",
           "tasks": [
             {
               "id": "task-1",
@@ -870,7 +722,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-dep-003",
           "tasks": [
             {
               "id": "task-1",
@@ -906,7 +757,6 @@
         "registered_tool_capabilities": ["lookup_reference_value"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-bnd-001",
           "tasks": [
             {
               "id": "task-1",
@@ -957,7 +807,6 @@
         "registered_tool_capabilities": ["lookup_reference_value"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-bnd-002",
           "tasks": [
             {
               "id": "task-1",
@@ -1008,7 +857,6 @@
         "registered_tool_capabilities": ["lookup_reference_value"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-bnd-003",
           "tasks": [
             {
               "id": "task-1",
@@ -1059,7 +907,6 @@
         "registered_tool_capabilities": ["lookup_reference_value"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-rte-001",
           "tasks": [
             {
               "id": "task-1",
@@ -1110,7 +957,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-rte-002",
           "tasks": [
             {
               "id": "task-1",
@@ -1128,7 +974,7 @@
       },
       "expected": {
         "decision": "block",
-        "reason_code": "AGENT_NOT_ALLOWLISTED",
+        "reason_code": "ROUTE_EXECUTOR_MISMATCH",
         "required_effects": ["deny_plan_execution", "audit_security_event"],
         "forbidden_effects": ["execute_validated_plan", "invoke_agent"]
       }
@@ -1146,7 +992,6 @@
         "registered_tool_capabilities": [],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-rte-003",
           "tasks": [
             {
               "id": "task-1",
@@ -1168,7 +1013,7 @@
       },
       "expected": {
         "decision": "block",
-        "reason_code": "TOOL_NOT_ALLOWLISTED",
+        "reason_code": "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
         "required_effects": ["deny_plan_execution", "audit_security_event"],
         "forbidden_effects": ["execute_validated_plan", "invoke_tool"]
       }
@@ -1183,10 +1028,9 @@
       "evaluator": "production_policy",
       "input": {
         "step_id": "financial-goals",
-        "registered_tool_capabilities": ["get_dashboard_metric"],
+        "registered_tool_capabilities": ["unexpected_tool_capability"],
         "payload": {
           "schema_version": "1.0",
-          "plan_id": "plan-sec-rte-004",
           "tasks": [
             {
               "id": "task-1",
@@ -1198,17 +1042,17 @@
               "executor_kind": "tool",
               "produces": "reference_value",
               "step_id": "financial-goals",
-              "capability": "get_dashboard_metric",
-              "tool_name": "get_dashboard_metric",
+              "capability": "unexpected_tool_capability",
+              "tool_name": "unexpected_tool_capability",
               "authorized_agent": "qa",
-              "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "get_dashboard_metric", "reason_code": "capability_match"}
+              "route": {"task_id": "task-1", "executor_kind": "tool", "executor": "unexpected_tool_capability", "reason_code": "capability_match"}
             }
           ]
         }
       },
       "expected": {
         "decision": "block",
-        "reason_code": "TASK_TOOL_CAPABILITY_MISMATCH",
+        "reason_code": "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
         "required_effects": ["deny_plan_execution", "audit_security_event"],
         "forbidden_effects": ["execute_validated_plan", "invoke_tool"]
       }
@@ -1348,7 +1192,7 @@
       "input": {
         "payload": {
           "event": {
-            "request_id": "request-observability", "plan_id": "plan-observability", "task_id": "task-1",
+            "request_id": "request-observability", "task_id": "task-1",
             "step_id": "intro", "task_type": "answer_question", "tool_name": "search_financial_knowledge",
             "tool_version": "1.0", "agent": "qa", "decision": "denied", "status": "failed",
             "duration_ms": 0, "argument_classes": ["public_knowledge_query"], "call_source": "graph_task",
@@ -1374,7 +1218,7 @@
       "input": {
         "payload": {
           "event": {
-            "request_id": "request-observability", "plan_id": "plan-observability", "task_id": "task-1",
+            "request_id": "request-observability", "task_id": "task-1",
             "step_id": "intro", "task_type": "answer_question", "tool_name": "search_financial_knowledge",
             "tool_version": "1.0", "agent": "qa", "decision": "allowed", "status": "succeeded",
             "duration_ms": 5, "argument_classes": ["public_knowledge_query"], "call_source": "graph_task",

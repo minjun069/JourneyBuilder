@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock
+
+from pydantic import ValidationError
 
 from core.context import (
     ContextWindow,
     ConversationTurn,
     StructuredConversationState,
 )
-from graph.planner import (
-    PlannerModelOutput,
-    create_route_plan,
-    validate_route_plan,
-)
+from graph.plan_validation import validate_plan_structure
+from graph.planner import PlannerModelOutput
+from graph.planning_service import create_route_plan, planner_route_constraints
+from graph.task_catalog import allowed_task_types_for
+from guardrails.plan_policy import evaluate_route_plan
 
 
 def task(
@@ -54,95 +57,34 @@ class FakePlanner:
         return self.plan
 
 
-class FakeClassifier:
-    AGENTS = {
-        "answer_question": "qa",
-        "propose_form_change": "input_assist",
-        "review_validation_error": "error_review",
-        "interpret_chart": "chart_interpret",
-        "collect_qualitative_info": "elicit",
-        "fallback": "fallback",
-    }
-
-    def __call__(self, *, task: dict, candidates: tuple[str, ...]) -> dict:
-        return {"status": "matched", "agent": self.AGENTS[task["type"]]}
-
-
 class RoutePlanValidationTests(unittest.TestCase):
-    def test_provider_empty_arguments_are_removed_before_plan_validation(self) -> None:
+    def test_model_requests_are_compiled_without_model_generated_wiring(self) -> None:
+        from graph.request_plan import compile_request_plan
         model_output = PlannerModelOutput.model_validate({
-            "tasks": [{
-                "id": "answer",
+            "requests": [{
                 "type": "answer_question",
                 "description": "단기 지향의 기간 설명",
-                "depends_on": [],
-                "bindings": {},
-                "arguments": {},
             }],
         })
 
-        route_plan = model_output.to_route_plan()
+        route_plan = compile_request_plan(model_output.to_request_plan())
 
         self.assertNotIn("arguments", route_plan["tasks"][0])
-        self.assertEqual(route_plan["elicit_routing"]["is_related"], False)
-        self.assertTrue(validate_route_plan(route_plan, step_id="basic-info").valid)
+        self.assertNotIn("elicit_routing", route_plan)
+        self.assertTrue(validate_plan_structure(route_plan, step_id="basic-info").valid)
 
-    def test_elicit_task_requires_structured_field_routing(self) -> None:
+    def test_qualitative_task_needs_no_special_routing_contract(self) -> None:
         elicit_task = task(
             "elicit",
             "collect_qualitative_info",
             "미래 목표 답변을 이어서 정리",
         )
-        missing = validate_route_plan(
+        missing = validate_plan_structure(
             {"tasks": [elicit_task]},
             step_id="financial-mindset",
         )
-        self.assertFalse(missing.valid)
-        self.assertIn(
-            "ELICIT_ROUTING_REQUIRED",
-            {issue.code for issue in missing.issues},
-        )
-
-        routed = validate_route_plan({
-            "elicit_routing": {
-                "is_related": True,
-                "field": "future_goals",
-                "turn_kind": "correction",
-                "confidence_sufficient": True,
-            },
-            "tasks": [elicit_task],
-        }, step_id="financial-mindset")
-        self.assertTrue(routed.valid, [issue.to_dict() for issue in routed.issues])
-        self.assertEqual(
-            routed.plan["elicit_routing"]["field"],
-            "future_goals",
-        )
-
-    def test_low_confidence_elicit_judgment_cannot_execute_elicit(self) -> None:
-        routing = {
-            "is_related": True,
-            "field": None,
-            "turn_kind": None,
-            "confidence_sufficient": False,
-        }
-        routed = validate_route_plan({
-            "elicit_routing": routing,
-            "tasks": [task("clarify", "fallback", "대상 항목 확인")],
-        }, step_id="financial-mindset")
-        self.assertTrue(routed.valid, [issue.to_dict() for issue in routed.issues])
-        blocked = validate_route_plan({
-            "elicit_routing": routing,
-            "tasks": [task(
-                "elicit",
-                "collect_qualitative_info",
-                "불확실한 대상의 정성정보 수집",
-            )],
-        }, step_id="financial-mindset")
-        self.assertFalse(blocked.valid)
-        self.assertIn(
-            "ELICIT_ROUTING_REQUIRED",
-            {issue.code for issue in blocked.issues},
-        )
+        self.assertTrue(missing.valid, [issue.to_dict() for issue in missing.issues])
+        self.assertNotIn("elicit_routing", missing.plan)
 
     def test_writable_household_reference_requires_complete_single_source_binding(self) -> None:
         lookup = task(
@@ -156,7 +98,7 @@ class RoutePlanValidationTests(unittest.TestCase):
                 "population": "kr_general_households_1plus",
             },
         )
-        incomplete = validate_route_plan({"tasks": [
+        incomplete = validate_plan_structure({"tasks": [
             lookup,
             task(
                 "fill",
@@ -177,7 +119,7 @@ class RoutePlanValidationTests(unittest.TestCase):
             "comparator", "source_id", "source_version", "as_of",
             "calculation_policy_version",
         )
-        complete = validate_route_plan({"tasks": [
+        complete = validate_plan_structure({"tasks": [
             lookup,
             task(
                 "fill",
@@ -192,34 +134,6 @@ class RoutePlanValidationTests(unittest.TestCase):
         ]}, step_id="financial-goals")
         self.assertTrue(complete.valid, [issue.to_dict() for issue in complete.issues])
 
-    def test_retirement_gap_arguments_are_runtime_fixed(self) -> None:
-        raw_task = task(
-            "gap",
-            "lookup_retirement_gap",
-            "최신 보고서의 은퇴 부족액 조회",
-        )
-        validation = validate_route_plan(
-            {"tasks": [raw_task]},
-            step_id="basic-info",
-        )
-
-        self.assertTrue(validation.valid)
-        self.assertEqual(
-            validation.plan["tasks"][0]["arguments"],
-            {"metric_id": "retirement_gap"},
-        )
-
-        raw_task["arguments"] = {"metric_id": "invented_metric"}
-        rejected = validate_route_plan(
-            {"tasks": [raw_task]},
-            step_id="basic-info",
-        )
-        self.assertFalse(rejected.valid)
-        self.assertIn(
-            "PLANNER_FIXED_ARGUMENT_INJECTION",
-            {issue.code for issue in rejected.issues},
-        )
-
     def test_reference_lookup_requires_complete_typed_arguments(self) -> None:
         raw_task = task(
             "reference",
@@ -228,7 +142,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         )
         del raw_task["arguments"]["population"]
 
-        validation = validate_route_plan(
+        validation = validate_plan_structure(
             {"tasks": [raw_task]},
             step_id="basic-info",
         )
@@ -240,7 +154,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         )
 
     def test_dependency_and_binding_are_normalized_to_runtime_ids(self) -> None:
-        validation = validate_route_plan({
+        validation = validate_plan_structure({
             "tasks": [
                 task(
                     "lookup",
@@ -273,7 +187,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         self.assertEqual(fill["produces"], "form_change")
 
     def test_one_artifact_can_feed_two_explicit_consumers(self) -> None:
-        validation = validate_route_plan({
+        validation = validate_plan_structure({
             "tasks": [
                 task("lookup", "lookup_reference_value", "40대 평균 비용 조회"),
                 task(
@@ -311,7 +225,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         )
 
     def test_more_than_three_tasks_is_rejected(self) -> None:
-        validation = validate_route_plan({
+        validation = validate_plan_structure({
             "tasks": [
                 task(str(index), "answer_question", f"질문 {index}")
                 for index in range(4)
@@ -321,7 +235,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         self.assertEqual(validation.issues[0].code, "INVALID_TASK_COUNT")
 
     def test_forward_or_cyclic_dependency_is_rejected(self) -> None:
-        validation = validate_route_plan({
+        validation = validate_plan_structure({
             "tasks": [
                 task(
                     "first",
@@ -344,7 +258,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         )
 
     def test_binding_requires_declared_dependency_and_matching_path(self) -> None:
-        undeclared = validate_route_plan({
+        undeclared = validate_plan_structure({
             "tasks": [
                 task("lookup", "lookup_reference_value", "평균값 조회"),
                 task(
@@ -363,7 +277,7 @@ class RoutePlanValidationTests(unittest.TestCase):
             {issue.code for issue in undeclared.issues},
         )
 
-        wrong_path = validate_route_plan({
+        wrong_path = validate_plan_structure({
             "tasks": [
                 task("lookup", "lookup_reference_value", "평균값 조회"),
                 task(
@@ -387,7 +301,7 @@ class RoutePlanValidationTests(unittest.TestCase):
         injected = task("one", "answer_question", "질문")
         injected["agent"] = "input_assist"
         injected["produces"] = "form_change"
-        validation = validate_route_plan({"tasks": [injected]}, step_id="intro")
+        validation = validate_plan_structure({"tasks": [injected]}, step_id="intro")
         self.assertFalse(validation.valid)
         self.assertIn(
             "PLANNER_EXECUTOR_INJECTION",
@@ -396,6 +310,97 @@ class RoutePlanValidationTests(unittest.TestCase):
 
 
 class ContextAwarePlanningTests(unittest.TestCase):
+    @staticmethod
+    def _empty_window() -> ContextWindow:
+        return ContextWindow(
+            turns=(),
+            confirmed_facts={},
+            structured_state=StructuredConversationState(),
+            summary=None,
+            retrieved_memories=(),
+            input_units=0,
+        )
+
+    def test_validation_feedback_repairs_plan_once_through_single_entry(self) -> None:
+        class RepairingPlanner:
+            def __init__(self) -> None:
+                self.calls: list[dict] = []
+
+            def __call__(self, *, message: str, step_id: str, context: dict) -> dict:
+                self.calls.append(context.copy())
+                if len(self.calls) == 1:
+                    return {"status": "executable", "tasks": []}
+                return {
+                    "status": "executable",
+                    "tasks": [task("answer", "answer_question", message)],
+                }
+
+        planner = RepairingPlanner()
+        validation = create_route_plan(
+            message="안정추구의 뜻을 알려줘",
+            step_id="intro",
+            context_window=self._empty_window(),
+            planner=planner,
+            evaluator=lambda candidate: evaluate_route_plan(
+                candidate,
+                step_id="intro",
+            ),
+            allowed_task_types=allowed_task_types_for(step_id="intro"),
+        )
+
+        self.assertTrue(validation.valid)
+        self.assertEqual(validation.retries_used, 1)
+        self.assertEqual(len(planner.calls), 2)
+        self.assertEqual(
+            planner.calls[1]["validation_feedback"][0]["code"],
+            "INVALID_TASK_COUNT",
+        )
+
+    def test_planner_owns_ambiguous_intent_without_virtual_task(self) -> None:
+        planner = FakePlanner({"status": "ambiguous", "tasks": []})
+        validation = create_route_plan(
+            message="그거 좀 해줘",
+            step_id="intro",
+            context_window=self._empty_window(),
+            planner=planner,
+            evaluator=lambda candidate: evaluate_route_plan(
+                candidate,
+                step_id="intro",
+            ),
+            allowed_task_types=allowed_task_types_for(step_id="intro"),
+        )
+
+        self.assertTrue(validation.valid)
+        self.assertEqual(validation.plan["tasks"], [])
+        self.assertEqual(validation.plan["outcome_reason"], "ambiguous_intent")
+
+    def test_route_constraints_describe_the_deterministic_task_menu(self) -> None:
+        allowed_task_types = allowed_task_types_for(
+            step_id="basic-info",
+            registered_tool_capabilities=("lookup_reference_value",),
+        )
+
+        constraints = planner_route_constraints(
+            step_id="basic-info",
+            allowed_task_types=allowed_task_types,
+            registered_tool_capabilities=("lookup_reference_value",),
+        )
+
+        self.assertEqual(
+            constraints["allowed_task_types"],
+            sorted(allowed_task_types),
+        )
+        self.assertEqual(
+            constraints["available_tool_capabilities"],
+            ["lookup_reference_value"],
+        )
+        self.assertNotIn(
+            "lookup_reference_value",
+            constraints["task_type_guidance"],
+        )
+        self.assertTrue(constraints["reference_options"])
+        self.assertNotIn("elicit_enabled", constraints)
+
     def test_planner_receives_only_bounded_context_and_every_task_is_routed(self) -> None:
         planner = FakePlanner({
             "tasks": [
@@ -428,11 +433,16 @@ class ContextAwarePlanningTests(unittest.TestCase):
             step_id="financial-goals",
             context_window=window,
             planner=planner,
-            classifier=FakeClassifier(),
-            elicit_context_index={
-                "schema_version": "2.0",
-                "fields": [{"field": "future_goals", "status": "open"}],
-            },
+            evaluator=lambda candidate: evaluate_route_plan(
+                candidate,
+                step_id="financial-goals",
+                registered_tool_capabilities=("lookup_reference_value",),
+            ),
+            allowed_task_types=allowed_task_types_for(
+                step_id="financial-goals",
+                registered_tool_capabilities=("lookup_reference_value",),
+            ),
+            registered_tool_capabilities=("lookup_reference_value",),
         )
 
         self.assertTrue(validation.valid)
@@ -440,22 +450,20 @@ class ContextAwarePlanningTests(unittest.TestCase):
             planner.calls[0]["context"]["confirmed_facts"],
             {"profile.age_band": "40대"},
         )
-        self.assertEqual(
-            planner.calls[0]["context"]["elicit_context_index"]["fields"][0],
-            {"field": "future_goals", "status": "open"},
+        self.assertNotIn("elicit_context_index", planner.calls[0]["context"])
+        self.assertIn(
+            "lookup_reference_value",
+            planner.calls[0]["context"]["route_constraints"]["allowed_task_types"],
         )
         lookup, fill = validation.plan["tasks"]
-        self.assertEqual(lookup["route"]["reason_code"], "capability_unavailable")
+        self.assertEqual(lookup["route"]["reason_code"], "capability_match")
         self.assertEqual(fill["route"]["executor"], "input_assist")
         self.assertEqual(fill["route"]["reason_code"], "intent_match")
 
-    def test_explanation_questions_recover_to_single_qa_plan(self) -> None:
-        def unavailable_planner(**_kwargs: object) -> dict:
-            raise RuntimeError("simulated planner provider timeout")
-
-        def unavailable_classifier(**_kwargs: object) -> dict:
-            raise RuntimeError("simulated router provider timeout")
-
+    def test_plan_using_task_outside_current_step_menu_is_rejected(self) -> None:
+        planner = FakePlanner({
+            "tasks": [task("chart", "interpret_chart", "차트 설명")],
+        })
         window = ContextWindow(
             turns=(),
             confirmed_facts={},
@@ -464,32 +472,65 @@ class ContextAwarePlanningTests(unittest.TestCase):
             retrieved_memories=(),
             input_units=0,
         )
-        for message in (
-            "단기 지향이면 어느정도 기간을 말하지?",
-            "안정추구란 정확히 뭘 말하는거야?",
+
+        validation = create_route_plan(
+            message="이 차트를 설명해줘",
+            step_id="basic-info",
+            context_window=window,
+            planner=planner,
+            evaluator=lambda candidate: evaluate_route_plan(
+                candidate,
+                step_id="basic-info",
+            ),
+            allowed_task_types=allowed_task_types_for(step_id="basic-info"),
+        )
+
+        self.assertFalse(validation.valid)
+        self.assertEqual(
+            validation.issues[0].code,
+            "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
+        )
+
+    def test_planner_failures_do_not_bypass_planning_with_raw_questions(self) -> None:
+        with self.assertRaises(ValidationError) as invalid_schema:
+            PlannerModelOutput.model_validate({"requests": [{"type": "answer_question"}]})
+        window = ContextWindow(
+            turns=(),
+            confirmed_facts={},
+            structured_state=StructuredConversationState(),
+            summary=None,
+            retrieved_memories=(),
+            input_units=0,
+        )
+        for message, error in (
+            ("단기 지향이면 어느정도 기간을 말하지?", RuntimeError("simulated planner provider timeout")),
+            ("주거비를 바꾸고 안정추구의 뜻도 설명해줘", invalid_schema.exception),
         ):
             with self.subTest(message=message):
+                unavailable_planner = Mock(side_effect=error)
+                evaluator = Mock()
                 validation = create_route_plan(
                     message=message,
                     step_id="basic-info",
                     context_window=window,
                     planner=unavailable_planner,
-                    classifier=unavailable_classifier,
+                    evaluator=evaluator,
+                    allowed_task_types=allowed_task_types_for(
+                        step_id="basic-info",
+                    ),
                 )
 
-                self.assertTrue(validation.valid)
-                self.assertEqual(len(validation.plan["tasks"]), 1)
-                task_result = validation.plan["tasks"][0]
-                self.assertEqual(task_result["type"], "answer_question")
-                self.assertEqual(task_result["route"]["executor"], "qa")
-                self.assertEqual(
-                    task_result["route"]["reason_code"],
-                    "intent_match",
-                )
+                self.assertFalse(validation.valid)
+                self.assertEqual(validation.plan["tasks"], [])
+                self.assertEqual(validation.issues[0].code, "PLANNER_ERROR")
+                self.assertEqual(validation.retries_used, 1)
+                self.assertEqual(unavailable_planner.call_count, 2)
+                evaluator.assert_not_called()
                 self.assertEqual(
                     {item["component"] for item in validation.diagnostics},
-                    {"planner", "router_classifier"},
+                    {"planner"},
                 )
+                self.assertTrue(all("recovery" not in item for item in validation.diagnostics))
 
 
 if __name__ == "__main__":

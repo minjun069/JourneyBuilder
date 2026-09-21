@@ -107,10 +107,22 @@ class ReadinessTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "non-200 status"):
                 readiness.check_http("http://127.0.0.1:8001/api/system/v1/health", 2.0)
 
-    def test_postgres_probe_runs_select_one_with_rounded_timeout(self) -> None:
+    def test_postgres_probe_requires_both_populated_rag_indexes(self) -> None:
         cursor = MagicMock()
         cursor.__enter__.return_value = cursor
         cursor.fetchone.return_value = (1,)
+        cursor.fetchall.return_value = [
+            (
+                "financial-knowledge",
+                "financial-knowledge__official-catalog-2-1-0",
+                42,
+            ),
+            (
+                "interface-guides",
+                "interface-guides__official-catalog-2-1-0",
+                38,
+            ),
+        ]
         connection = MagicMock()
         connection.__enter__.return_value = connection
         connection.cursor.return_value = cursor
@@ -126,7 +138,40 @@ class ReadinessTests(unittest.TestCase):
             "postgresql://runtime:secret@postgres/db",
             connect_timeout=3,
         )
-        cursor.execute.assert_called_once_with("SELECT 1")
+        self.assertEqual(cursor.execute.call_args_list[0].args, ("SELECT 1",))
+        self.assertIn("rag_active_indexes", cursor.execute.call_args_list[1].args[0])
+        self.assertEqual(
+            cursor.execute.call_args_list[1].args[1],
+            (["financial-knowledge", "interface-guides"],),
+        )
+
+    def test_postgres_probe_rejects_missing_or_empty_rag_index(self) -> None:
+        for rows in (
+            [("financial-knowledge", "financial-index", 42)],
+            [
+                ("financial-knowledge", "financial-index", 42),
+                ("interface-guides", "interface-index", 0),
+            ],
+        ):
+            with self.subTest(rows=rows):
+                cursor = MagicMock()
+                cursor.__enter__.return_value = cursor
+                cursor.fetchone.return_value = (1,)
+                cursor.fetchall.return_value = rows
+                connection = MagicMock()
+                connection.__enter__.return_value = connection
+                connection.cursor.return_value = cursor
+                connect = Mock(return_value=connection)
+
+                with patch.dict(
+                    sys.modules,
+                    {"psycopg": SimpleNamespace(connect=connect)},
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "RAG index"):
+                        readiness.check_postgres(
+                            "postgresql://runtime:secret@postgres/db",
+                            2.0,
+                        )
 
     def test_main_redacts_dependency_error_details(self) -> None:
         secret = "do-not-print-this-secret"

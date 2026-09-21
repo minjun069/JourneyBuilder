@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from time import monotonic
 from typing import Any, Mapping
 
+from core.field_registry import load_field_registry
+
+from .authorization import (
+    task_tool_context_is_authorized,
+    validate_task_tool_authorizations,
+)
 from .contracts import (
     AuditSink,
     KnowledgeSearch,
@@ -68,12 +72,11 @@ class FunctionToolRuntime:
                 "검증된 task 실행 문맥이 없습니다.",
             )
         request_id = payload.get("request_id")
-        plan_id = payload.get("plan_id")
         task_id = task.get("id")
         step_id = payload.get("step_id")
         if not all(
             isinstance(value, str) and value.strip()
-            for value in (request_id, plan_id, task_id, step_id)
+            for value in (request_id, task_id, step_id)
         ):
             return _runtime_failure(
                 request.tool_name,
@@ -92,40 +95,12 @@ class FunctionToolRuntime:
         definition = self._registry.definition_for(request.tool_name)
         task_type = task.get("type")
         route = task.get("route")
-        from graph.planner import TASK_TYPE_CONTRACTS
-
-        task_contract = TASK_TYPE_CONTRACTS.get(str(task_type))
-        common_context_matches = (
-            isinstance(task_type, str)
-            and task_contract is not None
-            and task.get("step_id") == step_id
-            and task.get("executor_kind") == task_contract.get("executor_kind")
-            and task.get("produces") == task_contract.get("produces")
-            and isinstance(route, Mapping)
-            and route.get("executor_kind") == task_contract.get("executor_kind")
-            and definition is not None
-            and request.agent in definition.allowed_agents
-            and task_type in definition.allowed_task_types
-        )
-        if task_contract is not None and task_contract.get("executor_kind") == "tool":
-            route_context_matches = (
-                isinstance(route, Mapping)
-                and task.get("capability") == task_contract.get("capability")
-                and task.get("tool_name") == task_contract.get("tool_name")
-                and task.get("authorized_agent")
-                == task_contract.get("authorized_agent")
-                and request.tool_name == task_contract.get("tool_name")
-                and request.agent == task_contract.get("authorized_agent")
-                and route.get("executor") == task_contract.get("capability")
-            )
-        else:
-            route_context_matches = (
-                route.get("executor") == request.agent
-                if isinstance(route, Mapping)
-                else False
-            )
-        canonical_context_matches = (
-            common_context_matches and route_context_matches
+        canonical_context_matches = task_tool_context_is_authorized(
+            task=task,
+            step_id=step_id,
+            requested_tool=request.tool_name,
+            requested_agent=request.agent,
+            definition=definition,
         )
         if not canonical_context_matches:
             result = _runtime_failure(
@@ -137,7 +112,6 @@ class FunctionToolRuntime:
                 audit_sink,
                 request=request,
                 request_id=request_id,
-                plan_id=plan_id,
                 task_id=task_id,
                 step_id=step_id,
                 task_type=str(task_type or "unknown"),
@@ -166,7 +140,6 @@ class FunctionToolRuntime:
                 audit_sink,
                 request=request,
                 request_id=request_id,
-                plan_id=plan_id,
                 task_id=task_id,
                 step_id=step_id,
                 task_type=task_type,
@@ -177,24 +150,15 @@ class FunctionToolRuntime:
             )
             return result
 
-        snapshot = payload.get("tool_context")
-        if not isinstance(snapshot, Mapping):
-            snapshot = {}
         context = ToolExecutionContext(
             request_id=request_id,
-            plan_id=plan_id,
             task_id=task_id,
             step_id=step_id,
             agent=request.agent,
             task_type=task_type,
             call_source=TOOL_CALL_SOURCE,
-            field_registry=tuple(snapshot.get("field_specs", ())),
-            dashboard_metrics=dict(snapshot.get("dashboard_metrics", {})),
-            retirement_scenarios=dict(snapshot.get("retirement_scenarios", {})),
-            available_reports=tuple(snapshot.get("available_reports", ())),
-            section_completion=dict(snapshot.get("section_completion", {})),
+            field_registry=tuple(load_field_registry(step_id)),
             knowledge_search=self._knowledge_search,
-            deadline_at_monotonic=_deadline_at_monotonic(payload.get("deadline_at")),
             audit_sink=audit_sink,
         )
         return await self._registry.invoke(
@@ -208,6 +172,7 @@ def build_production_tool_runtime(
     *,
     registry: FunctionToolRegistry | None = None,
     knowledge_search: KnowledgeSearch | None = None,
+    task_contracts: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> FunctionToolRuntime:
     """Bind the approved operational retriever without importing it in tests."""
 
@@ -219,47 +184,8 @@ def build_production_tool_runtime(
         from rag.retriever import search_financial_knowledge
 
         knowledge_search = search_financial_knowledge
-    _validate_task_tool_authorizations(registry)
+    validate_task_tool_authorizations(registry, task_contracts)
     return FunctionToolRuntime(registry, knowledge_search=knowledge_search)
-
-
-def _validate_task_tool_authorizations(registry: FunctionToolRegistry) -> None:
-    """Fail startup when canonical task and tool allowlists drift apart."""
-
-    from graph.planner import TASK_TYPE_CONTRACTS
-
-    for task_type, contract in TASK_TYPE_CONTRACTS.items():
-        if contract.get("executor_kind") != "tool":
-            continue
-        tool_name = str(contract.get("tool_name", ""))
-        agent = str(contract.get("authorized_agent", ""))
-        definition = registry.definition_for(tool_name)
-        if definition is None:
-            raise ValueError(
-                f"tool task authorization references an unknown tool: {task_type}"
-            )
-        if (
-            agent not in definition.allowed_agents
-            or task_type not in definition.allowed_task_types
-        ):
-            raise ValueError(
-                f"tool task authorization is inconsistent: {task_type}"
-            )
-
-
-def _deadline_at_monotonic(value: Any) -> float | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        deadline = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return monotonic() - 1
-    if deadline.tzinfo is None:
-        return monotonic() - 1
-    remaining = (
-        deadline.astimezone(timezone.utc) - datetime.now(timezone.utc)
-    ).total_seconds()
-    return monotonic() + max(0.0, remaining)
 
 
 def _runtime_failure(
@@ -280,7 +206,6 @@ def _audit_runtime_decision(
     *,
     request: RuntimeToolRequest,
     request_id: str,
-    plan_id: str,
     task_id: str,
     step_id: str,
     task_type: str,
@@ -291,7 +216,6 @@ def _audit_runtime_decision(
 ) -> None:
     audit_sink(ToolAuditEvent(
         request_id=request_id,
-        plan_id=plan_id,
         task_id=task_id,
         step_id=step_id,
         task_type=task_type,

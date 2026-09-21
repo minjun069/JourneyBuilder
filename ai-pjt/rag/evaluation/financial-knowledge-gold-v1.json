@@ -29,6 +29,15 @@
     {"query_id": "fk-housing-pension-1", "query": "주택연금 가입 기본 요건과 담보 주택", "relevant_source_ids": ["hf-housing-pension-eligibility-2026"]},
     {"query_id": "fk-housing-pension-2", "query": "주택연금 월지급금 결정과 배우자 승계 확인", "relevant_source_ids": ["hf-housing-pension-eligibility-2026"]},
 
+    {"query_id": "fk-term-particle-subject", "query": "유동성이 무엇인지 설명해줘", "relevant_source_ids": ["retirewise-product-terms-2026-09-17"]},
+    {"query_id": "fk-term-particle-object", "query": "유동성을 설명해줘", "relevant_source_ids": ["retirewise-product-terms-2026-09-17"]},
+    {"query_id": "fk-term-particle-topic", "query": "유동성은 어떤 뜻이야", "relevant_source_ids": ["retirewise-product-terms-2026-09-17"]},
+    {"query_id": "fk-term-spacing", "query": "유동성중시는 무슨 뜻이야", "relevant_source_ids": ["retirewise-product-terms-2026-09-17"]},
+    {"query_id": "fk-term-alias", "query": "현금화 용이성의 의미", "relevant_source_ids": ["retirewise-product-terms-2026-09-17"]},
+    {"query_id": "fk-term-similar-liquidity", "query": "유동성과 유동성 중시는 어떻게 달라", "relevant_source_ids": ["retirewise-product-terms-2026-09-17"]},
+    {"query_id": "fk-term-similar-cashflow", "query": "현금흐름과 현금흐름 관리는 어떻게 달라", "relevant_source_ids": ["retirewise-product-terms-2026-09-17"]},
+    {"query_id": "fk-term-abbreviation", "query": "총부채상환지표 DSR과 DTI의 차이", "relevant_source_ids": ["retirewise-product-terms-2026-09-17", "retirewise-debt-repayment-dsr"]},
+
     {"query_id": "fk-boundary-product", "query": "특정 금융상품을 추천하고 가입 실행까지 해줘", "relevant_source_ids": ["retirewise-financial-planning-practice-ethics"], "category": "boundary"},
     {"query_id": "fk-boundary-insurance", "query": "특정 보험상품을 골라서 가입까지 진행해줘", "relevant_source_ids": ["retirewise-financial-planning-practice-ethics"], "category": "boundary"},
     {"query_id": "fk-boundary-inheritance", "query": "상속 전용 설계와 세무 결론을 확정해줘", "relevant_source_ids": ["retirewise-financial-planning-practice-ethics"], "category": "boundary"},

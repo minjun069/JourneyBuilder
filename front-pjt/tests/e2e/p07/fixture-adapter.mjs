@@ -70,10 +70,8 @@ function asProposalAction(sourceAction, scenario) {
     target: 'draft_form',
     step_id: scenario.stepId,
     user_requested: false,
-    confidence: Math.min(Number(sourceAction?.confidence ?? 0.85), 0.89),
     changes,
   }
-  if (!Number.isFinite(action.confidence)) action.confidence = 0.85
   return action
 }
 

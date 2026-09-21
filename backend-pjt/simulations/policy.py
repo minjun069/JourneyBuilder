@@ -104,7 +104,3 @@ def simulation_assumption_values() -> dict[str, Any]:
     직접 수정할 수 있다. 이 값은 모듈로 그대로 전달되는 계산 가정이라 공유하면 안 된다.
     """
     return dict(load_simulation_policy()["assumption_values"])
-
-
-def max_comparison_scenarios() -> int:
-    return int(load_simulation_policy()["max_comparison_scenarios"])

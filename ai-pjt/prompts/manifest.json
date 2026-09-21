@@ -1,0 +1,297 @@
+{
+  "release": "2026-09-21.1",
+  "prompts": [
+    {
+      "id": "aggregator.compose",
+      "version": "4.0.0",
+      "sha256": "8397d18073326c84b3f48f2e15e42b999b7aeac3fa07ee1d4d5f64d1596e9403",
+      "purpose": "aggregator",
+      "output_schema": "aggregator_model_output",
+      "owner": "ai-team",
+      "risk": "financial_explanation",
+      "input_sections": [
+        {
+          "key": "answer",
+          "label": "검증된 답변"
+        }
+      ]
+    },
+    {
+      "id": "chart_interpret.explain",
+      "version": "4.0.0",
+      "sha256": "a82d5f91d0615c065283955c2f6206909d8fff96a40ff1956f8d703700665e21",
+      "purpose": "chart_interpret",
+      "output_schema": null,
+      "owner": "ai-team",
+      "risk": "financial_explanation",
+      "input_sections": [
+        {
+          "key": "user_request",
+          "label": "사용자 요청"
+        },
+        {
+          "key": "response_mode",
+          "label": "설명 방식"
+        },
+        {
+          "key": "chart_facts",
+          "label": "설명할 차트 정보"
+        },
+        {
+          "key": "chart_guide",
+          "label": "관련 설명 자료"
+        }
+      ]
+    },
+    {
+      "id": "elicit.respond",
+      "version": "4.0.0",
+      "sha256": "eb5a3d10e153ee2c3dd75514d1c5409beb2d0a3ed044e3bdc83e86f1eb3a46b0",
+      "purpose": "elicit",
+      "output_schema": null,
+      "owner": "ai-team",
+      "risk": "standard",
+      "input_sections": [
+        {
+          "key": "conversation_context",
+          "label": "이전 대화 문맥"
+        },
+        {
+          "key": "user_message",
+          "label": "현재 사용자 메시지"
+        }
+      ]
+    },
+    {
+      "id": "error_review.analyze",
+      "version": "4.0.0",
+      "sha256": "be3b4984b39be74b36819bf5dd1ce50219a7eb1dbf91c72f4e2e5909aaa96df2",
+      "purpose": "error_review",
+      "output_schema": "review_result",
+      "owner": "ai-team",
+      "risk": "financial_review",
+      "input_sections": [
+        {
+          "key": "fields",
+          "label": "검토할 입력 항목"
+        },
+        {
+          "key": "review_rules",
+          "label": "검토 기준"
+        }
+      ]
+    },
+    {
+      "id": "input_assist.extract",
+      "version": "4.0.0",
+      "sha256": "63f61410c060b4c9b915bc9d31dd500eb962e220873b88adf7484b9e68e6b615",
+      "purpose": "input_assist",
+      "output_schema": "extract_result",
+      "owner": "ai-team",
+      "risk": "form_change",
+      "input_sections": [
+        {
+          "key": "message",
+          "label": "입력 요청"
+        },
+        {
+          "key": "fields",
+          "label": "입력 항목"
+        },
+        {
+          "key": "current_values",
+          "label": "현재 고정 항목 값"
+        },
+        {
+          "key": "items",
+          "label": "현재 반복 항목"
+        },
+        {
+          "key": "reference",
+          "label": "검증된 조회값"
+        }
+      ]
+    },
+    {
+      "id": "input_assist.respond",
+      "version": "4.0.0",
+      "sha256": "26f42122dd39c0d2246da529c7697f2cd2f312705c19bbfd32b5c5620b9a3980",
+      "purpose": "input_assist",
+      "output_schema": null,
+      "owner": "ai-team",
+      "risk": "form_change",
+      "input_sections": [
+        {
+          "key": "message",
+          "label": "입력 요청"
+        },
+        {
+          "key": "changes",
+          "label": "검증된 변경안"
+        },
+        {
+          "key": "questions",
+          "label": "확인이 필요한 내용"
+        }
+      ]
+    },
+    {
+      "id": "input_assist.review",
+      "version": "4.0.0",
+      "sha256": "6cb7670de941274005375b7b3546633380dde2c7ee5c96edcab87937fe99c93d",
+      "purpose": "input_assist",
+      "output_schema": "review_result",
+      "owner": "ai-team",
+      "risk": "form_change",
+      "input_sections": [
+        {
+          "key": "message",
+          "label": "입력 요청"
+        },
+        {
+          "key": "changes",
+          "label": "의미 확인이 필요한 변경안"
+        },
+        {
+          "key": "reference",
+          "label": "검증된 조회값"
+        }
+      ]
+    },
+    {
+      "id": "planner.plan",
+      "version": "4.0.0",
+      "sha256": "1d9bca4d8f2ee3252750766056b8e115404aff5658c2a18ddeb7a504a846125f",
+      "purpose": "planner",
+      "output_schema": "planner_model_output",
+      "owner": "ai-team",
+      "risk": "orchestration",
+      "input_sections": [
+        {
+          "key": "message",
+          "label": "사용자 요청"
+        },
+        {
+          "key": "step_id",
+          "label": "현재 화면"
+        },
+        {
+          "key": "tasks",
+          "label": "가능한 작업"
+        },
+        {
+          "key": "references",
+          "label": "조회 가능한 기준"
+        },
+        {
+          "key": "context",
+          "label": "관련 대화"
+        },
+        {
+          "key": "feedback",
+          "label": "다시 확인할 점"
+        }
+      ]
+    },
+    {
+      "id": "qa.answer",
+      "version": "4.0.0",
+      "sha256": "87f6894492ee83c46dabd350e6952303eb979b6ad160fade72786a5b316596a6",
+      "purpose": "qa",
+      "output_schema": null,
+      "owner": "ai-team",
+      "risk": "financial_explanation",
+      "input_sections": [
+        {
+          "key": "question",
+          "label": "사용자 질문"
+        },
+        {
+          "key": "customer_info",
+          "label": "관련 사용자 정보"
+        },
+        {
+          "key": "bindings",
+          "label": "확인된 결과"
+        },
+        {
+          "key": "evidence",
+          "label": "질문별 참고자료"
+        },
+        {
+          "key": "feedback",
+          "label": "보완할 점"
+        }
+      ]
+    },
+    {
+      "id": "qa.judge",
+      "version": "4.0.0",
+      "sha256": "4c107bf5e8cc3117dab6147b11e842f15ac7c296c77a1f14c37ac54b81c6efae",
+      "purpose": "qa",
+      "output_schema": "qa_judge_result",
+      "owner": "ai-team",
+      "risk": "standard",
+      "input_sections": [
+        {
+          "key": "question",
+          "label": "사용자 질문"
+        },
+        {
+          "key": "customer_info",
+          "label": "관련 사용자 정보"
+        },
+        {
+          "key": "bindings",
+          "label": "확인된 결과"
+        },
+        {
+          "key": "evidence",
+          "label": "질문별 참고자료"
+        },
+        {
+          "key": "answer",
+          "label": "작성된 답변"
+        }
+      ]
+    },
+    {
+      "id": "qa.plan",
+      "version": "4.0.0",
+      "sha256": "ae729c9852695770d73431df1ec3758e7e599f06939070f6870782486d13c8f1",
+      "purpose": "qa",
+      "output_schema": "qa_plan_result",
+      "owner": "ai-team",
+      "risk": "standard",
+      "input_sections": [
+        {
+          "key": "question",
+          "label": "사용자 질문"
+        },
+        {
+          "key": "step_id",
+          "label": "현재 화면"
+        },
+        {
+          "key": "feedback",
+          "label": "보완할 점"
+        }
+      ]
+    },
+    {
+      "id": "summary.extract",
+      "version": "4.0.0",
+      "sha256": "286a38172f62076ed9e97154b6587b1bb5230cc66dfa578dffe3f0870de1b98b",
+      "purpose": "summary",
+      "output_schema": "summary_candidate",
+      "owner": "ai-team",
+      "risk": "conversation_memory",
+      "input_sections": [
+        {
+          "key": "source",
+          "label": "대화 원문"
+        }
+      ]
+    }
+  ]
+}

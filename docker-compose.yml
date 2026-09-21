@@ -66,6 +66,20 @@ services:
     networks:
       - application
 
+  rag-bootstrap:
+    build:
+      context: .
+      dockerfile: ai-pjt/Dockerfile
+    command: ["python", "-m", "rag.bootstrap"]
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?DATABASE_URL is required}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - application
+
   backend:
     build:
       context: .
@@ -98,10 +112,13 @@ services:
     build:
       context: .
       dockerfile: ai-pjt/Dockerfile
+      args:
+        APP_RELEASE: "${APP_RELEASE:-local}"
     environment:
       LLM_PROVIDER: "${LLM_PROVIDER:-gemini}"
       EMBEDDING_PROVIDER: "gemini"
       LLM_MODEL: "${LLM_MODEL:-gemini-2.5-flash-lite}"
+      LLM_TEMPERATURE: "${LLM_TEMPERATURE:-0}"
       EMBEDDING_MODEL: "gemini-embedding-2"
       GOOGLE_API_KEY: "${GOOGLE_API_KEY:?GOOGLE_API_KEY is required}"
       GOOGLE_GEMINI_BASE_URL: "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
@@ -121,7 +138,7 @@ services:
       RAG_INTERFACE_COLLECTION: "interface-guides"
       RAG_TOP_K: "${RAG_TOP_K:-5}"
       RAG_FETCH_K: "${RAG_FETCH_K:-10}"
-      RAG_MIN_DENSE_SCORE: "${RAG_MIN_DENSE_SCORE:-0.30}"
+      RAG_MIN_DENSE_SCORE: "${RAG_MIN_DENSE_SCORE:-0.54}"
       RAG_INDEX_RETENTION_DAYS: "${RAG_INDEX_RETENTION_DAYS:-30}"
       EMBED_DIM: "3072"
       READINESS_HTTP_URL: http://127.0.0.1:8001/api/system/v1/health
@@ -131,12 +148,13 @@ services:
       LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY:-}"
       LANGFUSE_BASE_URL: "${LANGFUSE_BASE_URL:-}"
       LANGFUSE_TRACING_ENVIRONMENT: "${LANGFUSE_TRACING_ENVIRONMENT:-default}"
-      LANGFUSE_RELEASE: "${LANGFUSE_RELEASE:-}"
       LANGCHAIN_TRACING_V2: "false"
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      rag-bootstrap:
         condition: service_completed_successfully
     expose:
       - "8001"

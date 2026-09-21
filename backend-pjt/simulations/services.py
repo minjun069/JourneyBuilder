@@ -16,7 +16,6 @@ from django.db import transaction
 from reports.snapshots import build_calculation_input_snapshot, digest_snapshot
 
 from .adapter import build_simulation_input
-from .baseline import issue_baseline_key
 from .errors import SimulationError
 from .policy import (
     SimulationPolicyError,

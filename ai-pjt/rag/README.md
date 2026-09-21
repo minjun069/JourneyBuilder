@@ -26,8 +26,8 @@ workspace에 기록한다.
 
 ## 운영 후보 corpus
 
-운영 후보의 기계 단일 원천은 `rag/data/catalog.json`이다. 2026-09-07 기준으로
-인터페이스 가이드 10개와 금융 지식 문서 14개가 등재되어 있으며, catalog 최상위
+운영 후보의 기계 단일 원천은 `rag/data/catalog.json`이다. 2026-09-17 기준으로
+인터페이스 가이드 10개와 금융 지식 문서 15개가 등재되어 있으며, catalog 최상위
 `acceptance`에 필수·권장 지식의 도메인 승인과 서비스 경계를 기록했다.
 
 금융 지식은 은퇴진단에 필요한 재무상태·현금흐름, 내부 가계재무지표, 목표와
@@ -35,20 +35,26 @@ workspace에 기록한다.
 상담 윤리를 포함한다. 보험·교육·상속·투자상품 전용 설계와 상품 추천·실행은
 포함하지 않는다. 참고 PDF 원문과 사용자별 재무정보도 적재하지 않는다.
 
+`financial-knowledge/product-terms.md`는 제품 화면과 상담에서 노출하는 용어의 정의,
+별칭, 사용 맥락과 주의사항을 Markdown으로 소유한다. 각 용어 절은 별도 청크로 색인되며
+별도의 용어 JSON이나 QA 고정 답변을 사용하지 않는다. `안정 추구`·`균형 추구`·
+`위험 감수`·`단기 지향`·`장기 지향` 같은 정성 선택지도 기존 retriever와 모델
+경로로만 설명하며, 용어별 키워드 분기로 검색이나 모델 호출을 우회하지 않는다.
+
 운영 adapter는 catalog의 승인·출처·버전·적용 범위·라이선스·민감도와 파일
 SHA-256을 `DocumentMetadata`로 변환한다. 경로가 collection pattern을 벗어나거나
 파일이 없거나 SHA-256이 다르면 embedding 호출 전에 실패한다.
 
 ## 승인 corpus 재현 검사
 
-외부 API와 DB 없이 승인 corpus 24개와 gold query 58개를 검사한다.
+외부 API와 DB 없이 승인 corpus 25개와 gold query 66개를 검사한다.
 
 ```bash
 python3 -m rag.pipeline.cli run-catalog-dry-run \
   --workspace /tmp/retirewise-rag-catalog
 ```
 
-이 검사는 인터페이스 질문 20개와 금융 지식·경계·근거 없음 질문 38개를 분리해
+이 검사는 인터페이스 질문 20개와 금융 지식·제품 용어·경계·근거 없음 질문 46개를 분리해
 Recall@5 0.85 이상, MRR@5 0.70 이상, provenance 완전성 100%, collection 혼입 0건,
 근거 없음 질문의 false evidence 0건을 요구한다. deterministic embedding 결과는
 파이프라인 회귀검사용이며 운영 Gemini 품질을 대신하지 않는다.
@@ -94,7 +100,7 @@ physical collection(`interface-guides__experiment-...`)과 DB manifest에 기록
   --report-dir .local/reports \
   --artifact-kind experiment \
   --environment-id <개발자-id> \
-  --index-version catalog-2-1-0
+  --index-version catalog-2-2-0
 ```
 
 ### 공식 artifact 생성과 갱신
@@ -120,17 +126,23 @@ git status --short
 
 명령은 catalog에서 collection별 승인 문서를 읽고 Markdown chunk를 만든 다음 GMS
 Gemini embedding을 호출해 새 physical index에 upsert한다. 이어 20개 인터페이스
-질문과 38개 금융 질문을 각각 검색해 Recall@5, MRR@5, provenance, collection 혼입,
+질문과 46개 금융 질문을 각각 검색해 Recall@5, MRR@5, provenance, collection 혼입,
 false evidence를 계산한다. 두 결과는 PASS/FAIL과 관계없이 collection 보고서와 하나의
 `official__...__qualification.json`으로 확정된다. 두 collection이 모두 통과한 경우에만
 `activatable=true`가 되며 `--promote`는 두 active pointer를 한 transaction에서 함께
 바꾼다. 하나라도 실패하면 기존 pointer는 그대로다.
 
-운영 검색은 dense 후보와 BM25 후보를 reciprocal-rank fusion하며, dense cosine
-similarity가 `0.52` 미만인 후보는 제외한다. 이 경계는 GMS `gemini-embedding-2`로
-승인 58문항을 측정했을 때 무관 질문 최고 점수 `0.5117`과 정답 문서 최저 점수
-`0.5401` 사이에서 정했다. 실제 실행의 `top_k`, `fetch_k`, 경계값은 qualification의
-`retrieval`에 기록한다. 모델이나 corpus가 바뀌면 같은 방식으로 다시 검증해야 한다.
+운영 검색은 원문 query의 dense 후보와 한국어 조사를 정규화한 BM25 후보를 weighted
+reciprocal-rank fusion한다. BM25는 제목 4.0, 별칭 2.5, 본문 1.0의 필드 가중치를
+사용하고 용어명 완전 일치, 별칭 완전 일치 순으로 보너스를 준다. 완전 일치 후보는
+RRF에서도 한 번 더 우선하며 dense 후보도 최종 순위에 함께 반영한다.
+
+dense cosine similarity가 `0.54` 미만인 후보는 제외한다. catalog 2.1.0의 정답
+문서 최저 점수 `0.5401`은 보존하면서, catalog 2.2.0 용어 사전이 무관한 여행 질의에
+반응한 dense 최고 점수 `0.5329`를 차단하도록 GMS `gemini-embedding-2`로 다시 측정한
+경계다. 제목·별칭·본문 BM25 결과는 dense 경계와 독립적으로 RRF에 참여하므로
+용어 정확 일치는 유지한다. catalog 2.2.0은 이 경계로 66문항 공식 qualification을
+통과해 승격됐다.
 
 `.local/reports/official__<catalog-version>__qualification.json`에서 다음을 모두
 확인한다.
@@ -141,7 +153,7 @@ similarity가 `0.52` 미만인 후보는 제외한다. 이 경계는 GMS `gemini
 - Recall@5 0.85 이상, MRR@5 0.70 이상, provenance 1.0
 - collection leakage 0건, false evidence 0건
 - `embedding.model=gemini-embedding-2`, `dimensions=3072`
-- `retrieval.minimum_dense_score=0.52`
+- `retrieval.minimum_dense_score=0.54`
 
 하나라도 충족하지 않으면 export하지 않고 기존 active pointer를 유지한다. 전부
 충족하면 다음을 실행한다.
@@ -160,6 +172,24 @@ sha256sum artifacts/official__official-<catalog-version>.tar.gz
 첫 artifact가 20 MiB 이하이면 일반 Git으로 커밋한다. 누적 크기가 문제가 될 때만
 `artifacts/*.tar.gz`를 Git LFS로 전환한다.
 
+### catalog 2.2.0 공식 실행 결과
+
+- source revision `e1bfb4da08aef2ef09b5041e4f1e7582d28b51d4`, catalog SHA-256
+  `06f58788a6b8db622d72ad7af4035f32a9cf2b9c564e2f6bcca7f6aa858d3102`, 계산 정책
+  `2026-09-12.v1`/`972ffb38464183cad16f714cc200b962e7c8bf73d3151e0550bb3b7cb49fb7a7`를 고정했다.
+- `interface-guides__official-catalog-2-2-0`은 10문서·38 chunk, Recall@5 `1.000`,
+  MRR@5 `0.967`, provenance `1.000`, 혼입·false evidence 0건이다.
+- `financial-knowledge__official-catalog-2-2-0`은 15문서·230 chunk, Recall@5 `1.000`,
+  MRR@5 `0.911`, provenance `1.000`, 혼입·false evidence 0건이다. 5개 no-result 질의는
+  모두 빈 결과를 반환했다.
+- 전체 66문항은 `PASS`, `activatable=true`, `deployable=true`고, 두 active pointer를
+  한 transaction에서 2.2.0 physical index로 전환했다.
+- artifact는 `artifacts/official__official-catalog-2-2-0.tar.gz`, 4,429,692 bytes,
+  SHA-256 `3e6e5e20e3e490578ad06a435275c9e196655ff915fe4d98b309e87435792a56`다.
+- 독립 consumer의 최초 import는 pointer를 유지한 채 두 index를 삽입했고,
+  활성화·재실행은 두 index를 byte-equivalent로 재사용하면서 38·230 chunk와
+  active pointer를 일치시켰다.
+
 ## 논리 백업 artifact 승계
 
 artifact에는 qualified physical ID의 RAG 테이블 행, active snapshot, qualification과
@@ -173,11 +203,11 @@ artifact에 `--activate`를 준 경우에만 두 pointer를 함께 전환한다.
 ```bash
 DATABASE_URL='postgresql://...' PYTHONPATH=.. \
   python3 -m rag.artifacts import \
-  --artifact artifacts/official__official-catalog-2-1-0.tar.gz
+  --artifact artifacts/official__official-<catalog-version>.tar.gz
 
 DATABASE_URL='postgresql://...' PYTHONPATH=.. \
   python3 -m rag.artifacts import \
-  --artifact artifacts/official__official-catalog-2-1-0.tar.gz \
+  --artifact artifacts/official__official-<catalog-version>.tar.gz \
   --activate
 ```
 
@@ -201,7 +231,7 @@ DATABASE_URL='postgresql://...' PYTHONPATH=.. \
 의존하지 않는다.
 
 `IndexedRetriever.retrieve()`는 활성 logical collection을 해석한다. PostgreSQL의
-cosine dense 검색과 전체 활성 collection의 BM25 결과를 각각 최대 10개 가져와 RRF로
+cosine dense 검색과 전체 활성 collection의 필드 가중 BM25 결과를 각각 최대 10개 가져와 RRF로
 합치고 최종 5개를 반환한다. 결과에는 `source_id`, catalog 문서 ID, 제목, 발행기관,
 원문 위치, 문서 버전·기준일·SHA-256, chunk ID·offset, dense/sparse/fusion 점수가 있다.
 

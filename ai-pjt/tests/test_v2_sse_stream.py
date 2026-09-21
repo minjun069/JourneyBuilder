@@ -8,7 +8,9 @@ from unittest.mock import patch
 import httpx
 
 from main import app, _stream_v2_chat_events
-from tests.instrumentation import fake_callback_masker
+from core.model_boundary import ModelOutputBlockedError
+from core.runtime_instrumentation import RuntimeStage, RuntimeStatus
+from tests.instrumentation import fake_instrumentation, fake_terminal_masker
 from transport.contracts import ChatV2Request
 
 
@@ -45,7 +47,6 @@ def v2_request() -> ChatV2Request:
         message="은퇴 준비를 알려줘",
         deadline_at=datetime.now(timezone.utc) + timedelta(seconds=60),
         customer_info={"saved_data": {}, "current_form": {}},
-        field_registry=[],
         chart_payload=None,
     )
 
@@ -56,7 +57,6 @@ def error_review_request() -> ChatV2Request:
             **v2_request().model_dump(),
             "step_id": "basic-info",
             "request_mode": "error_review",
-            "review_trigger": "save",
             "message": "현재 입력값을 검토해 주세요.",
         }
     )
@@ -95,7 +95,10 @@ class FakeContextAPI:
         return self.terminal
 
     def state_channels(self, scope, context, retrieved_memories=()):
-        return {"context_scope": {"session_id": scope.session_id}}
+        return {
+            "conversation_context": context,
+            "retrieved_memories": list(retrieved_memories),
+        }
 
     def config_for(self, scope, request_id):
         return {"configurable": {"thread_id": scope.thread_id}}
@@ -104,12 +107,12 @@ class FakeContextAPI:
 class FakeV2Graph:
     async def astream_events(self, input_data, *, config, version):
         assert input_data["request_id"] == "ai_req_v2_stream"
-        assert "execution_budget" in input_data
+        assert "execution_budget" not in input_data
         assert config["configurable"]["thread_id"] == "user-3-session-12"
         assert version == "v2"
         yield {
             "event": "on_chat_model_stream",
-            "metadata": {"langgraph_node": "router"},
+            "metadata": {"langgraph_node": "planner"},
             "data": {"chunk": SimpleNamespace(content="내부 출력")},
         }
         yield {
@@ -143,6 +146,12 @@ class FailingV2Graph:
         raise RuntimeError("외부에 노출하면 안 되는 오류")
 
 
+class PolicyBlockedV2Graph:
+    async def astream_events(self, input_data, *, config, version):
+        raise ModelOutputBlockedError("민감정보가 포함된 모델 응답")
+        yield  # pragma: no cover - keep this an async generator
+
+
 class EmptyResponseV2Graph:
     async def astream_events(self, input_data, *, config, version):
         yield {
@@ -164,7 +173,7 @@ class EmptyResponseV2Graph:
 class FakeErrorReviewGraph:
     async def astream_events(self, input_data, *, config, version):
         assert input_data["request_mode"] == "error_review"
-        assert input_data["review_trigger"] == "save"
+        assert "review_trigger" not in input_data
         yield {
             "event": "on_chain_end",
             "parent_ids": [],
@@ -177,7 +186,6 @@ class FakeErrorReviewGraph:
                         "action": None,
                         "review": {
                             "type": "error_review",
-                            "trigger": "save",
                             "manual": {
                                 "document_id": "interface-basic-info",
                                 "version": "1.0.0",
@@ -191,7 +199,7 @@ class FakeErrorReviewGraph:
 
 
 class V2SSEStreamTests(IsolatedAsyncioTestCase):
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_stream_uses_v2_identity_and_terminal_done(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -199,7 +207,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FakeV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
             )
         ]
 
@@ -212,7 +220,35 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(frames[-1][1]["output"]["response"], "안녕하세요")
         self.assertIn("completed_at", frames[-1][1])
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
+    async def test_stream_emits_one_request_root_lifecycle_with_io(self, _callbacks):
+        instrumentation, sink = fake_instrumentation()
+
+        frames = [
+            parse_frame(frame)
+            async for frame in _stream_v2_chat_events(
+                FakeV2Graph(),
+                FakeContextAPI(),
+                v2_request(),
+                fake_terminal_masker(),
+                instrumentation=instrumentation,
+            )
+        ]
+
+        self.assertEqual([name for name, _ in frames], ["start", "done"])
+        request_events = [
+            event
+            for event in sink.runtime_events
+            if event.stage is RuntimeStage.REQUEST_PROCESSING
+        ]
+        self.assertEqual(
+            [event.status for event in request_events],
+            [RuntimeStatus.STARTED, RuntimeStatus.SUCCEEDED],
+        )
+        self.assertEqual(request_events[0].input["message"], "은퇴 준비를 알려줘")
+        self.assertEqual(request_events[1].output["response"], "안녕하세요")
+
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_failure_returns_safe_v2_terminal_error(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -220,7 +256,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FailingV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
             )
         ]
 
@@ -230,7 +266,25 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(terminal["error"]["code"], "INTERNAL_ERROR")
         self.assertNotIn("외부에 노출하면 안 되는 오류", str(frames))
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
+    async def test_policy_block_returns_policy_terminal_error(self, _callbacks):
+        frames = [
+            parse_frame(frame)
+            async for frame in _stream_v2_chat_events(
+                PolicyBlockedV2Graph(),
+                FakeContextAPI(),
+                v2_request(),
+                fake_terminal_masker(),
+            )
+        ]
+
+        self.assertEqual([name for name, _ in frames], ["start", "error"])
+        terminal = frames[-1][1]
+        self.assertEqual(terminal["status"], "failed")
+        self.assertEqual(terminal["error"]["code"], "POLICY_BLOCKED")
+        self.assertNotIn("민감정보가 포함된 모델 응답", str(frames))
+
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_empty_response_returns_error_instead_of_done(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -238,14 +292,14 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 EmptyResponseV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
             )
         ]
 
         self.assertEqual([name for name, _ in frames], ["start", "error"])
         self.assertNotIn("event: done", str(frames))
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_error_review_is_preserved_in_sse_done(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -253,21 +307,22 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 FakeErrorReviewGraph(),
                 FakeContextAPI(),
                 error_review_request(),
-                fake_callback_masker(),
+                fake_terminal_masker(),
             )
         ]
 
         self.assertEqual([name for name, _ in frames], ["start", "done"])
         review = frames[-1][1]["output"]["review"]
         self.assertEqual(review["type"], "error_review")
-        self.assertEqual(review["trigger"], "save")
+        self.assertNotIn("trigger", review)
 
 
 class V2SSEEndpointTests(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         app.state.chat_graph = FakeV2Graph()
         app.state.context_api = FakeContextAPI()
-        app.state.callback_masker = fake_callback_masker()
+        app.state.terminal_masker = fake_terminal_masker()
+        app.state.instrumentation = fake_instrumentation()[0]
 
     async def _post(self, payload, authorization=None, *, sign=True):
         if sign and isinstance(payload, dict) and payload:
@@ -296,7 +351,7 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["error"]["code"], "SERVICE_UNAUTHORIZED")
 
-    @patch("main.get_callbacks", return_value=[])
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_valid_request_returns_v2_event_stream(self, _callbacks):
         with patch("main.settings.ai_service_bearer_token", "test-token"):
             response = await self._post(

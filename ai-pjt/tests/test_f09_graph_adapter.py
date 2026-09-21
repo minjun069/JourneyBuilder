@@ -1,24 +1,15 @@
 from __future__ import annotations
 
-from copy import deepcopy
-import json
-from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from graph.builder import build_graph
 from tests.instrumentation import fake_instrumentation
-from tests.test_graph_execution import FakeClassifier, FakePlanner, all_agent_graphs
+from tests.test_graph_execution import FakePlanner, all_agent_graphs
 from tools.catalog import build_default_registry
 from tools.graph_adapter import build_graph_tool_executors
 from tools.runtime import FunctionToolRuntime
-
-
-TOOL_CONTEXT_FIXTURE = json.loads((
-    Path(__file__).resolve().parents[2]
-    / "contract-fixtures/ai-lifecycle/v2/tool-contexts.json"
-).read_text(encoding="utf-8"))["ready"]
 
 
 def _graph():
@@ -26,49 +17,12 @@ def _graph():
     return build_graph_tool_executors(runtime)
 
 
-def _state(message: str, tool_context: dict | None = None) -> dict:
-    value = {
+def _state(message: str) -> dict:
+    return {
         "request_id": "req-f09-adapter",
         "message": message,
         "step_id": "basic-info",
         "customer_info": {"saved_data": {}, "current_form": {}},
-        "field_registry": [],
-    }
-    if tool_context is not None:
-        value["tool_context"] = tool_context
-    return value
-
-
-def _dashboard_plan() -> dict:
-    fields = (
-        "metric_id",
-        "value",
-        "unit",
-        "report_id",
-        "report_version",
-        "calculation_policy_version",
-        "generated_at",
-    )
-    return {
-        "tasks": [
-            {
-                "id": "gap",
-                "type": "lookup_retirement_gap",
-                "description": "최신 검증 보고서의 은퇴 부족액 조회",
-                "depends_on": [],
-                "bindings": {},
-            },
-            {
-                "id": "explain",
-                "type": "answer_dashboard_metric",
-                "description": "조회된 은퇴 부족액과 보고서 provenance 설명",
-                "depends_on": ["gap"],
-                "bindings": {
-                    field: {"task_id": "gap", "path": field}
-                    for field in fields
-                },
-            },
-        ]
     }
 
 
@@ -111,90 +65,14 @@ def _reference_plan(*, period: str = "annual") -> dict:
 
 
 class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
-    async def test_retirement_gap_exact_metadata_reaches_dependent_binding(self):
-        agents = all_agent_graphs()
-        instrumentation, sink = fake_instrumentation()
-        graph = build_graph(
-            None,
-            instrumentation=instrumentation,
-            planner=FakePlanner(_dashboard_plan()),
-            classifier=FakeClassifier(),
-            agent_graphs=agents,
-            tool_executors=_graph(),
-        )
-
-        result = await graph.ainvoke(_state(
-            "은퇴 부족액과 계산 근거를 알려줘",
-            deepcopy(TOOL_CONTEXT_FIXTURE),
-        ))
-
-        artifact = result["task_results"]["task-1"]["artifact"]
-        self.assertEqual(artifact["type"], "dashboard_metric")
-        self.assertEqual(artifact["producer_task_id"], "task-1")
-        self.assertEqual(artifact["value"], 375_000_000)
-        self.assertEqual(artifact["unit"], "KRW")
-        self.assertEqual(artifact["report_id"], 42)
-        self.assertEqual(artifact["report_version"], 3)
-        self.assertEqual(artifact["calculation_policy_version"], "2026-09-12.v1")
-        self.assertEqual(artifact["generated_at"], "2026-09-09T02:30:00Z")
-        self.assertEqual(
-            agents["qa"].calls[0]["bound_inputs"],
-            {
-                "metric_id": "retirement_gap",
-                "value": 375_000_000,
-                "unit": "KRW",
-                "report_id": 42,
-                "report_version": 3,
-                "calculation_policy_version": "2026-09-12.v1",
-                "generated_at": "2026-09-09T02:30:00Z",
-            },
-        )
-        self.assertEqual(result["task_results"]["task-2"]["status"], "completed")
-        tool_events = [
-            event for event in sink.security_events
-            if event.boundary == "tool_authorization"
-        ]
-        self.assertEqual(len(tool_events), 1)
-        self.assertEqual(tool_events[0].decision.value, "allowed")
-        self.assertEqual(
-            tool_events[0].target_name,
-            "get_dashboard_metric",
-        )
-
-    async def test_backend_unavailable_metric_blocks_dependent_task(self):
-        context = deepcopy(TOOL_CONTEXT_FIXTURE)
-        context["dashboard_metrics"]["retirement_gap"] = {
-            "availability": "unavailable",
-            "reason": "report_stale",
-        }
-        agents = all_agent_graphs()
-        graph = build_graph(
-            None,
-            instrumentation=fake_instrumentation()[0],
-            planner=FakePlanner(_dashboard_plan()),
-            classifier=FakeClassifier(),
-            agent_graphs=agents,
-            tool_executors=_graph(),
-        )
-
-        result = await graph.ainvoke(_state("은퇴 부족액을 알려줘", context))
-
-        failed = result["task_results"]["task-1"]
-        self.assertEqual(failed["status"], "failed")
-        self.assertEqual(failed["reason_code"], "tool_dependency_unavailable")
-        self.assertEqual(failed["tool_error"]["details"][0]["reason"], "report_stale")
-        self.assertEqual(result["task_results"]["task-2"]["status"], "blocked")
-        self.assertEqual(result["task_results"]["task-2"]["blocked_by"], ["task-1"])
-        self.assertEqual(agents["qa"].calls, [])
-
     async def test_approved_reference_value_keeps_policy_provenance_in_binding(self):
         planner = FakePlanner(_reference_plan())
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
-            classifier=FakeClassifier(),
             agent_graphs=agents,
             tool_executors=_graph(),
         )
@@ -205,7 +83,7 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(artifact["value"], 25)
         self.assertEqual(artifact["source_version"], "1.1.0")
         self.assertEqual(artifact["calculation_policy_version"], "2026-09-12.v1")
-        bound = agents["qa"].calls[0]["bound_inputs"]
+        bound = agents["qa"].calls[0]["task_input"]["bindings"]
         self.assertEqual(bound["value"], 25)
         self.assertEqual(bound["unit"], "percent")
         self.assertEqual(bound["source_id"], "retirewise-household-financial-indicator-policy")
@@ -216,9 +94,9 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=FakePlanner(_reference_plan(period="monthly")),
-            classifier=FakeClassifier(),
             agent_graphs=agents,
             tool_executors=_graph(),
         )

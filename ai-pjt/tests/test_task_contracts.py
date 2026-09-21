@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from graph.task_contracts import (
+from graph.binding_policy import (
     BindingResolutionError,
-    blocked_task_result,
     resolve_task_bindings,
     seal_validated_artifact,
+)
+from graph.task_contracts import (
+    blocked_task_result,
     validate_task_result,
 )
 
@@ -149,11 +151,10 @@ class TaskResultContractTests(unittest.TestCase):
                 "type": "form_change",
                 "target": "draft_form",
                 "user_requested": True,
-                "confidence": 1.0,
                 "changes": [
                     {
-                        "section": "financial_goals",
-                        "path": "monthly_target_expense",
+                        "section": "basic_info",
+                        "path": "monthly_income",
                         "operation": "set",
                         "value": 2_500_000,
                         "unit": "KRW",
@@ -165,8 +166,7 @@ class TaskResultContractTests(unittest.TestCase):
         validation = validate_task_result(
             task=task,
             result=result,
-            step_id="financial-goals",
-            field_registry=[FIELD_SPEC],
+            step_id="basic-info",
         )
         self.assertTrue(
             validation.valid,

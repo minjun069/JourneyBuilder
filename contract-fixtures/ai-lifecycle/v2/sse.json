@@ -18,8 +18,7 @@
       "planner_routed_turn": "sse"
     },
     "error_review": {
-      "save": "sse",
-      "user_request": "sse"
+      "save": "sse"
     },
     "change_decision": {
       "owner": "frontend",
@@ -39,14 +38,13 @@
   "ai_request": {
     "contract_version": "2.0",
     "request_id": "ai_req_fixture",
-    "payload_digest": "7ed8946315106b44aa0b1279db4bfc8c816fe878ae8d0d9e1ca4bdabb74a8cd5",
+    "payload_digest": "fd72e4b31dda09f00554fe66219d8eefaf971dd08fe79d68438882c5531deee0",
     "session_id": 1,
     "thread_id": "user-3-session-1",
     "step_id": "basic-info",
     "message": "월급은 세후 300만 원이에요.",
     "deadline_at": "2026-09-08T00:01:00Z",
     "customer_info": {"saved_data": {}, "current_form": {}},
-    "field_registry": [],
     "chart_payload": null
   },
   "ai_events": [

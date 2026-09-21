@@ -8,10 +8,8 @@ import logging
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import patch
 
-import httpx
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from core.callback_masking import CallbackPayloadMasker
 from core.masking import MaskingSink
 from core.model_boundary import ModelPurpose, secure_ainvoke, secure_system_prompt
 from core.observability_masking import (
@@ -20,8 +18,9 @@ from core.observability_masking import (
     build_masked_runtime_instrumentation,
 )
 from core.runtime_instrumentation import RuntimeStage
+from core.terminal_masking import TerminalPayloadMasker
 from graph.executor import execute_route_plan
-from graph.planner import TASK_TYPE_CONTRACTS
+from graph.task_catalog import TASK_TYPE_CONTRACTS
 from main import _stream_v2_chat_events
 from tests.security.masking_contract import (
     MASKING_SENTINELS,
@@ -29,28 +28,10 @@ from tests.security.masking_contract import (
     assert_no_raw_sentinels,
 )
 from transport.contracts import ChatV2Request
-from transport.runtime import (
-    AsyncChatTransport,
-    CallbackClient,
-    InMemoryRequestCheckpointStore,
-    request_digest,
-)
 
 
 TEST_KEY = b"f11-t04-integrated-leakage-key-32bytes"
-STEP_ID = "financial-goals"
-FIELD_REGISTRY = [{
-    "step_id": STEP_ID,
-    "section": "financial_goals",
-    "path": "monthly_target_expense",
-    "value_type": "integer",
-    "unit": "KRW",
-    "constraints": {"min": 0, "period": "month"},
-    "cardinality": "single",
-    "writable_by_ai": True,
-    "nullable": False,
-    "operations": ["set", "update"],
-}]
+STEP_ID = "basic-info"
 
 TASK_AGENT = {
     "answer_question": "qa",
@@ -58,8 +39,6 @@ TASK_AGENT = {
     "review_validation_error": "error_review",
     "interpret_chart": "chart_interpret",
     "collect_qualitative_info": "elicit",
-    "fallback": "fallback",
-    "answer_dashboard_metric": "qa",
 }
 TASK_MODEL_PURPOSE = {
     "answer_question": ModelPurpose.QA,
@@ -67,7 +46,6 @@ TASK_MODEL_PURPOSE = {
     "review_validation_error": ModelPurpose.ERROR_REVIEW,
     "interpret_chart": ModelPurpose.CHART_INTERPRET,
     "collect_qualitative_info": ModelPurpose.ELICIT,
-    "answer_dashboard_metric": ModelPurpose.QA,
 }
 
 
@@ -109,8 +87,6 @@ def _task(task_type: str) -> dict:
             "period": "annual",
             "population": "retirewise_kr_households",
         }
-    if task_type == "lookup_retirement_gap":
-        task["arguments"] = {"metric_id": "retirement_gap"}
     return task
 
 
@@ -121,10 +97,9 @@ def _completed_result(task_type: str, task_id: str) -> dict:
             "type": "form_change",
             "target": "draft_form",
             "user_requested": False,
-            "confidence": 0.9,
             "changes": [{
-                "section": "financial_goals",
-                "path": "monthly_target_expense",
+                "section": "basic_info",
+                "path": "monthly_income",
                 "operation": "set",
                 "value": 3_000_000,
                 "unit": "KRW",
@@ -147,20 +122,6 @@ def _completed_result(task_type: str, task_id: str) -> dict:
             "source_version": "1.0.0",
             "as_of": "2026-09-11",
             "calculation_policy_version": "2026-09-07.v1",
-        }
-    elif artifact_type == "dashboard_metric":
-        artifact = {
-            "type": "dashboard_metric",
-            "schema_version": "1.0",
-            "producer_task_id": task_id,
-            "availability": "ready",
-            "metric_id": "retirement_gap",
-            "value": 248_600_000,
-            "unit": "KRW",
-            "report_id": 17,
-            "report_version": 3,
-            "calculation_policy_version": "2026-09-07.v1",
-            "generated_at": "2026-09-11T00:00:00Z",
         }
     else:
         artifact = {"type": "text_response", "text": "안전한 응답"}
@@ -190,7 +151,6 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
         expected_types = set(TASK_TYPE_CONTRACTS)
         self.assertEqual(set(TASK_AGENT) | {
             "lookup_reference_value",
-            "lookup_retirement_gap",
         }, expected_types)
 
         downstream = FakeSerializedInstrumentationSink()
@@ -229,13 +189,9 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             task = _task(task_type)
             executor_name = str(task["route"]["executor"])
             report = await execute_route_plan(
-                plan={
-                    "plan_id": f"plan-{task_type}",
-                    "tasks": [task],
-                },
+                plan={"tasks": [task]},
                 step_id=STEP_ID,
                 customer_info={"current_form": _sentinel_fields()},
-                field_registry=FIELD_REGISTRY,
                 agent_executors=(
                     {executor_name: agent_executor}
                     if task["executor_kind"] == "agent"
@@ -250,7 +206,6 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
                 instrumentation=adapter.bind(
                     request_id="P13-REQUEST-RAW-0001",
                     thread_id=f"thread-{task_type}",
-                    plan_id=f"plan-{task_type}",
                     step_id=STEP_ID,
                 ),
             )
@@ -268,6 +223,19 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             sort_keys=True,
         )
         assert_no_raw_sentinels(rendered_trace, ContractSink.TRACE_EXPORT)
+        model_events = [
+            payload
+            for payload in downstream.payloads
+            if payload.get("event_family") == "operation"
+            and payload.get("stage") == "model"
+        ]
+        self.assertEqual(len(model_events), len(TASK_MODEL_PURPOSE))
+        for event in model_events:
+            self.assertEqual(
+                [message["role"] for message in event["input"]],
+                ["system", "user"],
+            )
+            self.assertEqual(event["output"]["role"], "assistant")
         forbidden_event_fields = {
             "message",
             "customer_info",
@@ -288,7 +256,7 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
         self.assertEqual(
             observed_executors,
             set(TASK_AGENT.values())
-            | {"lookup_reference_value", "get_dashboard_metric"},
+            | {"lookup_reference_value"},
         )
 
     async def test_failed_and_blocked_tasks_export_only_masked_metadata(self):
@@ -303,7 +271,6 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             raise RuntimeError(_sentinel_text())
 
         plan = {
-            "plan_id": "plan-failure-sentinel",
             "tasks": [
                 {
                     **_task("answer_question"),
@@ -332,14 +299,12 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             plan=plan,
             step_id=STEP_ID,
             customer_info={"current_form": _sentinel_fields()},
-            field_registry=FIELD_REGISTRY,
             agent_executors={"qa": fail},
             tool_executors={},
             request_id="P13-REQUEST-RAW-0001",
             instrumentation=adapter.bind(
                 request_id="P13-REQUEST-RAW-0001",
                 thread_id="thread-failure",
-                plan_id="plan-failure-sentinel",
                 step_id=STEP_ID,
             ),
         )
@@ -378,7 +343,6 @@ class SerializedBoundaryTests(TestCase):
             observed = adapter.bind(
                 request_id="P13-REQUEST-RAW-0001",
                 thread_id="P13-THREAD-RAW-0001",
-                plan_id="P13-PLAN-RAW-0001",
                 step_id=STEP_ID,
             )
             span = observed.start(RuntimeStage.PLANNER)
@@ -408,7 +372,6 @@ class SerializedBoundaryTests(TestCase):
             observed = adapter.bind(
                 request_id="P13-REQUEST-RAW-0001",
                 thread_id="P13-THREAD-RAW-0001",
-                plan_id="P13-PLAN-RAW-0001",
                 step_id=STEP_ID,
             )
             span = observed.start(RuntimeStage.AGGREGATION)
@@ -423,164 +386,8 @@ class SerializedBoundaryTests(TestCase):
         assert_no_raw_sentinels(rendered, ContractSink.TRACE_EXPORT)
 
 
-class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
-    async def test_actual_callback_body_checkpoint_and_attempt_trace_are_safe(self):
-        downstream = FakeSerializedInstrumentationSink()
-        instrumentation, _sink = build_masked_runtime_instrumentation(
-            pseudonym_key=TEST_KEY,
-            downstream=downstream,
-            sink=MaskingSink.TRACE_EXPORT,
-        )
-        received: list[dict] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            received.append(json.loads(request.content))
-            return httpx.Response(200, request=request)
-
-        callback_client = CallbackClient(
-            url="http://backend.test/api/v2/internal/ai/callback/",
-            bearer_token="test-token",
-            instrumentation=instrumentation,
-            client_factory=lambda **kwargs: httpx.AsyncClient(
-                transport=httpx.MockTransport(handler),
-                **kwargs,
-            ),
-        )
-
-        async def processor(request: ChatV2Request, _budget) -> dict:
-            observed = instrumentation.bind(
-                request_id=request.request_id,
-                thread_id=request.thread_id,
-                plan_id=f"plan-{request.request_id}",
-                step_id=request.step_id,
-            )
-            span = observed.start(RuntimeStage.AGGREGATION)
-            observed.succeed(span)
-            return {
-                "response": (
-                    "p13-user@example.invalid와 010-0000-0000으로 안내했습니다."
-                ),
-                "step_id": request.step_id,
-                "action": {
-                    "type": "form_change",
-                    "target": "draft_form",
-                    "user_requested": False,
-                    "confidence": 0.9,
-                    "changes": [{
-                        "section": "financial_goals",
-                        "path": "monthly_target_expense",
-                        "operation": "set",
-                        "value": 3_000_000,
-                        "unit": "KRW",
-                        "reason": "검증된 금융 입력",
-                    }],
-                },
-            }
-
-        store = InMemoryRequestCheckpointStore()
-        request = _request("P13-REQUEST-RAW-0001")
-        transport = AsyncChatTransport(
-            checkpoint_store=store,
-            processor=processor,
-            callback_client=callback_client,
-            callback_masker=CallbackPayloadMasker(pseudonym_key=TEST_KEY),
-            instrumentation=instrumentation,
-        )
-        await store.claim(request, request_digest(request))
-
-        terminal = await transport.run(request)
-        checkpoint = await store.get(request.request_id)
-
-        self.assertEqual(received, [terminal])
-        self.assertEqual(checkpoint.terminal_payload, terminal)
-        self.assertEqual(terminal["request_id"], request.request_id)
-        self.assertEqual(
-            terminal["output"]["action"]["changes"][0]["value"],
-            3_000_000,
-        )
-        callback_rendered = json.dumps(received, ensure_ascii=False, sort_keys=True)
-        assert_no_raw_sentinels(callback_rendered, ContractSink.CALLBACK)
-
-        trace_ids = {payload["trace_id"] for payload in downstream.payloads}
-        self.assertEqual(len(trace_ids), 1)
-        trace_rendered = json.dumps(
-            downstream.payloads,
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        assert_no_raw_sentinels(trace_rendered, ContractSink.TRACE_EXPORT)
-        self.assertTrue(any(
-            payload.get("stage") == "callback"
-            for payload in downstream.payloads
-        ))
-
-    async def test_malicious_model_output_becomes_safe_policy_callback(self):
-        downstream = FakeSerializedInstrumentationSink()
-        instrumentation, _sink = build_masked_runtime_instrumentation(
-            pseudonym_key=TEST_KEY,
-            downstream=downstream,
-            sink=MaskingSink.TRACE_EXPORT,
-        )
-        received: list[dict] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            received.append(json.loads(request.content))
-            return httpx.Response(200, request=request)
-
-        callback_client = CallbackClient(
-            url="http://backend.test/api/v2/internal/ai/callback/",
-            bearer_token="test-token",
-            instrumentation=instrumentation,
-            client_factory=lambda **kwargs: httpx.AsyncClient(
-                transport=httpx.MockTransport(handler),
-                **kwargs,
-            ),
-        )
-
-        class MaliciousModel:
-            async def ainvoke(self, _messages) -> AIMessage:
-                return AIMessage(
-                    content="p13-user@example.invalid 010-0000-0000"
-                )
-
-        async def processor(_request: ChatV2Request, _budget) -> dict:
-            with patch("core.model_boundary._runtime_key", return_value=TEST_KEY):
-                await secure_ainvoke(
-                    MaliciousModel(),
-                    [
-                        SystemMessage(content=secure_system_prompt("테스트 역할")),
-                        HumanMessage(content="안전한 질문"),
-                    ],
-                    purpose=ModelPurpose.QA,
-                )
-            raise AssertionError("blocked model output must not continue")
-
-        store = InMemoryRequestCheckpointStore()
-        request = _request("policy-blocked-request")
-        transport = AsyncChatTransport(
-            checkpoint_store=store,
-            processor=processor,
-            callback_client=callback_client,
-            callback_masker=CallbackPayloadMasker(pseudonym_key=TEST_KEY),
-            instrumentation=instrumentation,
-        )
-        await store.claim(request, request_digest(request))
-
-        terminal = await transport.run(request)
-
-        self.assertEqual(terminal["status"], "failed")
-        self.assertEqual(terminal["error"]["code"], "POLICY_BLOCKED")
-        output_audits = [
-            payload for payload in downstream.payloads
-            if payload.get("boundary") == "output_guardrail"
-        ]
-        self.assertEqual(len(output_audits), 1)
-        self.assertEqual(output_audits[0]["decision"], "denied")
-        rendered = json.dumps(received, ensure_ascii=False, sort_keys=True)
-        self.assertNotIn("p13-user@example.invalid", rendered)
-        self.assertNotIn("010-0000-0000", rendered)
-
-    @patch("main.get_callbacks", return_value=[])
+class StreamLeakageTests(IsolatedAsyncioTestCase):
+    @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_sse_discards_unchecked_chunks_and_masks_terminal(self, _callbacks):
         class ContextAPI:
             terminal = None
@@ -615,8 +422,11 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                 self.terminal = terminal
                 return terminal
 
-            def state_channels(self, scope, _context, _retrieved_memories=()):
-                return {"context_scope": {"session_id": scope.session_id}}
+            def state_channels(self, _scope, context, retrieved_memories=()):
+                return {
+                    "conversation_context": context,
+                    "retrieved_memories": list(retrieved_memories),
+                }
 
             def config_for(self, scope, _request_id):
                 return {"configurable": {"thread_id": scope.thread_id}}
@@ -658,7 +468,7 @@ class CallbackAndStreamLeakageTests(IsolatedAsyncioTestCase):
                 Graph(),
                 ContextAPI(),
                 _request("sse-request-safe-root"),
-                CallbackPayloadMasker(pseudonym_key=TEST_KEY),
+                TerminalPayloadMasker(pseudonym_key=TEST_KEY),
             )
         ])
         self.assertNotIn("p13-user@example.invalid", rendered)
@@ -681,7 +491,6 @@ def _request(request_id: str) -> ChatV2Request:
             "saved_data": {},
             "current_form": _sentinel_fields(),
         },
-        "field_registry": FIELD_REGISTRY,
         "chart_payload": None,
     })
 

@@ -3,9 +3,10 @@
   "fixture_kind": "g1-artifact-consistency",
   "gate": "G1",
   "status_axis": "production_binding",
+  "retired_inputs": ["P05"],
   "pass_semantics": {
     "asserts": [
-      "D1/G0와 P01~P14 산출물이 같은 후보 SHA에 존재한다.",
+      "폐기되지 않은 D1/G0와 P01~P14 산출물이 같은 후보 SHA에 존재한다.",
       "산출물 사이의 기계 계약과 현재 소비 코드가 결정적 검사에서 일치한다.",
       "후속 구현용 foundation과 비제품 연구가 제품 완료로 잘못 표시되지 않는다."
     ],
@@ -62,24 +63,17 @@
       "checks": ["clean-start", "negative-readiness", "cleanup"]
     },
     {
-      "id": "P05",
-      "artifact_role": "test-foundation",
-      "production_status": "deferred",
-      "current_consumers": ["ai-pjt/tests/test_context.py"],
-      "next_activation": ["W1-L01"],
-      "checks": ["context-budget", "context-correction", "context-isolation"]
-    },
-    {
       "id": "P06",
-      "artifact_role": "evaluation-foundation",
-      "production_status": "deferred",
+      "artifact_role": "deterministic-routing-contract",
+      "production_status": "active",
       "current_consumers": [
-        "ai-pjt/tests/router_evaluation.py",
-        "ai-pjt/tests/test_router_evaluation.py",
-        "ai-pjt/graph/router.py"
+        "ai-pjt/tests/test_routing_policy.py",
+        "ai-pjt/guardrails/tests/test_plan_policy.py",
+        "ai-pjt/graph/task_catalog.py",
+        "ai-pjt/guardrails/plan_policy.py"
       ],
-      "next_activation": ["W1-L02", "M2-L02"],
-      "checks": ["step-contract", "router-evaluation-coverage"]
+      "next_activation": [],
+      "checks": ["step-contract", "deterministic-route-enrichment", "single-plan-validation-entry"]
     },
     {
       "id": "P07",

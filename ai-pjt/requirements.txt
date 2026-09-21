@@ -3,7 +3,7 @@
 
 # HTTP service
 # Preserve the framework line used by the current application while the v2
-# transport owner updates request and callback contracts.
+# transport owner updates request and SSE terminal contracts.
 fastapi>=0.115,<0.116
 httpx>=0.27,<1
 pydantic>=2.9,<3
@@ -16,7 +16,6 @@ langgraph-checkpoint-postgres>=0.0.1,<3
 psycopg[binary]>=3,<4
 
 # LLM providers
-langchain>=0.3,<1
 langchain-core>=0.3,<1
 langchain-google-genai>=2,<3
 langchain-openai>=0.2,<1
@@ -25,7 +24,6 @@ langchain-openai>=0.2,<1
 llama-index-core>=0.14,<1
 llama-index-embeddings-google-genai>=0.6,<1
 llama-index-retrievers-bm25>=0.8,<1
-llama-index-vector-stores-postgres>=0.8,<1
 
 # Optional masking-safe typed event export. Raw LangChain callbacks stay disabled.
 langfuse>=4,<5

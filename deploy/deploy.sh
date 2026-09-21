@@ -12,14 +12,17 @@
 # 흐름
 #   1. 사전 점검: env 파일, compose 병합(config). 병합이 깨지면 값이 빈 필수 변수를 이름으로 찍는다
 #   2. 롤백 대상 확인: 직전 성공 배포가 남긴 유지 태그(:last-good) 존재 여부
-#   3. build → up -d --remove-orphans   (migrate one-shot → backend 순서는 compose 가 보장)
+#   3. build → up -d --remove-orphans
+#      (migrate → backend, 공식 RAG artifact import·activate → AI 순서는 compose 가 보장)
 #      → gateway 재시작. gateway(nginx) 의 upstream 은 resolve 방식(10s 주기 재조회)이라 backend 재생성 뒤
 #        스스로 회복하지만, 배포 직후 헬스체크가 TTL 을 기다리지 않도록 up 뒤에 즉시 다시 해석시킨다.
-#   4. 헬스체크: web·backend 컨테이너 healthy + web HTTP 200 + API 경로가 5xx 가 아닌 응답
+#   4. 헬스체크: rag-bootstrap exit 0 + web·backend 컨테이너 healthy
+#      + web HTTP 200 + API 경로가 5xx 가 아닌 응답
 #      (API 프로브는 host→web→gateway→backend 전 구간을 검사한다. 인증 필요 경로라 401 이 정상 응답)
 #      ai-pjt 는 AI_REQUIRED=1 이면 healthy 까지 같은 루프에서 대기하고 판정에 포함한다(운영 기본).
 #      0 이면 상태만 로그에 남기고 판정에서 뺀다
-#   5. 실패 → :last-good 태그를 :latest 로 되돌려 up -d --no-build, exit 1 (파이프라인 failed)
+#   5. 실패 → 롤백 전에 비정상 AI 컨테이너의 상태·health 기록·최근 로그를 남긴 뒤
+#      :last-good 태그를 :latest 로 되돌려 up -d --no-build, exit 1 (파이프라인 failed)
 #      성공 → 지금 이미지에 :last-good 을 붙이고(다음 롤백 대상) last_good 기록, dangling 정리
 #
 # 하지 않는 것: 볼륨 삭제(-v), DB 스키마 롤백. 마이그레이션은 앞으로만 간다 — 되돌려야 하면 사람이 한다.
@@ -49,6 +52,15 @@ done
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
+
+# Langfuse release와 OCI revision은 런타임 env가 아니라 새 AI 이미지에 고정한다.
+# 롤백에서 --no-build로 과거 이미지를 다시 올리면 그 이미지가 빌드될 때의 SHA가 유지된다.
+APP_RELEASE="${CI_COMMIT_SHA:-$(git rev-parse HEAD)}"
+if [ -n "$(git status --porcelain)" ]; then
+  APP_RELEASE="${APP_RELEASE}-dirty"
+fi
+export APP_RELEASE
+
 # 프로젝트 이름을 고정한다. compose 기본값은 체크아웃 디렉터리 이름에서 오는데(러너: S15P21B109 → s15p21b109),
 # 롤백이 compose 가 build-only 서비스에 붙이는 이미지 이름(<프로젝트>-<서비스>)을 직접 다뤄야 해서 추측하지 않는다.
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-s15p21b109}"
@@ -84,8 +96,10 @@ refresh_gateway() { compose restart gateway >/dev/null 2>&1 && log "gateway 재�
 # HTTP 상태코드가 "서버가 응답했다"를 뜻하는지 — 5xx 와 000(연결 실패)만 실패로 본다
 responded() { case "$1" in 000|5??) return 1 ;; *) return 0 ;; esac; }
 
-# 빌드하는 서비스만 롤백 대상 (외부 이미지 postgres/redis/gateway 는 태그가 고정이라 제외)
-BUILT_SERVICES=(web backend ai-pjt migrate)
+# 빌드하는 서비스만 롤백 대상 (외부 이미지 postgres/redis/gateway 는 태그가 고정이라 제외).
+# rag-bootstrap도 AI 이미지와 같은 artifact를 소유하므로 함께 유지해야 이미지 롤백 때
+# 직전 공식 artifact가 재활성화되어 코드와 RAG pointer가 같은 세대로 돌아간다.
+BUILT_SERVICES=(web backend ai-pjt migrate rag-bootstrap)
 # 성공한 배포의 이미지에 붙여 두는 유지 태그. 롤백은 이 태그로만 되돌린다.
 # 태그가 붙어 있으면 dangling 이 아니라서 성공 배포 끝의 image prune 이 지우지 못한다 —
 # 태그 없이 이미지 ID 만 들고 있던 이전 방식은 #116(2026-09-10)에서 4개 서비스 전부
@@ -120,7 +134,9 @@ report_missing_env() {
 [ -r "$ENV_FILE" ] || { log "env 파일을 읽을 수 없습니다: $ENV_FILE"; exit 1; }
 compose config --quiet || { log "compose 병합 실패 (필수 env 누락?)"; report_missing_env; exit 1; }
 mkdir -p "$STATE_DIR"
-log "저장소 $(git rev-parse --short HEAD 2>/dev/null || echo '?') · env $ENV_FILE · build=$BUILD"
+release_log="$APP_RELEASE"
+[ "$BUILD" = 1 ] || release_log="기존 이미지 유지"
+log "저장소 $(git rev-parse --short HEAD 2>/dev/null || echo '?') · build release $release_log · env $ENV_FILE · build=$BUILD"
 
 # ── 2. 롤백 대상 확인: 직전 성공 배포가 남긴 유지 태그 ───────────────────
 # 기동 중인 컨테이너의 이미지 ID 를 들고 있는 방식은 쓰지 않는다. 그 이미지는 태그를 잃은 채 남아 있어야만
@@ -156,8 +172,13 @@ if [ "$BUILD" = 1 ]; then
   compose build --pull 2>&1 | grep -vE '^\s*$' | tail -3
 fi
 log "compose up"
-compose up -d --remove-orphans
-refresh_gateway
+startup_ok=1
+if ! compose up -d --remove-orphans; then
+  startup_ok=0
+  log "compose up 실패 — one-shot migration 또는 RAG bootstrap 상태를 확인합니다"
+else
+  refresh_gateway
+fi
 
 # ── 4. 헬스체크 ──────────────────────────────────────────────────────────
 health_of() {  # 컨테이너 Health.Status (healthcheck 없으면 running 여부)
@@ -166,25 +187,61 @@ health_of() {  # 컨테이너 Health.Status (healthcheck 없으면 running 여�
   docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid"
 }
 
+oneshot_status() {  # one-shot 컨테이너의 종료 상태와 exit code
+  local cid; cid="$(compose ps -aq "$1" 2>/dev/null | head -1 || true)"
+  [ -n "$cid" ] || { echo "missing"; return; }
+  docker inspect --format '{{.State.Status}}:{{.State.ExitCode}}' "$cid"
+}
+
+# 롤백하면 실패한 컨테이너가 새 이미지로 교체되어 원래 예외와 healthcheck 기록이 사라진다.
+# 환경변수·compose config 는 출력하지 않고, 컨테이너 런타임 상태와 Docker가 보존한 최근
+# healthcheck 결과, 애플리케이션 로그의 제한된 tail만 롤백 전에 남긴다.
+diagnose_service() {
+  local svc="$1" cid
+  cid="$(compose ps -q "$svc" 2>/dev/null | head -1 || true)"
+  log "$svc 컨테이너 진단 (롤백 전):"
+  if [ -z "$cid" ]; then
+    log "  container=missing"
+    return
+  fi
+
+  docker inspect --format \
+    '  state={{.State.Status}} running={{.State.Running}} restarting={{.State.Restarting}} restart_count={{.RestartCount}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{json .State.Error}}' \
+    "$cid" 2>&1 || true
+  log "$svc healthcheck 최근 기록:"
+  docker inspect --format \
+    '{{if .State.Health}}{{range .State.Health.Log}}{{printf "  start=%s end=%s exit=%d output=%q\n" .Start .End .ExitCode .Output}}{{end}}{{else}}  healthcheck=none{{println}}{{end}}' \
+    "$cid" 2>&1 || true
+  log "$svc 최근 로그 100줄:"
+  compose logs --no-log-prefix --tail 100 "$svc" 2>&1 || true
+}
+
 # ai-pjt 의 판정 참여 여부. AI_REQUIRED=1 이면 healthy 를 "대기 조건" 에 포함한다.
 # 루프 밖에서 한 번만 읽으면 web·backend 가 이미 healthy 인 배포에서 루프가 즉시 탈출해
 # ai 의 HEALTHCHECK start-period(20s)를 기다리지 못하고 정상 배포를 실패로 판정한다 (S15P21B109-132).
 ai_ok() { [ "$AI_REQUIRED" != 1 ] || [ "$1" = healthy ]; }
+rag_ok() { [ "$1" = "exited:0" ]; }
 
-gate="web·backend healthy + GET $HEALTH_URL 200 + GET $API_HEALTH_URL 이 5xx 아님"
+gate="rag-bootstrap exit 0 + web·backend healthy + GET $HEALTH_URL 200 + GET $API_HEALTH_URL 이 5xx 아님"
 if [ "$AI_REQUIRED" = 1 ]; then gate="$gate + ai-pjt healthy"; fi
 log "헬스체크 (최대 ${TIMEOUT}s): $gate"
 deadline=$(( $(date +%s) + TIMEOUT ))
 ok=0
-w=unknown; b=unknown; a=unknown; code=000; api=000   # TIMEOUT<=0 이면 루프가 한 번도 안 돌아 set -u 에서 unbound
-while [ "$(date +%s)" -lt "$deadline" ]; do
-  w="$(health_of web)"; b="$(health_of backend)"; a="$(health_of ai-pjt)"
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" 2>/dev/null)" || code="${code:-000}"
-  api="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$API_HEALTH_URL" 2>/dev/null)" || api="${api:-000}"
-  if [ "$w" = healthy ] && [ "$b" = healthy ] && [ "$code" = 200 ] && responded "$api" && ai_ok "$a"; then ok=1; break; fi
-  sleep 5
-done
-log "결과: web=$w backend=$b http=$code api=$api ai-pjt=$a"
+w="$(health_of web)"; b="$(health_of backend)"; a="$(health_of ai-pjt)"; r="$(oneshot_status rag-bootstrap)"
+code=000; api=000   # TIMEOUT<=0 이어도 set -u 안전
+if [ "$startup_ok" = 1 ]; then
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    w="$(health_of web)"; b="$(health_of backend)"; a="$(health_of ai-pjt)"; r="$(oneshot_status rag-bootstrap)"
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" 2>/dev/null)" || code="${code:-000}"
+    api="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$API_HEALTH_URL" 2>/dev/null)" || api="${api:-000}"
+    if rag_ok "$r" && [ "$w" = healthy ] && [ "$b" = healthy ] && [ "$code" = 200 ] && responded "$api" && ai_ok "$a"; then ok=1; break; fi
+    sleep 5
+  done
+fi
+log "결과: rag-bootstrap=$r web=$w backend=$b http=$code api=$api ai-pjt=$a"
+if ! rag_ok "$r"; then
+  log "실패: 공식 RAG artifact import·activate가 완료되지 않았습니다 ($r)"
+fi
 if [ "$a" != healthy ]; then
   if [ "$AI_REQUIRED" = 1 ]; then
     log "실패: ai-pjt 가 필수(AI_REQUIRED=1)인데 '$a' — GOOGLE_API_KEY 등 env 와 컨테이너 로그를 확인하세요"
@@ -215,6 +272,12 @@ if [ "$ok" = 1 ]; then
 fi
 
 log "배포 실패 — 롤백 시작"
+if ! rag_ok "$r"; then
+  diagnose_service rag-bootstrap
+fi
+if [ "$a" != healthy ]; then
+  diagnose_service ai-pjt
+fi
 log "backend 최근 로그 20줄:"; compose logs --no-log-prefix --tail 20 backend 2>/dev/null || true
 if [ "${#ROLLBACK_READY[@]}" -eq 0 ]; then
   log "롤백 대상 없음. 컨테이너는 그대로 두고 실패로 종료 — 운영에는 방금 배포한 이미지가 그대로 남는다"
@@ -228,10 +291,13 @@ for svc in "${ROLLBACK_READY[@]}"; do
     log "  경고: $svc 태그 복원 실패 — 이 서비스는 새 이미지로 남는다"
   fi
 done
-compose up -d --no-build --remove-orphans
-refresh_gateway
+if compose up -d --no-build --remove-orphans; then
+  refresh_gateway
+else
+  log "경고: 롤백 compose up 실패 — 서비스와 RAG bootstrap 로그를 확인하세요"
+fi
 sleep 10
 code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" 2>/dev/null)" || code="${code:-000}"
 api="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$API_HEALTH_URL" 2>/dev/null)" || api="${api:-000}"
-log "롤백 후 상태: web=$(health_of web) backend=$(health_of backend) ai-pjt=$(health_of ai-pjt) http=$code api=$api"
+log "롤백 후 상태: rag-bootstrap=$(oneshot_status rag-bootstrap) web=$(health_of web) backend=$(health_of backend) ai-pjt=$(health_of ai-pjt) http=$code api=$api"
 exit 1

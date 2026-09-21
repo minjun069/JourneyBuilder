@@ -22,6 +22,7 @@ from .ai_lifecycle import (
 )
 from .ai_security import recover_terminal_state
 from .ai_tokenization import ReferenceTokenVault
+from .chart_payload import PRESENTATION_CHART_STEP_IDS
 from .models import AIRequestExecution, ConsultingSession, Message
 from .v2_sse import proxy_v2_ai_stream, replay_v2_stream
 
@@ -67,16 +68,22 @@ class V2MessageStreamView(V2APIView):
             return error_response(
                 LifecycleError(404, 'SESSION_NOT_FOUND', '상담 세션을 찾을 수 없습니다.')
             )
-        if session.status in (
-            ConsultingSession.Status.COMPLETED,
-            ConsultingSession.Status.ABANDONED,
-        ):
+        if session.status == ConsultingSession.Status.ABANDONED:
             return error_response(
                 LifecycleError(409, 'SESSION_CLOSED', '종료된 상담입니다.')
             )
 
         try:
             body = validate_browser_message(request.data)
+            if (
+                session.status == ConsultingSession.Status.COMPLETED
+                and body['step_id'] not in PRESENTATION_CHART_STEP_IDS
+            ):
+                raise LifecycleError(
+                    409,
+                    'SESSION_CLOSED',
+                    '완료된 상담에서는 진단 결과 질문만 이어갈 수 있습니다.',
+                )
             key = require_idempotency_key(request)
             store = RedisLifecycleStore()
             digest = canonical_digest(body)
@@ -173,6 +180,14 @@ class V2MessageStreamView(V2APIView):
                     session=locked_session,
                     role=Message.Role.USER,
                     content=body['content'],
+                    extracted_data=(
+                        {
+                            'system_event': 'presentation_entry',
+                            'step_id': body['step_id'],
+                        }
+                        if body.get('request_mode') == 'presentation_entry'
+                        else None
+                    ),
                 )
                 request_id = new_request_id()
                 raw_ai_payload = build_v2_ai_payload(
@@ -183,7 +198,6 @@ class V2MessageStreamView(V2APIView):
                     step_id=body['step_id'],
                     form_data=body['form_data'],
                     request_mode=body.get('request_mode', 'chat'),
-                    review_trigger=body.get('review_trigger'),
                 )
                 token_vault = ReferenceTokenVault(
                     user_id=request.user.id,

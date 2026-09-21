@@ -418,36 +418,6 @@ class MessageSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class MessageCreateSerializer(serializers.Serializer):
-    step_id = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        max_length=100,
-    )
-    content = serializers.CharField(
-        min_length=1,
-        max_length=2000,
-        error_messages={
-            'blank':      '메시지 내용을 입력해주세요.',
-            'max_length': '메시지는 2000자 이하여야 합니다.',
-        }
-    )
-    form_data = serializers.JSONField(required=False)
-
-    def validate_content(self, value):
-        return value.strip()
-
-    def validate_step_id(self, value):
-        value = value.strip()
-        return value or 'general'
-
-    def validate_form_data(self, value):
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise serializers.ValidationError('form_data는 객체 형식이어야 합니다.')
-        return value
-
 
 class ConsultingSessionListSerializer(serializers.ModelSerializer):
     progress_pct = serializers.SerializerMethodField()

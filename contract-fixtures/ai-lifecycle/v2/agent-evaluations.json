@@ -1,31 +1,43 @@
 {
   "fixture_kind": "agent-evaluations",
   "contract_version": "2.0",
-  "tasks": ["F07-T04", "F08-T04"],
+  "tasks": [
+    "F07-T04",
+    "F08-T04"
+  ],
   "acceptance_policy": {
     "contract_fixture_exact_match_required": true,
     "production_model_quality": "baseline_only",
     "production_model_quality_thresholds": null,
+    "chart_agent_quality": "quality_gate",
+    "chart_agent_quality_thresholds": {
+      "normal_case_pass_rate": 1.0,
+      "all_case_pass_rate": 1.0,
+      "numeric_unit_period_exact_match_rate": 1.0,
+      "rag_scope_exact_match_rate": 1.0,
+      "maximum_unsupported_numeric_claims": 0,
+      "maximum_recalculation_claims": 0,
+      "maximum_unsupported_causal_claims": 0,
+      "maximum_sensitive_value_mentions": 0
+    },
     "error_review_false_positive_threshold": null,
     "maximum_total_model_calls": 200
   },
-  "error_review_confidence_cases": [
-    {"confidence": 0.0, "expected_level": "low", "expected_visible": false},
-    {"confidence": 0.59, "expected_level": "low", "expected_visible": false},
-    {"confidence": 0.6, "expected_level": "medium", "expected_visible": true},
-    {"confidence": 0.849, "expected_level": "medium", "expected_visible": true},
-    {"confidence": 0.85, "expected_level": "high", "expected_visible": true},
-    {"confidence": 1.0, "expected_level": "high", "expected_visible": true}
-  ],
-  "fallback_exact_messages": {
+  "failure_responder_exact_messages": {
     "ambiguous_intent": "요청의 뜻을 하나로 확정하기 어렵습니다. 궁금한 내용이나 바꾸려는 입력 항목을 한 가지씩 구체적으로 말씀해 주세요.",
     "unsupported_intent": "현재 상담은 재무정보 입력, 재무진단 결과 설명과 은퇴설계 질문을 지원합니다. 이 범위 안의 요청으로 바꾸어 말씀해 주세요.",
-    "plan_invalid": "요청을 안전한 실행 계획으로 만들지 못했습니다. 원하는 작업을 한 가지씩 나누어 다시 요청해 주세요.",
-    "all_tasks_failed": "실행한 작업에서 전달할 수 있는 검증된 결과를 만들지 못했습니다. 입력과 요청을 확인한 뒤 다시 시도해 주세요."
+    "plan_invalid": "요청을 안전한 실행 계획으로 확정하지 못했습니다. 요청을 한 가지씩 나누거나 필요한 대상을 더 구체적으로 적어 다시 시도해 주세요.",
+    "all_tasks_failed": "실행한 작업에서 전달할 수 있는 검증된 결과를 만들지 못했습니다. 위 실패 원인을 확인한 뒤 다시 시도해 주세요."
   },
   "required_shared_fixture_cases": {
-    "error-reviews.json": ["save_suspicious_income", "user_review_no_suspicion", "save_agent_failure"],
-    "chart-payloads.json": ["lifetime_cashflow_ready", "lifetime_cashflow_not_ready"],
-    "elicit-policy.json": ["field_order", "limits"]
+    "error-reviews.json": [
+      "save_suspicious_income",
+      "save_no_suspicion",
+      "save_agent_failure"
+    ],
+    "chart-payloads.json": [
+      "lifetime_cashflow_ready",
+      "lifetime_cashflow_guidance_only"
+    ]
   }
 }

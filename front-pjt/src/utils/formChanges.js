@@ -1,18 +1,8 @@
 import { createSecureUuid } from './secureUuid.js'
 
-export function errorReviewConfidenceLevel(confidence) {
-  if (typeof confidence !== 'number' || !Number.isFinite(confidence)) return null
-  if (confidence >= 0.85) return 'high'
-  if (confidence >= 0.60) return 'medium'
-  return 'low'
-}
-
 export function visibleErrorReviewItems(items) {
   if (!Array.isArray(items)) return []
-  return items.filter((item) => {
-    const level = errorReviewConfidenceLevel(item?.confidence)
-    return (level === 'medium' || level === 'high') && item?.confidence_level === level
-  })
+  return items.filter((item) => item && typeof item.reason === 'string' && item.reason.trim())
 }
 
 export function errorReviewItemChange(item) {

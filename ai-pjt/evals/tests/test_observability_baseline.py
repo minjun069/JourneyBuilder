@@ -140,7 +140,7 @@ def synthetic_events():
             OperationStage.TOOL,
             OperationStatus.TIMEOUT,
             300,
-            "get_dashboard_metric",
+            "get_form_field_spec",
             error_code="TOOL_TIMEOUT",
         ),
         operation_event(
@@ -163,21 +163,6 @@ def synthetic_events():
             output_tokens=0,
             cost_microusd=800,
             error_code="LLM_ERROR",
-        ),
-        operation_event(
-            1,
-            OperationStage.CALLBACK,
-            OperationStatus.SUCCEEDED,
-            100,
-            "django_callback",
-        ),
-        operation_event(
-            2,
-            OperationStage.CALLBACK,
-            OperationStatus.FAILED,
-            150,
-            "django_callback",
-            error_code="CALLBACK_ERROR",
         ),
         operation_event(
             1,
@@ -242,9 +227,8 @@ class ObservabilityBaselineTests(unittest.TestCase):
         self.assertEqual(baseline.proposal_outcomes["no_response"].value, 0.5)
         self.assertEqual(baseline.proposal_outcomes["modified"].value, 0.0)
 
-    def test_operational_latency_callback_and_validation(self):
+    def test_operational_latency_and_validation(self):
         baseline = build_observability_baseline(synthetic_events())
-        self.assertEqual(baseline.callback_completion_rate.value, 0.5)
         self.assertEqual(baseline.deterministic_validation_block_rate.value, 0.5)
         self.assertEqual(baseline.operation_stages["model"].input_tokens, 180)
         self.assertEqual(baseline.operation_stages["tool"].timeout, 1)

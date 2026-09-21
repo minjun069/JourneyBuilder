@@ -108,7 +108,6 @@ class ObservabilityBaseline:
     wrong_suggestion_rollback_rate: Rate
     manual_transition_rate: Rate
     proposal_outcomes: dict[str, Rate]
-    callback_completion_rate: Rate
     deterministic_validation_block_rate: Rate
     total_ai_cost_microusd: int
     ai_cost_per_valid_completion_microusd: float | None
@@ -321,7 +320,6 @@ def build_observability_baseline(
         stage.value: _operation_baseline(stage_events)
         for stage, stage_events in operations_by_stage.items()
     }
-    callback = operation_stages[OperationStage.CALLBACK.value]
     validation = operation_stages[OperationStage.OUTPUT_VALIDATION.value]
 
     proposal_counts = {outcome: 0 for outcome in ProposalOutcome}
@@ -431,7 +429,6 @@ def build_observability_baseline(
         ),
         manual_transition_rate=_rate(len(manual_transitions), len(starts)),
         proposal_outcomes=proposal_outcomes,
-        callback_completion_rate=_rate(callback.succeeded, callback.total),
         deterministic_validation_block_rate=_rate(validation.blocked, validation.total),
         total_ai_cost_microusd=total_ai_cost,
         ai_cost_per_valid_completion_microusd=cost_per_completion,

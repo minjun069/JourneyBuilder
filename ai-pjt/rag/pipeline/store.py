@@ -5,7 +5,6 @@ import math
 import os
 import tempfile
 from collections.abc import Callable
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 

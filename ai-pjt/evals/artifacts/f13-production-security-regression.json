@@ -508,8 +508,8 @@
       "passed": true,
       "expected_decision": "block",
       "actual_decision": "block",
-      "expected_reason_code": "AGENT_NOT_ALLOWLISTED",
-      "actual_reason_code": "AGENT_NOT_ALLOWLISTED",
+      "expected_reason_code": "ROUTE_EXECUTOR_MISMATCH",
+      "actual_reason_code": "ROUTE_EXECUTOR_MISMATCH",
       "effects": [
         "deny_plan_execution",
         "audit_security_event"
@@ -522,8 +522,8 @@
       "passed": true,
       "expected_decision": "block",
       "actual_decision": "block",
-      "expected_reason_code": "TOOL_NOT_ALLOWLISTED",
-      "actual_reason_code": "TOOL_NOT_ALLOWLISTED",
+      "expected_reason_code": "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
+      "actual_reason_code": "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
       "effects": [
         "deny_plan_execution",
         "audit_security_event"
@@ -536,8 +536,8 @@
       "passed": true,
       "expected_decision": "block",
       "actual_decision": "block",
-      "expected_reason_code": "TASK_TOOL_CAPABILITY_MISMATCH",
-      "actual_reason_code": "TASK_TOOL_CAPABILITY_MISMATCH",
+      "expected_reason_code": "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
+      "actual_reason_code": "TASK_TYPE_NOT_ALLOWED_FOR_STEP",
       "effects": [
         "deny_plan_execution",
         "audit_security_event"

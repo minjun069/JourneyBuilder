@@ -91,9 +91,7 @@ class ReferenceTokenVaultTests(SimpleTestCase):
         token_vault = vault()
         tokenized = token_vault.tokenize({
             'total_debt': 73_400_000,
-            'tool_context': {
-                'dashboard_metrics': {'retirement_gap': {'value': 12_000_000}},
-            },
+            'chart_payload': {'series': [{'value': 12_000_000}]},
         })
 
         self.assertEqual(
@@ -101,7 +99,7 @@ class ReferenceTokenVaultTests(SimpleTestCase):
             '[[FINANCIAL_VALUE_a1b2c3d4e5f6_1]]',
         )
         self.assertEqual(
-            tokenized['tool_context']['dashboard_metrics']['retirement_gap']['value'],
+            tokenized['chart_payload']['series'][0]['value'],
             12_000_000,
         )
         self.assertEqual(token_vault.restore(tokenized)['total_debt'], 73_400_000)

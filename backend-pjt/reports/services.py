@@ -31,6 +31,13 @@ PRESENTATION_REPORT_TYPES = (
 # 동기 보고서 생성 — 자산현황표, 현금흐름표
 def generate_sync_report(session, report_type):
     content = _build_report_content(report_type, session)
+    if not isinstance(content, dict):
+        raise ValueError('Report calculator must return an object')
+    # Every Presentation report carries the same freshness and policy binding.
+    # Chart payload validation therefore never has to trust a report type merely
+    # because its version number happens to be current.
+    content.setdefault('calculation_policy_version', active_policy_version())
+    content.setdefault('input_snapshot_digest', calculation_input_digest(session))
 
     return _create_new_version(
         session=session,

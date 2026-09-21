@@ -22,15 +22,16 @@ from core.observability_masking import (  # noqa: E402
     FakeSerializedInstrumentationSink,
     build_masked_runtime_instrumentation,
 )
-from graph.task_contracts import (  # noqa: E402
+from graph.binding_policy import (  # noqa: E402
     BindingResolutionError,
     resolve_task_bindings,
     seal_validated_artifact,
+)
+from graph.task_contracts import (  # noqa: E402
     validate_task_result,
 )
 from guardrails.boundary_policy import (  # noqa: E402
     BoundaryDecision,
-    evaluate_callback_payload,
     evaluate_financial_output,
     evaluate_rag_content,
     evaluate_resource_usage,
@@ -53,7 +54,6 @@ SUPPORTED_CATEGORIES = {
     "indirect_rag_injection",
     "tool_manipulation",
     "approval_bypass",
-    "callback_integrity",
     "resource_abuse",
     "financial_overclaim",
     "obfuscated_bypass",
@@ -73,7 +73,6 @@ SUPPORTED_SURFACES = {
     "rag_document",
     "tool_call",
     "form_change",
-    "callback",
     "runtime_limits",
     "model_output",
     "route_plan",
@@ -88,6 +87,14 @@ EVALUATOR_INPUT_KINDS = {
     "production_policy": "production_payload",
 }
 VERSION_KEYS = {"dataset", "model", "prompt", "document", "index", "tool"}
+PLANNER_TASK_FIELDS = {
+    "id",
+    "type",
+    "description",
+    "depends_on",
+    "bindings",
+    "arguments",
+}
 CASE_ID_PATTERN = re.compile(r"^SEC-[A-Z]+-\d{3}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHARED_DOC_SOURCE_PATTERN = re.compile(r"^shared-docs:[^#]+\.md#[^#]+$")
@@ -300,8 +307,6 @@ class ProductionSecurityEvaluator:
             return self._evaluate_tool(payload)
         if category == "approval_bypass":
             return self._evaluate_form_change(payload)
-        if category == "callback_integrity":
-            return _from_boundary(evaluate_callback_payload(payload))
         if category == "resource_abuse":
             return _from_boundary(evaluate_resource_usage(payload))
         if category == "financial_overclaim":
@@ -323,14 +328,46 @@ class ProductionSecurityEvaluator:
         case_input: dict[str, Any],
         payload: dict[str, Any],
     ) -> Decision:
+        planner_tasks: list[Any] = []
+        declared_routes: list[Any] = []
+        raw_tasks = payload.get("tasks")
+        if isinstance(raw_tasks, list):
+            for task in raw_tasks:
+                if not isinstance(task, dict):
+                    planner_tasks.append(copy.deepcopy(task))
+                    declared_routes.append(None)
+                    continue
+                planner_tasks.append({
+                    key: copy.deepcopy(value)
+                    for key, value in task.items()
+                    if key in PLANNER_TASK_FIELDS
+                })
+                declared_routes.append(copy.deepcopy(task.get("route")))
+
+        planner_plan: dict[str, Any] = {
+            "status": payload.get("status", "executable"),
+            "tasks": planner_tasks,
+        }
         result = evaluate_route_plan(
-            payload,
+            planner_plan,
             step_id=case_input["step_id"],
             step_candidates=self._step_candidates,
             registered_tool_capabilities=tuple(
                 case_input.get("registered_tool_capabilities", ())
             ),
         )
+        if result.allowed:
+            trusted_tasks = result.plan.get("tasks", [])
+            for index, declared in enumerate(declared_routes):
+                if not isinstance(declared, dict) or index >= len(trusted_tasks):
+                    continue
+                canonical = trusted_tasks[index].get("route")
+                if declared != canonical:
+                    return Decision(
+                        "block",
+                        "ROUTE_EXECUTOR_MISMATCH",
+                        ("deny_plan_execution", "audit_security_event"),
+                    )
         effects = (
             ("execute_validated_plan",)
             if result.allowed
@@ -474,7 +511,6 @@ class ProductionSecurityEvaluator:
         instrumentation.bind(
             request_id=event.request_id,
             thread_id="thread-observability",
-            plan_id=event.plan_id,
             step_id=event.step_id,
         ).record_tool_audit(event)
         rendered = json.dumps(downstream.payloads, ensure_ascii=False, sort_keys=True)

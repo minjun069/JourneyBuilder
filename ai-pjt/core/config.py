@@ -91,6 +91,12 @@ class Settings:
         self.llm_model = active_environ.get(
             "LLM_MODEL", "gemini-2.5-flash-lite"
         ).strip()
+        self.llm_temperature = _read_unit_float(
+            "LLM_TEMPERATURE", 0.0, active_environ
+        )
+        from prompts import PROMPT_RELEASE
+
+        self.prompt_release = PROMPT_RELEASE
         self.embedding_model = active_environ.get(
             "EMBEDDING_MODEL", "gemini-embedding-2"
         ).strip()
@@ -146,7 +152,7 @@ class Settings:
         if self.rag_fetch_k < self.rag_top_k:
             raise RuntimeConfigurationError("RAG_FETCH_K must be at least RAG_TOP_K")
         self.rag_min_dense_score = _read_unit_float(
-            "RAG_MIN_DENSE_SCORE", 0.30, active_environ
+            "RAG_MIN_DENSE_SCORE", 0.54, active_environ
         )
         self.rag_index_retention_days = _read_positive_int(
             "RAG_INDEX_RETENTION_DAYS", 30, active_environ
@@ -180,6 +186,9 @@ class Settings:
         self.langfuse_base_url = active_environ.get(
             "LANGFUSE_BASE_URL", ""
         ).strip()
+        self.langfuse_release = (
+            active_environ.get("LANGFUSE_RELEASE", "local").strip() or "local"
+        )
 
     @staticmethod
     def _require_runtime_value(name: str, value: str) -> None:

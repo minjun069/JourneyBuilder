@@ -1,7 +1,7 @@
 PYTHON ?= python3
 NODE_IMAGE ?= node:22-bookworm
 
-.PHONY: g1-check g1-foundation g1-python g1-ai g1-backend g1-rag g1-tools g1-observability g1-security g1-node g1-runtime env-contract-check make-env-test f14-config-snapshot-test f14-regression
+.PHONY: g1-check g1-foundation g1-python g1-ai g1-backend g1-rag g1-tools g1-observability g1-security g1-node g1-runtime env-contract-check make-env-test deploy-diagnostics-test f14-config-snapshot-test f14-regression
 
 g1-check: g1-foundation g1-python g1-node
 
@@ -12,6 +12,7 @@ g1-python: g1-ai g1-backend g1-rag g1-tools g1-observability g1-security
 
 g1-ai:
 	$(PYTHON) -m unittest discover -s ai-pjt/tests -v
+	cd ai-pjt && $(PYTHON) -m unittest discover -s guardrails/tests -v
 
 g1-backend:
 	$(PYTHON) -m unittest discover -s backend-pjt/packages/retirement_simulation/tests -t backend-pjt/packages -q
@@ -40,9 +41,13 @@ g1-runtime:
 env-contract-check:
 	$(PYTHON) deploy/check_env_contract.py
 	$(PYTHON) -m unittest discover -s deploy/tests -p 'test_env_contract.py' -v
+	bash deploy/tests/test_deploy_ai_diagnostics.sh
 
 make-env-test:
 	bash deploy/tests/test_make_env.sh
+
+deploy-diagnostics-test:
+	bash deploy/tests/test_deploy_ai_diagnostics.sh
 
 f14-config-snapshot-test:
 	bash deploy/tests/test_f14_config_snapshot.sh

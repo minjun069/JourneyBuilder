@@ -26,12 +26,13 @@ AI와 MCP·Function Calling 도구는 Django 업무 테이블에 직접 쓰지 �
 - `action_id`는 한 assistant message의 form change 묶음을 식별한다.
 - `change_id`는 action 안의 한 change와 그 Frontend control을 식별한다.
 - request, thread, session, user 소유권이 일치해야 SSE terminal을 처리한다.
+- AI 대화 기억은 같은 scope의 사용자 발화·AI 응답·기존 요약과 근거 인용을 보존한다. upstream 마스킹 이후 금융값·숫자·토큰·AI 출처를 추가 제외하지 않으며 현재 금융 상태는 Backend snapshot을 우선한다.
 
 ### Canonical 필드 레지스트리
 
 Django model·serializer의 snake_case 필드명을 저장·AI 계약의 canonical 이름으로 사용한다. Frontend의 camelCase·표시 단위는 adapter가 변환한다.
 
-전체 필드의 기계 단일 원천은 저장소의 `backend-pjt/consulting/field_registry.py`에 있는 `FIELDS`다. AI 요청에는 현재 `step_id`의 필드만 전달한다. RAG 문서의 과거 field name은 쓰기 계약으로 사용하지 않는다.
+전체 필드의 기계 단일 원천은 저장소의 `backend-pjt/consulting/field_registry.py`에 있는 `FIELDS`다. AI는 공유 canonical 계약에서 현재 `step_id`의 필드를 로컬로 읽고 요청마다 레지스트리를 받지 않는다. RAG 문서의 과거 field name은 쓰기 계약으로 사용하지 않는다.
 
 필드 레지스트리는 최소 다음을 정의한다.
 
@@ -103,7 +104,6 @@ Django가 AI SSE terminal을 검증하고 정규화한 draft 변경은 다음 �
   "mode": "proposal",
   "status": "pending",
   "user_requested": false,
-  "confidence": 0.85,
   "changes": [
     {
       "change_id": "chg_income",
@@ -150,7 +150,7 @@ AI terminal에는 `action_id`, `change_id`, `mode`, 결정 상태가 없다. Dja
 
 ### proposal과 사용자 결정
 
-AI가 생성한 form action은 사용자가 변경을 요청했는지, confidence가 얼마인지와 무관하게 모두 `proposal`이다. `user_requested`와 confidence는 설명 메타데이터이며 사용자 승인으로 간주하지 않는다. 사용자가 Frontend control에서 승인하기 전에는 draft를 바꾸지 않는다.
+AI가 생성한 form action은 모두 `proposal`이다. `user_requested`는 사용자 승인으로 간주하지 않으며 confidence 필드는 계약에 없다. 사용자가 Frontend control에서 승인하기 전에는 draft를 바꾸지 않는다. Error Review도 confidence·confidence_level 없이 현재값·이유·선택 수정값을 반환한다.
 
 각 change의 `pending → approved | rejected`와 action의 `pending | partially_resolved | resolved` 전이는 Frontend 메모리에서만 일어난다. 승인·거절 endpoint, 결정용 멱등성 처리, 서버 상태·감사 이력은 없다.
 

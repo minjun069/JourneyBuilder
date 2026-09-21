@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import date, datetime
-import json
+from datetime import date
 from math import isfinite
 from collections.abc import Mapping
 from typing import Any
 
-from tools.output_validation import validate_form_update_contract
+from tools.output_policy import validate_form_update_contract
 
 
 TASK_STATUSES = {"completed", "failed", "blocked"}
@@ -19,7 +18,6 @@ ARTIFACT_TYPES = {
     "text_response",
     "form_change",
     "reference_value",
-    "dashboard_metric",
 }
 REFERENCE_VALUE_FIELDS = {
     "type",
@@ -37,51 +35,6 @@ REFERENCE_VALUE_FIELDS = {
     "as_of",
     "calculation_policy_version",
 }
-DASHBOARD_METRIC_FIELDS = {
-    "type",
-    "schema_version",
-    "producer_task_id",
-    "availability",
-    "metric_id",
-    "value",
-    "unit",
-    "report_id",
-    "report_version",
-    "calculation_policy_version",
-    "generated_at",
-}
-BINDABLE_ARTIFACT_PATHS = {
-    "reference_value": frozenset(
-        {
-            "reference_id",
-            "age",
-            "value",
-            "unit",
-            "period",
-            "population",
-            "comparator",
-            "source_id",
-            "source_version",
-            "as_of",
-            "calculation_policy_version",
-        }
-    ),
-    "dashboard_metric": frozenset(
-        {
-            "metric_id",
-            "value",
-            "unit",
-            "report_id",
-            "report_version",
-            "calculation_policy_version",
-            "generated_at",
-        }
-    ),
-    "text_response": frozenset({"text"}),
-    "form_change": frozenset(),
-}
-
-
 @dataclass(frozen=True)
 class TaskValidationIssue:
     code: str
@@ -97,22 +50,6 @@ class TaskResultValidation:
     valid: bool
     result: dict[str, Any]
     issues: tuple[TaskValidationIssue, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class SealedArtifact:
-    """Internal post-validation snapshot used to detect later mutation."""
-
-    task_id: str
-    canonical_payload: str
-
-
-class BindingResolutionError(ValueError):
-    """Raised when a downstream task cannot safely consume an artifact."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 def failed_task_result(
@@ -217,142 +154,6 @@ def validate_task_result(
     return TaskResultValidation(valid=True, result=candidate, issues=())
 
 
-def seal_validated_artifact(validation: TaskResultValidation) -> SealedArtifact:
-    """Seal only a successfully validated, completed artifact."""
-
-    result = validation.result
-    task_id = result.get("task_id")
-    artifact = result.get("artifact")
-    if (
-        not validation.valid
-        or result.get("status") != "completed"
-        or not isinstance(task_id, str)
-        or not isinstance(artifact, Mapping)
-    ):
-        raise ValueError("only a validated completed artifact can be sealed")
-    return SealedArtifact(
-        task_id=task_id,
-        canonical_payload=_canonical_artifact_payload(artifact),
-    )
-
-
-def resolve_task_bindings(
-    *,
-    task: Mapping[str, Any],
-    task_results: Mapping[str, Mapping[str, Any]],
-    expectations: Mapping[str, Mapping[str, Any]],
-    artifact_seals: Mapping[str, SealedArtifact],
-) -> dict[str, Any]:
-    """Resolve only schema-declared fields from completed dependency artifacts."""
-
-    bindings = task.get("bindings", {})
-    if not isinstance(bindings, Mapping):
-        raise BindingResolutionError("INVALID_BINDINGS", "bindings는 object여야 합니다.")
-    dependencies = task.get("depends_on", [])
-    if not isinstance(dependencies, list):
-        raise BindingResolutionError(
-            "INVALID_DEPENDENCIES", "depends_on은 array여야 합니다."
-        )
-
-    resolved: dict[str, Any] = {}
-    for input_name, binding in bindings.items():
-        expectation = expectations.get(input_name)
-        if expectation is None:
-            raise BindingResolutionError(
-                "UNKNOWN_BINDING_INPUT",
-                f"허용되지 않은 binding 입력입니다: {input_name}",
-            )
-        if not isinstance(binding, Mapping):
-            raise BindingResolutionError(
-                "INVALID_BINDING", f"binding은 object여야 합니다: {input_name}"
-            )
-        source_id = binding.get("task_id")
-        path = binding.get("path")
-        if source_id not in dependencies:
-            raise BindingResolutionError(
-                "UNDECLARED_DEPENDENCY",
-                f"binding source가 depends_on에 없습니다: {source_id}",
-            )
-        source_result = task_results.get(str(source_id))
-        if source_result is None or source_result.get("status") != "completed":
-            raise BindingResolutionError(
-                "DEPENDENCY_FAILED",
-                f"완료되지 않은 dependency를 참조했습니다: {source_id}",
-            )
-        artifact = source_result.get("artifact")
-        if not isinstance(artifact, Mapping):
-            raise BindingResolutionError(
-                "DEPENDENCY_ARTIFACT_MISSING",
-                f"dependency artifact가 없습니다: {source_id}",
-            )
-        seal = artifact_seals.get(str(source_id))
-        if seal is None or seal.task_id != source_id:
-            raise BindingResolutionError(
-                "ARTIFACT_INTEGRITY_MISSING",
-                f"검증 후 봉인된 dependency artifact가 없습니다: {source_id}",
-            )
-        if _canonical_artifact_payload(artifact) != seal.canonical_payload:
-            raise BindingResolutionError(
-                "ARTIFACT_INTEGRITY_MISMATCH",
-                f"검증 뒤 dependency artifact가 변경되었습니다: {source_id}",
-            )
-        artifact_type = artifact.get("type")
-        if artifact_type != expectation.get("artifact_type"):
-            raise BindingResolutionError(
-                "ARTIFACT_TYPE_MISMATCH",
-                f"binding artifact type이 맞지 않습니다: {input_name}",
-            )
-        allowed_paths = BINDABLE_ARTIFACT_PATHS.get(str(artifact_type), frozenset())
-        if path not in allowed_paths or path != expectation.get("path"):
-            raise BindingResolutionError(
-                "ARTIFACT_PATH_NOT_ALLOWED",
-                f"허용되지 않은 artifact path입니다: {path}",
-            )
-        if path not in artifact:
-            raise BindingResolutionError(
-                "ARTIFACT_VALUE_MISSING",
-                f"artifact에 binding 값이 없습니다: {path}",
-            )
-        expected_unit = expectation.get("unit")
-        if expected_unit is not None and artifact.get("unit") != expected_unit:
-            raise BindingResolutionError(
-                "ARTIFACT_UNIT_MISMATCH",
-                f"artifact 단위가 맞지 않습니다: {input_name}",
-            )
-        value = artifact[path]
-        expected_value_type = expectation.get("value_type")
-        if expected_value_type == "number" and (
-            isinstance(value, bool) or not isinstance(value, (int, float))
-        ):
-            raise BindingResolutionError(
-                "ARTIFACT_VALUE_TYPE_MISMATCH",
-                f"artifact 값 자료형이 맞지 않습니다: {input_name}",
-            )
-        if expected_value_type == "string" and not isinstance(value, str):
-            raise BindingResolutionError(
-                "ARTIFACT_VALUE_TYPE_MISMATCH",
-                f"artifact 값 자료형이 맞지 않습니다: {input_name}",
-            )
-        resolved[input_name] = deepcopy(value)
-    return resolved
-
-
-def _canonical_artifact_payload(artifact: Mapping[str, Any]) -> str:
-    try:
-        return json.dumps(
-            dict(artifact),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as exc:
-        raise BindingResolutionError(
-            "ARTIFACT_INTEGRITY_MISMATCH",
-            "dependency artifact를 안전하게 정규화할 수 없습니다.",
-        ) from exc
-
-
 def _validate_completed_result(
     *,
     task: Mapping[str, Any],
@@ -400,7 +201,7 @@ def _validate_completed_result(
         )
         return
     if (
-        artifact_type in {"reference_value", "dashboard_metric"}
+        artifact_type == "reference_value"
         and artifact.get("producer_task_id") != task.get("id")
     ):
         issues.append(
@@ -413,8 +214,6 @@ def _validate_completed_result(
 
     if artifact_type == "reference_value":
         _validate_reference_value(artifact, issues)
-    elif artifact_type == "dashboard_metric":
-        _validate_dashboard_metric(artifact, issues)
     elif artifact_type == "text_response":
         if not _non_empty(artifact.get("text")):
             issues.append(
@@ -428,7 +227,6 @@ def _validate_completed_result(
         response = result.get("response", "입력 변경안을 만들었습니다.")
         output_result = validate_form_update_contract({
             "step_id": step_id,
-            "field_registry": field_registry,
             "output": {
                 "response": response,
                 "step_id": step_id,
@@ -505,79 +303,6 @@ def _validate_reference_value(
                 "INVALID_REFERENCE_DATE",
                 "result.artifact.as_of",
                 "reference value 기준일은 ISO date여야 합니다.",
-            )
-        )
-
-
-def _validate_dashboard_metric(
-    artifact: Mapping[str, Any],
-    issues: list[TaskValidationIssue],
-) -> None:
-    _validate_exact_fields(
-        artifact,
-        DASHBOARD_METRIC_FIELDS,
-        issues,
-        artifact_name="dashboard metric",
-    )
-    _validate_tool_artifact_identity(artifact, issues)
-    if artifact.get("availability") != "ready":
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_AVAILABILITY",
-                "result.artifact.availability",
-                "완료된 dashboard metric은 ready여야 합니다.",
-            )
-        )
-    if artifact.get("metric_id") != "retirement_gap":
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_METRIC_ID",
-                "result.artifact.metric_id",
-                "허용되지 않은 dashboard metric입니다.",
-            )
-        )
-    value = artifact.get("value")
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_VALUE",
-                "result.artifact.value",
-                "retirement gap은 0 이상의 정수 금액이어야 합니다.",
-            )
-        )
-    if artifact.get("unit") != "KRW":
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_UNIT",
-                "result.artifact.unit",
-                "retirement gap 단위는 KRW여야 합니다.",
-            )
-        )
-    for field in ("report_id", "report_version"):
-        value = artifact.get(field)
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            issues.append(
-                _issue(
-                    "INVALID_REPORT_PROVENANCE",
-                    f"result.artifact.{field}",
-                    "보고서 ID와 version은 양의 정수여야 합니다.",
-                )
-            )
-    if not _non_empty(artifact.get("calculation_policy_version")):
-        issues.append(
-            _issue(
-                "MISSING_DASHBOARD_POLICY_VERSION",
-                "result.artifact.calculation_policy_version",
-                "dashboard metric에 calculation policy version이 필요합니다.",
-            )
-        )
-    generated_at = artifact.get("generated_at")
-    if not isinstance(generated_at, str) or not _is_aware_iso_datetime(generated_at):
-        issues.append(
-            _issue(
-                "INVALID_DASHBOARD_GENERATED_AT",
-                "result.artifact.generated_at",
-                "dashboard metric 생성 시각은 timezone이 있는 ISO datetime이어야 합니다.",
             )
         )
 
@@ -690,14 +415,6 @@ def _is_iso_date(value: str) -> bool:
     except ValueError:
         return False
     return True
-
-
-def _is_aware_iso_datetime(value: str) -> bool:
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    return parsed.tzinfo is not None
 
 
 def _issue(code: str, path: str, message: str) -> TaskValidationIssue:

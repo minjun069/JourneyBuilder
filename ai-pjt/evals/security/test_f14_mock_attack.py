@@ -35,7 +35,6 @@ class F14MockAttackTests(unittest.IsolatedAsyncioTestCase):
                 "dependency_integrity",
                 "binding_integrity",
                 "artifact_integrity",
-                "callback_reexecution",
             },
             {case["category"] for case in self.suite["cases"]},
         )

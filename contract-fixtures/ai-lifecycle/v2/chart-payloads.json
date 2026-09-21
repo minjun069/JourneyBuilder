@@ -3,16 +3,31 @@
   "fixture_kind": "chart_payloads",
   "contract_version": "2.0",
   "chart_contract": {
+    "schema_version": "2.1",
     "transport_field": "chart_payload",
     "representative_step_id": "lifetime-cashflow",
+    "supported_step_ids": [
+      "balance-sheet",
+      "cash-flow",
+      "financial-indicators",
+      "financial-goal-result",
+      "retirement-fund",
+      "retirement-readiness",
+      "retirement-simulation",
+      "pension-schedule",
+      "lifetime-cashflow",
+      "required-savings"
+    ],
+    "statuses": ["ready", "guidance_only"],
     "read_only": true,
     "canonical_money_unit": "KRW",
     "rate_encoding": "decimal",
-    "signed_cash_outflow": "지출은 chart series에서 음수로 표현한다.",
+    "fact_source": "verified_payload",
+    "meaning_source": "approved_rag",
     "forbidden_content": [
       "화면 screenshot 또는 이미지 추측값",
-      "ECharts·Chart.js 렌더링 option",
-      "원본 series에 없는 생성 수치",
+      "Frontend가 제출한 계산 결과",
+      "원본 payload에 없는 생성 수치",
       "사용자 JWT·서비스 credential·직접 식별정보"
     ]
   },
@@ -20,22 +35,94 @@
     "lifetime_cashflow_ready": {
       "step_id": "lifetime-cashflow",
       "django_ai_request_fragment": {
-        "field_registry": [],
         "chart_payload": {
+          "schema_version": "2.1",
           "chart_id": "lifetime-cashflow",
-          "title": "생애현금흐름 및 생애순자산",
+          "title": "생애 현금흐름",
           "status": "ready",
           "read_only": true,
+          "availability": {
+            "reason": "ready",
+            "numeric_interpretation_allowed": true
+          },
           "generated_at": "2026-09-02T06:00:30Z",
           "source_report": {
             "report_id": 701,
             "report_type": "lifetime-cashflow",
             "version": 1
           },
+          "report_version_key": "report:701:v1",
+          "provenance": {
+            "fact_source": "verified_payload",
+            "meaning_source": "approved_rag",
+            "natural_language_source": "llm",
+            "input_snapshot_digest": "current-digest",
+            "calculation_policy_version": "2026-09-12.v1"
+          },
+          "assumptions": {
+            "calculation_policy_version": "2026-09-12.v1",
+            "inflation_rate": 0.03,
+            "investment_rate": 0.04,
+            "wage_growth_rate": 0.03,
+            "real_estate_growth_rate": 0.02,
+            "sources": {
+              "inflation_rate": {"label": "승인 정책", "url": null},
+              "investment_rate": {"label": "승인 정책", "url": null},
+              "wage_growth_rate": {"label": "승인 정책", "url": null},
+              "real_estate_growth_rate": {"label": "승인 정책", "url": null}
+            }
+          },
+          "assumption_details": [
+            {
+              "id": "inflation_rate",
+              "label": "물가상승률",
+              "value": 0.03,
+              "unit": "fraction",
+              "display": "3%",
+              "source": {"label": "승인 정책", "url": null},
+              "provenance": {"source": "verified_payload", "path": "assumptions.inflation_rate"}
+            },
+            {
+              "id": "investment_rate",
+              "label": "투자수익률",
+              "value": 0.04,
+              "unit": "fraction",
+              "display": "4%",
+              "source": {"label": "승인 정책", "url": null},
+              "provenance": {"source": "verified_payload", "path": "assumptions.investment_rate"}
+            },
+            {
+              "id": "wage_growth_rate",
+              "label": "임금상승률",
+              "value": 0.03,
+              "unit": "fraction",
+              "display": "3%",
+              "source": {"label": "승인 정책", "url": null},
+              "provenance": {"source": "verified_payload", "path": "assumptions.wage_growth_rate"}
+            },
+            {
+              "id": "real_estate_growth_rate",
+              "label": "부동산 상승률",
+              "value": 0.02,
+              "unit": "fraction",
+              "display": "2%",
+              "source": {"label": "승인 정책", "url": null},
+              "provenance": {"source": "verified_payload", "path": "assumptions.real_estate_growth_rate"}
+            }
+          ],
+          "knowledge_scope": {
+            "source_ids": [
+              "retirewise-presentation-report-interpretation",
+              "retirewise-retirement-planning-report-interpretation",
+              "retirewise-planning-assumptions-2026",
+              "retirewise-household-balance-cash-flow"
+            ]
+          },
+          "connections": [],
           "period": {
             "dimension": "age",
             "from": 60,
-            "to": 62,
+            "to": 61,
             "interval": 1,
             "unit": "year"
           },
@@ -48,45 +135,14 @@
             "pension_assets": "KRW",
             "real_estate_assets": "KRW",
             "liabilities": "KRW",
-            "total_net_worth": "KRW",
-            "inflation_rate": "decimal",
-            "investment_rate": "decimal",
-            "wage_growth_rate": "decimal",
-            "real_estate_growth_rate": "decimal"
-          },
-          "assumptions": {
-            "inflation_rate": 0.026,
-            "investment_rate": 0.04,
-            "wage_growth_rate": 0.03,
-            "real_estate_growth_rate": 0.02,
-            "sources": {
-              "inflation_rate": {
-                "label": "한국은행 물가안정목표",
-                "url": "https://www.bok.or.kr/portal/main/contents.do?menuNo=200291"
-              },
-              "investment_rate": {
-                "label": "서비스 기본 가정",
-                "url": null
-              },
-              "wage_growth_rate": {
-                "label": "서비스 기본 가정",
-                "url": null
-              },
-              "real_estate_growth_rate": {
-                "label": "서비스 기본 가정",
-                "url": null
-              }
-            }
+            "total_net_worth": "KRW"
           },
           "summary": {
-            "depletion_point": {
-              "is_depleted": false,
-              "depletion_age": null
-            },
+            "depletion_point": {"is_depleted": false, "depletion_age": null},
             "final_status": {
-              "end_age": 62,
+              "end_age": 61,
               "final_deficit": 0,
-              "final_net_worth": 726020000
+              "final_net_worth": 713000000
             }
           },
           "series": [
@@ -111,43 +167,164 @@
               "real_estate_assets": 510000000,
               "liabilities": 100000000,
               "total_net_worth": 713000000
+            }
+          ],
+          "highlights": [
+            {
+              "id": "final-net-worth",
+              "label": "마지막 연령의 순자산",
+              "value": 713000000,
+              "unit": "KRW",
+              "display": "713,000,000원",
+              "provenance": {"source": "verified_payload", "path": "final_status.final_net_worth"}
             },
             {
-              "age": 62,
-              "cash_inflow": 36500000,
-              "cash_outflow": -46000000,
-              "net_flow": -9500000,
-              "liquid_assets": 89500000,
-              "pension_assets": 216320000,
-              "real_estate_assets": 520200000,
-              "liabilities": 100000000,
-              "total_net_worth": 726020000
+              "id": "final-liquid-assets",
+              "label": "마지막 연령의 유동자산",
+              "value": 95000000,
+              "unit": "KRW",
+              "display": "95,000,000원",
+              "provenance": {"source": "verified_payload", "path": "chart_data[1].liquid_assets"}
+            },
+            {
+              "id": "first-deficit-age",
+              "label": "첫 적자 전환 연령",
+              "value": 61,
+              "unit": "age",
+              "display": "61세",
+              "provenance": {"source": "verified_payload", "path": "chart_data.net_flow"}
             }
-          ]
+          ],
+          "events": [
+            {
+              "id": "reported-retirement_start-1",
+              "type": "retirement_start",
+              "label": "은퇴 시작",
+              "age": 60,
+              "facts": [],
+              "reason_code": "reported_calculation_event",
+              "provenance": {"source": "verified_payload", "path": "explanation_data.events[0]"}
+            },
+            {
+              "id": "cashflow-deficit-61",
+              "type": "cashflow_deficit_start",
+              "label": "현금흐름 적자 전환",
+              "age": 61,
+              "facts": [
+                {
+                  "id": "net-flow",
+                  "label": "순현금흐름",
+                  "value": -9000000,
+                  "unit": "KRW/year",
+                  "display": "-9,000,000원/년",
+                  "provenance": {"source": "verified_payload", "path": "chart_data.age=61.net_flow"}
+                }
+              ],
+              "reason_code": "verified_sign_transition",
+              "provenance": {"source": "verified_payload", "path": "chart_data"}
+            },
+            {
+              "id": "reported-pension_start-2",
+              "type": "pension_start",
+              "label": "연금 개시",
+              "age": 61,
+              "facts": [
+                {
+                  "id": "annual-pension",
+                  "label": "연간 연금유입",
+                  "value": 36000000,
+                  "unit": "KRW/year",
+                  "display": "36,000,000원/년",
+                  "provenance": {"source": "verified_payload", "path": "explanation_data.events[1].annual_amount"}
+                }
+              ],
+              "reason_code": "reported_calculation_event",
+              "provenance": {"source": "verified_payload", "path": "explanation_data.events[1]"}
+            }
+          ],
+          "warnings": [
+            {"code": "cashflow_deficit", "message": "현금흐름 적자 구간이 있습니다."}
+          ],
+          "details": {
+            "cashflow_components_by_age": [
+              {
+                "age": 60,
+                "cash_inflow": {"earned_and_other_income": 60000000},
+                "cash_outflow": {"retirement_living_expenses": 40000000}
+              },
+              {
+                "age": 61,
+                "cash_inflow": {"pension_income": 36000000, "rental_income": 0},
+                "cash_outflow": {"retirement_living_expenses": 45000000}
+              }
+            ]
+          }
         }
       },
       "expected_ai_behavior": {
         "allowed_agent": "chart_interpret",
         "may_describe": [
           "61세부터 연간 순현금흐름이 음수다.",
-          "62세 최종 순자산은 726020000원이다.",
+          "61세 최종 순자산은 713000000원이다.",
           "표본 기간에는 유동자산 고갈이 발생하지 않는다."
         ],
-        "must_display_or_preserve": ["title", "period", "units", "generated_at", "assumptions"],
+        "must_display_or_preserve": ["title", "period", "units", "generated_at", "assumptions", "provenance"],
         "must_not_emit_form_change": true,
+        "must_not_recalculate": true,
         "must_not_invent_values": true
       }
     },
-    "lifetime_cashflow_not_ready": {
+    "lifetime_cashflow_guidance_only": {
       "step_id": "lifetime-cashflow",
       "django_ai_request_fragment": {
-        "field_registry": [],
-        "chart_payload": null
+        "chart_payload": {
+          "schema_version": "2.1",
+          "chart_id": "lifetime-cashflow",
+          "title": "생애 현금흐름",
+          "status": "guidance_only",
+          "read_only": true,
+          "availability": {
+            "reason": "report_not_found",
+            "numeric_interpretation_allowed": false
+          },
+          "generated_at": null,
+          "source_report": null,
+          "report_version_key": "guidance-only:report_not_found",
+          "provenance": {
+            "fact_source": "none",
+            "meaning_source": "approved_rag",
+            "natural_language_source": "llm"
+          },
+          "period": null,
+          "units": {},
+          "assumptions": {},
+          "assumption_details": [],
+          "summary": {},
+          "series": [],
+          "highlights": [],
+          "events": [],
+          "warnings": [
+            {
+              "code": "report_not_found",
+              "message": "검증된 수치 없이 보고서의 목적과 읽는 방법만 안내합니다."
+            }
+          ],
+          "details": {},
+          "knowledge_scope": {
+            "source_ids": [
+              "retirewise-presentation-report-interpretation",
+              "retirewise-retirement-planning-report-interpretation",
+              "retirewise-planning-assumptions-2026",
+              "retirewise-household-balance-cash-flow"
+            ]
+          },
+          "connections": []
+        }
       },
       "expected_ai_behavior": {
         "numeric_interpretation_allowed": false,
         "must_not_invent_values": true,
-        "response_intent": "보고서가 아직 준비되지 않아 수치 해석을 제공할 수 없음을 안내"
+        "response_intent": "보고서 목적과 읽는 방법만 안내"
       }
     }
   }

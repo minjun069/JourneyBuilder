@@ -44,7 +44,6 @@ class SSEV2ContractTests(unittest.TestCase):
         policy = self.contract["channel_policy"]
         self.assertEqual(policy["error_review"], {
             "save": "sse",
-            "user_request": "sse",
         })
         self.assertEqual(policy["change_decision"], {
             "owner": "frontend",

@@ -316,9 +316,9 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
             repository_root=repository_root,
         )
 
-        self.assertEqual(catalog.catalog_version, "2.1.0")
+        self.assertEqual(catalog.catalog_version, "2.3.0")
         self.assertEqual(len(catalog.for_collection("interface-guides")), 10)
-        self.assertEqual(len(catalog.for_collection("financial-knowledge")), 14)
+        self.assertEqual(len(catalog.for_collection("financial-knowledge")), 15)
         self.assertTrue(
             all(document.metadata.review_status == "approved" for document in catalog.documents)
         )
@@ -393,7 +393,7 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                 "synthetic_financial_knowledge__v1",
             )
 
-    def test_catalog_dry_run_evaluates_all_58_queries(self) -> None:
+    def test_catalog_dry_run_evaluates_all_66_queries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             arguments = ["run-catalog-dry-run", "--workspace", directory]
             with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
@@ -403,17 +403,17 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
             interface = json.loads(
                 (
                     Path(directory)
-                    / "interface-guides__experiment-catalog-2-1-0-report.json"
+                    / "interface-guides__experiment-catalog-2-3-0-report.json"
                 ).read_text(encoding="utf-8")
             )
             financial = json.loads(
                 (
                     Path(directory)
-                    / "financial-knowledge__experiment-catalog-2-1-0-report.json"
+                    / "financial-knowledge__experiment-catalog-2-3-0-report.json"
                 ).read_text(encoding="utf-8")
             )
             self.assertEqual(interface["evaluation"]["query_count"], 20)
-            self.assertEqual(financial["evaluation"]["query_count"], 38)
+            self.assertEqual(financial["evaluation"]["query_count"], 46)
             self.assertTrue(interface["evaluation"]["passed"])
             self.assertTrue(financial["evaluation"]["passed"])
             self.assertEqual(financial["evaluation"]["false_evidence_count"], 0)
@@ -479,7 +479,7 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                         "--source-revision",
                         "a" * 40,
                         "--index-version",
-                        "catalog-2-1-0-test",
+                        "catalog-2-2-0-test",
                         "--promote",
                     ]
                 )
@@ -488,12 +488,12 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                 (
                     root
                     / "reports"
-                    / "official__catalog-2-1-0-test__qualification.json"
+                    / "official__catalog-2-2-0-test__qualification.json"
                 ).read_text(encoding="utf-8")
             )
 
         self.assertEqual(result, 0)
-        self.assertEqual(payload["query_count"], 58)
+        self.assertEqual(payload["query_count"], 66)
         self.assertEqual(payload["overall_decision"], "PASS")
         self.assertEqual(payload["source_revision"], "a" * 40)
         self.assertTrue(payload["activatable"])
@@ -501,17 +501,24 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
         self.assertEqual(
             payload["retrieval"],
             {
-                "strategy": "dense-bm25-rrf",
+                "strategy": "dense-field-bm25-weighted-rrf",
                 "top_k": 5,
                 "fetch_k": 10,
-                "minimum_dense_score": 0.52,
+                "minimum_dense_score": 0.54,
+                "bm25_field_weights": {
+                    "title": 4.0,
+                    "aliases": 2.5,
+                    "body": 1.0,
+                },
+                "korean_particle_normalization": True,
+                "exact_match_priority": ["title", "aliases", "body"],
             },
         )
         self.assertEqual(
             set(payload["activation"]["after"].values()),
             {
-                "interface-guides__official-catalog-2-1-0-test",
-                "financial-knowledge__official-catalog-2-1-0-test",
+                "interface-guides__official-catalog-2-2-0-test",
+                "financial-knowledge__official-catalog-2-2-0-test",
             },
         )
 

@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   createIdempotencyKey,
+  createPresentationEntryIdempotencyKey,
   deriveV2BaseURL,
 } from './aiLifecycle.js'
 
@@ -32,4 +33,18 @@ test('HTTP 개발 origin에서도 getRandomValues로 안전한 UUID를 만든다
     createIdempotencyKey(cryptoProvider),
     '00010203-0405-4607-8809-0a0b0c0d0e0f',
   )
+})
+
+test('동일 session·step·보고서 버전은 동일한 최초 안내 key를 만든다', async () => {
+  const input = { sessionId: 12, stepId: 'lifetime-cashflow', reportVersion: 'report:7:v2' }
+  const first = await createPresentationEntryIdempotencyKey(input)
+  const second = await createPresentationEntryIdempotencyKey(input)
+  const changed = await createPresentationEntryIdempotencyKey({
+    ...input,
+    reportVersion: 'report:7:v3',
+  })
+
+  assert.equal(first, second)
+  assert.notEqual(first, changed)
+  assert.match(first, /^presentation-entry-[0-9a-f]{64}$/)
 })

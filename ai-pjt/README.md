@@ -45,13 +45,16 @@ uv pip compile \
 | 필수 | `DATABASE_URL` | AI startup과 readiness가 사용하는 PostgreSQL DSN |
 | 현재 필수 | `GOOGLE_API_KEY` | Compose가 고정한 Gemini embedding과 기본 Gemini LLM에 필요 |
 | 조건부 필수 | `OPENAI_API_KEY`, `LLM_BASE_URL` | OpenAI 또는 OpenAI 호환 LLM provider에 맞춰 필요. 현재 설치된 embedding adapter는 Gemini |
+| 모델 선택 | `LLM_PROVIDER`, `LLM_MODEL`, `LLM_TEMPERATURE` | provider·model과 재현 가능한 0~1 temperature. 기본 temperature는 `0` |
+| prompt identity | 이미지 `APP_RELEASE`와 prompt manifest | 이미지는 현재 prompt만 포함하며 과거 prompt는 Git commit과 이전 배포 이미지로 추적·복구 |
 | startup 필수 | `AI_SERVICE_BEARER_TOKEN` | 누락·빈 값·단순 placeholder를 거부하고 `/api/ai/v2/chat/stream` request bearer로 사용 |
 | startup 필수 | `AI_MASKING_PSEUDONYM_KEY` | 서비스 token과 다른 32바이트 이상 가명화 secret |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
-| 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.30 |
+| 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.54 |
 | 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM` | retired 인덱스 30일 보관, embedding 차원 |
 | Langfuse 조건부 필수 | `LANGFUSE_ENABLED`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | 활성화할 때 세 연결값을 모두 명시하며 URL credential을 금지 |
-| Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT`, `LANGFUSE_RELEASE` | 환경 분리와 배포 SHA·버전 표시 |
+| Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT` | 환경 분리 |
+| 이미지 빌드 | `APP_RELEASE` | 기본 `local`. Dockerfile이 `LANGFUSE_RELEASE`와 OCI revision label로 고정하는 Git SHA·버전 |
 | readiness | `READINESS_HTTP_URL`, `READINESS_TIMEOUT_SECONDS` | 기본값은 컨테이너 내부 `/api/system/v1/health`, 2초 |
 | 미래 선택 | `REDIS_URL` | 현재 AI runtime과 readiness는 사용하지 않음 |
 | 운영 선택 | `LOG_LEVEL`, `RAG_SOURCE_REVISION` | 로그 수준과 indexing provenance 재정의 |
@@ -72,7 +75,6 @@ LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_BASE_URL=https://cloud.langfuse.com
 LANGFUSE_TRACING_ENVIRONMENT=development
-LANGFUSE_RELEASE=<git-sha-or-release>
 LANGCHAIN_TRACING_V2=false
 ```
 
@@ -85,9 +87,21 @@ docker compose run --rm --no-deps ai-pjt \
   python -c 'from langfuse import get_client; raise SystemExit(0 if get_client().auth_check() else 1)'
 ```
 
-연결 확인 뒤 AI 서비스를 기동하면 `retirewise.<event_family>.<stage>` observation에서
-가명 trace correlation, 단계·상태·지연, 모델 token·비용 metadata를 확인할 수 있다.
-prompt·response·고객 snapshot·도구 원문은 보내지 않는다. SDK는 이 exporter가 직접
+연결 확인 뒤 AI 서비스를 기동하면 요청마다 `retirewise.request` root observation이
+하나 생기고 그 아래에 `retirewise.<event_family>.<stage>` observation이 연결된다.
+runtime 단계의 `started`와 terminal event는 새 observation 두 개가 아니라 같은
+observation의 시작과 `update`/`end`로 기록된다. 요청·thread·plan·step correlation은
+root metadata에 한 번만 두고, 자식 metadata에는 task·executor·오류 식별자처럼 해당
+단계 진단에 필요한 값만 둔다.
+
+root와 단계 observation의 Input/Output에는 `MaskedInstrumentationSink`를 통과한 사용자
+질문, planner context와 실행 결과가 표시된다. 직접 식별정보·secret·허용 밖 금융값과
+raw 운영 ID는 마스킹 또는 가명화되며, 마스킹 전 prompt·response·고객 snapshot·도구
+원문은 보내지 않는다. 모델 generation에는 마스킹된 실제 prompt·response와 함께
+prompt ID·version·hash·release·policy version, model provider·name·temperature를 같은
+observation에 기록한다. 별도의 prompt metadata observation을 중복 생성하지 않는다.
+
+SDK는 이 exporter가 직접
 만든 span만 허용하므로 `langfuse.langchain.CallbackHandler`, `@observe`, 자동
 LangChain tracing을 production 경로에 추가하지 않는다.
 
@@ -95,13 +109,28 @@ Langfuse 전송은 비동기다. FastAPI lifespan 종료 시 SDK `shutdown()`으
 flush하며, emit 또는 shutdown 장애는 AI 업무 응답을 실패시키지 않는다. Langfuse는
 readiness dependency가 아니므로 장애 여부는 exporter 지표와 별도 smoke에서 확인한다.
 
+Langfuse release는 실행 시 `.env`로 주입하지 않는다. `APP_RELEASE` build arg를
+Dockerfile이 `LANGFUSE_RELEASE`와 `org.opencontainers.image.revision`에 함께 기록하고,
+SDK 생성자에도 그 값을 명시적으로 전달한다. `deploy/deploy.sh`는 새 이미지를 빌드하기
+전에 `CI_COMMIT_SHA` 또는 현재 Git SHA를 선택하고 미커밋 변경이 있으면 `-dirty`를
+붙인다. 따라서 `--no-build` 롤백은 과거 이미지에 저장된 과거 SHA를 유지하며, 서버
+`.env`에 남은 `LANGFUSE_RELEASE` 값은 Compose가 전달하지 않는다.
+
 ## Container build와 실행
 
 공용 step registry를 image에 포함하기 위해 저장소 루트를 build context로 사용한다.
 
 ```bash
-docker build -f ai-pjt/Dockerfile -t retirewise-ai:g1 .
+docker build \
+  --build-arg APP_RELEASE="$(git rev-parse HEAD)" \
+  -f ai-pjt/Dockerfile \
+  -t retirewise-ai:g1 \
+  .
 ```
+
+Compose로 로컬 이미지를 한 번 빌드할 때도 런타임 `LANGFUSE_RELEASE` 대신
+`APP_RELEASE="$(git rev-parse HEAD)" docker compose build ai-pjt`를 사용한다. build arg를
+생략하면 두 이미지 메타데이터 모두 `local`이 된다.
 
 기본 배포에서는 AI 포트를 host에 공개하지 않고 Backend가 Compose 내부 주소 `http://ai-pjt:8001`로 호출한다. 로컬에서 직접 smoke test할 때만 loopback에 임시 공개한다.
 
@@ -120,6 +149,8 @@ docker run --rm \
 1. `DATABASE_URL`과 probe 설정이 유효하다.
 2. 컨테이너 내부 `GET /api/system/v1/health`가 200과 예상 payload를 반환한다.
 3. 현재 LangGraph checkpointer가 사용하는 PostgreSQL에서 `SELECT 1`이 성공한다.
+4. `financial-knowledge`와 `interface-guides` 모두 active pointer와 일치하는 manifest,
+   1개 이상의 chunk를 가진다.
 
 성공하면 `ready`를 출력하고 exit 0, 실패하면 예외 종류만 출력하고 exit 1을 반환한다. DSN·credential·원격 URL이 오류 출력에 포함되지 않도록 예외 메시지는 출력하지 않는다. Dockerfile의 `HEALTHCHECK`가 이 exit code를 `healthy` 또는 `unhealthy`로 변환한다.
 
@@ -140,6 +171,8 @@ P03 Compose 담당자는 다음 조건을 사용한다.
 - service DNS 예시: `ai-pjt`
 - PostgreSQL의 실제 user/password/database/host를 `DATABASE_URL`로 주입
 - AI가 사용할 PostgreSQL service가 먼저 healthy가 되도록 dependency condition 설정
+- 같은 AI 이미지의 `rag-bootstrap` one-shot이 최신 공식 artifact를 import·activate하고
+  exit 0으로 완료된 뒤에만 AI를 시작
 - AI Dockerfile의 healthcheck를 덮어쓴다면 동일한 `python readiness.py` 조건 유지
 - 현재 AI runtime은 Redis를 사용하지 않으므로 Redis를 AI readiness dependency로 연결하지 않음
 
@@ -147,6 +180,7 @@ G1은 빈 환경에서 lock 설치, PostgreSQL 기동, AI `healthy`, 종료 순�
 
 - `DATABASE_URL` 누락
 - PostgreSQL 미기동 또는 연결 끊김
+- 두 operational RAG collection의 active pointer·manifest·chunk 누락
 - `/api/system/v1/health`의 비정상 status 또는 payload
 - 0 이하·10초 초과·숫자가 아닌 readiness timeout
 
@@ -159,11 +193,11 @@ G1은 `DATABASE_URL`, provider credential과 `AI_SERVICE_BEARER_TOKEN`을 startu
 1. `AI_SERVICE_BEARER_TOKEN`은 `/api/ai/v2/chat/stream` 인증에 연결된 rotation 가능한 secret이다.
 2. 비스트리밍 `/v2/chat`, 구형 `/chat[/stream]`, HTTP callback 전송과 관련 환경변수는 제거됐다.
 3. startup/config 오류와 SSE 로그에 API key, bearer token, 전체 DSN을 남기지 않는다.
-4. `/ready` endpoint를 application에 추가한다면 `readiness.py`와 PostgreSQL 판정이 서로 달라지지 않게 하나를 공통 경계로 만들고 Docker healthcheck도 그 경계를 사용한다.
+4. `/ready` endpoint를 application에 추가한다면 `readiness.py`의 PostgreSQL·active RAG 판정과 서로 달라지지 않게 하나를 공통 경계로 만들고 Docker healthcheck도 그 경계를 사용한다.
 5. 실제 LLM·Redis·Langfuse 호출을 readiness에 추가하지 않는다. 별도 provider/SSE smoke test와 운영 관측으로 검증한다.
 
 후속 검증에는 인증 없는 SSE request 거부, 제거된 route의 404, DSN/token 마스킹, PostgreSQL 정상·장애,
-liveness 정상인데 PostgreSQL이 실패하는 경우를 포함한다. readiness 구현 변경 시
+liveness 정상인데 PostgreSQL 또는 active RAG index가 실패하는 경우를 포함한다. readiness 구현 변경 시
 `tests/test_readiness.py`도 같은 변경에서 갱신한다.
 
 ## P01 Docker 검증 결과

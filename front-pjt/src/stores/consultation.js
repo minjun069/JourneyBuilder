@@ -88,7 +88,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     stepId,
     form = null,
     requestMode = 'chat',
-    reviewTrigger = null,
+    idempotencyKey = null,
   } = {}) {
     if (!sessionId.value) return
     if (streaming.value || isAiRequestActive.value || activeStreamController) {
@@ -120,10 +120,9 @@ export const useConsultationStore = defineStore('consultation', () => {
           step_id: stepId,
           form_data: mapCurrentForm(stepId, form ?? {}),
           request_mode: requestMode,
-          ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
         },
         {
-          idempotencyKey: createIdempotencyKey(),
+          idempotencyKey: idempotencyKey ?? createIdempotencyKey(),
           signal: controller.signal,
         },
       )
@@ -157,7 +156,6 @@ export const useConsultationStore = defineStore('consultation', () => {
         stepId,
         form,
         requestMode: 'error_review',
-        reviewTrigger: 'save',
       },
     )) {
       // Error Review는 구조화된 최종 결과만 화면에 반영한다.

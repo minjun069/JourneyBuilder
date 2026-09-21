@@ -31,7 +31,6 @@ EXPECTED_CONSUMERS = {
     "ai-pjt/tools/catalog.py",
     "backend-pjt/reports/policy.py",
     "backend-pjt/reports/services.py",
-    "backend-pjt/consulting/tool_context.py",
 }
 T03_POLICY_PATH = "contract-fixtures/financial-calculation/v1/policy.json"
 T03_POLICY_VERSION = "2026-09-07.v1"

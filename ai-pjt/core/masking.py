@@ -2,7 +2,7 @@
 
 The core accepts JSON-like values and returns a new value with the same
 container shape. Runtime adapters remain responsible for serializing that
-value immediately before a model, callback, log, or trace boundary.
+value immediately before a model, SSE terminal, log, or trace boundary.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class MaskingSink(str, Enum):
 
     MODEL_INPUT = "model_input"
     MODEL_OUTPUT = "model_output"
-    CALLBACK = "callback"
+    TERMINAL = "terminal"
     APPLICATION_LOG = "application_log"
     TRACE_EXPORT = "trace_export"
 
@@ -49,20 +49,20 @@ class MaskingPolicyError(ValueError):
 class MaskingPolicy:
     """Required key material and explicit model-use exceptions.
 
-    Model and callback exceptions contain exact leaf paths. Direct identifiers,
+    Model and terminal exceptions contain exact leaf paths. Direct identifiers,
     secrets, and operational identifiers cannot be allowed through either list.
     """
 
     pseudonym_key: bytes = field(repr=False)
     allowed_model_paths: frozenset[MaskingPath] = frozenset()
-    allowed_callback_paths: frozenset[MaskingPath] = frozenset()
+    allowed_terminal_paths: frozenset[MaskingPath] = frozenset()
 
     def __post_init__(self) -> None:
         if not isinstance(self.pseudonym_key, bytes) or len(self.pseudonym_key) < 32:
             raise MaskingPolicyError("pseudonym_key must contain at least 32 bytes")
         for field_name, paths in (
             ("allowed_model_paths", self.allowed_model_paths),
-            ("allowed_callback_paths", self.allowed_callback_paths),
+            ("allowed_terminal_paths", self.allowed_terminal_paths),
         ):
             if not isinstance(paths, frozenset):
                 raise MaskingPolicyError(f"{field_name} must be a frozenset")
@@ -108,7 +108,7 @@ _OBSERVABILITY_SINKS = frozenset(
     {MaskingSink.APPLICATION_LOG, MaskingSink.TRACE_EXPORT}
 )
 _MODEL_SINKS = frozenset({MaskingSink.MODEL_INPUT, MaskingSink.MODEL_OUTPUT})
-_CALLBACK_ROOT_CORRELATION_PATHS = frozenset(
+_TERMINAL_ROOT_CORRELATION_PATHS = frozenset(
     {("request_id",), ("session_id",), ("thread_id",)}
 )
 
@@ -195,7 +195,6 @@ _OPERATIONAL_FIELD_NAMESPACES = {
     "item_id": "item",
     "parent_client_item_id": "item",
     "parent_item_id": "item",
-    "plan_id": "plan",
     "producer_task_id": "task",
     "proposal_id": "proposal",
     "request_id": "request",
@@ -215,13 +214,12 @@ _SENSITIVE_CONTAINERS = frozenset(
     {
         "arguments",
         "assumptions",
-        "bound_inputs",
+        "bindings",
         "chart_payload",
         "current_form",
         "customer_info",
         "metrics",
         "saved_data",
-        "tool_context",
     }
 )
 _FREE_TEXT_FIELDS = frozenset(
@@ -378,6 +376,11 @@ class _PayloadMasker:
         namespace: str | None,
         path: MaskingPath,
     ) -> None:
+        # Containers inherit a class for their descendants, not for the string
+        # representation of the whole object. Collecting that representation
+        # would mask numbers even when their exact leaf paths are allowed.
+        if not self._is_scalar(value):
+            return
         if is_reference_token(value):
             return
         if data_class is DataClass.OPERATIONAL_INFORMATION and self._is_scalar(value):
@@ -547,9 +550,9 @@ class _PayloadMasker:
             return _DIRECT_IDENTIFIER_TOKEN
         if data_class is DataClass.OPERATIONAL_INFORMATION:
             if (
-                self._sink is MaskingSink.CALLBACK
+                self._sink is MaskingSink.TERMINAL
                 and (
-                    path in _CALLBACK_ROOT_CORRELATION_PATHS
+                    path in _TERMINAL_ROOT_CORRELATION_PATHS
                     or self._is_allowed_sink_path(path)
                 )
             ):
@@ -577,8 +580,8 @@ class _PayloadMasker:
     def _is_allowed_sink_path(self, path: MaskingPath) -> bool:
         if self._sink in _MODEL_SINKS:
             return path in self._policy.allowed_model_paths
-        if self._sink is MaskingSink.CALLBACK:
-            return path in self._policy.allowed_callback_paths
+        if self._sink is MaskingSink.TERMINAL:
+            return path in self._policy.allowed_terminal_paths
         return False
 
     def _should_mask_sensitive_path(self, path: MaskingPath) -> bool:
@@ -614,6 +617,8 @@ class _PayloadMasker:
         normalized = key.lower().replace("-", "_")
         if self._is_secret_field(normalized):
             return _FieldDecision(data_class=DataClass.SECRET)
+        if normalized == "name" and self._is_form_item_name_path(path):
+            return _FieldDecision(data_class=DataClass.PROJECT_HIGH_RISK_FINANCIAL)
         if self._is_direct_identifier_field(normalized):
             return _FieldDecision(data_class=DataClass.DIRECT_IDENTIFIER)
         namespace = _OPERATIONAL_FIELD_NAMESPACES.get(normalized)
@@ -648,6 +653,30 @@ class _PayloadMasker:
                 normalized in _SENSITIVE_CONTAINERS
                 and self._sink not in _OBSERVABILITY_SINKS
             )
+        )
+
+    @staticmethod
+    def _is_form_item_name_path(path: MaskingPath) -> bool:
+        """Canonical product/goal labels are business values, not user names."""
+
+        if path[:2] == ("customer_info", "current_form"):
+            suffix = path[2:]
+        elif path[:1] == ("current_form",):
+            suffix = path[1:]
+        else:
+            return False
+        return (
+            len(suffix) == 3
+            and suffix[0] == "assets"
+            and isinstance(suffix[1], int)
+            and suffix[2] == "name"
+        ) or (
+            len(suffix) == 5
+            and suffix[0] == "goal_periods"
+            and isinstance(suffix[1], int)
+            and suffix[2] == "items"
+            and isinstance(suffix[3], int)
+            and suffix[4] == "name"
         )
 
     @staticmethod
@@ -714,7 +743,7 @@ class _PayloadMasker:
             return True
         if {"section", "path", "operation"}.issubset(parent):
             return True
-        return "bound_inputs" in path
+        return "bindings" in path
 
     def _pseudonymize(self, value: Any, namespace: str) -> str:
         if value is None or isinstance(value, bool) or not isinstance(

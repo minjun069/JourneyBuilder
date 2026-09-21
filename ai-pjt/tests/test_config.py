@@ -28,8 +28,10 @@ class SettingsTests(unittest.TestCase):
         settings.validate_runtime()
 
         self.assertEqual(settings.rag_top_k, 5)
+        self.assertEqual(settings.llm_temperature, 0.0)
+        self.assertEqual(settings.prompt_release, "2026-09-21.1")
         self.assertEqual(settings.rag_fetch_k, 10)
-        self.assertEqual(settings.rag_min_dense_score, 0.30)
+        self.assertEqual(settings.rag_min_dense_score, 0.54)
         self.assertEqual(settings.rag_financial_collection, "financial-knowledge")
         self.assertEqual(settings.rag_interface_collection, "interface-guides")
         self.assertEqual(settings.embed_dim, 3072)
@@ -38,6 +40,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.context_embedding_batch_size, 8)
         self.assertFalse(settings.langfuse_enabled)
         self.assertEqual(settings.langfuse_base_url, "")
+        self.assertEqual(settings.langfuse_release, "local")
         self.assertEqual(
             settings.masking_pseudonym_key_bytes,
             b"g1-disposable-masking-key-32-bytes!",
@@ -93,6 +96,12 @@ class SettingsTests(unittest.TestCase):
             Settings({**BASE_ENV, "RAG_TOP_K": "5", "RAG_FETCH_K": "4"})
         with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_MIN_DENSE_SCORE"):
             Settings({**BASE_ENV, "RAG_MIN_DENSE_SCORE": "1.1"})
+        with self.assertRaisesRegex(RuntimeConfigurationError, "LLM_TEMPERATURE"):
+            Settings({**BASE_ENV, "LLM_TEMPERATURE": "1.1"})
+        self.assertEqual(
+            Settings({**BASE_ENV, "PROMPT_RELEASE": "ignored"}).prompt_release,
+            "2026-09-21.1",
+        )
         with self.assertRaisesRegex(
             RuntimeConfigurationError,
             "AI_CONTEXT_MEMORY_TOP_K",
@@ -108,6 +117,12 @@ class SettingsTests(unittest.TestCase):
             "LANGFUSE_BASE_URL": "https://langfuse.example.com",
         }
         Settings(enabled).validate_runtime()
+        self.assertEqual(
+            Settings(
+                {**enabled, "LANGFUSE_RELEASE": "candidate-sha-dirty"}
+            ).langfuse_release,
+            "candidate-sha-dirty",
+        )
 
         for name in (
             "LANGFUSE_PUBLIC_KEY",

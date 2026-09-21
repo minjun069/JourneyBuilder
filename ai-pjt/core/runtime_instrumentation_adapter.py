@@ -13,6 +13,7 @@ from time import monotonic, time
 from typing import Any, Callable
 
 from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
+from core.prompt_registry import PromptInvocationRecord
 from core.runtime_instrumentation import (
     InstrumentationEvent,
     InstrumentationPort,
@@ -39,7 +40,6 @@ class RuntimeCorrelation:
     attempt_id: str
     request_id: str
     thread_id: str
-    plan_id: str
     step_id: str
 
 
@@ -97,13 +97,11 @@ class RuntimeInstrumentationAdapter:
         *,
         request_id: str,
         thread_id: str,
-        plan_id: str,
         step_id: str,
     ) -> "BoundRuntimeInstrumentation":
         for name, value in (
             ("request_id", request_id),
             ("thread_id", thread_id),
-            ("plan_id", plan_id),
             ("step_id", step_id),
         ):
             if not isinstance(value, str) or not value:
@@ -113,7 +111,6 @@ class RuntimeInstrumentationAdapter:
             attempt_id=_stable_id("attempt", request_id, step_id),
             request_id=request_id,
             thread_id=thread_id,
-            plan_id=plan_id,
             step_id=step_id,
         )
         return BoundRuntimeInstrumentation(
@@ -122,39 +119,6 @@ class RuntimeInstrumentationAdapter:
             epoch_ms=self._epoch_ms,
             monotonic_clock=self._monotonic,
         )
-
-    def record_callback_attempt(
-        self,
-        *,
-        request_id: str,
-        thread_id: str,
-        plan_id: str,
-        step_id: str,
-        status: OperationStatus,
-        duration_ms: int,
-        error_code: str | None = None,
-    ) -> None:
-        """Translate one transport-owned callback attempt into the shared port."""
-
-        if status not in {
-            OperationStatus.SUCCEEDED,
-            OperationStatus.FAILED,
-            OperationStatus.TIMEOUT,
-        }:
-            raise ValueError("callback attempt status must be terminal")
-        self.bind(
-            request_id=request_id,
-            thread_id=thread_id,
-            plan_id=plan_id,
-            step_id=step_id,
-        ).record_operation(
-            stage=OperationStage.CALLBACK,
-            status=status,
-            operation_name="backend_callback",
-            duration_ms=duration_ms,
-            error_code=error_code,
-        )
-
 
 class BoundRuntimeInstrumentation:
     """Instrumentation API bound to one request, thread, plan, and step."""
@@ -272,8 +236,25 @@ class BoundRuntimeInstrumentation:
         status: OperationStatus,
         operation_name: str,
         duration_ms: int,
+        task_id: str | None = None,
         agent: str | None = None,
         error_code: str | None = None,
+        model_provider: str | None = None,
+        model_name: str | None = None,
+        model_temperature: float | None = None,
+        prompt_id: str | None = None,
+        prompt_version: str | None = None,
+        prompt_hash: str | None = None,
+        prompt_release: str | None = None,
+        prompt_policy_version: str | None = None,
+        index_version: str | None = None,
+        tool_version: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        cost_microusd: int | None = None,
+        resource_ids: tuple[str, ...] = (),
+        scores: tuple[float, ...] = (),
+        result_count: int | None = None,
         input: Any | None = None,
         output: Any | None = None,
         error_type: str | None = None,
@@ -288,20 +269,131 @@ class BoundRuntimeInstrumentation:
             duration_ms=duration_ms,
             operation_name=operation_name,
             step_id=self.correlation.step_id,
+            task_id=task_id,
             agent=agent,
             error_code=error_code,
+            model_provider=model_provider,
+            model_name=model_name,
+            model_temperature=model_temperature,
+            prompt_id=prompt_id,
+            prompt_version=prompt_version,
+            prompt_hash=prompt_hash,
+            prompt_release=prompt_release,
+            prompt_policy_version=prompt_policy_version,
+            index_version=index_version,
+            tool_version=tool_version,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_microusd=cost_microusd,
+            resource_ids=resource_ids,
+            scores=scores,
+            result_count=result_count,
             input=input,
             output=output,
             error_type=error_type,
             error_fingerprint=error_fingerprint,
         ))
 
+    def record_model_call(
+        self,
+        *,
+        purpose: str,
+        operation_name: str | None = None,
+        status: str,
+        duration_ms: int,
+        input: Any,
+        output: Any,
+        task_id: str | None = None,
+        error_code: str | None = None,
+        model_provider: str | None = None,
+        model_name: str | None = None,
+        model_temperature: float | None = None,
+        prompt_id: str | None = None,
+        prompt_version: str | None = None,
+        prompt_hash: str | None = None,
+        prompt_release: str | None = None,
+        prompt_policy_version: str | None = None,
+        error_type: str | None = None,
+        error_fingerprint: str | None = None,
+    ) -> None:
+        """Record one actual provider invocation made by the model boundary."""
+
+        from core.config import settings
+        from core.model_boundary import PROMPT_POLICY_VERSION
+
+        operation_status = OperationStatus(status)
+        if operation_status not in {
+            OperationStatus.SUCCEEDED,
+            OperationStatus.FAILED,
+            OperationStatus.TIMEOUT,
+        }:
+            raise ValueError("model call status must be terminal")
+        self.record_operation(
+            stage=OperationStage.MODEL,
+            status=operation_status,
+            operation_name=operation_name or f"{purpose}.generate",
+            duration_ms=duration_ms,
+            task_id=task_id,
+            agent=purpose,
+            error_code=(
+                None
+                if operation_status is OperationStatus.SUCCEEDED
+                else error_code or "model_call_failed"
+            ),
+            model_provider=model_provider or settings.llm_provider,
+            model_name=model_name or settings.llm_model,
+            model_temperature=(
+                float(getattr(settings, "llm_temperature", 0.0))
+                if model_temperature is None
+                else model_temperature
+            ),
+            prompt_id=prompt_id,
+            prompt_version=(
+                prompt_version or f"data-policy-{PROMPT_POLICY_VERSION}"
+            ),
+            prompt_hash=prompt_hash,
+            prompt_release=prompt_release,
+            prompt_policy_version=(
+                prompt_policy_version or PROMPT_POLICY_VERSION
+            ),
+            input=input,
+            output=output,
+            error_type=error_type,
+            error_fingerprint=error_fingerprint,
+        )
+
+    def record_prompt_invocation(self, record: PromptInvocationRecord) -> None:
+        """Translate one physical model call into a version-complete event."""
+
+        if not isinstance(record, PromptInvocationRecord):
+            raise TypeError("prompt invocation must use PromptInvocationRecord")
+        status = (
+            OperationStatus.SUCCEEDED
+            if record.status == "succeeded"
+            else OperationStatus.FAILED
+        )
+        self.record_operation(
+            stage=OperationStage.MODEL,
+            status=status,
+            operation_name=record.prompt_id,
+            duration_ms=record.duration_ms,
+            agent=record.purpose,
+            error_code=record.error_code,
+            model_provider=record.model_provider,
+            model_name=record.model_name,
+            model_temperature=record.model_temperature,
+            prompt_id=record.prompt_id,
+            prompt_version=record.prompt_version,
+            prompt_hash=record.prompt_hash,
+            prompt_release=record.prompt_release,
+            prompt_policy_version=record.prompt_policy_version,
+        )
+
     def record_tool_audit(self, event: object) -> None:
         """Translate a tool audit without accepting values or raw arguments."""
 
         required = {
             "request_id": self.correlation.request_id,
-            "plan_id": self.correlation.plan_id,
             "step_id": self.correlation.step_id,
         }
         for field_name, expected in required.items():
@@ -343,7 +435,6 @@ class BoundRuntimeInstrumentation:
             trace_id=self.correlation.trace_id,
             request_id=self.correlation.request_id,
             thread_id=self.correlation.thread_id,
-            plan_id=self.correlation.plan_id,
             step_id=self.correlation.step_id,
             task_id=task_id,
             occurred_at_epoch_ms=self._epoch_ms(),
@@ -381,7 +472,6 @@ class BoundRuntimeInstrumentation:
             trace_id=span.correlation.trace_id,
             request_id=span.correlation.request_id,
             thread_id=span.correlation.thread_id,
-            plan_id=span.correlation.plan_id,
             occurred_at_epoch_ms=self._epoch_ms(),
             stage=span.stage,
             status=status,

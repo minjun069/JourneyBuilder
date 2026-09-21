@@ -89,15 +89,33 @@ class MarkdownStructureChunker(DeterministicChunker):
     """Chunk Markdown on headings, paragraphs, and complete table blocks."""
 
     _HEADING = re.compile(r"^[ \t]{0,3}#{1,6}\s+")
+    _PRODUCT_TERM_MARKER = "<!-- product-term-document -->"
+    _PRODUCT_TERM_BLOCK = re.compile(
+        r"(?ms)^<!-- product-term:start -->\s*\n"
+        r"(?P<body>## [^\n]+\n.*?)"
+        r"^<!-- product-term:end -->\s*$"
+    )
+    _PRODUCT_TERM_FIELDS = (
+        "- **용어 ID:**",
+        "- **별칭:**",
+        "- **정의:**",
+        "- **사용 맥락:**",
+        "- **주의사항:**",
+    )
 
     def __init__(self, chunk_size: int = 900, overlap: int = 100) -> None:
         super().__init__(chunk_size=chunk_size, overlap=overlap)
 
     @property
     def chunker_id(self) -> str:
-        return f"markdown-v1-size-{self.chunk_size}-overlap-{self.overlap}"
+        return f"markdown-v2-size-{self.chunk_size}-overlap-{self.overlap}"
 
     def chunk_document(self, document: SourceDocument) -> list[Chunk]:
+        if self._PRODUCT_TERM_MARKER in document.text:
+            return self._make_chunks(
+                document,
+                self._product_term_ranges(document.text),
+            )
         ranges = self._block_ranges(document.text)
         packed: list[tuple[int, int]] = []
         current: tuple[int, int] | None = None
@@ -121,6 +139,34 @@ class MarkdownStructureChunker(DeterministicChunker):
         if current is not None:
             packed.append(current)
         return self._make_chunks(document, packed)
+
+    def _product_term_ranges(self, text: str) -> list[tuple[int, int]]:
+        matches = list(self._PRODUCT_TERM_BLOCK.finditer(text))
+        starts = text.count("<!-- product-term:start -->")
+        ends = text.count("<!-- product-term:end -->")
+        if not matches or len(matches) != starts or starts != ends:
+            raise ValueError("product term document contains malformed term blocks")
+
+        ranges: list[tuple[int, int]] = []
+        terms: set[str] = set()
+        for match in matches:
+            start, end = self._trim_range(
+                text,
+                match.start("body"),
+                match.end("body"),
+            )
+            body = text[start:end]
+            headings = re.findall(r"(?m)^##\s+(.+?)\s*$", body)
+            if len(headings) != 1:
+                raise ValueError("each product term block must contain one level-2 heading")
+            term = headings[0].strip()
+            if term in terms:
+                raise ValueError(f"duplicate product term heading: {term}")
+            terms.add(term)
+            if any(field not in body for field in self._PRODUCT_TERM_FIELDS):
+                raise ValueError(f"product term block is missing a required field: {term}")
+            ranges.append((start, end))
+        return ranges
 
     def _block_ranges(self, text: str) -> list[tuple[int, int, bool]]:
         lines = text.splitlines(keepends=True)

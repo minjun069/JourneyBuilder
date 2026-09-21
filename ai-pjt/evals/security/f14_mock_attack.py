@@ -6,30 +6,20 @@ import argparse
 import asyncio
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
 import sys
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 
 AI_ROOT = Path(__file__).resolve().parents[2]
 if str(AI_ROOT) not in sys.path:
     sys.path.insert(0, str(AI_ROOT))
 
-from core.callback_masking import CallbackPayloadMasker  # noqa: E402
 from core.runtime_instrumentation import FakeInstrumentationSink, InstrumentationPort  # noqa: E402
 from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter  # noqa: E402
 from graph.executor import execute_route_plan  # noqa: E402
-from transport.contracts import ChatV2Request  # noqa: E402
-from transport.runtime import (  # noqa: E402
-    AsyncChatTransport,
-    CallbackDeliveryContext,
-    ExecutionBudget,
-    InMemoryRequestCheckpointStore,
-)
-
 from security_regression import (  # noqa: E402
     ProductionSecurityEvaluator,
     load_suite as load_f13_suite,
@@ -40,7 +30,7 @@ SCHEMA_VERSION = "f14-attack-assessment-v1"
 SUITE_PATH = Path(__file__).with_name("f14-cases.json")
 CASE_ID_PATTERN = re.compile(r"^F14-ATK-\d{3}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-SCENARIOS = {"f13_production_case", "dependency_executor", "callback_replay"}
+SCENARIOS = {"f13_production_case", "dependency_executor"}
 
 
 @dataclass(frozen=True)
@@ -198,20 +188,19 @@ async def _dependency_executor_scenario() -> dict[str, Any]:
         }
 
     report = await execute_route_plan(
-        plan={"plan_id": "plan-f14-dependency", "tasks": [
+        plan={"tasks": [
             _reference_task(),
             _dependent_task(),
             _independent_task(),
         ]},
+        request_id="request-f14-dependency",
         step_id="financial-goals",
         customer_info={},
-        field_registry=[],
         agent_executors={"input_assist": dependent, "qa": independent},
         tool_executors={"lookup_reference_value": failing_lookup},
         instrumentation=_instrumentation().bind(
             request_id="request-f14-dependency",
             thread_id="thread-f14-dependency",
-            plan_id="plan-f14-dependency",
             step_id="financial-goals",
         ),
     )
@@ -221,74 +210,6 @@ async def _dependency_executor_scenario() -> dict[str, Any]:
         "dependent_status": report.task_results["task-2"]["status"],
         "independent_status": report.task_results["task-3"]["status"],
         "action": report.output.get("action"),
-    }
-
-
-class _CallbackRecorder:
-    def __init__(self) -> None:
-        self.payloads: list[dict[str, Any]] = []
-
-    async def send(
-        self,
-        payload: dict[str, Any],
-        *,
-        context: CallbackDeliveryContext,
-    ) -> None:
-        if context.request_id != "f14-attack-replay":
-            raise AssertionError("callback correlation changed")
-        self.payloads.append(deepcopy(payload))
-
-
-async def _callback_replay_scenario() -> dict[str, Any]:
-    store = InMemoryRequestCheckpointStore()
-    callback = _CallbackRecorder()
-    processor_calls = 0
-
-    async def processor(
-        _: ChatV2Request,
-        __: ExecutionBudget,
-    ) -> dict[str, Any]:
-        nonlocal processor_calls
-        processor_calls += 1
-        return {"response": "확정 응답", "action": None}
-
-    transport = AsyncChatTransport(
-        checkpoint_store=store,
-        processor=processor,
-        callback_client=callback,  # type: ignore[arg-type]
-        callback_masker=CallbackPayloadMasker(
-            pseudonym_key=b"f14-synthetic-callback-key-32bytes"
-        ),
-        instrumentation=_instrumentation(),
-        clock=lambda: datetime(2026, 9, 12, tzinfo=timezone.utc),
-    )
-    request = ChatV2Request.model_validate({
-        "contract_version": "2.0",
-        "request_id": "f14-attack-replay",
-        "payload_digest": "0" * 64,
-        "session_id": 1401,
-        "thread_id": "thread-f14-replay",
-        "step_id": "basic-info",
-        "message": "합성 callback 재실행 공격",
-        "deadline_at": "2099-01-01T00:00:00Z",
-        "customer_info": {"saved_data": {}, "current_form": {}},
-        "field_registry": [],
-        "chart_payload": None,
-    })
-    scheduled: list[tuple[Callable[..., Awaitable[Any]], Any]] = []
-    schedule = lambda function, argument: scheduled.append((function, argument))
-    await transport.accept(request, schedule)
-    await transport.accept(request, schedule)
-    first = await scheduled[0][0](scheduled[0][1])
-    second = await transport.run(request)
-    checkpoint = await store.get(request.request_id)
-    return {
-        "scheduled_runs": len(scheduled),
-        "processor_calls": processor_calls,
-        "callback_calls": len(callback.payloads),
-        "identical_callbacks": first == second == callback.payloads[0] == callback.payloads[1],
-        "checkpoint_status": checkpoint.status if checkpoint else None,
-        "callback_delivered": checkpoint.callback_delivered if checkpoint else False,
     }
 
 
@@ -329,9 +250,6 @@ async def run_suite(
             reproduction_input = source_case["input"]
         elif scenario == "dependency_executor":
             actual = await _dependency_executor_scenario()
-            reproduction_input = deepcopy(case["input"])
-        elif scenario == "callback_replay":
-            actual = await _callback_replay_scenario()
             reproduction_input = deepcopy(case["input"])
         else:  # validate_suite rejects this before execution.
             raise ValueError(f"unsupported scenario: {scenario}")

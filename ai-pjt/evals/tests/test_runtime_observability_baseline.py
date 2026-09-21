@@ -9,22 +9,18 @@ from evals.runtime_observability_fixture import reference_runtime_events
 
 
 class RuntimeObservabilityBaselineTests(unittest.TestCase):
-    def test_task_request_retry_fallback_and_aggregation_baseline(self) -> None:
+    def test_task_request_retry_failure_response_and_aggregation_baseline(self) -> None:
         baseline = build_runtime_observability_baseline(reference_runtime_events())
 
         self.assertEqual(baseline.requests, 3)
         self.assertEqual(baseline.request_success_rate.value, 2 / 3)
         self.assertEqual(baseline.request_timeout_count, 1)
-        self.assertEqual(baseline.task_outcomes.total, 5)
-        self.assertEqual(baseline.task_outcomes.completed, 2)
+        self.assertEqual(baseline.task_outcomes.total, 4)
+        self.assertEqual(baseline.task_outcomes.completed, 1)
         self.assertEqual(baseline.task_outcomes.failed, 2)
         self.assertEqual(baseline.task_outcomes.blocked, 1)
-        self.assertEqual(baseline.fallback_request_rate.value, 1 / 3)
+        self.assertEqual(baseline.all_tasks_failed_response_rate.value, 1 / 3)
         self.assertEqual(baseline.aggregation_success_rate.value, 1.0)
-        self.assertEqual(baseline.callback_delivery.attempts, 8)
-        self.assertEqual(baseline.callback_delivery.retried_requests, 2)
-        self.assertEqual(baseline.callback_delivery.eventually_succeeded, 2)
-        self.assertEqual(baseline.callback_delivery.exhausted, 1)
 
     def test_stage_latency_and_reasons_are_reported_without_targets(self) -> None:
         payload = build_runtime_observability_baseline(
@@ -47,7 +43,6 @@ class RuntimeObservabilityBaselineTests(unittest.TestCase):
             trace_id="trace_00000001",
             request_id="request-00000001",
             thread_id="thread-00000001",
-            plan_id="plan-request-00000001",
             occurred_at_epoch_ms=1,
             stage=RuntimeStage.REQUEST_PROCESSING,
             status=RuntimeStatus.STARTED,
@@ -59,7 +54,6 @@ class RuntimeObservabilityBaselineTests(unittest.TestCase):
             trace_id=start.trace_id,
             request_id=start.request_id,
             thread_id=start.thread_id,
-            plan_id=start.plan_id,
             occurred_at_epoch_ms=2,
             stage=start.stage,
             status=RuntimeStatus.SUCCEEDED,

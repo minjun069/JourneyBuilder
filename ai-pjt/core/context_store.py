@@ -15,7 +15,7 @@ import json
 import re
 from typing import Any, Mapping
 
-from core.context import (
+from core.context_domain import (
     CONTEXT_SCHEMA_VERSION,
     ArchivedConversationTurn,
     ContextSummary,
@@ -551,7 +551,8 @@ class PostgresCommittedContextStore:
             cursor = await connection.execute(
                 "SELECT thread_key FROM ai_temporary_executions WHERE expires_at <= NOW()"
             )
-            return tuple(row["thread_key"] async for row in cursor)
+            rows = await cursor.fetchall()
+            return tuple(row["thread_key"] for row in rows)
 
     async def forget_execution(self, thread_key: str) -> None:
         async with await self._connect(autocommit=True) as connection:

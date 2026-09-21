@@ -110,20 +110,10 @@ def format_docs(results: Sequence[Any]) -> str:
     for result in results:
         if isinstance(result, SearchResult):
             metadata = result.chunk.metadata
-            locators = ", ".join(metadata.source_locators)
             formatted.append(
                 "\n".join(
                     (
-                        (
-                            f"[근거: {metadata.title} | 발행: {metadata.publisher} | "
-                            f"기준일: {metadata.as_of_date} | 버전: {metadata.version}]"
-                        ),
-                        (
-                            f"[source_id: {metadata.source_id} | chunk_id: "
-                            f"{result.chunk.chunk_id} | 구간: "
-                            f"{result.chunk.start_offset}-{result.chunk.end_offset}]"
-                        ),
-                        f"[원문 위치: {locators}]",
+                        f"[자료: {metadata.title} | 기준일: {metadata.as_of_date}]",
                         result.chunk.text,
                     )
                 )
@@ -131,13 +121,5 @@ def format_docs(results: Sequence[Any]) -> str:
             continue
 
         node = result.node
-        metadata = node.metadata
-        formatted.append(
-            "\n".join(
-                (
-                    f"[근거: {metadata.get('title', metadata.get('source', '알 수 없음'))}]",
-                    node.get_content(),
-                )
-            )
-        )
+        formatted.append(node.get_content())
     return "\n\n---\n\n".join(formatted)

@@ -76,14 +76,18 @@ def load_step_registry(path: Path | None = None) -> dict[str, Any]:
         for description in agent_descriptions.values()
     ):
         raise StepRegistryError("agent_descriptions must contain non-empty strings")
-    fallback_agent = payload.get("fallback_agent")
-    if fallback_agent not in agents:
-        raise StepRegistryError("fallback_agent must be a registered agent")
-
     transport_fallback_step_ids = _require_non_empty_strings(
         payload.get("transport_fallback_step_ids"),
         "transport_fallback_step_ids",
     )
+    transport_fallback_allowed_agents = _require_non_empty_strings(
+        payload.get("transport_fallback_allowed_agents"),
+        "transport_fallback_allowed_agents",
+    )
+    if set(transport_fallback_allowed_agents) - set(agents):
+        raise StepRegistryError(
+            "transport_fallback_allowed_agents contains unregistered agents"
+        )
 
     steps = payload.get("steps")
     if not isinstance(steps, list) or not steps:
@@ -104,10 +108,6 @@ def load_step_registry(path: Path | None = None) -> dict[str, Any]:
             raise StepRegistryError(
                 f"steps[{index}].allowed_agents contains unregistered agents"
             )
-        if fallback_agent not in allowed_agents:
-            raise StepRegistryError(
-                f"steps[{index}].allowed_agents must include fallback_agent"
-            )
         step_ids.append(step_id)
 
     if len(step_ids) != len(set(step_ids)):
@@ -121,10 +121,13 @@ def load_step_registry(path: Path | None = None) -> dict[str, Any]:
 
 def load_step_candidates(path: Path | None = None) -> dict[str, list[str]]:
     registry = load_step_registry(path)
-    return {
+    candidates = {
         step["step_id"]: list(step["allowed_agents"])
         for step in registry["steps"]
     }
+    for step_id in registry["transport_fallback_step_ids"]:
+        candidates[step_id] = list(registry["transport_fallback_allowed_agents"])
+    return candidates
 
 
 def load_agent_descriptions(path: Path | None = None) -> dict[str, str]:

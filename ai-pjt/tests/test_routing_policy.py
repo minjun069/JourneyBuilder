@@ -2,119 +2,121 @@ from __future__ import annotations
 
 import unittest
 
-from graph.router import select_route
-from router_evaluation import load_contract_step_candidates, load_evaluation_fixture
+from graph.task_catalog import allowed_task_types_for
+from guardrails.plan_policy import evaluate_and_route
 
 
-class FakeClassifier:
-    def __init__(self, result: dict) -> None:
-        self.result = result
-        self.calls: list[dict] = []
-
-    def __call__(self, *, task: dict, candidates: tuple[str, ...]) -> dict:
-        self.calls.append({"task": task, "candidates": candidates})
-        if self.result["status"] == "error":
-            raise RuntimeError(self.result.get("error", "classifier error"))
-        return {
-            "status": self.result["status"],
-            "agent": self.result.get("agent"),
-        }
+STEP_CANDIDATES = {
+    "intro": ("qa",),
+    "financial-goals": ("qa", "input_assist", "error_review"),
+}
 
 
-class ProductionRoutingPolicyTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.fixture = load_evaluation_fixture()
-        cls.step_candidates = load_contract_step_candidates()
+class DeterministicRoutingPolicyTests(unittest.TestCase):
+    def test_agent_task_type_has_one_canonical_route(self) -> None:
+        decision = evaluate_and_route(
+            {"status": "executable", "tasks": [{
+                "id": "answer",
+                "type": "answer_question",
+                "description": "안정추구의 뜻을 설명",
+                "depends_on": [],
+                "bindings": {},
+            }]},
+            step_id="intro",
+            step_candidates=STEP_CANDIDATES,
+        )
 
-    def test_all_p06_cases_match_agent_and_reason_code(self) -> None:
-        for case in self.fixture["cases"]:
-            classifier = FakeClassifier(case["classifier"])
-            task = {
-                "id": case["id"],
-                "type": case["kind"],
-                "description": case["message"],
-                "executor_kind": "agent",
-            }
-            with self.subTest(case=case["id"]):
-                decision = select_route(
-                    task=task,
-                    step_id=case["step_id"],
-                    step_candidates=self.step_candidates,
-                    classifier=classifier,
-                )
-                self.assertEqual(decision["task_id"], case["id"])
-                self.assertEqual(decision["executor"], case["expected"]["agent"])
-                self.assertEqual(
-                    decision["reason_code"],
-                    case["expected"]["reason_code"],
-                )
-                self.assertEqual(
-                    len(classifier.calls),
-                    case.get("expected_classifier_calls", 1),
-                )
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.plan["tasks"][0]["route"], {
+            "task_id": "task-1",
+            "executor_kind": "agent",
+            "executor": "qa",
+            "reason_code": "intent_match",
+        })
 
-    def test_registered_tool_capability_is_selected_without_classifier(self) -> None:
-        classifier = FakeClassifier({"status": "matched", "agent": "qa"})
-        decision = select_route(
-            task={
-                "id": "task-1",
-                "executor_kind": "tool",
-                "capability": "lookup_reference_value",
+    def test_tool_route_requires_registered_capability(self) -> None:
+        raw_plan = {"status": "executable", "tasks": [{
+            "id": "lookup",
+            "type": "lookup_reference_value",
+            "description": "기준값 조회",
+            "depends_on": [],
+            "bindings": {},
+            "arguments": {
+                "reference_id": "debt_service_ratio_max",
+                "age": 45,
+                "period": "annual",
+                "population": "retirewise_kr_households",
             },
+        }]}
+        available = evaluate_and_route(
+            raw_plan,
             step_id="financial-goals",
-            step_candidates=self.step_candidates,
-            classifier=classifier,
+            step_candidates=STEP_CANDIDATES,
             registered_tool_capabilities=("lookup_reference_value",),
         )
-        self.assertEqual(decision["executor_kind"], "tool")
-        self.assertEqual(decision["executor"], "lookup_reference_value")
-        self.assertEqual(decision["reason_code"], "capability_match")
-        self.assertEqual(classifier.calls, [])
-
-    def test_unregistered_tool_capability_fails_closed(self) -> None:
-        decision = select_route(
-            task={
-                "id": "task-1",
-                "executor_kind": "tool",
-                "capability": "lookup_reference_value",
-            },
+        unavailable = evaluate_and_route(
+            raw_plan,
             step_id="financial-goals",
-            step_candidates=self.step_candidates,
-            classifier=FakeClassifier({"status": "matched", "agent": "qa"}),
+            step_candidates=STEP_CANDIDATES,
         )
-        self.assertEqual(decision["executor_kind"], "tool")
-        self.assertEqual(decision["reason_code"], "capability_unavailable")
 
-    def test_unknown_executor_kind_falls_back(self) -> None:
-        decision = select_route(
-            task={"id": "task-1", "executor_kind": "shell"},
+        self.assertTrue(available.allowed)
+        self.assertEqual(
+            available.plan["tasks"][0]["route"]["executor"],
+            "lookup_reference_value",
+        )
+        self.assertEqual(unavailable.reason_code, "TASK_TYPE_NOT_ALLOWED_FOR_STEP")
+
+    def test_unknown_or_injected_route_is_never_authorized(self) -> None:
+        unknown = evaluate_and_route(
+            {"status": "executable", "tasks": [{
+                "id": "unknown",
+                "type": "shell",
+                "description": "실행",
+                "depends_on": [],
+                "bindings": {},
+            }]},
             step_id="intro",
-            step_candidates=self.step_candidates,
-            classifier=FakeClassifier({"status": "matched", "agent": "qa"}),
+            step_candidates=STEP_CANDIDATES,
         )
-        self.assertEqual(decision["executor"], "fallback")
-        self.assertEqual(decision["reason_code"], "plan_invalid")
-
-    def test_known_task_type_recovers_from_classifier_failure(self) -> None:
-        diagnostics: list[dict[str, str]] = []
-        decision = select_route(
-            task={
-                "id": "task-1",
+        injected = evaluate_and_route(
+            {"status": "executable", "tasks": [{
+                "id": "answer",
                 "type": "answer_question",
-                "description": "안정추구란 정확히 뭘 말하는거야?",
-                "executor_kind": "agent",
-            },
-            step_id="basic-info",
-            step_candidates=self.step_candidates,
-            classifier=FakeClassifier({"status": "error"}),
-            diagnostic_sink=diagnostics.append,
+                "description": "질문 답변",
+                "depends_on": [],
+                "bindings": {},
+                "route": {"executor": "shell"},
+            }]},
+            step_id="intro",
+            step_candidates=STEP_CANDIDATES,
         )
 
-        self.assertEqual(decision["executor"], "qa")
-        self.assertEqual(decision["reason_code"], "intent_match")
-        self.assertEqual(diagnostics[0]["error_type"], "RuntimeError")
-        self.assertRegex(diagnostics[0]["error_fingerprint"], r"^[0-9a-f]{24}$")
+        self.assertEqual(unknown.reason_code, "UNSUPPORTED_TASK_TYPE")
+        self.assertEqual(injected.reason_code, "UNKNOWN_TASK_FIELDS")
+
+    def test_step_task_menu_is_derived_from_agent_and_tool_registries(self) -> None:
+        intro = allowed_task_types_for(
+            step_id="intro",
+            step_candidates=STEP_CANDIDATES,
+        )
+        goals = allowed_task_types_for(
+            step_id="financial-goals",
+            step_candidates=STEP_CANDIDATES,
+            registered_tool_capabilities=("lookup_reference_value",),
+        )
+
+        self.assertEqual(intro, ("answer_question",))
+        self.assertIn("propose_form_change", goals)
+        self.assertIn("review_validation_error", goals)
+        self.assertIn("lookup_reference_value", goals)
+
+    def test_general_transport_step_routes_questions_to_qa(self) -> None:
+        allowed = allowed_task_types_for(step_id="general")
+
+        self.assertIn("answer_question", allowed)
+        self.assertNotIn("propose_form_change", allowed)
+        self.assertNotIn("review_validation_error", allowed)
 
 
 if __name__ == "__main__":
