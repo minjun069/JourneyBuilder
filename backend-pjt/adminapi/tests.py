@@ -14,10 +14,17 @@ from consulting.models import (
     FinancialAsset,
     Income,
     Liability,
+    PensionAsset,
     RealEstateAsset,
 )
+from reports.snapshots import build_calculation_input_snapshot
+from simulations.adapter import build_simulation_input
 
 from .grading import GOOD, RISK, WARN, build_graded_indicators
+from .management.commands.seed_demo import (
+    PENSION_PERIOD_LIFETIME,
+    PENSION_PERIOD_SAVINGS,
+)
 from .services import representative_session
 
 User = get_user_model()
@@ -334,6 +341,49 @@ class SeedDemoCommandTests(TestCase):
         call_command('seed_demo', '--count', '6', verbosity=0)
         self.assertEqual(
             User.objects.filter(email__endswith='@retirewise.demo').count(), 6)
+
+
+class SeedDemoPensionPeriodTests(TestCase):
+    """시드 연금 행이 시뮬레이션 어댑터의 수령 기간 규격을 만족해야 한다.
+
+    pension_period 는 CharField 다. 비워 두면 pension_period_missing, 정수를 넣으면
+    '20' 으로 저장돼 pension_period_unsupported 가 난다. 둘 다 시연 고객을
+    시뮬레이션 불가 상태로 만든다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('seed_demo', '--count', '10', verbosity=0)
+
+    def test_no_pension_row_has_an_empty_period(self):
+        self.assertTrue(PensionAsset.objects.exists())
+        self.assertFalse(
+            PensionAsset.objects.filter(pension_period__isnull=True).exists())
+        self.assertFalse(PensionAsset.objects.filter(pension_period='').exists())
+
+    def test_seeded_periods_use_the_frontend_select_values(self):
+        self.assertEqual(
+            set(PensionAsset.objects.values_list('pension_period', flat=True)),
+            {PENSION_PERIOD_LIFETIME, PENSION_PERIOD_SAVINGS},
+        )
+
+    def test_adapter_reports_no_pension_period_issue_for_seeded_sessions(self):
+        """패턴을 여기 복사하지 않고 어댑터 자신의 판정을 돌린다.
+
+        복사하면 어댑터가 규칙을 바꿔도 이 테스트가 눈치채지 못한다.
+        """
+        sessions = ConsultingSession.objects.filter(
+            pension_assets__isnull=False).distinct()
+        self.assertTrue(sessions.exists())
+        for session in sessions:
+            with self.subTest(session=session.pk):
+                codes = {
+                    issue.code
+                    for issue in build_simulation_input(
+                        build_calculation_input_snapshot(session)).issues
+                }
+                self.assertNotIn('pension_period_missing', codes)
+                self.assertNotIn('pension_period_unsupported', codes)
 
 
 class BootstrapDemoCommandTests(TestCase):
