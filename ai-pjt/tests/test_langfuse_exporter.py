@@ -319,7 +319,7 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "stage": "model",
             "status": "succeeded",
             "duration_ms": 5,
-            "operation_name": "qa.specify",
+            "operation_name": "qa.plan",
             "task_id": "task-1",
             "agent": "qa",
         })
@@ -335,8 +335,8 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         route = by_name["retirewise.route.router.select"]
         task = by_name["retirewise.task.task-1.qa"]
         binding = by_name["retirewise.binding_resolution"]
-        agent_step = by_name["retirewise.agent_step.qa.specify"]
-        agent_model = by_name["retirewise.model.qa.specify"]
+        agent_step = by_name["retirewise.agent_step.qa.plan"]
+        agent_model = by_name["retirewise.model.qa.plan"]
 
         self.assertIs(planner.parent, root)
         self.assertIs(planner_model.parent, planner)

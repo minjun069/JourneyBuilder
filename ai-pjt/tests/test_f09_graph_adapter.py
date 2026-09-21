@@ -70,11 +70,11 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
             agent_graphs=agents,
             tool_executors=_graph(),
-            response_composer=None,
         )
 
         result = await graph.ainvoke(_state("45세 부채상환 기준을 알려줘"))
@@ -94,11 +94,11 @@ class F09GraphAdapterTests(unittest.IsolatedAsyncioTestCase):
         agents = all_agent_graphs()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=FakePlanner(_reference_plan(period="monthly")),
             agent_graphs=agents,
             tool_executors=_graph(),
-            response_composer=None,
         )
 
         result = await graph.ainvoke(_state("45세 부채상환 월 기준을 알려줘"))

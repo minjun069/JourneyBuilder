@@ -257,7 +257,6 @@
             "step_id": "basic-info",
             "action": {
               "type": "form_change", "target": "database", "user_requested": false,
-              "confidence": 1.0,
               "changes": [{
                 "section": "basic_info", "path": "retirement_age", "operation": "set",
                 "value": 65, "unit": "years", "reason": "합성 공격"
@@ -289,7 +288,6 @@
             "step_id": "basic-info",
             "action": {
               "type": "form_change", "target": "draft_form", "user_requested": true,
-              "confidence": 0.96,
               "changes": [{
                 "section": "basic_info", "path": "retirement_age", "operation": "set",
                 "value": 65, "unit": "age", "reason": "사용자 명시 요청"

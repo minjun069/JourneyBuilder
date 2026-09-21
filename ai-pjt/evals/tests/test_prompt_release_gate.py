@@ -26,11 +26,32 @@ def _report(release: str) -> dict:
             "form_action_exact_rate": 0.96,
             "error_review_false_positive_rate": 0.04,
             "average_model_calls": 4.0,
+            "qa_normal_max_calls": 3,
+            "input_direct_max_calls": 2,
+            "input_review_max_calls": 3,
+            "request_conditions_preserved_rate": 1.0,
+            "question_coverage_rate": 1.0,
+            "plain_language_pass_rate": 1.0,
         },
     }
 
 
 class PromptReleaseGateTests(unittest.TestCase):
+    def test_required_behavior_and_per_agent_call_budgets_are_enforced(self) -> None:
+        candidate = _report("candidate")
+        candidate["quality_metrics"].update({
+            "qa_normal_max_calls": 4,
+            "input_direct_max_calls": 3,
+            "input_review_max_calls": 4,
+            "request_conditions_preserved_rate": 0.9,
+            "question_coverage_rate": 0.8,
+            "plain_language_pass_rate": 0.7,
+        })
+        self.assertEqual(set(evaluate_prompt_candidate(_report("previous"), candidate)), {
+            "qa_normal_max_calls_exceeded", "input_direct_max_calls_exceeded", "input_review_max_calls_exceeded",
+            "request_conditions_preserved_rate_incomplete", "question_coverage_rate_incomplete", "plain_language_pass_rate_incomplete",
+        })
+
     def test_non_regressing_new_release_passes(self) -> None:
         self.assertEqual(
             evaluate_prompt_candidate(_report("previous"), _report("candidate")),

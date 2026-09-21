@@ -46,11 +46,11 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         context_api = ContextStateAPI(checkpointer, InMemoryCommittedContextStore())
         self.graph = build_graph(
             checkpointer,
+            response_composer=None,
             instrumentation=fake_instrumentation()[0],
             planner=planner,
             agent_graphs=agent_graphs or all_agent_graphs(),
             tool_executors=tool_executors,
-            response_composer=None,
         )
         self.context_api = context_api
         return context_api
@@ -274,14 +274,13 @@ class VerticalAsyncIntegrationTests(IsolatedAsyncioTestCase):
         request_payload["step_id"] = "financial-goals"
         request = ChatV2Request.model_validate(request_payload)
 
-        classify = SimpleNamespace(ainvoke=AsyncMock(return_value=input_assist_service.ClassifyResult(
-            intent="fill_avg",
-            user_requested_change=True,
+        extract = SimpleNamespace(ainvoke=AsyncMock(return_value=input_assist_service.ExtractResult(
+            request="fill_defaults", changes=[], questions=[],
         )))
         merge_model = SimpleNamespace(ainvoke=AsyncMock(return_value=AIMessage(
             content="승인된 주거비 기준으로 기존 빈 항목 변경안을 만들었습니다.",
         )))
-        with patch.object(input_assist_service, "_classify_chain", classify), patch.object(
+        with patch.object(input_assist_service, "extract_chain", extract), patch.object(
             input_assist_service, "llm", merge_model
         ):
             first = await self.run_stream_execution(request)

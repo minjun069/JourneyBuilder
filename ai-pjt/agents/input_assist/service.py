@@ -1,567 +1,376 @@
+"""Batch form extraction with deterministic validation and optional meaning review."""
+
 from __future__ import annotations
 
-import json
+import re
 from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any, NotRequired, TypedDict
 
 from agents.input_assist.defaults import (
-    ReferenceTargetNotAllowed,
-    build_bound_reference_proposals,
-    build_default_proposals,
+    ReferenceTargetNotAllowed, build_bound_reference_proposals, build_default_proposals,
 )
-from core.llm import llm
 from core.field_registry import load_field_registry
-from core.model_boundary import (
-    ModelPurpose,
-    prompt_messages,
-    secure_ainvoke,
-)
+from core.llm import llm
+from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
+from tools.output_policy import _validate_change
+
 from .model import (
-    CLASSIFY_PROMPT as _CLASSIFY_PROMPT,
-    ERROR_CHECK_2_PROMPT as _ERROR_CHECK_2_PROMPT,
-    IDENTIFY_PROMPT as _IDENTIFY_PROMPT,
-    MERGE_PROMPT as _MERGE_PROMPT,
-    RESOLVE_PROMPT as _RESOLVE_PROMPT,
-    ClassifyResult,
-    ErrorCheck2Result,
-    IdentificationItem,
-    IdentifyResult,
-    ResolveResult,
-    classify_chain as _classify_chain,
-    error_check_2_chain as _error_check_2_chain,
-    identify_chain as _identify_chain,
-    resolve_chain as _resolve_chain,
+    EXTRACT_PROMPT, RESPOND_PROMPT, REVIEW_PROMPT,
+    ExtractResult, ExtractedChange, ReviewResult, extract_chain, review_chain,
 )
 
-MAX_RETRIES = 2
-
-
-# ---------------------------------------------------------------------------
-# State
-# ---------------------------------------------------------------------------
 
 class InputAssistState(TypedDict):
-    # ChatState 와 공유 (subgraph 입출력)
     message: str
     step_id: str
     customer_info: dict
-    # executor가 검증한 선행 typed artifact의 명시적 binding
     task_input: NotRequired[dict[str, Any]]
-    # identify 출력 (Django canonical registry)
-    guideline: str
-    field_spec: str
-    # classify 출력
-    classification: str          # "fill_avg" | "find_field" | "organize" | "other"
-    # identify 출력
-    user_requested_change: bool
-    identification: list[dict]
-    cur_index: int             # 현재 처리 중인 항목 인덱스
-    # resolve 출력 / 재시도 관리
-    resolution: Any
-    resolution_retries: int
-    resolution_confidence: float
-    # error_check_2 출력
-    validation_type: str
-    validation_reason: str
-    # 항목별 결과 누적 (qa.py 의 partial_answers 와 동일 역할)
-    partial_results: list[dict]  # 성공·실패한 canonical field 처리 결과
-    # 최종 출력 — ChatState 의 output 필드로 전파
-    output: dict                 # 자연어 응답과 FormChangeAction
-    reason_code: NotRequired[str]
-_RESOLVE_INTENT_INSTRUCTIONS: dict[str, str] = {
-    "fill_avg": "executor가 검증해 전달한 binding 값만 사용하세요. binding 값이 없으면 평균값·추천값을 임의로 생성하지 마세요.",
-    "find_field": "발췌 내용에서 이 항목에 해당하는 값을 직접 추출하여 반환하세요.",
-    "organize": "발췌 내용을 이 항목의 type·unit·constraints 에 맞게 정리하여 반환하세요.",
-}
+    field_refs: dict[str, dict]
+    item_refs: dict[str, dict]
+    extraction: dict
+    candidates: list[dict]
+    review_candidates: list[dict]
+    questions: list[str]
+    output: dict
 
 
-def _bindings(state: Mapping[str, Any]) -> dict[str, Any]:
-    task_input = state.get("task_input")
-    if not isinstance(task_input, Mapping):
-        return {}
-    bindings = task_input.get("bindings")
+def _bindings(state: Mapping[str, Any]) -> dict:
+    task = state.get("task_input", {})
+    bindings = task.get("bindings", {}) if isinstance(task, Mapping) else {}
     return dict(bindings) if isinstance(bindings, Mapping) else {}
 
 
-def _field_registry(state: Mapping[str, Any]) -> list[dict[str, Any]]:
-    return load_field_registry(str(state.get("step_id", "")))
-
-# ---------------------------------------------------------------------------
-# 노드
-# ---------------------------------------------------------------------------
-
-def _init(_: InputAssistState) -> dict:
-    return {
-        "guideline": "",
-        "field_spec": "",
-        "classification": "",
-        "user_requested_change": False,
-        "identification": [],
-        "cur_index": 0,
-        "resolution": None,
-        "resolution_confidence": 0,
-        "resolution_retries": 0,
-        "validation_type": "",
-        "validation_reason": "",
-        "partial_results": [],
-        "output": {},
-        "reason_code": "",
-    }
+def _reference_for_model(state: Mapping[str, Any]) -> dict:
+    bindings = _bindings(state)
+    if "value" not in bindings:
+        return {}
+    return {key: deepcopy(bindings[key]) for key in ("value", "unit", "period", "population") if key in bindings}
 
 
-async def _classify(state: InputAssistState) -> dict:
-    result = await secure_ainvoke(
-        _classify_chain,
-        prompt_messages(_CLASSIFY_PROMPT, {
-            "step_id": state["step_id"],
-            "message": state["message"],
-        }),
-        purpose=ModelPurpose.INPUT_ASSIST,
-        operation_name="input_assist.classify",
-        sensitive_payload=_model_sensitive_payload(state),
-        prompt=_CLASSIFY_PROMPT,
-    )
-    return {
-        "classification": result.intent,
-        "user_requested_change": result.user_requested_change,
-    }
+def _current_form(state: Mapping[str, Any]) -> dict:
+    form = state.get("customer_info", {}).get("current_form", {})
+    return form if isinstance(form, dict) else {}
 
 
-async def _identify(state: InputAssistState) -> dict:
-    writable_registry = [
-        field for field in _field_registry(state)
-        if field.get("writable_by_ai")
-    ]
-    guideline = json.dumps(writable_registry, ensure_ascii=False, indent=2)
-    current_form = state.get("customer_info", {}).get("current_form", {})
-    if state["classification"] == "fill_avg":
-        try:
-            bindings = _bindings(state)
-            if "reference_id" in bindings:
-                proposals = build_bound_reference_proposals(
-                    step_id=state["step_id"],
-                    message=state["message"],
-                    current_form=current_form if isinstance(current_form, dict) else {},
-                    bindings=bindings,
-                    user_requested_change=state["user_requested_change"],
-                )
-            else:
-                proposals = build_default_proposals(
-                    step_id=state["step_id"],
-                    message=state["message"],
-                    current_form=current_form if isinstance(current_form, dict) else {},
-                    saved_data=state.get("customer_info", {}).get("saved_data", {}),
-                )
-        except ReferenceTargetNotAllowed:
-            return {
-                "guideline": guideline,
-                "identification": [],
-                "resolution_confidence": 0,
-                "cur_index": 0,
-                "reason_code": "reference_target_not_allowed",
-            }
-        return {
-            "guideline": guideline,
-            "identification": proposals,
-            "resolution_confidence": 0,
-            "cur_index": 0,
+def _identity(row: Mapping[str, Any], *, parent: bool = False) -> dict:
+    prefix = "parent_" if parent else ""
+    if row.get("id") is not None:
+        return {f"{prefix}item_id": row["id"]}
+    if row.get("client_item_id"):
+        return {f"{prefix}client_item_id": row["client_item_id"]}
+    return {}
+
+
+def _row_label(row: Mapping[str, Any]) -> str:
+    for key in ("name", "content", "type", "asset_type"):
+        if row.get(key):
+            return str(row[key])
+    if "from_age" in row and "to_age" in row:
+        return f"{row['from_age']}세부터 {row['to_age']}세"
+    return "이름 없는 항목"
+
+
+def _form_context(state: Mapping[str, Any]) -> tuple[dict, dict, dict]:
+    """Keep raw field paths and row identities in code-owned reference maps."""
+    registry = [field for field in load_field_registry(state["step_id"]) if field["writable_by_ai"]]
+    fields = {f"f{index}": field for index, field in enumerate(registry)}
+    form = _current_form(state)
+    items: dict[str, dict] = {}
+    for section in dict.fromkeys(field["section"] for field in registry if field["cardinality"] != "single"):
+        rows = form.get(section, []) if section in {"goal_periods", "goal_milestones"} else form.get("assets", [])
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, Mapping) or not _identity(row):
+                continue
+            parent_ref = f"r{len(items)}"
+            items[parent_ref] = {"section": section, "row": dict(row), "parent": None}
+            if section == "goal_periods":
+                for child in row.get("items", []) if isinstance(row.get("items"), list) else []:
+                    if isinstance(child, Mapping) and _identity(child):
+                        items[f"r{len(items)}"] = {
+                            "section": section, "row": dict(child), "parent": dict(row), "parent_ref": parent_ref,
+                        }
+    field_inputs = []
+    for ref, field in fields.items():
+        entry = {
+            "field_ref": ref, "name": field["label"], "type": field["value_type"],
+            "unit": field["unit"], "constraints": field["constraints"],
+            "required": not field["nullable"],
         }
+        if field["cardinality"] != "single":
+            entry["key"] = field["path"].removeprefix("items[].")
+            entry["group"] = field["section"]
+            entry["nested"] = field["path"].startswith("items[].")
+        field_inputs.append(entry)
+    item_inputs = []
+    for ref, item in items.items():
+        values = {}
+        for field_ref, field in fields.items():
+            if field["section"] != item["section"] or field["path"].startswith("items[].") != bool(item["parent"]):
+                continue
+            key = field["path"].removeprefix("items[].")
+            if key != "items":
+                value = item["row"].get(key)
+                values[field_ref] = "입력 없음" if value is None else value
+        item_inputs.append({
+            "item_ref": ref, "name": _row_label(item["row"]), "values": values,
+            **({"parent_ref": item["parent_ref"]} if item.get("parent_ref") else {}),
+        })
+    payload = {
+        "message": state["message"], "fields": field_inputs, "items": item_inputs,
+        "reference": _reference_for_model(state),
+        "current_values": {ref: "입력 없음" if form.get(field["path"]) is None else form[field["path"]]
+                           for ref, field in fields.items() if field["cardinality"] == "single"},
+    }
+    return fields, items, payload
+
+
+def _sensitive_payload(state: Mapping[str, Any]) -> dict:
+    return {"message": state["message"], "customer_info": state.get("customer_info", {}), "bindings": _bindings(state)}
+
+
+async def _extract(state: InputAssistState) -> dict:
+    fields, items, payload = _form_context(state)
     result = await secure_ainvoke(
-        _identify_chain,
-        prompt_messages(_IDENTIFY_PROMPT, {
-            "step_id": state["step_id"],
-            "field_registry": writable_registry,
-            "current_form": current_form,
-            "message": state["message"],
-            "classification": state["classification"],
-            "user_requested_change": state["user_requested_change"],
-        }),
-        purpose=ModelPurpose.INPUT_ASSIST,
-        operation_name="input_assist.identify",
-        sensitive_payload=_model_sensitive_payload(state),
-        prompt=_IDENTIFY_PROMPT,
+        extract_chain, prompt_messages(EXTRACT_PROMPT, payload),
+        purpose=ModelPurpose.INPUT_ASSIST, operation_name="input_assist.extract",
+        sensitive_payload=_sensitive_payload(state), prompt=EXTRACT_PROMPT,
     )
     return {
-        "guideline": guideline,
-        "identification": [item.model_dump() for item in result.items],
-        "resolution_confidence": 0,
-        "cur_index": 0,
-    }
-
-def _route_after_identify(state: InputAssistState) -> str:
-    return "next_field" if state["identification"] else "merge"
-
-
-def _next_field(state: InputAssistState) -> dict:
-    return {
-        "field_spec": "",
-        "resolution": None,
-        "validation_reason": "",
-        "resolution_retries": 0,
-        "validation_type": "",
+        "field_refs": fields, "item_refs": items, "extraction": result.model_dump(),
+        "questions": list(result.questions), "candidates": [], "review_candidates": [], "output": {},
     }
 
 
-async def _error_check_1(state: InputAssistState) -> dict:
-    item = state["identification"][state["cur_index"]]
-    field_spec = next((
-        field
-        for field in _field_registry(state)
-        if field.get("section") == item["section"]
-        and field.get("path") == item["path"]
-    ), None)
-
-    if field_spec is None:
-        reason = "등록되지 않은 canonical 필드"
-    elif not field_spec.get("writable_by_ai"):
-        reason = "AI 쓰기가 허용되지 않은 canonical 필드"
-    elif item["operation"] not in field_spec.get("operations", []):
-        reason = "허용되지 않은 form operation"
-    elif (
-        _bindings(state).get("unit") is not None
-        and _bindings(state)["unit"] != field_spec.get("unit", "none")
-    ):
-        reason = "선행 조회 결과와 canonical 필드의 단위 불일치"
+def _restore_change(raw: dict, fields: dict, items: dict) -> tuple[dict, dict, Any, str]:
+    field = fields.get(raw["field_ref"])
+    if field is None:
+        raise ValueError("변경할 항목을 현재 화면에서 확인해 주세요.")
+    operation = raw["operation"]
+    item = items.get(raw.get("item_ref"))
+    change = {"section": field["section"], "path": field["path"], "operation": operation}
+    current_value = None
+    row_name = ""
+    if field["cardinality"] == "single":
+        if raw.get("item_ref") is not None or operation not in {"set", "remove"}:
+            raise ValueError(f"{field['label']}: 변경 방식을 확인해 주세요.")
+        if operation == "remove" and not field["nullable"]:
+            raise ValueError(f"{field['label']}: 필수 입력 항목은 비울 수 없습니다.")
+    elif operation == "add":
+        if field["section"] == "goal_periods":
+            if field["path"] != "items" or item is None or item["section"] != "goal_periods" or item["parent"]:
+                raise ValueError("추가할 기간별 항목의 부모 기간을 확인해 주세요.")
+            change.update(_identity(item["row"], parent=True))
+            row_name = _row_label(item["row"])
+        elif raw.get("item_ref") is not None:
+            raise ValueError("새 항목 추가와 기존 항목 수정을 구분해 주세요.")
     else:
-        reason = ""
+        if operation not in {"update", "remove"} or item is None or item["section"] != field["section"]:
+            raise ValueError(f"{field['label']}: 변경할 기존 항목을 확인해 주세요.")
+        if field["path"].startswith("items[].") != bool(item["parent"]):
+            raise ValueError("변경할 기간과 그 안의 항목을 확인해 주세요.")
+        change.update(_identity(item["row"]))
+        if item["parent"]:
+            change.update(_identity(item["parent"], parent=True))
+        current_value = item["row"].get(field["path"].removeprefix("items[]."))
+        row_name = _row_label(item["row"])
+    if operation != "remove":
+        change["value"] = deepcopy(raw.get("value"))
+    change["reason"] = "사용자가 요청한 입력 변경"
+    return change, field, current_value, row_name
 
-    if not reason:
-        return {"validation_reason": ""}
 
+def _requires_review(message: str, change: dict, field: dict, row_name: str) -> bool:
+    """Only literal, explicitly named changes can skip semantic review."""
+    compact = re.sub(r"\s+", "", message)
+    if not re.search(r"바꿔|변경|수정|넣어|입력|설정|추가|삭제|지워|제거|채워|작성|적용|고쳐", message):
+        return True
+    if re.search(r"말고|제외|않|유지|그대로|아니|하지|설명|알려|[~〜]", message):
+        return True
+    if row_name and re.sub(r"\s+", "", row_name) not in compact:
+        return True
+    if change["operation"] == "remove":
+        return not (row_name and re.search(r"삭제|지워|제거|빼줘", message))
+    if change["operation"] == "add" or re.sub(r"\s+", "", field["label"]) not in compact:
+        return True
+    value = change.get("value")
+    if isinstance(value, bool) or value is None or isinstance(value, (list, dict)):
+        return True
+    label = re.sub(r"\s+", "", field["label"])
+    for other in load_field_registry(field["step_id"]):
+        other_label = re.sub(r"\s+", "", other["label"])
+        if label != other_label and label in other_label and other_label in compact:
+            return True
+    if isinstance(value, (int, float)):
+        if re.search(r"(?:천|만|억)\s*원", message):
+            return True
+    if not isinstance(value, (str, int, float)) or value == "":
+        return True
+    literal = re.escape(re.sub(r"\s+", "", str(value)))
+    pattern = rf"{re.escape(label)}(?:은|는|을|를|이|가)?[:=]?{literal}(?![\d.])"
+    return re.search(pattern, compact.replace(",", "")) is None
+
+
+def _description(change: dict, field: dict, current_value: Any, row_name: str = "") -> dict:
     return {
-        "partial_results": state["partial_results"] + [{
-            "section": item["section"],
-            "path": item["path"],
-            "operation": item["operation"],
-            "excerpt": item["excerpt"],
-            "resolution": None,
-            "success": False,
-            "reason": reason,
-        }],
-        "cur_index": state["cur_index"] + 1,
-        "validation_type": "registry",
-        "validation_reason": reason,
+        "name": f"{row_name} / {field['label']}" if row_name else field["label"],
+        "operation": change["operation"], "current_value": "입력 없음" if current_value is None else current_value,
+        "value": "입력 비우기" if change.get("value") is None else change["value"], "unit": field["unit"],
     }
 
 
-def _route_after_error_check_1(state: InputAssistState) -> str:
-    if not state["validation_reason"]:
-        return "resolve"
-    if state["cur_index"] < len(state["identification"]):
-        return "next_field"
-    return "merge"
+def _validation_message(code: str) -> str:
+    return {
+        "VALUE_TYPE_MISMATCH": "항목에 맞는 숫자나 문자 형식으로 알려 주세요.",
+        "VALUE_BELOW_MIN": "허용된 최솟값보다 작습니다.",
+        "VALUE_ABOVE_MAX": "허용된 최댓값보다 큽니다.",
+        "NULL_NOT_ALLOWED": "필수 입력 항목은 비울 수 없습니다.",
+        "CHOICE_NOT_ALLOWED": "화면에서 선택할 수 있는 값으로 알려 주세요.",
+        "VALUE_TOO_LONG": "입력 가능한 글자 수를 넘었습니다.",
+    }.get(code, "이 항목에 적용할 값과 변경 방식을 다시 확인해 주세요.")
 
 
-async def _resolve(state: InputAssistState) -> dict:
-    item = state["identification"][state["cur_index"]]
-    hint = (
-        f"\n\n[이전 작업 실패 이유]: {state['validation_reason']}"
-        if state["validation_reason"]
-        else ""
-    )
-    
-    field_spec = next((
-        field for field in _field_registry(state)
-        if field.get("section") == item["section"] and field.get("path") == item["path"]
-    ), {})
-    field_spec = json.dumps(field_spec, ensure_ascii=False, indent=2)
-
+def _default_changes(state: InputAssistState) -> list[dict]:
     bindings = _bindings(state)
-    if "value" in bindings:
-        return {
-            "resolution": bindings["value"],
-            "resolution_confidence": 1.0,
-            "field_spec": field_spec,
-        }
-    if "policy_value" in item:
-        return {
-            "resolution": item["policy_value"],
-            "resolution_confidence": 1.0,
-            "field_spec": field_spec,
-        }
-    if state["classification"] == "fill_avg":
-        return {
-            "resolution": None,
-            "resolution_confidence": 0.0,
-            "field_spec": field_spec,
-            "validation_reason": "검증된 선행 기준값 binding 없음",
-        }
-
-    result = await secure_ainvoke(
-        _resolve_chain,
-        prompt_messages(_RESOLVE_PROMPT, {
-            "intent_instruction": _RESOLVE_INTENT_INSTRUCTIONS.get(
-                state["classification"], ""
-            ),
-            "field_spec": field_spec,
-            "hint": hint,
-            "operation": item["operation"],
-            "user_excerpt": item["excerpt"],
-        }),
-        purpose=ModelPurpose.INPUT_ASSIST,
-        operation_name="input_assist.resolve",
-        sensitive_payload=_model_sensitive_payload(state),
-        prompt=_RESOLVE_PROMPT,
+    if "reference_id" in bindings:
+        return build_bound_reference_proposals(
+            step_id=state["step_id"], message=state["message"], current_form=_current_form(state),
+            bindings=bindings, user_requested_change=True,
+        )
+    return build_default_proposals(
+        step_id=state["step_id"], message=state["message"], current_form=_current_form(state),
+        saved_data=state.get("customer_info", {}).get("saved_data", {}),
     )
+
+
+def _policy_change(raw: dict, field: dict) -> dict:
+    change = {key: value for key, value in raw.items() if key in {
+        "section", "path", "operation", "item_id", "client_item_id", "parent_item_id", "parent_client_item_id",
+    }}
+    change.update(value=raw["policy_value"], unit=field["unit"], reason="승인된 기본값 정책", **raw.get("policy_metadata", {}))
+    return change
+
+
+def _bind_change(change: dict, field: dict, bindings: dict, approved: list[dict]) -> dict:
+    """A model may select a target, but cannot rewrite a verified reference."""
+    if change["operation"] == "remove" or (
+        type(change.get("value")) is not type(bindings["value"])
+        or change.get("value") != bindings["value"]
+        or bindings.get("unit") != field["unit"]
+    ):
+        raise ValueError(f"{field['label']}: 조회한 기준값과 값 또는 단위가 달라 변경안을 만들지 않았습니다.")
+    if "reference_id" in bindings:
+        keys = ("section", "path", "operation", "item_id", "client_item_id", "parent_item_id", "parent_client_item_id")
+        matches = [raw for raw in approved if all(raw.get(key) == change.get(key) for key in keys)]
+        if len(matches) != 1 or matches[0]["policy_value"] != bindings["value"]:
+            raise ValueError(f"{field['label']}: 조회값을 적용할 수 있는 승인된 기존 빈 항목이 아닙니다.")
+        return _policy_change(matches[0], field)
+    return {**change, "value": deepcopy(bindings["value"]), "unit": bindings["unit"], "reason": "검증된 조회 기준값으로 요청한 변경"}
+
+
+def _validate(state: InputAssistState) -> dict:
+    fields, items = state["field_refs"], state["item_refs"]
+    registry = {(field["section"], field["path"]): field for field in load_field_registry(state["step_id"])}
+    questions = list(state["questions"])
+    candidates, review_candidates = [], []
+    request = state["extraction"]["request"]
+    if request == "none":
+        if not questions:
+            questions.append("어떤 항목을 어떤 값으로 변경할지 알려 주세요.")
+        return {"candidates": [], "review_candidates": [], "questions": questions}
+    defaults = request == "fill_defaults"
+    bindings = _bindings(state)
+    bound = not defaults and "value" in bindings
+    approved: list[dict] = []
     try:
-        resolution = json.loads(result.value_json)
-    except (TypeError, json.JSONDecodeError):
-        resolution = None
-    return {
-        "resolution": resolution,
-        "resolution_confidence": (
-            max(0.0, min(1.0, result.confidence)) if resolution is not None else 0.0
-        ),
-        "field_spec": field_spec,
-    }
+        raw_changes = _default_changes(state) if defaults else state["extraction"]["changes"]
+        if bound and "reference_id" in bindings:
+            approved = _default_changes(state)
+    except ReferenceTargetNotAllowed:
+        raw_changes = []
+        questions.append("조회 기준값을 승인된 기존 항목에 연결할 수 없어 변경안을 만들지 않았습니다.")
+    if defaults and not raw_changes and not questions:
+        questions.append("승인된 기준값으로 채울 수 있는 빈 항목이 없어 자동 채우지 않았습니다.")
+    for raw in raw_changes:
+        try:
+            if defaults:
+                field = registry.get((raw["section"], raw["path"]))
+                if field is None:
+                    raise ValueError("기준값을 적용할 입력 항목을 확인해 주세요.")
+                change = _policy_change(raw, field)
+                current_value, row_name = None, ""
+                for item in items.values():
+                    if item["section"] == change["section"] and _identity(item["row"]) and all(
+                        change.get(key) == value for key, value in _identity(item["row"]).items()
+                    ) and all(change.get(key) == value for key, value in _identity(item["parent"] or {}, parent=True).items()):
+                        current_value = item["row"].get(field["path"].removeprefix("items[]."))
+                        row_name = _row_label(item["row"])
+                        break
+            else:
+                change, field, current_value, row_name = _restore_change(raw, fields, items)
+                if bound:
+                    change = _bind_change(change, field, bindings, approved)
+            if field["cardinality"] == "single":
+                current_value = _current_form(state).get(field["path"])
+            issues = _validate_change(change, len(candidates), registry)
+            if change["operation"] == "add" and isinstance(change.get("value"), dict):
+                prefix = "items[]." if change["section"] == "goal_periods" and change["path"] == "items" else ""
+                required = [spec["path"].removeprefix(prefix) for spec in registry.values()
+                            if spec["section"] == field["section"] and spec["writable_by_ai"] and not spec["nullable"]
+                            and spec["path"].startswith(prefix) and "[]." not in spec["path"].removeprefix(prefix)]
+                missing = [key for key in required if key not in change["value"]]
+                if missing:
+                    names = [registry[(field["section"], prefix + key)]["label"] for key in missing]
+                    raise ValueError(f"{field['label']}: 새 항목의 필수값을 알려 주세요 ({', '.join(names)}).")
+            if issues:
+                raise ValueError(f"{field['label']}: {_validation_message(issues[0].code)}")
+            candidate = {"change": change, "description": _description(change, field, current_value, row_name)}
+            candidates.append(candidate)
+            if not defaults and _requires_review(state["message"], change, field, row_name):
+                review_candidates.append({"change_ref": f"c{len(candidates) - 1}", **candidate["description"]})
+        except ValueError as exc:
+            questions.append(str(exc))
+    return {"candidates": candidates, "review_candidates": review_candidates, "questions": questions}
 
 
-async def _error_check_2(state: InputAssistState) -> dict:
-    item = state["identification"][state["cur_index"]]
-
-    bindings = _bindings(state)
-    if "value" in bindings:
-        source_id = bindings.get("source_id")
-        reason = "검증된 선행 task artifact binding"
-        if source_id:
-            reason = f"{reason} ({source_id})"
-        return {
-            "partial_results": state["partial_results"] + [{
-                "section": item["section"],
-                "path": item["path"],
-                "operation": item["operation"],
-                "item_id": item.get("item_id"),
-                "client_item_id": item.get("client_item_id"),
-                "excerpt": item["excerpt"],
-                "resolution": bindings["value"],
-                "parent_item_id": item.get("parent_item_id"),
-                "parent_client_item_id": item.get("parent_client_item_id"),
-                "success": True,
-                "reason": reason,
-                "confidence": 1.0,
-                "bound_unit": bindings.get("unit"),
-                "policy_metadata": item.get("policy_metadata"),
-            }],
-            "cur_index": state["cur_index"] + 1,
-            "resolution_retries": 0,
-            "validation_type": "ok",
-            "validation_reason": "",
-        }
-    if "policy_value" in item:
-        metadata = item.get("policy_metadata", {})
-        source = metadata.get("source", {}) if isinstance(metadata, dict) else {}
-        source_title = source.get("title", "승인된 기본값 정책")
-        return {
-            "partial_results": state["partial_results"] + [{
-                "section": item["section"],
-                "path": item["path"],
-                "operation": item["operation"],
-                "item_id": item.get("item_id"),
-                "client_item_id": item.get("client_item_id"),
-                "excerpt": item["excerpt"],
-                "resolution": item["policy_value"],
-                "parent_item_id": item.get("parent_item_id"),
-                "parent_client_item_id": item.get("parent_client_item_id"),
-                "success": True,
-                "reason": f"승인된 기본값 정책: {source_title}",
-                "confidence": 1.0,
-                "policy_metadata": metadata,
-            }],
-            "cur_index": state["cur_index"] + 1,
-            "resolution_retries": 0,
-            "validation_type": "ok",
-            "validation_reason": "",
-        }
-    if state["classification"] == "fill_avg":
-        reason = "승인된 조회 결과가 없어 평균값을 생성하지 않음"
-        return {
-            "partial_results": state["partial_results"] + [{
-                "section": item["section"],
-                "path": item["path"],
-                "operation": item["operation"],
-                "excerpt": item["excerpt"],
-                "resolution": None,
-                "success": False,
-                "reason": reason,
-            }],
-            "cur_index": state["cur_index"] + 1,
-            "resolution_retries": 0,
-            "validation_type": "hallucination",
-            "validation_reason": reason,
-        }
-
+async def _review(state: InputAssistState) -> dict:
     result = await secure_ainvoke(
-        _error_check_2_chain,
-        prompt_messages(_ERROR_CHECK_2_PROMPT, {
-            "classification": state["classification"],
-            "field_spec": state["field_spec"],
-            "operation": item["operation"],
-            "resolution_confidence": state.get("resolution_confidence", 0),
-            "user_input": item["excerpt"],
-            "resolution": state["resolution"],
+        review_chain, prompt_messages(REVIEW_PROMPT, {
+            "message": state["message"], "changes": state["review_candidates"], "reference": _reference_for_model(state),
         }),
-        purpose=ModelPurpose.INPUT_ASSIST,
-        operation_name="input_assist.validate",
-        sensitive_payload=_model_sensitive_payload(state),
-        prompt=_ERROR_CHECK_2_PROMPT,
+        purpose=ModelPurpose.INPUT_ASSIST, operation_name="input_assist.review",
+        sensitive_payload=_sensitive_payload(state), prompt=REVIEW_PROMPT,
     )
-    if result.error_type == "ok":
-        return {
-            "partial_results": state["partial_results"] + [{
-                "section": item["section"],
-                "path": item["path"],
-                "operation": item["operation"],
-                "item_id": item.get("item_id"),
-                "client_item_id": item.get("client_item_id"),
-                "excerpt": item["excerpt"],
-                "resolution": state["resolution"],
-                "parent_item_id": item.get("parent_item_id"),
-                "parent_client_item_id": item.get("parent_client_item_id"),
-                "success": True,
-                "reason": result.reason,
-                "confidence": state.get("resolution_confidence", 0),
-            }],
-            "cur_index": state["cur_index"] + 1,
-            "resolution_retries": 0,
-            "validation_type": "ok",
-            "validation_reason": "",
-        }
-    if state["resolution_retries"] >= MAX_RETRIES:
-        return {
-            "partial_results": state["partial_results"] + [{
-                "section": item["section"],
-                "path": item["path"],
-                "operation": item["operation"],
-                "item_id": item.get("item_id"),
-                "client_item_id": item.get("client_item_id"),
-                "excerpt": item["excerpt"],
-                "resolution": None,
-                "success": False,
-                "parent_item_id": item.get("parent_item_id"),
-                "parent_client_item_id": item.get("parent_client_item_id"),
-                "reason": result.reason,
-            }],
-            "cur_index": state["cur_index"] + 1,
-            "resolution_retries": 0,
-            "validation_type": result.error_type,
-            "validation_reason": result.reason,
-        }
-    return {
-        "validation_type": result.error_type,
-        "validation_reason": result.reason,
-        "resolution_retries": state["resolution_retries"] + 1,
-    }
-
-
-def _route_after_error_check_2(state: InputAssistState) -> str:
-    if state["resolution_retries"]:
-        return "resolve"
-    if state["cur_index"] < len(state["identification"]):
-        return "next_field"
-    return "merge"
-
-
-async def _merge(state: InputAssistState) -> dict:
-    if state.get("reason_code") == "reference_target_not_allowed":
-        return {
-            "output": {
-                "response": "조회 기준값을 현재 폼의 승인된 기존 항목에 안전하게 연결할 수 없어 변경안을 만들지 않았습니다.",
-                "step_id": state["step_id"],
-                "action": None,
-            }
-        }
-    if state["classification"] == "fill_avg" and not state["partial_results"]:
-        return {
-            "output": {
-                "response": (
-                    "현재 단계에는 승인된 기본값 정책으로 안전하게 매핑할 수 있는 "
-                    "빈 항목이 없어 자동 채우지 않았습니다."
-                ),
-                "step_id": state["step_id"],
-                "action": None,
-            }
-        }
-    parts = []
-    changes = []
-    confidences = []
-    for item in state["partial_results"]:
-        field_name = f"{item['section']}.{item['path']}"
-        if item["success"]:
-            parts.append(f"[{field_name}] 입력값: {item['resolution']}")
-            change = {
-                "section": item["section"],
-                "path": item["path"],
-                "operation": item["operation"],
-                "value": item["resolution"],
-                "reason": item["reason"],
-            }
-            if item.get("bound_unit") is not None:
-                change["unit"] = item["bound_unit"]
-            metadata = item.get("policy_metadata")
-            if isinstance(metadata, dict):
-                change.update(metadata)
-            if item.get("item_id") is not None:
-                change["item_id"] = item["item_id"]
-            if item.get("client_item_id"):
-                change["client_item_id"] = item["client_item_id"]
-            if item.get("parent_item_id") is not None:
-                change["parent_item_id"] = item["parent_item_id"]
-            if item.get("parent_client_item_id"):
-                change["parent_client_item_id"] = item["parent_client_item_id"]
-            changes.append(change)
-            confidences.append(item.get("confidence", 0))
+    requested = {item["change_ref"] for item in state["review_candidates"]}
+    verdicts: dict[str, list] = {}
+    for item in result.items:
+        verdicts.setdefault(item.change_ref, []).append(item)
+    questions = list(state["questions"])
+    candidates = []
+    for index, candidate in enumerate(state["candidates"]):
+        ref = f"c{index}"
+        if ref not in requested:
+            candidates.append(candidate)
+            continue
+        decisions = verdicts.get(ref, [])
+        if len(decisions) == 1 and decisions[0].accepted:
+            candidates.append(candidate)
         else:
-            parts.append(f"[{field_name}] 입력 실패 — {item['reason']}")
+            reason = decisions[0].reason if len(decisions) == 1 else "변경 의도를 확인할 수 없습니다."
+            questions.append(f"{candidate['description']['name']}: {reason or '변경할 값을 다시 알려 주세요.'}")
+    return {"candidates": candidates, "questions": questions}
 
-    if changes and all(isinstance(change.get("reference"), dict) for change in changes):
-        return {
-            "output": {
-                "response": "승인된 가구 기준값으로 기존 빈 항목의 변경안을 만들었습니다. 항목별 승인 후 폼을 저장해 주세요.",
-                "step_id": state["step_id"],
-                "action": {
-                    "type": "form_change",
-                    "target": "draft_form",
-                    "user_requested": state["user_requested_change"],
-                    "confidence": min(confidences),
-                    "changes": changes,
-                },
-            }
-        }
 
+async def _respond(state: InputAssistState) -> dict:
     result = await secure_ainvoke(
-        llm,
-        prompt_messages(_MERGE_PROMPT, {
-            "step_id": state["step_id"],
-            "message": state["message"],
-            "results": parts,
-            "user_requested_change": state["user_requested_change"],
-        }),
-        purpose=ModelPurpose.INPUT_ASSIST,
-        operation_name="input_assist.merge",
-        sensitive_payload=_model_sensitive_payload(state),
-        prompt=_MERGE_PROMPT,
+        llm, prompt_messages(RESPOND_PROMPT, {
+            "message": state["message"], "changes": [item["description"] for item in state["candidates"]],
+            "questions": state["questions"],
+        }), purpose=ModelPurpose.INPUT_ASSIST, operation_name="input_assist.respond",
+        sensitive_payload=_sensitive_payload(state), prompt=RESPOND_PROMPT,
     )
-    return {
-        "output": {
-            "response": result.content,
-            "step_id": state["step_id"],
-            "action": {
-                "type": "form_change",
-                "target": "draft_form",
-                "user_requested": state["user_requested_change"],
-                "confidence": min(confidences) if confidences else 0,
-                "changes": changes,
-            } if changes else None,
-        }
-    }
-
-
-def _model_sensitive_payload(state: InputAssistState) -> dict[str, Any]:
-    return {
-        "message": state.get("message", ""),
-        "customer_info": state.get("customer_info", {}),
-        "bindings": _bindings(state),
-        "identification": state.get("identification", []),
-        "resolution": state.get("resolution"),
-        "partial_results": state.get("partial_results", []),
-    }
+    changes = [item["change"] for item in state["candidates"]]
+    return {"output": {
+        "response": result.content, "step_id": state["step_id"],
+        "action": {"type": "form_change", "target": "draft_form", "user_requested": True, "changes": changes} if changes else None,
+    }}

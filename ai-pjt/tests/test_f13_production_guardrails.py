@@ -113,6 +113,7 @@ class ProductionGraphGuardrailTests(unittest.IsolatedAsyncioTestCase):
 
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=instrumentation,
             planner=planner,
             agent_graphs=agents,
@@ -144,6 +145,7 @@ class ProductionGraphGuardrailTests(unittest.IsolatedAsyncioTestCase):
         instrumentation, sink = fake_instrumentation()
         graph = build_graph(
             None,
+            response_composer=None,
             instrumentation=instrumentation,
             planner=planner,
             agent_graphs=agents,

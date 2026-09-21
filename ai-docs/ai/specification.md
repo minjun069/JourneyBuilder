@@ -1,6 +1,6 @@
 # AI 오케스트레이션 명세
 
-상태: **3주 MVP 방향과 foundation 계약 확정 — F02~F13 production 구현·baseline 측정 대기**
+상태: **현재 작업별 모델 계약 반영 — 실제 모델 품질 평가는 별도 실행**
 
 이 문서는 Agent 상태, 라우팅, 종료 조건, 프롬프트·모델 운용 방식의 단일 원천이다. 사용자 관찰 가능 책임과 인수 기준은 [AI Agent 요구사항](../requirements/ai-agent.md)을 따른다.
 
@@ -8,14 +8,13 @@
 
 | Agent | 내부 책임 | 주요 입력 | 주요 출력 |
 |---|---|---|---|
-| qa | 질문 명세, 검색 필요 판단, 근거 답변 | 메시지, 대화 문맥, 고객 정보, RAG | 답변, 인용, 불확실성 |
-| input_assist | 발화에서 폼 변경 의도·값 추출 | 현재 단계, Canonical 필드 레지스트리, 미저장 폼, 발화 | 답변, FormChangeAction |
-| error_review | 코드 검증 결과를 사용자 관점에서 설명 | 검증 오류, 현재 값, 제약 | 오류 설명, 수정 제안 |
-| chart_interpret | 구조화된 차트 수치와 계산 결과 설명 | chart payload, 고객 정보 | 핵심 해석, 주의점, 근거 수치 |
-| elicit | 누락된 정성정보를 한 항목씩 수집 | 누락 항목, 턴 상태, 대화 문맥 | 한 개 질문, 수집 상태 |
-| fallback | 모호·미지원·실패 요청을 안전하게 복구 | 실패 범주, 지원 범위 | 재질문, 범위 안내, 재시도 안내 |
+| qa | 질문·검색 계획 일괄 생성, 근거 답변과 동일 근거 검토 | 작업 설명, 관련 현재값·binding, RAG 본문 | 답변, 근거 한계 |
+| input_assist | 발화에서 폼 변경 추출, 코드 검증, 필요한 의미 검토 | 작업 설명, 짧은 필드·행 참조, 현재 폼 | 코드가 복원한 FormChangeAction, 답변 |
+| error_review | 기본 검증을 통과한 값의 명확한 오기·단위 착오·직접 모순 검토 | 필드 참조키·이름·단위·값, 관계 검토 기준 | 코드가 복원한 ErrorReviewResult |
+| chart_interpret | Backend가 검증한 차트 사실 설명 | 검증 메타를 제외한 설명용 사실, 관련 설명 자료 | 핵심 해석, 주의점, 근거 수치 |
+| elicit | 과거 대화와 현재 정성 발화에 자연스럽게 응답 | 현재 메시지, 대화 문맥 | 자연어 응답 |
 
-역할 수와 경계의 채택 근거는 [ADR-0001](../decisions/0001-six-agent-ai-architecture.md)을 따른다. 사용자의 승인 없는 재무 데이터 저장, 실제 투자 실행, 검토되지 않은 상품 추천, 결정론적 검증의 LLM 대체는 수행하지 않는다.
+현재 실행 역할은 다섯 Agent이며 과거 [ADR-0001](../decisions/0001-six-agent-ai-architecture.md)의 별도 Fallback Agent는 사용하지 않는다. 실패 안내는 코드와 Aggregator가 담당한다. 사용자의 승인 없는 재무 데이터 저장, 실제 투자 실행, 검토되지 않은 상품 추천, 결정론적 검증의 LLM 대체는 수행하지 않는다.
 
 ## 공통 상태
 
@@ -23,17 +22,16 @@
 |---|---|
 | request_id | 한 AI SSE 실행의 idempotency·terminal 식별자 |
 | thread_id | 사용자와 상담 세션을 함께 포함한 대화 문맥 식별자 |
-| session_id | Django 상담 세션 식별자 |
 | step_id | 프론트의 실제 프로세스 단계 |
-| field_registry | 현재 단계에서 허용된 section/path·자료형·제약·쓰기 권한 |
-| messages | 역할이 구분된 bounded 대화 이력 |
+| request_mode | 일반 chat, 저장 시 error_review, 최초 presentation_entry |
+| conversation_context | 같은 session·thread의 최근 대화, 요약과 출처가 있는 기억 |
 | customer_info | 확정 정보와 현재 미저장 폼이 구분된 snapshot |
-| chart_payload | chart 단계에서만 사용하는 읽기 전용 보고서 원본·단위·기간·가정·요약. 미준비 또는 비차트 단계는 `null` |
-| route | 선택 Agent와 선택 근거 코드 |
-| output | 자연어 답변, 인용, FormChangeAction, 오류의 구조화 결과 |
-| trace_context | 가명화된 관측 식별자와 모델·프롬프트·인덱스 버전 |
+| chart_payload | Backend 검증 보고서. ready는 수치 설명, guidance_only는 목적 안내, 비차트 단계만 null |
+| route_plan | 코드가 합성하고 검증한 최대 3개 task와 dependency·binding |
+| task_input | 해당 작업의 description과 검증된 binding |
+| output | 자연어 답변, FormChangeAction 또는 ErrorReviewResult |
 
-messages는 같은 thread_id에서만 복원한다. 예산을 넘으면 최근 대화와 확정 사실을 우선하며, 요약문은 원문과 구분한다. 사용자가 값을 정정하면 최신 확정값을 우선한다.
+필드 레지스트리는 AI 로컬 코드에서 step_id로 읽는다. 대화·archive는 같은 session·thread에서만 복원한다. 기억은 사용자·AI·기존 요약을 모두 포함하고 금융 주제·숫자·참조 token을 추가 배제하지 않는다. 상류 마스킹, 원문 근거 인용·기본 형식·scope·CAS 검증은 유지한다. AI 제안과 사용자 결정을 구분하고 현재 폼·보고서 사실은 Backend snapshot을 따른다. 모델 대화 입력에서 저장 ID·검색 점수·예산 메타는 제외한다.
 
 
 ### 미저장 폼 변경 정책
@@ -45,27 +43,26 @@ input_assist가 내보내는 `FormChangeAction`은 저장된 DB가 아니라 `ta
 - `update`: 안정적인 `item_id` 또는 `client_item_id`로 항목을 수정한다.
 - `remove`: 안정적인 ID로 항목을 제거한다.
 
-AI가 만든 모든 변경은 `proposal`로 반환해 사용자가 change별로 승인하거나 거절한다. 사용자가 변경을 명시적으로 요청했거나 모델 confidence가 높아도 그 사실만으로 승인된 것이 아니며 draft에 자동 적용하지 않는다. Django는 현재 단계의 레지스트리와 operation allowlist를 다시 검증해 모델 출력만으로 쓰기 범위가 확장되지 않게 한다. 실제 DB 저장은 기존 폼 저장 API와 serializer 검증을 반드시 거친다.
+AI가 만든 모든 변경은 `proposal`로 반환해 사용자가 change별로 승인하거나 거절한다. 변경 요청 자체는 승인 결정이 아니며 draft에 자동 적용하지 않는다. confidence는 계약에 없다. Django는 현재 단계의 레지스트리와 operation allowlist를 다시 검증하고 실제 DB 저장은 기존 폼 저장 API와 serializer 검증을 거친다.
 
 반복 항목은 DB 저장 후 서버 `id`를 사용하고, 저장 전에는 프론트가 발급한 `client_item_id`를 사용한다. 중첩 항목 추가는 `parent_item_id` 또는 `parent_client_item_id`로 부모를 지정한다.
 ## 공통 흐름
 
 1. 요청 스키마와 권한을 검증한다.
 2. 세션 문맥을 복원한다.
-3. 현재 단계의 Agent 후보를 제한하고 의도를 라우팅한다.
-4. 선택 Agent가 현재 Agent allowlist에 있는 RAG·Function Calling 도구를 호출한다.
-5. runtime이 모델 인자와 분리된 request·step·Agent·deadline 컨텍스트를 주입하고 도구 입력·출력·권한·timeout을 검증한다.
+3. Planner가 status와 requests를 반환한다. 각 요청은 type·description과 선택 reference_id/reference_age만 가진다. 작업 설명은 조건·값·단위·마스킹 참조를 보존한다.
+4. request_plan compiler가 ID·조회 작업·도구 인자·dependency·provenance binding을 합성하고 plan policy가 단계별 허용 작업과 구조를 검증한다. executor는 의존 순서대로 최대 3개 task를 실행한다.
+5. 각 Agent에는 검증된 작업 설명과 필요한 사실·binding만 전달한다. provider·schema·compile 오류로 계획 생성·검증이 두 차례 실패하면 계획 실패 안내로 끝내며 원문을 description으로 대신 넣는 QA 우회는 하지 않는다. runtime이 권한·deadline·도구 계약을 검증하며 failed dependency의 후속 task는 실행하지 않는다.
 6. Agent 최종 출력은 form action 유무와 관계없이 항상 `validate_form_update` 파이프라인 노드를 통과한다. 이 노드는 일반 응답 계약과 form action의 canonical 필드·자료형·단위·연산을 결정론적으로 검사한다.
-7. 보안 검사를 통과한 결과만 SSE terminal로 반환한다.
+7. Aggregator가 성공·실패 안내와 action/review를 코드로 합치고 성공이 하나여도 answer를 모델로 다듬는다. response 한 필드만 받고 숫자 순서·값·조건·승인·저장 문장이 보존되지 않으면 코드 응답으로 되돌린다. 보안 검사를 통과한 결과만 terminal로 반환한다.
 
 ## Agent별 종료와 재시도
 
-- qa: 답변과 필요한 인용을 생성했거나 근거 부족을 명시하면 종료한다.
-- input_assist: 식별 항목을 성공·실패로 분류하고 변경안을 생성하면 종료한다.
-- error_review: 결정론적 오류의 설명과 가능한 수정안을 제공하면 종료한다.
-- chart_interpret: 전달된 핵심 수치를 설명하고 원본에 없는 계산을 하지 않았음을 검증하면 종료한다.
-- elicit: 한 번에 한 질문만 반환한다. 항목이 채워졌거나 턴 상한에 도달하면 다음 항목 또는 fallback으로 전환한다.
-- fallback: 재질문·지원 범위·재시도 중 하나의 다음 행동을 반환하면 종료한다.
+- qa: plan → 필요한 검색 전체 → answer → 같은 근거 judge로 기본 모델 3회다. 표현 문제는 같은 근거로, 근거 부족은 계획·검색부터 한 번 재시도한다. 별도 답변 병합 모델은 없다.
+- input_assist: extract → 코드 검증 → 필요한 후보만 일괄 review → respond로 기본 모델 2회, 의미 검토 시 3회다. ref를 외부 field·row ID로 복원하는 작업은 코드가 담당한다.
+- error_review: 모델은 field_ref·reason·선택 suggested_value만 반환하고 코드는 현재값·식별자를 복원한다. confidence·confidence_level은 없으며 결과 없음·오류는 기존 저장을 막지 않는다.
+- chart_interpret: 제공된 표시값·단위를 그대로 사용한다. 숫자 검증도 같은 설명용 projection을 사용하며 메타 숫자와 임의 백분율 환산을 허용하지 않는다. 최초 안내는 최대 3개 주요 항목, 자료는 현재 보고서와 질문 관련 구간만 전달한다.
+- elicit: 현재 정성 대화에 응답하며 전용 필드 상태·확인 후보·capture·form action을 만들지 않는다.
 
 구조화 출력 파싱 실패와 일시적 외부 오류만 제한적으로 자동 재시도한다. 부작용 도구는 idempotency가 없으면 자동 재시도하지 않는다.
 
@@ -73,9 +70,9 @@ AI가 만든 모든 변경은 `proposal`로 반환해 사용자가 change별로 
 
 ## 프롬프트와 모델
 
-- Agent별 system prompt와 구조화 출력 스키마를 코드의 단일 원천으로 관리한다.
+- `prompts/definitions`, catalog와 manifest가 작업별 prompt·입출력 계약을 소유한다. 공통 지시는 역할 준수·없는 사실 금지·참조 보존·대화의 출처 구분으로 줄이고 사용자용 문체는 답변 생성 호출에만 적용한다.
 - prompt ID·버전, 모델 provider·모델명, temperature, tool schema 버전을 trace에 남긴다.
-- 라우터, 입력 보조, 도구 인자는 구조화 출력으로 제한하고 allowlist 밖 값은 fallback으로 보낸다.
+- Planner 의미 요청은 구조화 출력으로 제한한다. 임의 JSON 값이 필요한 Input extract와 Error Review는 JSON mode 응답을 Pydantic으로 파싱하고 공통 출력 보안 검사를 거친다. allowlist 밖 값은 실행 전에 거부한다.
 - 모델이 생성한 사용자·세션·step·권한 값은 신뢰하지 않으며 Function tool에는 runtime의 `ToolExecutionContext`만 사용한다.
 - 모델은 품질, 구조화 출력 성공률, 지연, 비용, 데이터 처리 조건을 동일 평가셋으로 비교해 결정한다.
 - 프로덕션 모델·Embedding은 재현 가능한 버전으로 고정한다.

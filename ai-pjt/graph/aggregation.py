@@ -18,6 +18,18 @@ from tools.output_policy import validate_form_update_contract
 
 logger = logging.getLogger(__name__)
 _NUMBER_TOKEN = re.compile(r"(?<![A-Za-z0-9])[-+]?\d[\d,.]*(?:%|원|개월|년)?")
+_MEANING_CONDITION = re.compile(
+    r"저장|승인|제안|확인|적용|완료|변경안|반영|수정|삭제|추가|않|없|아니|경우|하면|부터|까지|이상|이하|초과|미만"
+)
+
+
+def _protected_sentences(response: str) -> list[str]:
+    """Financial values and material conditions are not a copy editor's decision."""
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?。])\s+|\n+", response)
+        if sentence.strip() and (_NUMBER_TOKEN.search(sentence) or _MEANING_CONDITION.search(sentence))
+    ]
 
 AggregateComposer = Callable[..., Awaitable[dict[str, Any]]]
 
@@ -26,7 +38,6 @@ class AggregatorModelOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     response: str = Field(min_length=1)
-    source_ids: list[str]
 
 
 def failure_response(
@@ -144,34 +155,25 @@ async def compose_aggregate_response(
     step_id: str,
     field_registry: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Naturalize multiple verified text blocks without changing structures."""
+    """Polish every successful answer once, keeping verified content and actions."""
 
     response = output.get("response")
-    if not isinstance(response, str):
-        return deepcopy(dict(output))
-    blocks = [block.strip() for block in response.split("\n\n") if block.strip()]
-    if len(blocks) < 2:
+    if not isinstance(response, str) or not response.strip():
         return deepcopy(dict(output))
     prompt = get_prompt("aggregator.compose")
 
     from core.llm import llm
 
-    source_blocks = [
-        {"source_id": f"result-{index + 1}", "text": block}
-        for index, block in enumerate(blocks)
-    ]
-    source_ids = [block["source_id"] for block in source_blocks]
     try:
         runnable = llm.with_structured_output(AggregatorModelOutput)
         raw = await secure_ainvoke(
             runnable,
             prompt_messages(prompt, {
-                "step_id": step_id,
-                "response_blocks": source_blocks,
+                "answer": response,
             }),
             purpose=ModelPurpose.AGGREGATOR,
             operation_name="aggregator.compose",
-            sensitive_payload={"response_blocks": source_blocks},
+            sensitive_payload={"answer": response},
             prompt=prompt,
         )
         composed = (
@@ -179,10 +181,10 @@ async def compose_aggregate_response(
             if isinstance(raw, AggregatorModelOutput)
             else AggregatorModelOutput.model_validate(raw)
         )
-        if composed.source_ids != source_ids:
-            raise ValueError("aggregator omitted or reordered source blocks")
         if _NUMBER_TOKEN.findall(composed.response) != _NUMBER_TOKEN.findall(response):
             raise ValueError("aggregator changed verified numeric tokens or order")
+        if _protected_sentences(composed.response) != _protected_sentences(response):
+            raise ValueError("aggregator changed a verified value, condition or approval statement")
         validation = validate_form_update_contract({
             "step_id": step_id,
             "output": {
@@ -251,14 +253,10 @@ def _merge_form_changes(
     merged_changes: list[dict[str, Any]] = []
     changes_by_key: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     user_requested_values: list[bool] = []
-    confidences: list[float] = []
     has_alternatives = False
 
     for form_index, form_change in enumerate(form_changes):
         user_requested_values.append(form_change.get("user_requested") is True)
-        confidence = form_change.get("confidence")
-        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
-            confidences.append(float(confidence))
 
         for change_index, raw_change in enumerate(form_change.get("changes", [])):
             if not isinstance(raw_change, Mapping):
@@ -280,7 +278,6 @@ def _merge_form_changes(
         "type": "form_change",
         "target": "draft_form",
         "user_requested": all(user_requested_values),
-        "confidence": min(confidences) if confidences else 0.0,
         "changes": merged_changes,
     }, has_alternatives
 

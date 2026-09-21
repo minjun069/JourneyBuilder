@@ -294,8 +294,6 @@ class TerminalPayloadValidationTests(SimpleTestCase):
                 'current_value': 20_000,
                 'reason': '다른 소득 정보와 비교해 단위 착오가 의심됩니다.',
                 'suggested_value': 2_000_000,
-                'confidence': 0.91,
-                'confidence_level': 'high',
             }],
         }
         payload = completed_terminal(output={'response': '확인이 필요합니다.', 'review': review})
@@ -317,19 +315,18 @@ class TerminalPayloadValidationTests(SimpleTestCase):
                 },
             }, 'basic-info')
 
-        low_confidence = completed_terminal(output={
+        missing_reason = completed_terminal(output={
             'response': '확인이 필요합니다.',
             'review': {
                 **review,
                 'items': [{
                     **review['items'][0],
-                    'confidence': 0.59,
-                    'confidence_level': 'low',
+                    'reason': '',
                 }],
             },
         })
         with self.assertRaises(LifecycleError):
-            validate_terminal_payload(low_confidence)
+            validate_terminal_payload(missing_reason)
 
 
 class FormChangeProposalTests(SimpleTestCase):

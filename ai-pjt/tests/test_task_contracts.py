@@ -151,7 +151,6 @@ class TaskResultContractTests(unittest.TestCase):
                 "type": "form_change",
                 "target": "draft_form",
                 "user_requested": True,
-                "confidence": 1.0,
                 "changes": [
                     {
                         "section": "basic_info",

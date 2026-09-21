@@ -54,7 +54,6 @@ class AssistanceMode(str, Enum):
 class ManualTransitionReason(str, Enum):
     USER_PREFERENCE = "user_preference"
     AI_FAILURE = "ai_failure"
-    LOW_CONFIDENCE = "low_confidence"
     UNSUPPORTED_TASK = "unsupported_task"
     ACCESSIBILITY = "accessibility"
     UNKNOWN = "unknown"

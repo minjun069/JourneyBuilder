@@ -16,6 +16,12 @@ REQUIRED_METRICS = frozenset({
     "form_action_exact_rate",
     "error_review_false_positive_rate",
     "average_model_calls",
+    "qa_normal_max_calls",
+    "input_direct_max_calls",
+    "input_review_max_calls",
+    "request_conditions_preserved_rate",
+    "question_coverage_rate",
+    "plain_language_pass_rate",
 })
 
 
@@ -109,6 +115,15 @@ def evaluate_prompt_candidate(
     call_limit = max(before["average_model_calls"] * 1.25, before["average_model_calls"] + 1)
     if after["average_model_calls"] > call_limit:
         issues.append("model_call_budget_regression")
+    # Count agent calls separately from the shared Planner and final polishing.
+    for metric, limit in (("qa_normal_max_calls", 3), ("input_direct_max_calls", 2), ("input_review_max_calls", 3)):
+        if after[metric] > limit:
+            issues.append(f"{metric}_exceeded")
+    for metric in ("request_conditions_preserved_rate", "question_coverage_rate", "plain_language_pass_rate"):
+        if before[metric] > 1 or after[metric] > 1:
+            issues.append(f"{metric}_out_of_range")
+        elif after[metric] != 1:
+            issues.append(f"{metric}_incomplete")
     return issues
 
 

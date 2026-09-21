@@ -376,6 +376,11 @@ class _PayloadMasker:
         namespace: str | None,
         path: MaskingPath,
     ) -> None:
+        # Containers inherit a class for their descendants, not for the string
+        # representation of the whole object. Collecting that representation
+        # would mask numbers even when their exact leaf paths are allowed.
+        if not self._is_scalar(value):
+            return
         if is_reference_token(value):
             return
         if data_class is DataClass.OPERATIONAL_INFORMATION and self._is_scalar(value):
@@ -612,6 +617,8 @@ class _PayloadMasker:
         normalized = key.lower().replace("-", "_")
         if self._is_secret_field(normalized):
             return _FieldDecision(data_class=DataClass.SECRET)
+        if normalized == "name" and self._is_form_item_name_path(path):
+            return _FieldDecision(data_class=DataClass.PROJECT_HIGH_RISK_FINANCIAL)
         if self._is_direct_identifier_field(normalized):
             return _FieldDecision(data_class=DataClass.DIRECT_IDENTIFIER)
         namespace = _OPERATIONAL_FIELD_NAMESPACES.get(normalized)
@@ -646,6 +653,30 @@ class _PayloadMasker:
                 normalized in _SENSITIVE_CONTAINERS
                 and self._sink not in _OBSERVABILITY_SINKS
             )
+        )
+
+    @staticmethod
+    def _is_form_item_name_path(path: MaskingPath) -> bool:
+        """Canonical product/goal labels are business values, not user names."""
+
+        if path[:2] == ("customer_info", "current_form"):
+            suffix = path[2:]
+        elif path[:1] == ("current_form",):
+            suffix = path[1:]
+        else:
+            return False
+        return (
+            len(suffix) == 3
+            and suffix[0] == "assets"
+            and isinstance(suffix[1], int)
+            and suffix[2] == "name"
+        ) or (
+            len(suffix) == 5
+            and suffix[0] == "goal_periods"
+            and isinstance(suffix[1], int)
+            and suffix[2] == "items"
+            and isinstance(suffix[3], int)
+            and suffix[4] == "name"
         )
 
     @staticmethod

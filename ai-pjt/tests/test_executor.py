@@ -99,7 +99,6 @@ def form_result(task_id: str, value: int = 2_500_000) -> dict:
             "type": "form_change",
             "target": "draft_form",
             "user_requested": True,
-            "confidence": 1.0,
             "changes": [{
                 "section": "basic_info",
                 "path": "monthly_income",
@@ -456,7 +455,6 @@ class AggregationComposerTests(unittest.IsolatedAsyncioTestCase):
             async def ainvoke(self, _messages: list) -> dict:
                 return {
                     "response": "첫 번째 결과와 두 번째 결과를 함께 안내합니다.",
-                    "source_ids": ["result-1", "result-2"],
                 }
 
         class Provider:
@@ -485,7 +483,6 @@ class AggregationComposerTests(unittest.IsolatedAsyncioTestCase):
             async def ainvoke(self, _messages: list) -> dict:
                 return {
                     "response": "검증되지 않은 999원을 추가합니다.",
-                    "source_ids": ["result-1", "result-2"],
                 }
 
         class Provider:
@@ -511,7 +508,6 @@ class AggregationComposerTests(unittest.IsolatedAsyncioTestCase):
             async def ainvoke(self, _messages: list) -> dict:
                 return {
                     "response": "100원 결과만 안내합니다.",
-                    "source_ids": ["result-1", "result-2"],
                 }
 
         class Provider:

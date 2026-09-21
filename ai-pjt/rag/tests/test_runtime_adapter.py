@@ -45,15 +45,16 @@ class RuntimeAdapterTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         runtime.reset_retrievers()
 
-    def test_formatted_context_contains_required_provenance(self) -> None:
+    def test_model_context_keeps_text_and_date_without_internal_provenance(self) -> None:
         context = runtime.format_docs([make_result()])
 
         self.assertIn("승인 문서", context)
-        self.assertIn("공식 기관", context)
         self.assertIn("2026-09-07", context)
-        self.assertIn("approved-source", context)
-        self.assertIn("chunk-1", context)
-        self.assertIn("https://example.test/source", context)
+        self.assertIn("검증된 근거 구간", context)
+        self.assertNotIn("approved-source", context)
+        self.assertNotIn("chunk-1", context)
+        self.assertNotIn("https://example.test/source", context)
+        self.assertNotIn("10-20", context)
 
     def test_empty_context_discloses_missing_approved_evidence(self) -> None:
         self.assertIn("승인 근거가 없습니다", runtime.format_docs([]))

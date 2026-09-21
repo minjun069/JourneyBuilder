@@ -5,31 +5,29 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from core.llm import llm
+from core.json_response import json_response_chain
 from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 from prompts import get_prompt
 
 
 class ReviewItem(BaseModel):
-    section: str
-    path: str
-    item_id: int | None = None
-    client_item_id: str | None = None
-    parent_item_id: int | None = None
-    parent_client_item_id: str | None = None
-    current_value_json: str
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    field_ref: str = Field(min_length=1)
     reason: str = Field(min_length=1)
-    suggested_value_json: str | None = None
-    confidence: float = Field(ge=0, le=1)
+    suggested_value: JsonValue = None
 
 
 class ReviewResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     items: list[ReviewItem]
 
 
-_review_chain = llm.with_structured_output(ReviewResult)
+_review_chain = json_response_chain(llm, ReviewResult)
 REVIEW_PROMPT = get_prompt("error_review.analyze")
 
 

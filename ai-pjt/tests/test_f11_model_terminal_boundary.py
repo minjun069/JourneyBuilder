@@ -81,44 +81,44 @@ class ModelBoundaryTests(unittest.TestCase):
         settings.masking_pseudonym_key = self.previous_key
 
     def test_common_prompt_has_explicit_version(self) -> None:
-        self.assertEqual(prompt_policy_version, "2.0")
-        self.assertIn("[원칙]", DATA_HANDLING_PROMPT)
-        self.assertIn("분석 대상", DATA_HANDLING_PROMPT)
+        self.assertEqual(prompt_policy_version, "3.0")
+        self.assertIn("[공통 원칙]", DATA_HANDLING_PROMPT)
+        self.assertIn("규칙 무시", DATA_HANDLING_PROMPT)
 
     def test_registered_prompt_keeps_runtime_payload_out_of_system_message(self) -> None:
-        prompt = get_prompt("qa.specify")
+        prompt = get_prompt("qa.plan")
         messages = prompt_messages(prompt, {
             "step_id": "basic-info",
-            "message": "사용자 런타임 입력",
-            "bindings": {},
+            "question": "사용자 런타임 입력",
+            "feedback": "",
         })
 
         self.assertNotIn("사용자 런타임 입력", messages[0].content)
         self.assertIn("사용자 런타임 입력", messages[1].content)
 
     def test_prompt_invocation_emits_complete_version_metadata(self) -> None:
-        prompt = get_prompt("qa.specify")
+        prompt = get_prompt("qa.plan")
         records = []
         with bind_prompt_trace_sink(records.append):
             secure_invoke(
                 FakeModel("정상 응답"),
                 prompt_messages(prompt, {
                     "step_id": "basic-info",
-                    "message": "질문",
-                    "bindings": {},
+                    "question": "질문",
+                    "feedback": "",
                 }),
                 purpose=ModelPurpose.QA,
                 prompt=prompt,
             )
 
         self.assertEqual(len(records), 1)
-        self.assertEqual(records[0].prompt_id, "qa.specify")
-        self.assertEqual(records[0].prompt_version, "3.0.0")
+        self.assertEqual(records[0].prompt_id, "qa.plan")
+        self.assertEqual(records[0].prompt_version, "4.0.0")
         self.assertEqual(len(records[0].prompt_hash), 64)
-        self.assertEqual(records[0].prompt_policy_version, "2.0")
+        self.assertEqual(records[0].prompt_policy_version, "3.0")
 
     def test_combined_recorders_emit_one_content_and_metadata_event(self) -> None:
-        prompt = get_prompt("qa.specify")
+        prompt = get_prompt("qa.plan")
         model_events: list[dict] = []
         prompt_events = []
 
@@ -130,22 +130,22 @@ class ModelBoundaryTests(unittest.TestCase):
                     FakeModel("정상 응답"),
                     prompt_messages(prompt, {
                         "step_id": "basic-info",
-                        "message": "질문",
-                        "bindings": {},
+                        "question": "질문",
+                        "feedback": "",
                     }),
                     purpose=ModelPurpose.QA,
-                    operation_name="qa.specify",
+                    operation_name="qa.plan",
                     prompt=prompt,
                 )
 
         self.assertEqual(len(model_events), 1)
         self.assertEqual(prompt_events, [])
         event = model_events[0]
-        self.assertEqual(event["prompt_id"], "qa.specify")
-        self.assertEqual(event["prompt_version"], "3.0.0")
+        self.assertEqual(event["prompt_id"], "qa.plan")
+        self.assertEqual(event["prompt_version"], "4.0.0")
         self.assertEqual(len(event["prompt_hash"]), 64)
         self.assertTrue(event["prompt_release"])
-        self.assertEqual(event["prompt_policy_version"], "2.0")
+        self.assertEqual(event["prompt_policy_version"], "3.0")
         self.assertEqual(event["input"][0]["role"], "system")
         self.assertEqual(
             event["output"],
@@ -217,7 +217,7 @@ class ModelBoundaryTests(unittest.TestCase):
                     HumanMessage(content=json.dumps(raw, ensure_ascii=False)),
                 ],
                 purpose=ModelPurpose.QA,
-                operation_name="qa.specify",
+                operation_name="qa.plan",
                 sensitive_payload=raw,
             )
 
@@ -225,7 +225,7 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         event = records[0]
         self.assertEqual(event["purpose"], "qa")
-        self.assertEqual(event["operation_name"], "qa.specify")
+        self.assertEqual(event["operation_name"], "qa.plan")
         self.assertEqual(event["status"], "succeeded")
         self.assertEqual(event["input"][0]["role"], "system")
         self.assertEqual(event["input"][1]["role"], "user")
@@ -369,7 +369,6 @@ class TerminalBoundaryTests(unittest.TestCase):
                     "type": "form_change",
                     "target": "draft_form",
                     "user_requested": True,
-                    "confidence": 1.0,
                     "changes": [{
                         "section": "incomes",
                         "path": "monthly_income",
@@ -454,7 +453,6 @@ class TerminalBoundaryTests(unittest.TestCase):
                     "type": "form_change",
                     "target": "draft_form",
                     "user_requested": True,
-                    "confidence": 1.0,
                     "changes": [{
                         "section": "goal_periods",
                         "path": "items[].amount",
@@ -508,20 +506,14 @@ class ProductionModelCallAuditTests(unittest.TestCase):
         expected = {
             "graph/planner.py": {"PLANNER_PROMPT"},
             "agents/qa/model.py": {
-                "SPECIFY_PROMPT",
-                "DECIDE_PROMPT",
+                "PLAN_PROMPT",
                 "ANSWER_PROMPT",
-                "DIRECT_ANSWER_PROMPT",
-                "MERGE_PROMPT",
                 "JUDGE_PROMPT",
-                "REFINE_PROMPT",
             },
             "agents/input_assist/model.py": {
-                "CLASSIFY_PROMPT",
-                "IDENTIFY_PROMPT",
-                "RESOLVE_PROMPT",
-                "ERROR_CHECK_2_PROMPT",
-                "MERGE_PROMPT",
+                "EXTRACT_PROMPT",
+                "REVIEW_PROMPT",
+                "RESPOND_PROMPT",
             },
             "agents/error_review/model.py": {"REVIEW_PROMPT"},
             "agents/chart_interpret/model.py": {"CHART_PROMPT"},

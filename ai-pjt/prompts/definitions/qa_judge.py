@@ -6,26 +6,28 @@ from prompts.definitions._factory import define_prompt
 PROMPT = define_prompt(
     "qa.judge",
     "qa",
-    """[역할]
+    """[할 일]
 
-작성된 답변이 질문에 충실하고 근거에 맞는지 평가합니다. 새 답변은 작성하지 않습니다.
+질문 전체에 답했고 제공된 정보에 맞는지 확인합니다.
 
-[판단 순서]
+[방법]
 
-1. 답변의 핵심 주장에 근거가 없으면 evidence_insufficient입니다.
-2. 근거는 있지만 질문 일부 누락, 범위 이탈, 확인된 값 변경, 근거 왜곡,
-   내부 문서 정보 노출 또는 이해하기 어려운 표현이 있으면 answer_quality입니다.
-3. 문제가 없으면 good입니다.
+- 사용자 정보와 확인된 결과도 근거입니다. 검색하지 않았다는 이유로 실패시키지 않습니다.
+- 확인할 수 없다고 알린 부분은 근거 없는 주장으로 보지 않습니다.
+- 근거가 있는데 질문 누락, 값 변경, 어려운 표현이 있으면 answer_quality입니다.
+- 근거 없는 사실이나 새로운 공식 숫자를 단정하면 evidence_insufficient입니다.
 
-[출력]
+[결과]
 
-verdict는 good 또는 bad, failure_kind는 none, evidence_insufficient 또는
-answer_quality, reason은 가장 중요한 이유 한 문장으로 반환합니다.""",
+status는 good, answer_quality, evidence_insufficient 중 하나입니다.
+reason에는 고쳐야 할 부분을 한 문장으로 쓰고, good이면 빈 문자열을 씁니다.""",
     (
         ("question", "사용자 질문"),
+        ("customer_info", "관련 사용자 정보"),
+        ("bindings", "확인된 결과"),
+        ("evidence", "질문별 참고자료"),
         ("answer", "작성된 답변"),
-        ("evidence", "사용한 근거"),
-        ("bindings", "확인된 선행 결과"),
     ),
-    output_schema="judge_result",
+    output_schema="qa_judge_result",
+    version="4.0.0",
 )

@@ -230,22 +230,6 @@ class InputAssistDefaultPolicyTests(unittest.TestCase):
 
 
 class ErrorReviewManualTests(unittest.TestCase):
-    def test_confidence_bands_are_exact_and_low_is_hidden(self) -> None:
-        from agents.error_review.confidence import confidence_level, visible_review_items
-
-        self.assertEqual(confidence_level(0.59), "low")
-        self.assertEqual(confidence_level(0.60), "medium")
-        self.assertEqual(confidence_level(0.849), "medium")
-        self.assertEqual(confidence_level(0.85), "high")
-        self.assertEqual(
-            [item["confidence_level"] for item in visible_review_items([
-                {"confidence_level": "low"},
-                {"confidence_level": "medium"},
-                {"confidence_level": "high"},
-            ])],
-            ["medium", "high"],
-        )
-
     def test_every_supported_step_has_one_hash_verified_manual(self) -> None:
         configure_runtime()
         from agents.error_review.manuals import SUPPORTED_STEPS, load_error_review_manual
@@ -282,7 +266,6 @@ class ErrorReviewManualTests(unittest.TestCase):
             "current_value": 20_000,
             "reason": "단위 착오가 의심됩니다.",
             "suggested_value": 2_000_000,
-            "confidence": 0.9,
         }
 
         self.assertIsNotNone(_validated_item(
@@ -305,7 +288,6 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         configure_runtime()
         from agents.qa import service as qa
         from core.operation_observation import bind_operation_recorder
-        from langchain_core.messages import AIMessage
 
         records: list[dict] = []
         results = [SimpleNamespace(
@@ -315,32 +297,16 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
             score=0.91,
         )]
         retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=results))
-        model = SimpleNamespace(
-            ainvoke=AsyncMock(return_value=AIMessage(content="승인 근거 답변"))
-        )
-        state = {
-            "message": "연금 제도를 설명해줘",
-            "step_id": "pension",
-            "customer_info": {},
-            "task_input": {"description": "연금 설명", "bindings": {}},
-            "current_query": "연금 제도 승인 근거",
-            "current_context": "",
-            "need_retrieval": True,
-            "retry_hint": "",
-            "official_value_unavailable": False,
-        }
-
         with (
             bind_operation_recorder(
                 lambda **event: records.append(dict(event))
             ),
             patch.object(qa, "get_retriever", return_value=retriever),
             patch.object(qa, "format_docs", return_value="승인 문서 context"),
-            patch.object(qa, "llm", model),
         ):
-            result = await qa._generate(state)
+            result = await qa._search("연금 제도 승인 근거")
 
-        self.assertEqual(result["current_answer"], "승인 근거 답변")
+        self.assertEqual(result, "승인 문서 context")
         self.assertEqual(len(records), 1)
         event = records[0]
         self.assertEqual(event["operation_name"], "qa.search")
@@ -350,26 +316,31 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("query", repr(event).lower())
         self.assertNotIn("연금 제도 승인 근거", repr(event))
 
-    async def test_product_term_explanation_uses_specify_model(self) -> None:
+    async def test_product_term_question_and_search_are_planned_in_one_model_call(self) -> None:
         configure_runtime()
         from agents.qa import service as qa
 
-        specify_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.SpecifyResult(
-            queries=["유동성 중시 유동성 정의"],
+        plan_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.PlanResult(
+            questions=[qa.QuestionPlan(
+                question="유동성 중시에서 유동성이란?", need_retrieval=True,
+                query="유동성 중시 유동성 정의",
+            )],
         )))
         message = "유동성 중시에서 유동성이 뭐야?"
-        with patch.object(qa, "_specify_chain", specify_chain):
-            specified = await qa._specify({
+        with patch.object(qa, "_plan_chain", plan_chain):
+            planned = await qa._plan({
                 "step_id": "financial-mindset",
                 "message": message,
+                "feedback": "",
                 "task_input": {"description": message, "bindings": {}},
             })
 
         self.assertEqual(
-            specified,
-            {"search_queries": ["유동성 중시 유동성 정의"], "query_index": 0},
+            planned["questions"],
+            [{"question": "유동성 중시에서 유동성이란?", "need_retrieval": True,
+              "query": "유동성 중시 유동성 정의"}],
         )
-        specify_chain.ainvoke.assert_awaited_once()
+        plan_chain.ainvoke.assert_awaited_once()
 
     async def test_product_term_explanation_retrieves_then_uses_model(self) -> None:
         configure_runtime()
@@ -379,14 +350,13 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         state = {
             "step_id": "financial-mindset",
             "message": "안정 추구가 정확히 뭐야?",
-            "current_query": "안정 추구 정의",
             "customer_info": {},
+            "customer_context": {},
             "task_input": {"description": "용어 설명", "bindings": {}},
-            "current_context": "",
+            "questions": [{"question": "안정 추구란?", "need_retrieval": True,
+                           "query": "안정 추구 정의"}],
             "current_answer": "",
-            "need_retrieval": True,
-            "retry_hint": "",
-            "official_value_unavailable": False,
+            "feedback": "",
         }
         answer = "손실 가능성과 자산 가치 변동을 낮추는 것을 우선한다는 뜻입니다."
         generated_with_source = (
@@ -402,11 +372,14 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(qa, "format_docs", return_value="승인된 안정 추구 용어 절"),
             patch.object(qa, "secure_ainvoke", invoke),
         ):
-            generated = await qa._generate(state)
+            retrieved = await qa._retrieve(state)
+            generated = await qa._generate({**state, **retrieved})
 
         retriever.aretrieve.assert_awaited_once_with("안정 추구 정의")
         invoke.assert_awaited_once()
-        self.assertEqual(generated["current_context"], "승인된 안정 추구 용어 절")
+        self.assertEqual(retrieved["evidence"], [
+            {"question": "안정 추구란?", "reference": "승인된 안정 추구 용어 절"},
+        ])
         self.assertEqual(generated["current_answer"], answer)
         self.assertNotIn("출처", generated["current_answer"])
         self.assertNotIn("product-terms.md", generated["current_answer"])
@@ -417,7 +390,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         configure_runtime()
         from agents.qa import service as qa
 
-        answer = qa._strip_retrieval_source_disclosure(
+        answer = qa.strip_retrieval_source_disclosure(
             "핵심 설명입니다. (출처: 제품 용어 문서)\n"
             "[근거: RetireWise 제품 용어 설명 | 발행: S15P21B109]\n"
             "[source_id: retirewise-product-terms-2026-09-17 | "
@@ -448,88 +421,6 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         for token in forbidden:
             with self.subTest(token=token):
                 self.assertNotIn(token, source)
-
-    async def test_product_term_explanation_is_classified_for_retrieval(self) -> None:
-        configure_runtime()
-        from agents.qa import service as qa
-
-        decision_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RetrievalDecision(
-            need_retrieval=True,
-        )))
-        with patch.object(qa, "_decision_chain", decision_chain):
-            decision = await qa._decide({
-                "message": "안정추구가 정확히 뭐야?",
-                "step_id": "financial-mindset",
-                "current_query": "안정 추구 정의",
-                "customer_info": {},
-                "task_input": {"description": "용어 설명", "bindings": {}},
-            })
-
-        self.assertEqual(decision, {"need_retrieval": True})
-        decision_chain.ainvoke.assert_awaited_once()
-
-    async def test_new_official_value_fails_closed_even_with_unrelated_binding(self) -> None:
-        configure_runtime()
-        from agents.qa import service as qa
-
-        decision_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RetrievalDecision(
-            need_retrieval=True,
-            requests_new_official_value=True,
-        )))
-        with patch.object(qa, "_decision_chain", decision_chain):
-            decision = await qa._decide({
-                "message": "연금저축 공식 한도는 얼마인가요?",
-                "step_id": "basic-info",
-                "current_query": "연금저축 공식 한도",
-                "customer_info": {},
-                "task_input": {
-                    "description": "공식 한도",
-                    "bindings": {
-                        "retirement_gap": {"value": 100_000, "unit": "KRW"},
-                    },
-                },
-            })
-
-        self.assertFalse(decision["need_retrieval"])
-        self.assertTrue(decision["official_value_unavailable"])
-
-    async def test_evidence_shortage_refreshes_query_once_but_quality_retry_keeps_context(self) -> None:
-        configure_runtime()
-        from agents.qa import service as qa
-
-        base = {
-            "message": "기준의 의미를 설명해줘",
-            "task_input": {
-                "description": "기준 의미",
-                "bindings": {"value": 100, "unit": "KRW", "source_id": "approved"},
-            },
-            "current_answer": "답변",
-            "current_context": "cached-context",
-            "current_query": "원래 검색어",
-            "partial_answers": [],
-            "query_index": 0,
-            "retries": 0,
-            "retrieval_refreshes": 0,
-            "need_retrieval": True,
-        }
-        evidence_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.JudgeResult(
-            verdict="bad", failure_kind="evidence_insufficient", reason="근거 부족"
-        )))
-        refine_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.RefineResult(query="보정 검색어")))
-        with patch.object(qa, "_judge_chain", evidence_chain), patch.object(qa, "_refine_chain", refine_chain):
-            refreshed = await qa._judge(base)
-        self.assertEqual(refreshed["current_context"], "")
-        self.assertEqual(refreshed["current_query"], "보정 검색어")
-        self.assertEqual(refreshed["retrieval_refreshes"], 1)
-
-        quality_chain = SimpleNamespace(ainvoke=AsyncMock(return_value=qa.JudgeResult(
-            verdict="bad", failure_kind="answer_quality", reason="표현 부족"
-        )))
-        with patch.object(qa, "_judge_chain", quality_chain):
-            quality_retry = await qa._judge(base)
-        self.assertNotIn("current_context", quality_retry)
-        self.assertEqual(quality_retry["retry_hint"], "표현 부족")
-
 
 @unittest.skipUnless(AGENT_RUNTIME_AVAILABLE, "Agent runtime image에서 실행")
 class ChartAndFailureResponderTests(unittest.IsolatedAsyncioTestCase):
