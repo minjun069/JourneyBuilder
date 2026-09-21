@@ -299,12 +299,13 @@ def _compatible_connections(*, session: Any, definition: ChartDefinition, curren
 
 def _validated_simulation_payload(*, session: Any, definition: ChartDefinition, current_digest: str) -> dict[str, Any]:
     try:
-        from simulations.services import load_consistent_snapshot, load_policy, package_version, prepare_input, run_analysis
+        from simulations.services import confirmed_empty_sections, load_consistent_snapshot, load_policy, package_version, prepare_input, run_analysis
         assumptions, policy_version = load_policy()
         snapshot, snapshot_digest = load_consistent_snapshot(session)
         if snapshot_digest != current_digest:
             raise ChartPayloadValidationError("report_stale")
-        prepared = prepare_input(snapshot)
+        # "금융자산 없음" 확인을 넘기지 않으면 해당 세션은 항상 INPUT_NOT_READY 가 된다.
+        prepared = prepare_input(snapshot, confirmed_empty_sections=confirmed_empty_sections(session, snapshot))
         analysis, _elapsed_ms = run_analysis(prepared, assumptions, scenarios=())
     except ChartPayloadValidationError:
         raise

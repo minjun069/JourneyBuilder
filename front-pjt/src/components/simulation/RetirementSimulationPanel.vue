@@ -1,7 +1,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
+import SimulationIssueList from '@/components/simulation/SimulationIssueList.vue'
 import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
+
+const CONSULTATION_PATH = '/ai'
 
 defineProps({
   compact: { type: Boolean, default: false },
@@ -21,6 +25,17 @@ const comparison = computed(() => scenario.value?.result ?? null)
 const delta = computed(() => scenario.value?.delta ?? null)
 const profile = computed(() => analysis.value?.baseline_profile ?? null)
 const issues = computed(() => reportStore.simulationError?.details?.issues ?? [])
+// INPUT_NOT_READY 는 실패가 아니라 "아직 입력이 덜 됐다" 는 뜻이다.
+// 빨간 오류 대신 중립 안내 + 상담 링크로 보여 준다.
+const inputNotReady = computed(() => reportStore.simulationError?.code === 'INPUT_NOT_READY')
+const canRetry = computed(() => reportStore.simulationError?.retryable === true)
+// 세션 목록을 아직 받아오는 중에는 activeSessionId 가 null 이다.
+// 그동안 "완료 상담이 없습니다" 를 띄우면 대시보드에 들어올 때마다 깜빡인다.
+const stateLoading = computed(() => (
+  !analysis.value
+  && !reportStore.simulationError
+  && (reportStore.loading || reportStore.simulationLoading)
+))
 const trajectory = computed(() => {
   const baselineRows = baseline.value?.asset_percentiles ?? []
   const comparisonByAge = new Map(
@@ -120,7 +135,6 @@ async function recalculate() {
     <header class="panel-header">
       <div>
         <h2>은퇴 시뮬레이션</h2>
-        <p class="subtitle">결과는 서버에 저장하지 않으며 화면을 새로 열 때 최신 정보로 다시 계산합니다.</p>
       </div>
       <button
         v-if="reportStore.activeSessionId"
@@ -133,22 +147,25 @@ async function recalculate() {
       </button>
     </header>
 
-    <div v-if="!reportStore.activeSessionId" class="state-card">
-      분석 가능한 완료 상담이 없습니다.
-    </div>
-    <div v-else-if="reportStore.simulationLoading && !analysis" class="state-card">
+    <div v-if="stateLoading" class="state-card">
       최신 상담 정보로 시뮬레이션을 계산하고 있습니다.
     </div>
+    <template v-else-if="!reportStore.activeSessionId">
+      <div v-if="reportStore.error" class="state-card error" role="alert">
+        상담 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
+      </div>
+      <div v-else class="state-card">
+        AI 상담을 완료하면 은퇴 시뮬레이션 결과를 여기에서 확인할 수 있습니다.
+      </div>
+    </template>
 
     <template v-if="analysis">
       <div v-if="reportStore.simulation?.stale" class="warning" role="alert">
         상담 정보나 계산 기준이 변경되었습니다. 기준을 다시 계산해 주세요.
       </div>
       <div v-if="reportStore.simulationError" class="warning" role="alert">
-        {{ reportStore.simulationError.message }}
-        <ul v-if="issues.length">
-          <li v-for="issue in issues" :key="`${issue.field}-${issue.code}`">{{ issue.message }}</li>
-        </ul>
+        <p class="state-message">{{ reportStore.simulationError.message }}</p>
+        <SimulationIssueList :issues="issues" />
       </div>
 
       <div class="result-grid">
@@ -235,8 +252,20 @@ async function recalculate() {
       </details>
     </template>
 
-    <div v-else-if="reportStore.simulationError" class="state-card error" role="alert">
-      {{ reportStore.simulationError.message }}
+    <div
+      v-else-if="reportStore.simulationError"
+      class="state-card"
+      :class="inputNotReady ? 'guidance' : 'error'"
+      role="alert"
+    >
+      <p class="state-message">{{ reportStore.simulationError.message }}</p>
+      <SimulationIssueList :issues="issues" />
+      <RouterLink v-if="inputNotReady" class="state-link" :to="CONSULTATION_PATH">
+        상담에서 입력 보완하기
+      </RouterLink>
+      <p v-else-if="canRetry" class="state-hint">
+        위 ‘기준 다시 계산’ 버튼으로 다시 시도해 주세요.
+      </p>
     </div>
   </section>
 </template>
@@ -245,7 +274,6 @@ async function recalculate() {
 .simulation-panel { display: flex; flex-direction: column; gap: 18px; color: #1a1f3c; }
 .panel-header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
 .panel-header h2 { margin: 2px 0 6px; font-size: 26px; font-weight: 800; letter-spacing: -0.4px; color: #1a1a2e; }
-.subtitle { margin: 0; color: #6b7280; font-size: 13px; }
 .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .result-card { border: 1px solid #e9eaf2; border-radius: 12px; padding: 16px; background: #fff; box-shadow: 0 1px 3px rgba(20, 20, 43, 0.06); display: flex; flex-direction: column; gap: 6px; }
 .result-card span, .result-card small { color: #6b7280; font-size: 13px; font-weight: 600; }
@@ -264,9 +292,30 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .primary-button { grid-column: 1 / -1; background: #5e5ce6; color: #fff; font-weight: 800; }
 .secondary-button, .row-button { background: #eeeefe; color: #4543b8; font-weight: 700; }
 .row-button { padding: 7px 10px; }
-.state-card, .warning { border-radius: 12px; padding: 18px; background: #f7f7fb; color: #6b7280; }
-.warning { background: #fff7ed; color: #9a3412; }
-.state-card.error, .form-error { color: #b91c1c; }
+/* 상태 카드는 다른 대시보드 페이지(DashboardReportShell)와 같은 모양을 쓴다. */
+.state-card {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid #e9eaf2;
+  border-radius: 12px;
+  padding: 24px;
+  background: #fff;
+  color: #777;
+  font-size: 15px;
+  text-align: center;
+}
+.state-card.error { color: #dc2626; }
+.state-card.guidance { color: #4b5163; }
+.state-message { margin: 0; font-weight: 700; }
+.state-hint { margin: 0; font-size: 13px; color: #6b7280; }
+.state-link { border-radius: 8px; padding: 9px 14px; background: #eeeefe; color: #4543b8; font-size: 14px; font-weight: 800; text-decoration: none; }
+.state-card :deep(.issue-list) { max-width: 520px; }
+.warning { display: flex; flex-direction: column; gap: 8px; border-radius: 12px; padding: 18px; background: #fff7ed; color: #9a3412; }
+.form-error { color: #b91c1c; }
 .form-error { grid-column: 1 / -1; margin: 0; font-size: 13px; }
 .trajectory-wrap { overflow-x: auto; }
 .trajectory-wrap h3 { font-size: 15px; }
@@ -277,13 +326,14 @@ th:first-child, td:first-child { text-align: left; }
 .notices summary { cursor: pointer; font-weight: 800; }
 .compact { gap: 9px; height: 100%; overflow-y: auto; }
 .compact .panel-header h2 { font-size: 18px; }
-.compact .subtitle { display: none; }
 .compact .result-grid { gap: 6px; }
 .compact .result-card { padding: 8px; }
 .compact .result-card strong { font-size: 18px; }
 .compact .controls { padding: 9px; gap: 7px; }
 .compact .expense-row { grid-template-columns: 52px auto 52px minmax(80px, 1fr) auto auto; }
 .compact input, .compact button { padding: 5px 7px; font-size: 11px; }
+.compact .state-card { min-height: 0; gap: 8px; padding: 12px; font-size: 13px; }
+.compact .state-link { padding: 6px 10px; font-size: 12px; }
 @media (max-width: 850px) {
   .result-grid, .controls { grid-template-columns: 1fr; }
   .primary-button, fieldset, .form-error { grid-column: 1; }
