@@ -26,6 +26,7 @@ from .errors import SimulationError, SimulationAPIView, success_response
 from .execution import session_lock, worker_slot
 from .services import (
     SLOW_EXECUTION_MS,
+    confirmed_empty_sections,
     load_consistent_snapshot,
     load_policy,
     package_version,
@@ -64,7 +65,12 @@ class SimulationRunView(SessionMixin, SimulationAPIView):
 
         assumptions, policy_version = load_policy()
         snapshot, snapshot_digest = load_consistent_snapshot(session)
-        prepared = prepare_input(snapshot)
+        # "금융자산 없음" 을 확인한 세션은 is_ready_for_reports() 를 통과한다. 그 사실을
+        # 어댑터에 넘기지 않으면 완료 상태인데도 항상 422 가 된다.
+        prepared = prepare_input(
+            snapshot,
+            confirmed_empty_sections=confirmed_empty_sections(session, snapshot),
+        )
 
         def key_for(contract_version: str, mapping_version: str) -> str:
             return issue_baseline_key(

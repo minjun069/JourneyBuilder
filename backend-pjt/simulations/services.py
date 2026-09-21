@@ -43,6 +43,33 @@ def load_consistent_snapshot(session) -> tuple[dict, str]:
     return snapshot, digest_snapshot(snapshot)
 
 
+# 세션 플래그 → 어댑터 섹션 이름. 모델에 플래그가 있는 섹션만 적는다.
+# 어댑터의 _CONFIRMABLE_SECTIONS 에는 pension_assets 도 있지만 대응하는 모델 필드가
+# 없다. 없는 플래그를 추측해서 채우지 않는다 — 없으면 확인하지 않은 것이다.
+_CONFIRMED_EMPTY_FLAGS = (
+    ('financial_assets', 'financial_assets_confirmed_empty'),
+)
+
+
+def confirmed_empty_sections(session, snapshot: dict) -> tuple[str, ...]:
+    """"정말 없음" 을 사용자가 확인했고 스냅샷도 실제로 비어 있는 섹션 이름.
+
+    플래그만 보고 넘기면 안 된다. 모듈 input_adapter._confirm_empty() 는 이름만 받고
+    해당 섹션에 행이 남아 있으면 InputMappingError('invalid_confirmation') 를 던진다.
+    그러면 사용자가 고칠 수 있는 422 INPUT_NOT_READY 가 ANALYSIS_REJECTED 로 둔갑한다.
+    그래서 플래그와 실제 공백을 **둘 다** 만족할 때만 확인으로 친다.
+
+    스냅샷을 다시 조회하지 않고 인자로 받는다. load_consistent_snapshot() 이 뜬 것과
+    다른 시점을 보면 같은 불일치가 생긴다.
+    """
+    return tuple(
+        section
+        for section, flag in _CONFIRMED_EMPTY_FLAGS
+        # 계약 테스트의 가짜 세션처럼 플래그가 없는 객체는 "확인 안 함" 으로 둔다.
+        if getattr(session, flag, False) and not snapshot.get(section)
+    )
+
+
 def package_version() -> str:
     return metadata.version(DISTRIBUTION)
 
@@ -60,9 +87,15 @@ def load_policy() -> tuple[dict[str, Any], str]:
         ) from error
 
 
-def prepare_input(snapshot: dict):
-    """어댑터를 돌리고 규격 위반이 있으면 모듈을 부르지 않는다."""
-    prepared = build_simulation_input(snapshot)
+def prepare_input(snapshot: dict, *, confirmed_empty_sections: tuple[str, ...] = ()):
+    """어댑터를 돌리고 규격 위반이 있으면 모듈을 부르지 않는다.
+
+    confirmed_empty_sections 는 호출부가 세션에서 읽어 넘긴다(services 의 동명 헬퍼).
+    빠뜨리면 "금융자산 없음" 을 확인한 세션이 항상 422 INPUT_NOT_READY 가 된다.
+    """
+    prepared = build_simulation_input(
+        snapshot, confirmed_empty_sections=confirmed_empty_sections
+    )
     if prepared.issues:
         raise SimulationError(
             422,
