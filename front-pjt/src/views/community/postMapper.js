@@ -28,6 +28,12 @@ export function relativeTime(iso, nowMs = Date.now()) {
   return new Date(iso).toLocaleDateString('ko-KR')
 }
 
+// ISO 시각 → 정렬용 숫자 키. 누락/파싱 불가 값은 0으로 떨어뜨려 정렬이 깨지지 않게 한다
+export function createdAtMs(iso) {
+  const ts = Date.parse(iso)
+  return Number.isNaN(ts) ? 0 : ts
+}
+
 // 서버 응답(content/like_count/view_count)을 화면이 쓰는 형태(body/likes/views)로 변환한다
 export function toViewPost(data) {
   return {
@@ -49,6 +55,7 @@ export function toViewPost(data) {
     views: data.view_count ?? 0,
     recommended: !!data.is_recommended,
     createdAt: relativeTime(data.created_at),
+    createdAtMs: createdAtMs(data.created_at),
     commentList: [],
   }
 }

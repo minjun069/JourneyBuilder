@@ -14,8 +14,8 @@ onMounted(() => {
 })
 
 // ─── Tabs ─────────────────────────────────────────────────
-const activeTab = ref('추천 글')
-const TABS = ['추천 글', '인기 글']
+const activeTab = ref('최신순')
+const TABS = ['최신순', '추천 글', '인기 글']
 
 // ─── Filters ──────────────────────────────────────────────
 const searchQuery = ref('')
@@ -49,7 +49,10 @@ function resetFilters() {
 const filteredPosts = computed(() => {
   let list = posts.value.slice()
 
-  if (activeTab.value === '추천 글') {
+  // 배열 순서는 unshift/upsert로 흔들리므로 최신순은 항상 타임스탬프로 다시 정렬한다
+  if (activeTab.value === '최신순') {
+    list.sort((a, b) => (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0))
+  } else if (activeTab.value === '추천 글') {
     list = list.filter((p) => p.recommended)
   } else {
     list.sort((a, b) => b.likes - a.likes)
@@ -120,7 +123,11 @@ function metaLine(post) {
           :class="{ active: activeTab === tab }"
           @click="activeTab = tab"
         >
-          <svg v-if="tab === '추천 글'" width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <svg v-if="tab === '최신순'" width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <svg v-else-if="tab === '추천 글'" width="14" height="14" viewBox="0 0 24 24" fill="none">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
           </svg>
           <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none">

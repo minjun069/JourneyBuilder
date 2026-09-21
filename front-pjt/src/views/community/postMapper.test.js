@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { toViewPost, toViewComment, relativeTime, formatViews } from './postMapper.js'
+import { toViewPost, toViewComment, relativeTime, formatViews, createdAtMs } from './postMapper.js'
 
 const NOW = new Date('2026-01-15T12:00:00Z').getTime()
 
@@ -39,6 +39,7 @@ test('toViewPost는 서버 필드를 화면 뷰모델 필드로 매핑한다', (
   assert.equal(view.comments, 3)
   assert.equal(view.views, 340)
   assert.equal(view.recommended, true)
+  assert.equal(view.createdAtMs, Date.parse('2026-01-15T11:59:30Z'))
   assert.deepEqual(view.commentList, [])
 })
 
@@ -68,6 +69,40 @@ test('작성자·밴드·플래그 기본값 — 빈 문자열 author는 익명�
   assert.equal(view.views, 0)
   assert.equal(view.recommended, false)
   assert.equal(view.createdAt, '방금 전')
+  assert.equal(view.createdAtMs, 0)
+})
+
+// ─── createdAtMs ──────────────────────────────────────────
+
+test('createdAtMs는 ISO 시각을 정렬 가능한 숫자로 바꾼다', () => {
+  assert.equal(createdAtMs('2026-01-15T11:59:30Z'), Date.parse('2026-01-15T11:59:30Z'))
+  assert.equal(createdAtMs('2026-01-15T11:59:30+09:00'), Date.parse('2026-01-15T11:59:30+09:00'))
+})
+
+test('createdAtMs는 누락·비정상 입력을 0으로 떨어뜨린다', () => {
+  assert.equal(createdAtMs(undefined), 0)
+  assert.equal(createdAtMs(null), 0)
+  assert.equal(createdAtMs(''), 0)
+  assert.equal(createdAtMs('not-a-date'), 0)
+  assert.equal(createdAtMs({}), 0)
+})
+
+test('createdAtMs 기준 내림차순 정렬 — 비정상 created_at은 맨 뒤로 가라앉는다', () => {
+  const rows = [
+    { id: 1, title: 't', created_at: '2026-01-10T00:00:00Z' },
+    { id: 2, title: 't', created_at: 'not-a-date' },
+    { id: 3, title: 't', created_at: '2026-01-15T00:00:00Z' },
+    { id: 4, title: 't' },
+    { id: 5, title: 't', created_at: '2026-01-12T00:00:00Z' },
+  ]
+
+  const sorted = rows
+    .map(toViewPost)
+    .sort((a, b) => b.createdAtMs - a.createdAtMs)
+    .map((p) => p.id)
+
+  assert.deepEqual(sorted.slice(0, 3), [3, 5, 1])
+  assert.deepEqual(sorted.slice(3).sort(), [2, 4])
 })
 
 // ─── toViewComment ────────────────────────────────────────
