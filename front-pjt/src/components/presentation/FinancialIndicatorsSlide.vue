@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useReportStore } from '@/stores/report'
 import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue'
-import { makeIndicator } from '@/components/charts/financialIndicatorSchema'
+import { makeIndicator, toIndicatorGroups } from '@/components/charts/financialIndicatorSchema'
 
 // 글에 첨부된 스냅샷을 받는다. 없으면 기존처럼 store 를 본다(대시보드·AI 화면 동작 유지)
 const props = defineProps({
@@ -11,7 +11,11 @@ const props = defineProps({
 
 const reportStore = useReportStore()
 
-const fi = computed(() => props.data ?? reportStore.reports?.['financial-indicators'])
+// 서버가 실제로 계산한 리포트 본문은 지표별 평면 키로 오고, 시드 글·목업은 groups 형태다.
+// 그리기 직전에 두 모양을 groups 로 맞춘다 — 이미 저장된 글도 다시 만들지 않고 그대로 그려진다
+const fi = computed(() => toIndicatorGroups(
+  props.data ?? reportStore.reports?.['financial-indicators'],
+))
 
 const GROUP_LABEL = { cashflow: '현금흐름', assets: '자산', risk: '리스크 대비' }
 

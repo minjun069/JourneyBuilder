@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
+import { toGoalPhases } from '@/utils/financialGoalData'
 
 // 글에 첨부된 스냅샷을 받는다. 없으면 기존처럼 store 를 본다(대시보드·AI 화면 동작 유지)
 const props = defineProps({
@@ -11,14 +12,17 @@ const props = defineProps({
 const reportStore = useReportStore()
 const gd = computed(() => props.data ?? reportStore.reports?.['financial-goal-result'])
 
-const prePhases  = computed(() => gd.value?.pre_retirement ?? [])
-const postPhases = computed(() => gd.value?.post_retirement_phases ?? [])
+// 서버가 계산한 본문의 pre_retirement 는 구간 배열이 아니라 객체 하나로 온다.
+// 그리기 직전에 두 모양을 구간 배열로 맞춘다 — 목업·대시보드·AI 경로의 배열은 그대로 지나간다
+const prePhases  = computed(() => toGoalPhases(gd.value?.pre_retirement))
+const postPhases = computed(() => toGoalPhases(gd.value?.post_retirement_phases))
 
 function makeTimeline(phases) {
   if (!phases.length) return null
   const minAge    = phases[0].start_age
   const maxAge    = phases[phases.length - 1].end_age
-  const totalSpan = maxAge - minAge
+  // 구간이 하나뿐이고 시작·끝 나이가 같으면 0으로 나눠 위치가 전부 NaN 이 된다
+  const totalSpan = (maxAge - minAge) || 1
 
   function agePct(age) {
     return ((age - minAge) / totalSpan) * 100
@@ -68,7 +72,7 @@ function style(i, isPre, total) {
 }
 
 function phaseItems(phase) {
-  return phase.desired_expenses.flatMap(d => d.items)
+  return phase.desired_expenses.flatMap(d => d.items ?? [])
 }
 
 const fmt = fmtKRW

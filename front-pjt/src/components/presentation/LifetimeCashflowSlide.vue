@@ -103,6 +103,8 @@ function label(col) {
 .slide {
   width: 100%;
   height: 100%;
+  /* 아래 @container 규칙의 기준 — 화면 폭이 아니라 슬라이드가 놓인 상자 폭을 본다 */
+  container-type: inline-size;
   padding: 12px 20px 10px;
   display: flex;
   flex-direction: column;
@@ -200,4 +202,16 @@ function label(col) {
 .asset-bar   { background: #22c55e; opacity: 0.85; }
 
 .age-label { font-size: 10px; color: #9498b5; white-space: nowrap; flex-shrink: 0; }
+
+/* 좁은 상자(커뮤니티 글의 첨부 슬라이드)용 — 열이 나이 레이블 너비(min-content) 아래로
+   줄지 않아 375px 화면에서는 오른쪽 열이 상자 밖으로 밀려 통째로 잘렸다.
+   상자 폭이 좁을 때만 간격·글자를 줄여 모든 열을 안에 넣는다.
+   컨테이너 쿼리라 대시보드·AI 화면(넓은 폭)에는 적용되지 않는다 */
+@container (max-width: 460px) {
+  .chart { gap: 2px; }
+  .col { min-width: 0; gap: 2px; }
+  .bar-group { gap: 2px; }
+  .bar { border-radius: 2px 2px 0 0; }
+  .age-label { font-size: 8px; letter-spacing: -0.04em; }
+}
 </style>

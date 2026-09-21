@@ -39,13 +39,17 @@ const DATA_DRIVEN_SLIDES = {
   LifetimeCashflowSlide:    'lifetime-cashflow',
 }
 
-// 내용만큼 세로로 늘어나는 슬라이드 — .slide 가 min-height:100% + overflow-y:auto 라
-// 본문에서 고정 높이 상자에 넣으면 차트 절반이 잘린 채 스크롤도 안 된다.
-// 나머지 슬라이드는 height:100% + overflow:hidden 이라 고정 높이 상자가 있어야 제대로 그려진다
+// 내용 높이가 데이터에 따라 달라지는 슬라이드 — 고정 높이 상자에 넣으면 잘린 채 스크롤도 안 된다.
+//  · BalanceSheet·CashFlow·FinancialIndicators: .slide 가 min-height:100% + overflow-y:auto (표/게이지가 늘어남)
+//  · FinancialGoal: .slide 가 height:100% 지만 내부가 전부 내용 높이(타임라인·지출 카드)라
+//    부모가 auto 면 100%가 auto 로 풀려 그대로 늘어난다 — 220px 상자에서는 '은퇴 전'이 통째로 잘렸다
+// 나머지 슬라이드(LifetimeCashflow·PensionSchedule·RequiredSavings·RetirementFund·RetirementReadiness)는
+// 차트 영역이 flex:1 + min-height:0 이라 부모 높이가 없으면 차트가 0px로 접힌다 — 고정 높이 상자를 유지한다
 const AUTO_HEIGHT_SLIDES = new Set([
   'BalanceSheetSlide',
   'CashFlowSlide',
   'FinancialIndicatorsSlide',
+  'FinancialGoalSlide',
 ])
 
 function isAutoHeightSlide(section) {
@@ -660,17 +664,20 @@ async function removeComment(commentId) {
 
 /* 늘어나는 슬라이드는 높이를 내용에 맡겨 전부 보여준다.
    커뮤니티 본문 전용 override — 대시보드·AI·발표 화면은 각자 고정 높이 컨테이너를 쓴다 */
+/* 세로는 내용에 맡기고, 좁은 화면에서 상자보다 넓어지는 표는 말없이 잘리는 대신 옆으로 밀어보게 한다 */
 .component-wrap--auto {
   height: auto;
   min-height: 220px;
-  overflow: visible;
+  overflow: auto;
 }
 
 /* 부모가 auto 가 되면 .slide 의 min-height:100% 가 0 이 되고
-   overflow-y:auto 는 이중 스크롤을 만든다 — 이 화면에서만 풀어준다 */
+   overflow-y:auto 는 이중 스크롤을 만든다 — 이 화면에서만 풀어준다.
+   overflow-y 만 풀면 overflow-x:hidden 인 슬라이드(FinancialGoal)에서
+   브라우저가 overflow-y 를 auto 로 되돌려 다시 스크롤이 생기므로 양축을 함께 푼다 */
 .component-wrap--auto :deep(.slide) {
   min-height: 220px;
-  overflow-y: visible;
+  overflow: visible;
 }
 
 .component-wrap--auto .component-empty {
