@@ -1,0 +1,354 @@
+{
+  "schema_version": "counseling-candidate/v1",
+  "catalog_version": "counseling-1.0.0",
+  "as_of_date": "2026-09-21",
+  "hash_algorithm": "sha256",
+  "acceptance": {
+    "status": "pending",
+    "approved_at": null,
+    "reviewed_by": null,
+    "service_boundary": "재무정보 수집·재무상태·현금흐름·목표·은퇴진단의 설명에 한정. 개인 심리 진단, 상품·투자 추천, 제도값·산식 변경, 계약 실행은 제외.",
+    "license": "CFPB 자체 제작 공개자료의 일반 개념을 한국어로 자체 서술. 출처별 권리는 sources에 보존. 참고용 제한 자료의 원문·표·번역 전문 미적재.",
+    "sensitivity": "public"
+  },
+  "intended_use": {
+    "baseline": "마지막 병합 단계에서 질문·검증 결과에 관련된 상담 근거를 검색하는 비교 실험",
+    "session_understanding": "세션마다 보유·갱신하는 고객 이해 문단을 별도 개인 컨텍스트로 활용하는 후속 실험",
+    "runtime_status": "not-implemented",
+    "promotion_status": "not-requested",
+    "personal_context_in_corpus": false,
+    "profile_note": "문단은 고객 진술·확인 사실·미확인 해석을 구분한다. 매 턴 재검토하되 새 정보가 없으면 유지할 수 있다."
+  },
+  "sources": [
+    {
+      "id": "cfpb-toolkit",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Your Money, Your Goals toolkit",
+      "url": "https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_financial-empowerment_toolkit.pdf",
+      "locator": "PDF 물리 10–12쪽(감정·가치·질문), 40–41쪽(비상·예정·소득 공백 저축). 공식 페이지의 2020년 6월 갱신본.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-money-picture",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "My money picture",
+      "url": "https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_money-picture_tool_2018-11.pdf",
+      "locator": "PDF 물리 1–3쪽: 현재 상황·태도·원하는 변화·상담 주제 선택",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-cash-flow-budget",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Creating a cash flow budget",
+      "url": "https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_cash_flow_budget_tool_2018-11_ADA.pdf",
+      "locator": "PDF 물리 1–2쪽: 수입·지출 시점과 잔액 이월. SNAP/TANF 등 미국 제도 제외.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-events-purchases",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Planning for life events and large purchases",
+      "url": "https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_events-purchases_tool_2018-11.pdf",
+      "locator": "PDF 물리 1–2쪽: 생애사건·큰 지출의 시점과 비용",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-revising-goals",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Revising goals",
+      "url": "https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_revising_goals_handout_2018-11.pdf",
+      "locator": "PDF 물리 1–2쪽: 상황 변화와 목표·우선순위 재검토",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-wellbeing-guide",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Measuring financial well-being: User guide",
+      "url": "https://files.consumerfinance.gov/f/201512_cfpb_financial-well-being-user-guide-scale.pdf",
+      "locator": "PDF 물리 6–7쪽 §2.1 네 관점, 16쪽 §4.5 문항 변경의 측정 한계. 문항·채점표·미국 규준 제외.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-wellbeing-findings",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Explore financial well-being findings",
+      "url": "https://www.consumerfinance.gov/consumer-tools/educator-tools/financial-well-being-resources/explore-findings/",
+      "locator": "Financial well-being 정의와 네 요소. 개인의 한국어 척도 점수로 환산하지 않음.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "fpsb-standards-2023",
+      "publisher": "Financial Planning Standards Board (FPSB)",
+      "title": "Global Financial Planning Standards",
+      "url": "https://www.fpsb.org/wp-content/uploads/2023/04/230000_pub_FPSB-Global-Financial-Planning-Standards-Final.pdf",
+      "locator": "PDF 물리 64–65쪽 Standards 6–7, 71쪽 Standard 13, 142쪽 권리표시. 설계 검토 참고만.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "reference-only",
+      "rights": {
+        "status": "reference-only",
+        "url": "https://www.fpsb.org/wp-content/uploads/2023/04/230000_pub_FPSB-Global-Financial-Planning-Standards-Final.pdf",
+        "note": "All rights reserved 확인. 공개 적재 허락 미확인. 원문·표·번역 전문을 corpus에 편입하지 않음."
+      }
+    },
+    {
+      "id": "bok-household-survey-2025",
+      "publisher": "한국은행 공동발표",
+      "title": "2025년 가계금융복지조사 결과",
+      "url": "https://www.bok.or.kr/portal/bbs/B0000501/view.do?menuNo=201264&nttId=10094917",
+      "locator": "추가 통계 선정용 공식 게시 페이지. 원문·수치·표 미적재.",
+      "published_at": "2025-12-04",
+      "verified_at": "2026-09-21",
+      "usage": "reference-only",
+      "rights": {
+        "status": "reference-only",
+        "url": "https://www.bok.or.kr/portal/main/contents.do?menuNo=200228",
+        "note": "해당 자료의 개별 재사용 허락 미확인. 링크만 기록하며 실제 통계 편입은 별도 이용조건·관측기간 검토 대상."
+      }
+    }
+  ],
+  "design_reference_ids": [
+    "fpsb-standards-2023"
+  ],
+  "documents": [
+    {
+      "id": "knowledge-counseling-client-understanding",
+      "source_id": "retirewise-counseling-client-understanding",
+      "title": "고객의 고민과 맥락을 이해하고 확인하는 상담",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-client-understanding.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-toolkit",
+        "cfpb-money-picture"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-client-understanding"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "943fd5311343d8bd4119ac14bfba5c68419b89b81a7722c417083c457e7fbf3b"
+    },
+    {
+      "id": "knowledge-counseling-financial-wellbeing",
+      "source_id": "retirewise-counseling-financial-wellbeing",
+      "title": "숫자는 괜찮다는데 불안해요: 재무 상태와 체감 여유 이해하기",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-financial-wellbeing.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-wellbeing-guide",
+        "cfpb-money-picture",
+        "cfpb-toolkit"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-financial-wellbeing"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "904b1f5133dc0a4f4f23c32067e28001b076e5a81afe4da425b6213f8a5222c9"
+    },
+    {
+      "id": "knowledge-counseling-cashflow-resilience",
+      "source_id": "retirewise-counseling-cashflow-resilience",
+      "title": "월말에 돈이 모자라요: 현금흐름의 시점과 완충 여력",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-cashflow-resilience.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-cash-flow-budget",
+        "cfpb-toolkit",
+        "cfpb-money-picture"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-cashflow-resilience"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "17966485632fb8a135d2020476e19ee65b044af8e74a9fd3f1ba24b536fca980"
+    },
+    {
+      "id": "knowledge-counseling-goals-life-events",
+      "source_id": "retirewise-counseling-goals-life-events",
+      "title": "목표를 다 준비할 수 있을까요: 우선순위와 생활 변화",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-goals-life-events.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-events-purchases",
+        "cfpb-revising-goals",
+        "cfpb-money-picture"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-goals-life-events"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "1e15df65fe65b824c993273b4ad149d623043f070f5ab2f4f0012f1745151515"
+    },
+    {
+      "id": "knowledge-counseling-retirement-diagnosis",
+      "source_id": "retirewise-counseling-retirement-diagnosis",
+      "title": "은퇴진단 결과의 의미와 불확실성을 설명하는 상담",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-retirement-diagnosis.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-revising-goals",
+        "cfpb-money-picture"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-retirement-diagnosis"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "02f36307435faaab50534636b150fff32074b899e36cdaca25f9e1568ca53a7f"
+    },
+    {
+      "id": "knowledge-counseling-comparison-economic-context",
+      "source_id": "retirewise-counseling-comparison-economic-context",
+      "title": "또래 비교와 경제·사회 맥락을 다루는 상담",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-comparison-economic-context.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-wellbeing-findings",
+        "cfpb-revising-goals",
+        "bok-household-survey-2025"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-comparison-economic-context"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "87d58eabe1df3b4e20f9a29cd0e17de4282b471a6bda64ab22e3a47de0bf4b87"
+    }
+  ],
+  "evaluation": {
+    "retrieval": "ai-pjt/rag/evaluation/counseling-candidate-gold-v1.json",
+    "behavior": "ai-pjt/rag/evaluation/counseling-behavior-cases-v1.json",
+    "behavior_status": "not-executed",
+    "production_embedding_status": "not-executed"
+  }
+}

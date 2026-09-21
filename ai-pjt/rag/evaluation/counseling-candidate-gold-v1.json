@@ -1,0 +1,235 @@
+{
+  "schema_version": "counseling-retrieval-gold/v1",
+  "as_of_date": "2026-09-21",
+  "scope": "후보 상담 문서의 로컬 검색 회귀. 최신 제도값·상품 추천·개인 사실은 검색 결과의 존재와 별개로 behavior 사례에서 근거 사용 범위를 평가.",
+  "queries": [
+    {
+      "query_id": "counseling-understanding-1",
+      "query": "질문에는 답을 들었는데 계속 마음이 놓이지 않는 고객의 고민을 어떻게 확인하나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-understanding-2",
+      "query": "고객 이해 문단에서 본인이 말한 목표와 상담자가 추측한 원인을 구분하는 방법",
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-understanding-3",
+      "query": "고객이 이전 해석을 아니라고 정정하면 대화 요약을 어떻게 갱신하나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-understanding-4",
+      "query": "고마워요라는 말만 새로 들어왔을 때 고객의 성향을 다시 추정해야 하나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-wellbeing-1",
+      "query": "매달 돈이 남는데도 불안하다고 해요. 숫자와 체감 여유가 왜 다를까요",
+      "relevant_source_ids": [
+        "retirewise-counseling-financial-wellbeing"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-wellbeing-2",
+      "query": "재무 웰빙의 통제감 충격 대응 목표 진전 선택의 자유를 상담에서 설명",
+      "relevant_source_ids": [
+        "retirewise-counseling-financial-wellbeing"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-wellbeing-3",
+      "query": "형편이 빠듯한 고객에게 위험을 숨기지 않으면서 안심시키는 설명",
+      "relevant_source_ids": [
+        "retirewise-counseling-financial-wellbeing"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-wellbeing-4",
+      "query": "친구들보다 못 모았다고 스스로를 탓하는 고객에게 어떤 설명이 도움이 될까요",
+      "relevant_source_ids": [
+        "retirewise-counseling-financial-wellbeing"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-cashflow-1",
+      "query": "한 달 합계로는 남는데 카드 결제일마다 돈이 모자라요",
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-cashflow-2",
+      "query": "월급이 들쭉날쭉해서 평균 소득만으로 생활비 여유를 판단하기 어려워요",
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-cashflow-3",
+      "query": "비상금과 이미 예정된 연간 목돈 지출과 목적자금을 왜 구분하나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-cashflow-4",
+      "query": "소득은 충분한 것 같은데 입금일보다 청구일이 먼저 몰리는 상황",
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-goals-1",
+      "query": "노후 저축과 가까운 목돈 지출을 동시에 준비하려면 무엇을 확인해야 하나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-goals-2",
+      "query": "상황이 바뀌었는데 예전 목표를 계속 지켜야 할까요",
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-goals-3",
+      "query": "여유 있게 살고 싶지만 얼마가 필요한지 모르겠어요",
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-goals-4",
+      "query": "두 목표가 같은 저축액을 필요로 할 때 금액 시점 우선순위 확인",
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-retirement-1",
+      "query": "은퇴자금이 부족하다고 나오면 저는 이미 늦은 건가요",
+      "relevant_source_ids": [
+        "retirewise-counseling-retirement-diagnosis"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-retirement-2",
+      "query": "어떤 지표는 괜찮고 다른 지표는 나쁠 때 전체 재무상태를 어떻게 해석하나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-retirement-diagnosis"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-retirement-3",
+      "query": "연금 정보가 비어 있고 보고서도 준비되지 않았는데 부족하다고 판단할 수 있나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-retirement-diagnosis"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-retirement-4",
+      "query": "은퇴진단 결과가 너무 많아 어디부터 확인해야 할지 모르겠어요",
+      "relevant_source_ids": [
+        "retirewise-counseling-retirement-diagnosis"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-comparison-1",
+      "query": "또래 평균 자산보다 적으면 제 재무상태가 부적절한가요",
+      "relevant_source_ids": [
+        "retirewise-counseling-comparison-economic-context"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-comparison-2",
+      "query": "경제 상황이 달라졌다고 제 진단의 원인이나 계산 가정을 바꿀 수 있나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-comparison-economic-context"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-comparison-3",
+      "query": "가구 평균과 개인 자산을 비교할 때 기준시점과 대상이 달라도 되나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-comparison-economic-context"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-comparison-4",
+      "query": "조사 발표일과 소득 기간이 다른 통계를 현재 숫자처럼 써도 되나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-comparison-economic-context"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-none-weather",
+      "query": "내일 부산 시간대별 강수 확률 알려줘",
+      "relevant_source_ids": [],
+      "category": "no_result"
+    },
+    {
+      "query_id": "counseling-none-recipe",
+      "query": "김치찌개 맛있게 끓이는 조리법",
+      "relevant_source_ids": [],
+      "category": "no_result"
+    },
+    {
+      "query_id": "counseling-none-sports",
+      "query": "프로야구 투수 방어율과 타자 타율",
+      "relevant_source_ids": [],
+      "category": "no_result"
+    },
+    {
+      "query_id": "counseling-none-code",
+      "query": "파이썬 퀵 정렬 구현 코드를 작성해 줘",
+      "relevant_source_ids": [],
+      "category": "no_result"
+    },
+    {
+      "query_id": "counseling-none-travel",
+      "query": "제주도 렌터카 맛집과 숙소",
+      "relevant_source_ids": [],
+      "category": "no_result"
+    },
+    {
+      "query_id": "counseling-none-music",
+      "query": "기타 악보에서 C코드 운지법",
+      "relevant_source_ids": [],
+      "category": "no_result"
+    }
+  ]
+}

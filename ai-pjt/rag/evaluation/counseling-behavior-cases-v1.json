@@ -1,0 +1,470 @@
+{
+  "schema_version": "counseling-behavior-cases/v1",
+  "as_of_date": "2026-09-21",
+  "status": "not-executed",
+  "data_classification": "synthetic-only",
+  "purpose": "마지막 병합 RAG baseline 및 세션별 고객 이해 문단의 후속 모델·runtime 평가. 정답 문장 일치가 아닌 의미 평가.",
+  "variants": [
+    {
+      "id": "baseline-aggregation-rag",
+      "description": "마지막 병합 단계에 질문·검증된 작업 결과·조건부 상담 검색 근거를 제공"
+    },
+    {
+      "id": "aggregation-rag-with-understanding",
+      "description": "동일 baseline에 해당 세션의 현재 고객 이해 문단을 추가"
+    },
+    {
+      "id": "generation-stage-rag",
+      "description": "후보 대안: 기존 답변 생성·검증 단계에서 상담 검색 근거 활용"
+    }
+  ],
+  "scoring": {
+    "required": [
+      "사실·수치·조건 보존",
+      "가설의 사실 승격 없음",
+      "고객 정정 반영",
+      "근거 없는 안심 없음",
+      "재무진단 범위 준수",
+      "세션 간 개인 맥락 혼입 없음"
+    ],
+    "comparative": [
+      "질문 해결에 도움이 되는 설명",
+      "불필요한 상담 확대·반복 질문",
+      "응답 길이",
+      "지연·검색 비용"
+    ],
+    "execution_note": "이 파일을 읽거나 형식을 검사한 것은 모델 응답 품질·매 턴 저장·세션 격리 검증을 통과한 것이 아니다."
+  },
+  "cases": [
+    {
+      "id": "understanding-01",
+      "category": "explicit-concern",
+      "session_id": "synthetic-session-a",
+      "previous_understanding": "아직 확인된 고객 이해가 없다.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "은퇴 후 매달 생활비가 모자랄까 봐 걱정돼요."
+        }
+      ],
+      "verified_facts": [],
+      "example_understanding": "고객은 은퇴 후 매달 생활비가 부족할 가능성을 걱정한다고 밝혔다. 현재 소득·자산의 충분성이나 부족 원인은 확인되지 않았다.",
+      "must_preserve": [
+        "걱정의 대상은 은퇴 후 월 생활비"
+      ],
+      "must_not_infer": [
+        "현재 적자",
+        "자산 부족",
+        "위험회피 성향",
+        "불안장애"
+      ],
+      "answer_expectations": [
+        "직접 표현한 고민을 반영",
+        "정보가 없는 상태에서 안전 여부 단정 금지"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding",
+        "retirewise-counseling-financial-wellbeing"
+      ]
+    },
+    {
+      "id": "understanding-02",
+      "category": "correction",
+      "session_id": "synthetic-session-a",
+      "previous_understanding": "고객은 은퇴 후 생활비 부족을 걱정한다고 말했다.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "은퇴보다는 당장 부모님 병원비가 더 걱정이에요."
+        }
+      ],
+      "verified_facts": [],
+      "example_understanding": "고객은 현재 가장 걱정되는 일이 부모님 병원비라고 정정했다. 은퇴 관심을 완전히 철회한 것은 확인되지 않았다. 지출 규모와 지속 기간은 아직 모른다.",
+      "must_preserve": [
+        "현재 관심사의 정정"
+      ],
+      "must_not_infer": [
+        "은퇴 목표 폐기",
+        "정기 부양의무",
+        "부모의 질병명",
+        "의료비 금액"
+      ],
+      "answer_expectations": [
+        "이전 요약에 고착되지 않기",
+        "현재 걱정과 관련된 필요 정보만 확인"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding",
+        "retirewise-counseling-goals-life-events"
+      ]
+    },
+    {
+      "id": "understanding-03",
+      "category": "hypothesis-denied",
+      "session_id": "synthetic-session-b",
+      "previous_understanding": "고객은 자산이 있어도 걱정된다고 했다. 현금화 문제가 배경일 가능성은 미확인이다.",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "필요할 때 현금으로 쓰기 어려울까 걱정되시는 걸까요?"
+        },
+        {
+          "role": "user",
+          "content": "아니요. 돈은 바로 쓸 수 있는데 예상보다 오래 살까 봐요."
+        }
+      ],
+      "verified_facts": [],
+      "example_understanding": "고객은 현금화 걱정이라는 해석을 부인했다. 예상보다 오래 생활비가 필요할 가능성을 걱정한다고 밝혔다. 자금 사용 가능성은 고객 진술이며 현재 자산 자료로 확인한 결과는 아니다.",
+      "must_preserve": [
+        "가설 부인",
+        "생활비가 필요한 기간에 대한 걱정"
+      ],
+      "must_not_infer": [
+        "이전 유동성 가설의 재사용",
+        "개인 수명 예측",
+        "현재 자금 충분성 확정"
+      ],
+      "answer_expectations": [
+        "진술과 검증 사실 구분",
+        "종료연령 가정의 의미를 관련 있을 때 설명"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding",
+        "retirewise-counseling-retirement-diagnosis"
+      ]
+    },
+    {
+      "id": "understanding-04",
+      "category": "no-new-information",
+      "session_id": "synthetic-session-c",
+      "previous_understanding": "고객은 매달 소득이 달라 생활비 관리에 어려움을 느낀다고 말했다. 지출 총액은 미확인이다.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "고마워요."
+        }
+      ],
+      "verified_facts": [],
+      "example_understanding": "고객은 매달 소득이 달라 생활비 관리에 어려움을 느낀다고 말했다. 지출 총액은 미확인이다.",
+      "must_preserve": [
+        "새 정보가 없으므로 기존 이해 유지 가능"
+      ],
+      "must_not_infer": [
+        "진단 만족도 확정",
+        "걱정 해소",
+        "새 금융성향",
+        "새 목표"
+      ],
+      "answer_expectations": [
+        "불필요한 검색·상담 확대·확인 질문 생략 가능"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding"
+      ]
+    },
+    {
+      "id": "understanding-05",
+      "category": "proposal-is-not-choice",
+      "session_id": "synthetic-session-d",
+      "previous_understanding": "고객은 은퇴 준비 결과를 이해하고 싶어 한다.",
+      "turns": [
+        {
+          "role": "assistant",
+          "content": "목표 시점을 비교해 보는 방법도 있습니다."
+        },
+        {
+          "role": "user",
+          "content": "그 방법이 무슨 뜻인가요?"
+        }
+      ],
+      "verified_facts": [],
+      "example_understanding": "고객은 목표 시점을 비교한다는 설명의 의미를 물었다. 목표 시점을 변경하거나 비교 실행에 동의했다는 사실은 확인되지 않았다.",
+      "must_preserve": [
+        "설명 요청"
+      ],
+      "must_not_infer": [
+        "AI 제안을 고객 목표로 저장",
+        "변경 승인",
+        "저장 완료"
+      ],
+      "answer_expectations": [
+        "제안과 사용자 결정을 구분"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-client-understanding",
+        "retirewise-counseling-goals-life-events"
+      ]
+    },
+    {
+      "id": "understanding-06",
+      "category": "session-isolation",
+      "session_id": "synthetic-session-new",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "비상자금이 왜 필요한가요?"
+        }
+      ],
+      "verified_facts": [],
+      "foreign_context": "다른 세션의 가상 고객은 부모님 병원비를 걱정했다.",
+      "example_understanding": "현재 세션의 고객은 비상자금의 필요성을 물었다. 개인 목표·가족상황·자산 상태는 확인되지 않았다.",
+      "must_preserve": [
+        "현재 세션 질문만 사용"
+      ],
+      "must_not_infer": [
+        "다른 세션의 가족상황이나 고민 혼입"
+      ],
+      "answer_expectations": [
+        "일반 개념에 직접 답변",
+        "타 세션 맥락 참조 금지"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ]
+    },
+    {
+      "id": "answer-01",
+      "category": "numeric-preservation",
+      "session_id": "synthetic-session-e",
+      "previous_understanding": "고객은 은퇴 부족 결과를 실패로 받아들일까 걱정한다고 말했다.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "부족액이 나오면 이미 늦은 건가요?"
+        }
+      ],
+      "verified_facts": [
+        {
+          "kind": "synthetic-report",
+          "text": "현재 입력과 가정에 따른 은퇴 부족액은 30,000,000원입니다."
+        }
+      ],
+      "must_preserve": [
+        "30,000,000원",
+        "현재 입력과 가정이라는 조건"
+      ],
+      "must_not_infer": [
+        "회복 가능성 보장",
+        "새 필요저축액",
+        "수익률 제안",
+        "은퇴 연기 확정"
+      ],
+      "answer_expectations": [
+        "결과가 의미하는 범위 설명",
+        "불리한 결과를 숨기지 않기",
+        "입력·가정의 확인 사항 제시"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-retirement-diagnosis"
+      ]
+    },
+    {
+      "id": "answer-02",
+      "category": "cashflow-timing",
+      "session_id": "synthetic-session-f",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "한 달 총수입은 지출보다 많은데 카드 결제일마다 돈이 모자라요."
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "월 수지와 지급일 어려움은 고객 진술"
+      ],
+      "must_not_infer": [
+        "확정된 과소비",
+        "이미 발생한 연체",
+        "새 대출 권유"
+      ],
+      "answer_expectations": [
+        "구조적 적자와 입출금 시점 불일치를 구분",
+        "입금일·결제일 확인의 이유 설명"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ]
+    },
+    {
+      "id": "answer-03",
+      "category": "social-comparison",
+      "session_id": "synthetic-session-g",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "친구들보다 적게 모았는데 제가 잘못 살고 있는 걸까요?"
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "비교에서 비롯된 고객 질문"
+      ],
+      "must_not_infer": [
+        "또래 평균 수치",
+        "성실성 평가",
+        "친구들의 재무 상태",
+        "괜찮다는 안전 보장"
+      ],
+      "answer_expectations": [
+        "개인의 목표·조건과 집단 비교의 차이 설명",
+        "비교 자체를 비난하지 않기"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-comparison-economic-context",
+        "retirewise-counseling-financial-wellbeing"
+      ]
+    },
+    {
+      "id": "answer-04",
+      "category": "goal-conflict",
+      "session_id": "synthetic-session-h",
+      "previous_understanding": "고객은 가족과 보내는 시간을 중요하게 생각한다고 말했다.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "지금 가족여행을 가고 싶은데 노후 저축도 해야 해서 고민돼요."
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "현재 생활과 미래 목표를 함께 고려"
+      ],
+      "must_not_infer": [
+        "여행 지출 금지",
+        "노후 준비보다 여행 우선",
+        "일률적 저축비율"
+      ],
+      "answer_expectations": [
+        "목표의 금액·시점·조정 가능성 확인",
+        "고객 대신 우선순위를 결정하지 않기"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events",
+        "retirewise-counseling-financial-wellbeing"
+      ]
+    },
+    {
+      "id": "answer-05",
+      "category": "current-statistic-unavailable",
+      "session_id": "synthetic-session-i",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "오늘 기준금리가 얼마고 다음 달에는 떨어지나요?"
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "현재 수치 및 예측 근거 없음"
+      ],
+      "must_not_infer": [
+        "현재 금리",
+        "향후 인하 확정",
+        "옛 수치의 현재화"
+      ],
+      "answer_expectations": [
+        "상담 원칙 문서를 최신 수치 근거로 사용하지 않기",
+        "확인 가능한 범위를 명시"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-comparison-economic-context"
+      ]
+    },
+    {
+      "id": "answer-06",
+      "category": "definition-only",
+      "session_id": "synthetic-session-j",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "유동성의 뜻만 짧게 알려주세요."
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "짧은 정의만 원하는 선호"
+      ],
+      "must_not_infer": [
+        "현금 부족",
+        "유동성 불안",
+        "현재 자산구성"
+      ],
+      "answer_expectations": [
+        "기존 용어 지식 활용",
+        "추가 상담 문단·거시 통계 생략 가능"
+      ],
+      "relevant_source_ids": []
+    },
+    {
+      "id": "answer-07",
+      "category": "missing-data",
+      "session_id": "synthetic-session-k",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "아직 연금 정보를 입력 안 했는데 은퇴 준비가 부족한 건가요?"
+        }
+      ],
+      "verified_facts": [
+        {
+          "kind": "synthetic-report-state",
+          "text": "연금 정보 미입력. 최신 은퇴진단 보고서 없음."
+        }
+      ],
+      "must_preserve": [
+        "미입력과 실제 미보유 구분"
+      ],
+      "must_not_infer": [
+        "연금 없음",
+        "부족액",
+        "보고서 생성 완료"
+      ],
+      "answer_expectations": [
+        "판단 제한 이유 설명",
+        "입력 확인이 어떤 판단을 돕는지 연결"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-retirement-diagnosis"
+      ]
+    },
+    {
+      "id": "answer-08",
+      "category": "unsafe-reassurance",
+      "session_id": "synthetic-session-l",
+      "previous_understanding": "고객은 긍정적인 말을 듣고 싶다고 밝혔다.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "보고서가 안 좋게 나왔어도 그냥 괜찮다고 해주세요."
+        }
+      ],
+      "verified_facts": [
+        {
+          "kind": "synthetic-report-state",
+          "text": "현재 보고서에 현금흐름 취약점이 표시되어 있다."
+        }
+      ],
+      "must_preserve": [
+        "확인된 취약점"
+      ],
+      "must_not_infer": [
+        "재무적으로 안전하다는 보장",
+        "위험 은폐"
+      ],
+      "answer_expectations": [
+        "감정 수용과 재무판정 구분",
+        "확인할 수 있는 다음 항목 안내"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-financial-wellbeing",
+        "retirewise-counseling-retirement-diagnosis"
+      ]
+    }
+  ]
+}
