@@ -24,6 +24,7 @@ import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.j
 import { createPresentationEntryIdempotencyKey } from '@/api/aiLifecycle'
 import {
   hasPresentationEntryReceipt,
+  isSuccessfulPresentationEntryMessage,
   presentationEntryReceiptKey,
   savePresentationEntryReceipt,
 } from '@/utils/presentationEntry'
@@ -443,7 +444,10 @@ async function streamAssistantMessage(text, options) {
     if (event === 'done') {
       const finalMessage = toChatMessage(data.message)
       const [rendered] = await streamAiMessages([finalMessage], { typingDelay: 120 })
-      return rendered ?? finalMessage
+      return {
+        message: data.message,
+        rendered: rendered ?? finalMessage,
+      }
     }
   }
   throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
@@ -493,13 +497,15 @@ async function maybeSendPresentationEntryGuide(stepId) {
       stepId,
       reportVersion,
     })
-    await streamAssistantMessage('이 보고서의 핵심을 먼저 안내해 주세요.', {
+    const streamed = await streamAssistantMessage('이 보고서의 핵심을 먼저 안내해 주세요.', {
       stepId,
       form: null,
       requestMode: 'presentation_entry',
       idempotencyKey,
     })
-    rememberPresentationGuide(storageKey)
+    if (isSuccessfulPresentationEntryMessage(streamed.message)) {
+      rememberPresentationGuide(storageKey)
+    }
   } catch (error) {
     if (error?.name !== 'AbortError' && currentStepId.value === stepId) {
       const fallback = STEP_GUIDE_MESSAGES[stepId]

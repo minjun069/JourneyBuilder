@@ -8,6 +8,11 @@ from pathlib import Path
 import re
 from typing import Any
 
+from rag.catalog_paths import (
+    CatalogDocumentPathError,
+    resolve_catalog_document_path,
+)
+
 
 DATA_ROOT = Path(__file__).resolve().parent / "data"
 CATALOG_PATH = DATA_ROOT / "catalog.json"
@@ -88,7 +93,10 @@ def load_chart_knowledge(step_id: str, requested_source_ids: Any, *, question: s
     if not isinstance(requested_source_ids, list) or tuple(requested_source_ids) != approved:
         raise ChartKnowledgeError("chart knowledge scope mismatch")
 
-    catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    try:
+        catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ChartKnowledgeError("approved catalog unavailable") from exc
     if catalog.get("acceptance", {}).get("status") != "domain-approved":
         raise ChartKnowledgeError("chart knowledge catalog is not approved")
     records = {
@@ -104,8 +112,13 @@ def load_chart_knowledge(step_id: str, requested_source_ids: Any, *, question: s
         record = records.get(source_id)
         if record is None:
             raise ChartKnowledgeError(f"approved source is missing: {source_id}")
-        path = CATALOG_PATH.parents[3] / record["path"]
-        raw = path.read_bytes()
+        try:
+            path = resolve_catalog_document_path(CATALOG_PATH, record.get("path"))
+            raw = path.read_bytes()
+        except (CatalogDocumentPathError, OSError) as exc:
+            raise ChartKnowledgeError(
+                f"approved source unavailable: {source_id}"
+            ) from exc
         if sha256(raw).hexdigest() != record.get("sha256"):
             raise ChartKnowledgeError(f"approved source hash mismatch: {source_id}")
         text = raw.decode("utf-8")

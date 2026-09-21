@@ -93,6 +93,11 @@ test('Presentation 최초 진입은 보고서 버전별 자동 안내를 한 번
   assert.match(entry, /wasPresentationGuideConsumed/)
   assert.match(entry, /createPresentationEntryIdempotencyKey/)
   assert.match(entry, /requestMode: 'presentation_entry'/)
+  assert.match(entry, /isSuccessfulPresentationEntryMessage/)
+  assert.ok(
+    entry.indexOf('isSuccessfulPresentationEntryMessage')
+      < entry.indexOf('rememberPresentationGuide'),
+  )
   assert.match(view, /system_event === 'presentation_entry'/)
   assert.match(view, /presentationReportVersion/)
 })

@@ -251,6 +251,14 @@ class RequestStateTransitionTests(SimpleTestCase):
 class TerminalPayloadValidationTests(SimpleTestCase):
     def test_completed_and_failed_terminal_payloads_are_valid(self):
         self.assertEqual(validate_terminal_payload(completed_terminal())['status'], 'completed')
+        presentation = completed_terminal(output={
+            'response': '보고서 핵심 안내입니다.',
+            'presentation_entry_status': 'succeeded',
+        })
+        self.assertEqual(
+            validate_terminal_payload(presentation)['output']['presentation_entry_status'],
+            'succeeded',
+        )
         failed = completed_terminal(
             status='failed',
             error={
@@ -261,6 +269,13 @@ class TerminalPayloadValidationTests(SimpleTestCase):
         )
         failed.pop('output')
         self.assertEqual(validate_terminal_payload(failed)['status'], 'failed')
+
+        invalid_presentation = completed_terminal(output={
+            'response': '잘못된 상태입니다.',
+            'presentation_entry_status': 'unknown',
+        })
+        with self.assertRaises(LifecycleError):
+            validate_terminal_payload(invalid_presentation)
 
     def test_legacy_elicit_ui_action_is_rejected(self):
         payload = completed_terminal()
@@ -330,6 +345,33 @@ class TerminalPayloadValidationTests(SimpleTestCase):
 
 
 class FormChangeProposalTests(SimpleTestCase):
+    @patch('consulting.ai_lifecycle.create_assistant_message_from_terminal')
+    def test_presentation_entry_status_is_exposed_to_the_browser(self, create_message):
+        message = SimpleNamespace(
+            extracted_data={
+                'intent': 'qa',
+                'requires_approval': False,
+                'pending_changes': [],
+            },
+            save=Mock(),
+        )
+        create_message.return_value = message
+
+        result = create_v2_assistant_message(
+            SimpleNamespace(id=12),
+            completed_terminal(output={
+                'response': '보고서 핵심 안내입니다.',
+                'presentation_entry_status': 'succeeded',
+            }),
+            'lifetime-cashflow',
+        )
+
+        self.assertEqual(
+            result.extracted_data['presentation_entry_status'],
+            'succeeded',
+        )
+        message.save.assert_called_once_with(update_fields=['extracted_data'])
+
     @patch('consulting.ai_lifecycle.create_assistant_message_from_terminal')
     def test_terminal_message_exposes_only_v2_action_shape(self, create_message):
         message = SimpleNamespace(

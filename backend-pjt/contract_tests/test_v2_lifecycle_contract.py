@@ -90,8 +90,12 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
 
     def test_terminal_shapes_and_errors_match_frozen_cases(self):
         completed = FIXTURE['cases']['terminal_completed_proposal']['terminal_payload']
+        presentation = FIXTURE['cases'][
+            'terminal_completed_presentation_entry'
+        ]['terminal_payload']
         failed = FIXTURE['cases']['terminal_failed_llm_timeout']['terminal_payload']
         self.assertEqual(validate_terminal_payload(completed), completed)
+        self.assertEqual(validate_terminal_payload(presentation), presentation)
         self.assertEqual(validate_terminal_payload(failed), failed)
 
         missing = FIXTURE['cases']['terminal_missing_status']
