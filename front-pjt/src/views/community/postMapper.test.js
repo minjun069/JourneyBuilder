@@ -24,6 +24,7 @@ test('toViewPost는 서버 필드를 화면 뷰모델 필드로 매핑한다', (
     asset_band: '1~3억',
     income_band: '3~5천',
     created_at: '2026-01-15T11:59:30Z',
+    is_mine: true,
   })
 
   assert.equal(view.id, 7)
@@ -39,6 +40,7 @@ test('toViewPost는 서버 필드를 화면 뷰모델 필드로 매핑한다', (
   assert.equal(view.comments, 3)
   assert.equal(view.views, 340)
   assert.equal(view.recommended, true)
+  assert.equal(view.isMine, true)
   assert.equal(view.createdAtMs, Date.parse('2026-01-15T11:59:30Z'))
   assert.deepEqual(view.commentList, [])
 })
@@ -68,8 +70,17 @@ test('작성자·밴드·플래그 기본값 — 빈 문자열 author는 익명�
   assert.equal(view.comments, 0)
   assert.equal(view.views, 0)
   assert.equal(view.recommended, false)
+  assert.equal(view.isMine, false)
   assert.equal(view.createdAt, '방금 전')
   assert.equal(view.createdAtMs, 0)
+})
+
+test('toViewPost는 is_mine을 불리언으로 강제하고 누락 시 false로 둔다', () => {
+  assert.equal(toViewPost({ id: 1, title: 't', is_mine: true }).isMine, true)
+  assert.equal(toViewPost({ id: 1, title: 't', is_mine: 1 }).isMine, true)
+  assert.equal(toViewPost({ id: 1, title: 't', is_mine: false }).isMine, false)
+  assert.equal(toViewPost({ id: 1, title: 't', is_mine: null }).isMine, false)
+  assert.equal(toViewPost({ id: 1, title: 't' }).isMine, false)
 })
 
 // ─── createdAtMs ──────────────────────────────────────────

@@ -88,6 +88,47 @@ async function onToggleLike() {
   }
 }
 
+// ─── Delete post ──────────────────────────────────────────
+// 글 삭제는 본문·댓글을 통째로 잃는 동작이라 인라인 2단계 확인을 거친다
+const deleteConfirming = ref(false)
+const postDeleting     = ref(false)
+const deleteError      = ref('')
+
+// 삭제 성공 직후 스토어가 목록에서 글을 지우므로,
+// 이동 전까지 '존재하지 않는 게시글' 화면이 번쩍이지 않도록 별도 상태로 덮는다
+const isDeleted = computed(() => postDeleting.value && !post.value)
+
+function askDeletePost() {
+  deleteError.value      = ''
+  deleteConfirming.value = true
+}
+
+function cancelDeletePost() {
+  if (postDeleting.value) return
+  deleteConfirming.value = false
+}
+
+async function confirmDeletePost() {
+  if (postDeleting.value || !post.value) return
+  const id = post.value.id
+  postDeleting.value = true
+  deleteError.value  = ''
+  try {
+    await communityStore.removePost(id)
+  } catch (err) {
+    // 403(작성자 아님)도 성공처럼 보이지 않게 이동하지 않고 오류를 남긴다
+    deleteError.value =
+      err?.response?.status === 403
+        ? '작성자만 삭제할 수 있습니다.'
+        : '글 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+    deleteConfirming.value = false
+    postDeleting.value     = false
+    return
+  }
+  // 성공 시 postDeleting을 되돌리지 않는다 — 이동 전 isDeleted 화면을 유지한다
+  router.push('/community')
+}
+
 // ─── Comments ─────────────────────────────────────────────
 const commentText       = ref('')
 const commentError      = ref('')
@@ -135,8 +176,13 @@ async function removeComment(commentId) {
 </script>
 
 <template>
+  <!-- 삭제 직후 목록으로 이동하기 전까지 — not-found 플래시를 막는다 -->
+  <div v-if="isDeleted" class="not-found">
+    <p>게시글을 삭제했습니다.</p>
+  </div>
+
   <!-- 로딩 중에는 not-found 플래시를 막는다 -->
-  <div v-if="!post && detailLoading" class="not-found">
+  <div v-else-if="!post && detailLoading" class="not-found">
     <p>게시글을 불러오는 중...</p>
   </div>
 
@@ -170,11 +216,27 @@ async function removeComment(commentId) {
       <!-- Article -->
       <article class="post-card">
 
-        <!-- Category + time -->
+        <!-- Category + time + 내 글 액션 -->
         <div class="post-top">
           <span class="category-badge" :style="CATEGORY_STYLE[post.category]">{{ post.category }}</span>
-          <span class="post-time">{{ post.createdAt }}</span>
+          <div class="post-actions">
+            <span class="post-time">{{ post.createdAt }}</span>
+
+            <!-- 내 글에만 노출. 댓글의 텍스트형 삭제 버튼과 섞이지 않도록 테두리 버튼으로 구분한다 -->
+            <template v-if="post.isMine">
+              <button v-if="!deleteConfirming" class="post-delete-btn" @click="askDeletePost">글 삭제</button>
+              <span v-else class="post-delete-confirm">
+                <span class="post-delete-ask">정말 삭제할까요?</span>
+                <button class="post-delete-yes" :disabled="postDeleting" @click="confirmDeletePost">
+                  {{ postDeleting ? '삭제 중…' : '삭제' }}
+                </button>
+                <button class="post-delete-no" :disabled="postDeleting" @click="cancelDeletePost">취소</button>
+              </span>
+            </template>
+          </div>
         </div>
+
+        <p v-if="deleteError" class="post-delete-error">{{ deleteError }}</p>
 
         <!-- Title -->
         <h1 class="post-title">{{ post.title }}</h1>
@@ -400,6 +462,65 @@ async function removeComment(commentId) {
 }
 
 .post-time { font-size: 13px; color: #9ca3af; }
+
+/* ── Post delete ─────────────────────────────────── */
+.post-actions { display: flex; align-items: center; gap: 12px; }
+
+.post-delete-btn {
+  padding: 5px 12px;
+  background: #fff;
+  border: 1.5px solid #fecdd3;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #f43f5e;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.post-delete-btn:hover { background: #fff1f3; border-color: #f43f5e; }
+
+.post-delete-confirm { display: flex; align-items: center; gap: 8px; }
+
+.post-delete-ask { font-size: 12px; font-weight: 600; color: #dc2626; white-space: nowrap; }
+
+.post-delete-yes {
+  padding: 5px 12px;
+  background: #f43f5e;
+  border: 1.5px solid #f43f5e;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s;
+}
+
+.post-delete-yes:hover { background: #e11d48; }
+
+.post-delete-no {
+  padding: 5px 12px;
+  background: #fff;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.post-delete-no:hover { border-color: #9ca3af; color: #374151; }
+
+.post-delete-yes:disabled,
+.post-delete-no:disabled { opacity: 0.6; cursor: default; }
+.post-delete-yes:disabled:hover { background: #f43f5e; }
+.post-delete-no:disabled:hover { border-color: #e5e7eb; color: #6b7280; }
+
+.post-delete-error { font-size: 12px; color: #dc2626; margin: 0; text-align: right; }
 
 .post-title {
   font-size: 22px;

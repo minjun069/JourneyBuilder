@@ -24,6 +24,20 @@ SECTION_MAX_COUNT = 30
 SECTION_TEXT_MAX_LENGTH = 5000
 
 
+class IsMineMixin:
+    """요청자가 작성자인지 — 수정/삭제 버튼 노출 판단용.
+
+    요청 컨텍스트에서만 파생되므로 클라이언트가 값을 넣어도 무시된다.
+    queryset annotation 에 의존하지 않아 생성/PATCH 응답에서도 정확하다.
+    """
+
+    def get_is_mine(self, obj):
+        request = self.context.get('request')
+        if request is None or not request.user.is_authenticated:
+            return False
+        return obj.user_id == request.user.id
+
+
 class AuthorBandMixin:
     """작성자 표시 이름과 밴드 3종을 함께 가리는 공통 로직.
 
@@ -46,7 +60,7 @@ class AuthorBandMixin:
         return '' if obj.is_anonymous else obj.author_income_band
 
 
-class PostListSerializer(AuthorBandMixin, serializers.ModelSerializer):
+class PostListSerializer(IsMineMixin, AuthorBandMixin, serializers.ModelSerializer):
     # 기존 Post 모델에 author 필드 없지만 JSON으로 보내고 싶으므로 새로 생성
     author = serializers.SerializerMethodField()
     # -> DRF: 자동으로 get_author() 호출
@@ -57,18 +71,20 @@ class PostListSerializer(AuthorBandMixin, serializers.ModelSerializer):
     age_band = serializers.SerializerMethodField()
     asset_band = serializers.SerializerMethodField()
     income_band = serializers.SerializerMethodField()
+    # 내 글 여부 — 익명 글이어도 본인에게는 True (삭제 버튼 노출용)
+    is_mine = serializers.SerializerMethodField()
 
     class Meta:
         model = Post
         fields = [
             'id', 'author', 'title', 'category', 'content',
             'like_count', 'view_count', 'comment_count',
-            'is_recommended', 'liked',
+            'is_recommended', 'liked', 'is_mine',
             'age_band', 'asset_band', 'income_band', 'created_at',
         ]
 
 
-class PostDetailSerializer(AuthorBandMixin, serializers.ModelSerializer):
+class PostDetailSerializer(IsMineMixin, AuthorBandMixin, serializers.ModelSerializer):
     author = serializers.SerializerMethodField()
     # annotation 에 의존하지 않는다 (생성/PATCH 응답 재사용 대비)
     liked = serializers.SerializerMethodField()
@@ -76,13 +92,14 @@ class PostDetailSerializer(AuthorBandMixin, serializers.ModelSerializer):
     age_band = serializers.SerializerMethodField()
     asset_band = serializers.SerializerMethodField()
     income_band = serializers.SerializerMethodField()
+    is_mine = serializers.SerializerMethodField()
 
     class Meta:
         model = Post
         fields = [
             'id', 'author', 'title', 'content', 'category', 'is_anonymous',
             'sections', 'like_count', 'view_count', 'comment_count',
-            'is_recommended', 'liked',
+            'is_recommended', 'liked', 'is_mine',
             'age_band', 'asset_band', 'income_band',
             'created_at', 'updated_at',
         ]
@@ -152,7 +169,7 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
 
-class CommentSerializer(serializers.ModelSerializer):
+class CommentSerializer(IsMineMixin, serializers.ModelSerializer):
     author = serializers.SerializerMethodField()
     is_mine = serializers.SerializerMethodField()
 
@@ -164,12 +181,6 @@ class CommentSerializer(serializers.ModelSerializer):
         if obj.is_anonymous:
             return '익명'
         return mask_display_name(obj.user.name)
-
-    def get_is_mine(self, obj):
-        request = self.context.get('request')
-        if request is None or not request.user.is_authenticated:
-            return False
-        return obj.user_id == request.user.id
 
 
 class CommentCreateSerializer(serializers.ModelSerializer):

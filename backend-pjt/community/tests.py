@@ -308,6 +308,99 @@ class PostDetailTests(TestCase):
         self.assertEqual(second['view_count'], 2)
 
 
+class PostIsMineTests(TestCase):
+    """is_mine 은 요청 사용자에서만 파생된다 (삭제 버튼 노출 판단 근거)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.writer = make_banded_user()
+        cls.other = User.objects.create_user(
+            email='other@test.com', password='pass-1234-ok', name='다른유저')
+        cls.post = Post.objects.create(user=cls.writer, title='글', content='내용')
+
+    def row_for(self, client):
+        rows = client.get(POSTS).json()
+        return next(row for row in rows if row['id'] == self.post.pk)
+
+    def test_list_is_mine_differs_per_user(self):
+        self.assertTrue(self.row_for(bearer_client(self.writer))['is_mine'])
+        self.assertFalse(self.row_for(bearer_client(self.other))['is_mine'])
+
+    def test_detail_is_mine_differs_per_user(self):
+        url = f'{POSTS}{self.post.pk}/'
+        self.assertTrue(bearer_client(self.writer).get(url).json()['is_mine'])
+        self.assertFalse(bearer_client(self.other).get(url).json()['is_mine'])
+
+    def test_anonymous_request_gets_is_mine_false(self):
+        # 목록/상세는 IsAuthenticatedOrReadOnly — AnonymousUser 에서 크래시하면 안 된다
+        self.assertFalse(self.row_for(APIClient())['is_mine'])
+        detail = APIClient().get(f'{POSTS}{self.post.pk}/')
+        self.assertEqual(detail.status_code, 200)
+        self.assertFalse(detail.json()['is_mine'])
+
+    def test_create_response_includes_is_mine_true(self):
+        # 생성 응답은 annotation 없는 새 인스턴스를 직렬화한다
+        response = bearer_client(self.writer).post(
+            POSTS, {'title': '새 글', 'content': '내용'}, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()['is_mine'])
+
+    def test_client_cannot_write_is_mine(self):
+        response = bearer_client(self.writer).post(
+            POSTS, {'title': '새 글', 'content': '내용', 'is_mine': False},
+            format='json')
+        self.assertEqual(response.status_code, 201)
+        # 페이로드가 아니라 요청 사용자에서만 결정된다
+        self.assertTrue(response.json()['is_mine'])
+        pk = response.json()['id']
+        other_view = bearer_client(self.other).get(f'{POSTS}{pk}/').json()
+        self.assertFalse(other_view['is_mine'])
+
+    def test_other_user_cannot_forge_is_mine_on_create(self):
+        response = bearer_client(self.other).post(
+            POSTS, {'title': '남의 글', 'content': '내용', 'is_mine': True},
+            format='json')
+        self.assertEqual(response.status_code, 201)
+        pk = response.json()['id']
+        self.assertFalse(bearer_client(self.writer).get(f'{POSTS}{pk}/').json()['is_mine'])
+
+
+class PostDeleteTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.writer = make_banded_user()
+        cls.other = User.objects.create_user(
+            email='other@test.com', password='pass-1234-ok', name='다른유저')
+
+    def setUp(self):
+        self.post = Post.objects.create(user=self.writer, title='글', content='내용')
+
+    def test_owner_can_soft_delete_and_post_leaves_list(self):
+        response = bearer_client(self.writer).delete(f'{POSTS}{self.post.pk}/')
+        self.assertEqual(response.status_code, 204)
+        self.post.refresh_from_db()
+        self.assertIsNotNone(self.post.deleted_at)
+        ids = [row['id'] for row in bearer_client(self.writer).get(POSTS).json()]
+        self.assertNotIn(self.post.pk, ids)
+        # 기본 매니저 조회 → 상세도 404
+        self.assertEqual(
+            bearer_client(self.writer).get(f'{POSTS}{self.post.pk}/').status_code, 404)
+
+    def test_other_user_delete_returns_403_and_post_survives(self):
+        response = bearer_client(self.other).delete(f'{POSTS}{self.post.pk}/')
+        self.assertEqual(response.status_code, 403)
+        self.post.refresh_from_db()
+        self.assertIsNone(self.post.deleted_at)
+        ids = [row['id'] for row in bearer_client(self.writer).get(POSTS).json()]
+        self.assertIn(self.post.pk, ids)
+
+    def test_anonymous_delete_is_rejected(self):
+        response = APIClient().delete(f'{POSTS}{self.post.pk}/')
+        self.assertIn(response.status_code, (401, 403))
+        self.post.refresh_from_db()
+        self.assertIsNone(self.post.deleted_at)
+
+
 class CommentApiTests(TestCase):
     @classmethod
     def setUpTestData(cls):

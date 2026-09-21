@@ -54,6 +54,7 @@ export function toViewPost(data) {
     comments: data.comment_count ?? 0,
     views: data.view_count ?? 0,
     recommended: !!data.is_recommended,
+    isMine: !!data.is_mine,
     createdAt: relativeTime(data.created_at),
     createdAtMs: createdAtMs(data.created_at),
     commentList: [],
