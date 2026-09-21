@@ -1,13 +1,17 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useCommunityStore, CATEGORY_STYLE, formatViews } from './communityStore.js'
 
 const communityStore = useCommunityStore()
-const { posts } = storeToRefs(communityStore)
+const { posts, loading, error } = storeToRefs(communityStore)
 
 const router = useRouter()
+
+onMounted(() => {
+  communityStore.fetchPosts()
+})
 
 // ─── Tabs ─────────────────────────────────────────────────
 const activeTab = ref('추천 글')
@@ -66,10 +70,26 @@ const filteredPosts = computed(() => {
   return list
 })
 
-function toggleLike(event, post) {
-  event.stopPropagation()
-  post.liked = !post.liked
-  post.likes += post.liked ? 1 : -1
+// ─── Like ─────────────────────────────────────────────────
+const likeError = ref('')
+
+async function onToggleLike(post) {
+  // axios 인터셉터가 401을 하드 리다이렉트하므로 API 호출 전에 토큰을 확인한다
+  if (!localStorage.getItem('access_token')) {
+    router.push('/login')
+    return
+  }
+  likeError.value = ''
+  try {
+    await communityStore.toggleLike(post.id)
+  } catch {
+    likeError.value = '좋아요 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+  }
+}
+
+// 빈 밴드가 있어도 ' · · ' 없이 이어붙인다
+function metaLine(post) {
+  return [post.category, post.age, post.asset, post.income].filter(Boolean).join(' · ')
 }
 </script>
 
@@ -154,15 +174,41 @@ function toggleLike(event, post) {
 
       <!-- Post List -->
       <span class="result-count">전체 게시물 {{ filteredPosts.length }}개</span>
-      
+
+      <p v-if="likeError" class="like-error">{{ likeError }}</p>
+
       <div class="post-list">
-        <div v-if="filteredPosts.length === 0" class="empty-state">
+        <!-- 로딩 스켈레톤 (기존 데이터가 없을 때만) -->
+        <template v-if="loading && posts.length === 0">
+          <div v-for="i in 3" :key="i" class="post-card skeleton-card">
+            <div class="skeleton-line w-30"></div>
+            <div class="skeleton-line w-70"></div>
+            <div class="skeleton-line w-90"></div>
+          </div>
+        </template>
+
+        <!-- 오류 -->
+        <div v-else-if="error && posts.length === 0" class="empty-state">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="#d1d5db" stroke-width="1.5"/>
+            <path d="M12 8v4M12 15.5v.5" stroke="#d1d5db" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <p>게시글을 불러오지 못했습니다.</p>
+          <button class="reset-btn" @click="communityStore.fetchPosts()">다시 시도</button>
+        </div>
+
+        <!-- 빈 상태: 필터/검색 중 > 추천 탭 빔 > 전체 빔 -->
+        <div v-else-if="filteredPosts.length === 0" class="empty-state">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
             <circle cx="11" cy="11" r="7" stroke="#d1d5db" stroke-width="1.5"/>
             <path d="M16.5 16.5L21 21" stroke="#d1d5db" stroke-width="1.5" stroke-linecap="round"/>
           </svg>
-          <p>검색 결과가 없습니다.</p>
-          <button class="reset-btn" @click="resetFilters">필터 초기화</button>
+          <template v-if="isFiltered">
+            <p>검색 결과가 없습니다.</p>
+            <button class="reset-btn" @click="resetFilters">필터 초기화</button>
+          </template>
+          <p v-else-if="activeTab === '추천 글'">아직 추천 글이 없습니다.</p>
+          <p v-else>아직 게시글이 없습니다.</p>
         </div>
 
         <article
@@ -187,10 +233,15 @@ function toggleLike(event, post) {
             <div class="author-row">
               <span class="author-avatar">{{ post.author[0] }}</span>
               <span class="author-name">{{ post.author }}</span>
-              <span class="author-meta">{{ post.category }} · {{ post.age }} · {{ post.asset }} · {{ post.income }}</span>
+              <span class="author-meta">{{ metaLine(post) }}</span>
             </div>
             <div class="stat-row">
-              <button class="stat-btn like-btn" :class="{ liked: post.liked }" @click="(e) => toggleLike(e, post)">
+              <button
+                class="stat-btn like-btn"
+                :class="{ liked: post.liked }"
+                :disabled="communityStore.isLikePending(post.id)"
+                @click.stop="onToggleLike(post)"
+              >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                   <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
                     :fill="post.liked ? 'currentColor' : 'none'"
@@ -402,6 +453,8 @@ function toggleLike(event, post) {
 
 .result-count { margin-left: auto; font-size: 12px; color: #9ca3af; }
 
+.like-error { font-size: 12px; color: #dc2626; margin: 0; }
+
 /* ── Post List ───────────────────────────────────── */
 .post-list {
   display: flex;
@@ -417,6 +470,27 @@ function toggleLike(event, post) {
   padding: 60px 0;
   color: #9ca3af;
   font-size: 14px;
+}
+
+/* ── Loading Skeleton ────────────────────────────── */
+.skeleton-card { cursor: default; }
+.skeleton-card:hover { box-shadow: none; transform: none; border-color: #e5e7eb; }
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton-line.w-30 { width: 30%; }
+.skeleton-line.w-70 { width: 70%; }
+.skeleton-line.w-90 { width: 90%; }
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 /* ── Post Card ───────────────────────────────────── */
@@ -548,4 +622,8 @@ function toggleLike(event, post) {
 
 .stat-btn:hover { color: #f43f5e; }
 .stat-btn.liked { color: #f43f5e; }
+
+.stat-btn:disabled { opacity: 0.5; cursor: default; }
+.stat-btn:disabled:hover { color: #9ca3af; }
+.stat-btn.liked:disabled:hover { color: #f43f5e; }
 </style>
