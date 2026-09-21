@@ -465,6 +465,368 @@
         "retirewise-counseling-financial-wellbeing",
         "retirewise-counseling-retirement-diagnosis"
       ]
+    },
+    {
+      "id": "answer-09",
+      "category": "debt-burden-without-blame",
+      "session_id": "synthetic-session-answer-09",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "대출 잔액은 줄었는데 이번 달부터 상환액이 늘어 생활이 빠듯해요."
+        }
+      ],
+      "verified_facts": [
+        "현재 보고서 부채잔액 3,000만원, 월 상환액 90만원. 변경 이유 미확인."
+      ],
+      "must_preserve": [
+        "잔액 3,000만원과 월 상환액 90만원",
+        "변경 원인은 미확인"
+      ],
+      "must_not_infer": [
+        "과소비 원인 단정",
+        "대출 갈아타기 권유",
+        "상환 완료 가능성 보장"
+      ],
+      "answer_expectations": [
+        "총잔액과 월 지급부담을 구분",
+        "납부일·상환방식·거치 종료 등 원인을 확인할 질문 선택",
+        "수치와 기존 판정 보존"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-debt-burden"
+      ],
+      "example_understanding": "고객은 월 상환 부담을 걱정한다고 밝혔다. 보고서 잔액과 월 상환액은 확인됐으나 부담 변화의 원인은 미확인이다."
+    },
+    {
+      "id": "answer-10",
+      "category": "debt-versus-buffer",
+      "session_id": "synthetic-session-answer-10",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "적금을 전부 깨서 대출을 갚으면 마음이 편할까요?"
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "상환과 안심을 연결한 고객 질문"
+      ],
+      "must_not_infer": [
+        "전액 상환이 최선",
+        "고객의 위험회피 성향",
+        "새 상환 비율"
+      ],
+      "answer_expectations": [
+        "상환 후 남는 사용가능자금·필수지출·비용을 확인",
+        "마음이 편해질 것이라고 약속하지 않기"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-debt-burden",
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "example_understanding": "고객은 저축을 사용한 상환을 고민한다. 실행 결정, 필수지출, 상환 후 완충 여력은 미확인이다."
+    },
+    {
+      "id": "answer-11",
+      "category": "asset-rich-cash-poor",
+      "session_id": "synthetic-session-answer-11",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "집이 있어서 자산은 충분하다고 나오는데 다음 달 생활비가 걱정돼요."
+        }
+      ],
+      "verified_facts": [
+        "현재 보고서 순자산은 양수. 현금화 계획·즉시사용금액 미확인."
+      ],
+      "must_preserve": [
+        "확인된 순자산과 고객의 생활비 걱정"
+      ],
+      "must_not_infer": [
+        "집을 팔기로 결정",
+        "주택연금 자격 확정",
+        "자산 충분하니 걱정 불필요"
+      ],
+      "answer_expectations": [
+        "총자산과 지급시점 유동성을 구분",
+        "거주·목적 제한 및 사용가능액 확인"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-asset-liquidity"
+      ],
+      "example_understanding": "고객은 집을 보유하면서 다음 달 생활비를 걱정한다고 밝혔다. 순자산은 양수지만 즉시 사용가능액은 확인하지 않았다."
+    },
+    {
+      "id": "answer-12",
+      "category": "concentration-without-trade",
+      "session_id": "synthetic-session-answer-12",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "제 회사 주식에 대부분 들어 있는데 지금 다 팔아야 하나요?"
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "특정 자산에 집중됐다는 고객 진술"
+      ],
+      "must_not_infer": [
+        "즉시 전량 매도",
+        "이상적 배분비율",
+        "실제 손실 발생"
+      ],
+      "answer_expectations": [
+        "같은 원인으로 소득과 자산이 영향받을 수 있는지 확인",
+        "용도·시점·거래 제한을 확인",
+        "상품 매매 결정 대신 진단 범위의 설명"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-asset-liquidity"
+      ],
+      "example_understanding": "고객은 근무 회사 주식에 자산이 집중됐다고 말했고 매도 필요성을 묻는다. 실제 비중·사용시점·매도 결정은 미확인이다."
+    },
+    {
+      "id": "answer-13",
+      "category": "pension-estimate-status",
+      "session_id": "synthetic-session-answer-13",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "공단에서 예상 연금이 월 120만원이라고 봤는데 이대로 받을 수 있나요?"
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "월 120만원은 고객이 전달한 예상액",
+        "공식 화면·기준일 아직 미확인"
+      ],
+      "must_not_infer": [
+        "확정 월 수령액",
+        "연금 수령 불가",
+        "기관 조회 완료"
+      ],
+      "answer_expectations": [
+        "조회일·간이 추정 여부·전제 확인",
+        "예상과 확정을 구분하며 기존 값을 마음대로 고치지 않기"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-pension-uncertainty"
+      ],
+      "example_understanding": "고객은 공단에서 월 120만원의 예상액을 봤다고 말했다. 실제 조회자료와 전제는 확인하지 않았고 미래 확정 수령액이 아니다."
+    },
+    {
+      "id": "answer-14",
+      "category": "pension-gap-despite-ratio",
+      "session_id": "synthetic-session-answer-14",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "준비도 105%면 퇴직하고 연금이 나오기 전에도 괜찮다는 뜻인가요?"
+        }
+      ],
+      "verified_facts": [
+        "현재 보고서 은퇴준비도 105%. 소득종료와 연금개시 일정은 이 결과에 제공되지 않음."
+      ],
+      "must_preserve": [
+        "준비도 105%",
+        "일정 정보 미제공"
+      ],
+      "must_not_infer": [
+        "무조건 충분",
+        "연금 공백이 실제 발생",
+        "임의 조기수령 제안"
+      ],
+      "answer_expectations": [
+        "비율의 확인된 의미와 특정 기간 현금흐름을 구분",
+        "검증된 연금일정·현금흐름 조회가 먼저",
+        "새 숫자·판정 생성 금지"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-pension-uncertainty",
+        "retirewise-counseling-retirement-diagnosis"
+      ],
+      "example_understanding": "고객은 준비도 105%가 연금 개시 전 생활비도 보장하는지 묻는다. 비율은 확인됐고 시점별 지급여력은 미확인이다."
+    },
+    {
+      "id": "answer-15",
+      "category": "income-interruption",
+      "session_id": "synthetic-session-answer-15",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "회사 사정으로 다음 달부터 무급휴직인데 언제 복직할지 몰라요."
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "무급휴직 및 복직시점 미정은 고객 진술"
+      ],
+      "must_not_infer": [
+        "실업급여 수급 확정",
+        "복직 날짜",
+        "과거 평균급여 유지"
+      ],
+      "answer_expectations": [
+        "마지막 확정 수입과 필수지출 시점을 확인",
+        "지원금이나 미래 급여는 확정 전 가용자금으로 넣지 않기",
+        "새 소득 상황에 맞는 입력 점검"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "example_understanding": "고객은 다음 달부터 무급휴직이고 복직 시기는 모른다고 밝혔다. 마지막 확정 수입, 가용자금, 필수지출은 미확인이다."
+    },
+    {
+      "id": "answer-16",
+      "category": "unconfirmed-family-transfer",
+      "session_id": "synthetic-session-answer-16",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "퇴직금도 나올 거고 형이 도와준다는데 그 돈으로 버티면 되겠죠?"
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "예상 수입과 가족 도움에 대한 고객 진술"
+      ],
+      "must_not_infer": [
+        "입금일·실수령액 확정",
+        "형의 지원 능력",
+        "생활비 충당 보장"
+      ],
+      "answer_expectations": [
+        "수령 가능성·시점·금액·제한을 나누어 확인",
+        "확인된 자금과 가정한 자금으로 구분"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "example_understanding": "고객은 퇴직금과 가족 지원을 기대한다. 수령일·사용가능액·지원 합의는 미확인이다."
+    },
+    {
+      "id": "answer-17",
+      "category": "spouse-goal-conflict",
+      "session_id": "synthetic-session-answer-17",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "배우자는 집을 사고 싶어 하고 저는 은퇴 저축부터 하고 싶어요."
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "두 우선순위는 고객을 통해 전달된 내용"
+      ],
+      "must_not_infer": [
+        "배우자 성향·동기",
+        "한쪽 목표 우선 확정",
+        "공동자산 사용 동의"
+      ],
+      "answer_expectations": [
+        "각 목표 금액·시점·조정 가능성 확인",
+        "개인 자금과 합의된 공동 재원을 구분",
+        "관계 중재보다 목표 중복·현금흐름 진단"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "example_understanding": "고객은 주택 마련과 은퇴 저축의 우선순위가 배우자와 다르다고 말했다. 배우자의 직접 진술과 공동자금 사용 합의는 확인되지 않았다."
+    },
+    {
+      "id": "answer-18",
+      "category": "parent-support-and-retirement",
+      "session_id": "synthetic-session-answer-18",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "부모님께 매달 드리는 돈을 줄이지 않고 제 노후도 준비하고 싶어요."
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "지원 유지와 자신의 노후를 함께 원하는 목표"
+      ],
+      "must_not_infer": [
+        "지원 중단 권고",
+        "부모의 자산·질병",
+        "지원 지속 가능 확정"
+      ],
+      "answer_expectations": [
+        "지원 금액·기간·필수성과 다른 재원 확인",
+        "한 자금을 지원과 노후에 중복 배정하지 않기",
+        "가족 상황은 필요한 정보만 확인"
+      ],
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "example_understanding": "고객은 부모 지원을 유지하면서 노후를 준비하고 싶다고 밝혔다. 지원 규모·기간·다른 가족의 분담은 미확인이다."
+    },
+    {
+      "id": "answer-19",
+      "category": "no-retrieval-explicit-correction",
+      "session_id": "synthetic-session-answer-19",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "아까 월급을 300이라고 말했는데 350만원이에요. 걱정은 없고 숫자만 정정할게요."
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "350만원으로 정정한 진술",
+        "숫자만 정정하려는 의도"
+      ],
+      "must_not_infer": [
+        "소비 성향 변경",
+        "소득 증가 원인",
+        "저장 완료"
+      ],
+      "answer_expectations": [
+        "정정 반영이 우선이며 상담 검색 생략",
+        "지원을 받는 입력·저장 경로가 실제 완료된 경우에만 완료 표현",
+        "고객 이해 문단에 새 고민 생성 금지"
+      ],
+      "relevant_source_ids": [],
+      "example_understanding": "고객은 월급 진술을 350만원으로 정정했다. 추가 걱정은 없다고 밝혔으며 실제 저장 여부는 별도로 확인해야 한다."
+    },
+    {
+      "id": "answer-20",
+      "category": "no-retrieval-thanks",
+      "session_id": "synthetic-session-answer-20",
+      "previous_understanding": null,
+      "turns": [
+        {
+          "role": "user",
+          "content": "설명 이해했어요. 고마워요."
+        }
+      ],
+      "verified_facts": [],
+      "must_preserve": [
+        "추가 질문 없음"
+      ],
+      "must_not_infer": [
+        "새 목표",
+        "안정적 성향",
+        "저축 실행 의사"
+      ],
+      "answer_expectations": [
+        "짧게 응답하고 상담 검색 생략",
+        "고객 이해 문단을 새 성향으로 덮어쓰지 않기"
+      ],
+      "relevant_source_ids": []
     }
   ]
 }

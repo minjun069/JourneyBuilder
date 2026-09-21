@@ -48,17 +48,21 @@ SHA-256을 `DocumentMetadata`로 변환한다. 경로가 collection pattern을 �
 ## F25 상담 지식 후보 재현 검사
 
 `data/counseling-candidate.json`은 기존 운영 catalog와 분리된 `pending` 후보다.
-`financial-knowledge/counseling-*.md` 6개에 출처·권리·SHA-256·적용 범위를 연결한다.
+`financial-knowledge/counseling-*.md` 9개에 출처·권리·SHA-256·적용 범위를 연결한다.
 마지막 병합 RAG baseline 및 세션별 고객 이해 문단을 고려한 자료이며, 검색·세션
 갱신 runtime은 아직 연결하지 않았다. 실제 고객 문단은 공용 corpus에 넣지 않는다.
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest rag.tests.test_counseling_candidate -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+  rag.tests.test_counseling_candidate rag.tests.test_counseling_coverage -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m rag.evaluation.counseling_coverage \
+  --report /tmp/f25-counseling-coverage.json \
+  --markdown /tmp/f25-counseling-coverage.md
 PYTHONDONTWRITEBYTECODE=1 python3 -m rag.evaluation.counseling_candidate \
   --report /tmp/f25-counseling-candidate-report.json
 ```
 
-기본 실행은 후보 30문항 검색, 기존 금융지식 46문항 기준선, 혼합 corpus에서의 두
+기본 실행은 후보 50문항 검색, 기존 금융지식 46문항 기준선, 혼합 corpus에서의 두
 질문 세트를 각각 평가한다. `--candidate-only`는 후보 검색만 검사한다. pending을
 approved나 synthetic으로 바꾸지 않고 임시 파일 인덱스만 사용한다. 출력은
 `deployable=false`, `llm_evaluated=false`이며 활성 포인터·DB·공식 artifact는 바꾸지 않는다.
@@ -66,9 +70,25 @@ approved나 synthetic으로 바꾸지 않고 임시 파일 인덱스만 사용�
 확인하며 기준을 통과해도 운영 Gemini qualification을 대신하지 않는다.
 
 `evaluation/counseling-behavior-cases-v1.json`은 가설·정정·변화 없음·세션 격리·수치
-보존·거짓 안심 등 14개 가상 사례다. 고객 이해 문단 예시는 문장 일치 정답이 아니다.
+보존·거짓 안심·부채 부담·자산 유동성·연금·소득 중단·가족 목표 충돌 등 26개 가상
+사례다. 고객 이해 문단 예시는 문장 일치 정답이 아니다.
 현재 `not-executed`이며 파일 검사와 실제 모델·저장 동작 검증을 구분한다.
 설계·승격 조건의 단일 원천은 공유 문서 `docs/ai/retrieval.md`의 F25 절이다.
+
+`evaluation/counseling-coverage-v1.json`은 실제 24단계와 `general`의 상담 상황을
+기존 지식·후보 문서의 정확한 절에 연결한다. `knowledge_mode`는 필요한 지식 종류,
+`retrieval_timing`은 검색 없이 응답할지·먼저 확인/조회할지를 나타내며 runtime
+라우팅 규칙이 아니다. 지도 검사는 빠진 단계·잘못된 문서/절 참조·검색 생략 조건의
+모순을 찾는다. `before`는 `278bd53`의 승인 금융지식 15개와 후보 6개 기준이며,
+`after=documented`는 문서의 대응 범위다. 실제 상황 빈도·사용자 만족도·AX 성과는
+측정하지 않았다. 표는 위 명령으로 생성해 전체 상황과 확인 조건을 검토할 수 있다.
+
+후보 1.1.0은 신규 부채·자산 유동성·연금 불확실성 3문서와 기존 현금흐름·목표
+2문서의 확장으로 상담 절을 21개에서 37개로 늘렸다. 제도·산식은 기존 문서를
+재사용한다. 검색 gold의 최초 30문항은 유지하고 새 20문항을 추가했으며 `cohorts`에
+두 집합을 기록한다. 검색 성적은 문서 단위로 측정하므로 해당 절을 정확히 찾았거나
+상담을 잘했다고 해석하지 않는다. 무조건 혼합한 검색에서는 기존 문서가 밀리는
+회귀와 무관 질문 오탐이 남아 있어 운영 승격 근거로 사용할 수 없다.
 
 ## 승인 corpus 재현 검사
 

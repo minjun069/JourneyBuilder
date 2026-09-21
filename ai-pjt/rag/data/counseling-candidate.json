@@ -1,6 +1,6 @@
 {
   "schema_version": "counseling-candidate/v1",
-  "catalog_version": "counseling-1.0.0",
+  "catalog_version": "counseling-1.1.0",
   "as_of_date": "2026-09-21",
   "hash_algorithm": "sha256",
   "acceptance": {
@@ -25,7 +25,7 @@
       "publisher": "Consumer Financial Protection Bureau (CFPB)",
       "title": "Your Money, Your Goals toolkit",
       "url": "https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_financial-empowerment_toolkit.pdf",
-      "locator": "PDF 물리 10–12쪽(감정·가치·질문), 40–41쪽(비상·예정·소득 공백 저축). 공식 페이지의 2020년 6월 갱신본.",
+      "locator": "PDF 물리 10–13쪽(감정·가치·가족 간 목표 차이·확인 질문), 40–41쪽(비상·예정·소득 공백 저축). 공식 페이지의 2020년 6월 갱신본.",
       "published_at": null,
       "verified_at": "2026-09-21",
       "usage": "adapted-concepts",
@@ -154,6 +154,81 @@
         "url": "https://www.bok.or.kr/portal/main/contents.do?menuNo=200228",
         "note": "해당 자료의 개별 재사용 허락 미확인. 링크만 기록하며 실제 통계 편입은 별도 이용조건·관측기간 검토 대상."
       }
+    },
+    {
+      "id": "cfpb-debt-log",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Debt log",
+      "url": "https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_debt_log_tool_2018-11_ADA.pdf",
+      "locator": "PDF 물리 1–3쪽: 채무잔액·월납부액·금리·납부일의 구분. 미국 신용·추심 제도 제외.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-prioritizing-bills",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Prioritizing bills",
+      "url": "https://files.consumerfinance.gov/f/documents/cfpb_your-money-your-goals_prioritizing-bills_tool.pdf",
+      "locator": "PDF 물리 1–3쪽: 납부 곤란 시 생활·소득 유지 영향과 미납 결과 확인. 미국 법적 결과·제도 제외.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-balancing-savings-debt",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "Balancing savings and debt: Findings from an online experiment",
+      "url": "https://files.consumerfinance.gov/f/documents/cfpb_balancing-savings-and-debt_report_2021-01.pdf",
+      "locator": "2021년 1월 자료, PDF 물리 1–3쪽: 상환과 완충자금의 상충. 2쪽 편의표본 한계; 조사 수치·배분비율·최적 전략 미적재.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "cfpb-emergency-fund",
+      "publisher": "Consumer Financial Protection Bureau (CFPB)",
+      "title": "An essential guide to building an emergency fund",
+      "url": "https://www.consumerfinance.gov/an-essential-guide-to-building-an-emergency-fund/",
+      "locator": "What is an emergency fund? / How much do I need in it? / Where should I keep it? / When should I use it?: 소득 중단, 상황별 필요와 자금 접근 가능성. 금융상품 사례 제외.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "adapted-concepts",
+      "rights": {
+        "status": "public-domain",
+        "url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+        "note": "CFPB 자체 제작 정보의 public domain 조건 확인. 제3자 저작물·상표·로고 제외. 한국어 자체 서술이며 공식 번역·검수·보증이 아님."
+      }
+    },
+    {
+      "id": "nps-estimate-cautions",
+      "publisher": "국민연금공단",
+      "title": "예상연금 간단계산: 노령연금 관련 유의사항",
+      "url": "https://www.nps.or.kr/comm/quick/getOHAH0011P0.do",
+      "locator": "노령연금 관련 유의사항 3–4항: 예상값의 산출 전제와 실제 지급액 변동 가능성을 확인한 참고 링크. 원문·표·산식·제도값 미적재.",
+      "published_at": null,
+      "verified_at": "2026-09-21",
+      "usage": "reference-only",
+      "rights": {
+        "status": "reference-only",
+        "url": "https://www.nps.or.kr/comm/quick/getOHAH0011P0.do",
+        "note": "개별 원문 재사용 허락 미확인. 링크와 검토 범위만 기록. 상담 내용은 기존 승인 지식과 프로젝트 자체 서술로 작성."
+      }
     }
   ],
   "design_reference_ids": [
@@ -231,11 +306,12 @@
       "path": "ai-pjt/rag/data/financial-knowledge/counseling-cashflow-resilience.md",
       "published_at": "2026-09-21",
       "as_of_date": "2026-09-21",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source_refs": [
         "cfpb-cash-flow-budget",
         "cfpb-toolkit",
-        "cfpb-money-picture"
+        "cfpb-money-picture",
+        "cfpb-revising-goals"
       ],
       "applies_to": {
         "country": "KR",
@@ -250,7 +326,7 @@
         ]
       },
       "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
-      "sha256": "17966485632fb8a135d2020476e19ee65b044af8e74a9fd3f1ba24b536fca980"
+      "sha256": "61c81c7dcf08cf79df6417ac1cc64228699fe259d44b302946ee85d05c309d20"
     },
     {
       "id": "knowledge-counseling-goals-life-events",
@@ -262,11 +338,12 @@
       "path": "ai-pjt/rag/data/financial-knowledge/counseling-goals-life-events.md",
       "published_at": "2026-09-21",
       "as_of_date": "2026-09-21",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source_refs": [
         "cfpb-events-purchases",
         "cfpb-revising-goals",
-        "cfpb-money-picture"
+        "cfpb-money-picture",
+        "cfpb-toolkit"
       ],
       "applies_to": {
         "country": "KR",
@@ -281,7 +358,7 @@
         ]
       },
       "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
-      "sha256": "1e15df65fe65b824c993273b4ad149d623043f070f5ab2f4f0012f1745151515"
+      "sha256": "b23daac9c6b97e3da4037d45db54837f95579c7ecff77a4abde6e454814f769b"
     },
     {
       "id": "knowledge-counseling-retirement-diagnosis",
@@ -343,6 +420,97 @@
       },
       "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
       "sha256": "87d58eabe1df3b4e20f9a29cd0e17de4282b471a6bda64ab22e3a47de0bf4b87"
+    },
+    {
+      "id": "knowledge-counseling-debt-burden",
+      "source_id": "retirewise-counseling-debt-burden",
+      "title": "빚을 갚는데도 버거워요: 상환 부담과 생활 여력 이해하기",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-debt-burden.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-debt-log",
+        "cfpb-prioritizing-bills",
+        "cfpb-balancing-savings-debt",
+        "cfpb-emergency-fund"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-debt-burden"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "8208d4a313c590592c83536b4a00f16a9550c720ce13b645a012848b520179c0"
+    },
+    {
+      "id": "knowledge-counseling-asset-liquidity",
+      "source_id": "retirewise-counseling-asset-liquidity",
+      "title": "자산은 있는데 쓸 돈이 부족해요: 편중과 유동성 이해하기",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-asset-liquidity.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-emergency-fund"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-asset-liquidity"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "1d22733ebe0cc8d7b557a5813bc92b1a1c2858d2bc80019ae2ffe90ddfc3bf13"
+    },
+    {
+      "id": "knowledge-counseling-pension-uncertainty",
+      "source_id": "retirewise-counseling-pension-uncertainty",
+      "title": "연금의 예상액과 시점이 불확실할 때의 상담",
+      "publisher": "S15P21B109",
+      "document_type": "financial-knowledge",
+      "collection": "financial-knowledge",
+      "path": "ai-pjt/rag/data/financial-knowledge/counseling-pension-uncertainty.md",
+      "published_at": "2026-09-21",
+      "as_of_date": "2026-09-21",
+      "version": "1.0.0",
+      "source_refs": [
+        "cfpb-revising-goals",
+        "nps-estimate-cautions"
+      ],
+      "applies_to": {
+        "country": "KR",
+        "topic": "counseling-pension-uncertainty"
+      },
+      "refresh": {
+        "cadence_days": 180,
+        "triggers": [
+          "출처 내용·이용조건 변경",
+          "진단·보고서·상담 범위 변경",
+          "근거 없는 원인 추론·안심·세션 맥락 혼입 관찰"
+        ]
+      },
+      "retire_when": "출처 재확인 실패 또는 새 확정 상담 정책으로 대체될 때",
+      "sha256": "3a93473262c916d9bd2d634bd431e418eed41fe13502430e79b6865f4edad67b"
     }
   ],
   "evaluation": {

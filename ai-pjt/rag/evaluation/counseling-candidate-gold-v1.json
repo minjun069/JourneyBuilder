@@ -1,7 +1,7 @@
 {
   "schema_version": "counseling-retrieval-gold/v1",
   "as_of_date": "2026-09-21",
-  "scope": "후보 상담 문서의 로컬 검색 회귀. 최신 제도값·상품 추천·개인 사실은 검색 결과의 존재와 별개로 behavior 사례에서 근거 사용 범위를 평가.",
+  "scope": "후보 상담 문서의 로컬 검색 회귀. 최신 제도값·상품 추천·개인 사실은 검색 결과의 존재와 별개로 behavior 사례에서 근거 사용 범위를 평가. 보강 전 30문항을 유지하고 다섯 우선 주제 20문항을 추가했다. 문서 단위 검색 지표이며 사례의 정확한 절 검색·응답 품질·AX를 입증하지 않는다.",
   "queries": [
     {
       "query_id": "counseling-understanding-1",
@@ -230,6 +230,223 @@
       "query": "기타 악보에서 C코드 운지법",
       "relevant_source_ids": [],
       "category": "no_result"
+    },
+    {
+      "query_id": "counseling-debt-1",
+      "query": "대출 잔액은 작년보다 줄었는데 월 상환 부담은 더 커져서 생활이 빠듯해요",
+      "relevant_source_ids": [
+        "retirewise-counseling-debt-burden"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-debt-2",
+      "query": "저축을 전부 빚 갚는 데 쓰면 갑자기 필요한 돈은 어떻게 하죠",
+      "relevant_source_ids": [
+        "retirewise-counseling-debt-burden"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-debt-3",
+      "query": "이번 달 납부할 돈이 모자라는데 무엇을 먼저 확인해야 하는지 모르겠어요",
+      "relevant_source_ids": [
+        "retirewise-counseling-debt-burden"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-debt-4",
+      "query": "대출 여러 개의 납부일과 상환액이 겹쳐 어디에서 부담이 생기는지 모르겠어요",
+      "relevant_source_ids": [
+        "retirewise-counseling-debt-burden"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-liquidity-1",
+      "query": "집값은 올랐는데 당장 생활비로 쓸 현금은 없어서 불안해요",
+      "relevant_source_ids": [
+        "retirewise-counseling-asset-liquidity"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-liquidity-2",
+      "query": "회사 주식에 자산이 몰려 있으면 진단에서 어떤 점을 확인하나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-asset-liquidity"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-liquidity-3",
+      "query": "전세 보증금으로 곧 쓸 돈까지 여유자금으로 보면 안 되는 이유가 뭔가요",
+      "relevant_source_ids": [
+        "retirewise-counseling-asset-liquidity"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-liquidity-4",
+      "query": "부동산을 팔면 생활비가 될 줄 알았는데 매수자를 못 구하면 어떻게 보나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-asset-liquidity"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-pension-1",
+      "query": "국민연금 예상액은 조회했는데 나중에 그대로 받을 수 있을지 걱정돼요",
+      "relevant_source_ids": [
+        "retirewise-counseling-pension-uncertainty"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-pension-2",
+      "query": "퇴직하고 연금이 시작되기 전 몇 년의 생활비가 비는데 준비도만 봐도 되나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-pension-uncertainty"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-pension-3",
+      "query": "월 연금이 현재 생활비보다 많아도 미래 물가를 생각하면 충분한 건가요",
+      "relevant_source_ids": [
+        "retirewise-counseling-pension-uncertainty"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-pension-4",
+      "query": "IRP 계좌 잔액과 그 잔액에서 받는 월 연금을 모두 더하면 중복인가요",
+      "relevant_source_ids": [
+        "retirewise-counseling-pension-uncertainty"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-income-stop-1",
+      "query": "휴직해서 다음 달 급여가 없는데 언제부터 생활비가 부족할지 모르겠어요",
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-income-stop-2",
+      "query": "실직했지만 퇴직금이 들어올 예정이면 지금 쓸 수 있는 돈으로 봐도 되나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-income-stop-3",
+      "query": "가족이 도와준다고는 했는데 금액과 날짜가 아직 정해지지 않았어요",
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-income-stop-4",
+      "query": "복직 시기를 모르는데 과거 평균 월급을 계속 소득에 넣으면 안 되나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-cashflow-resilience"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-family-1",
+      "query": "배우자는 집을 사고 싶고 저는 은퇴 저축이 먼저라서 목표가 달라요",
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-family-2",
+      "query": "부모님 생활비를 돕고 싶은데 제 노후 준비도 빠듯해서 고민돼요",
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-family-3",
+      "query": "배우자 명의 자산도 우리 가족 목표를 위해 전부 쓸 수 있다고 입력해도 되나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "category": "positive"
+    },
+    {
+      "query_id": "counseling-family-4",
+      "query": "아이 교육비와 부모 지원과 노후 목표를 한 저축 계좌에서 준비하면 어떻게 구분하나요",
+      "relevant_source_ids": [
+        "retirewise-counseling-goals-life-events"
+      ],
+      "category": "positive"
     }
-  ]
+  ],
+  "cohorts": {
+    "baseline_revision": "278bd53",
+    "original_query_ids": [
+      "counseling-understanding-1",
+      "counseling-understanding-2",
+      "counseling-understanding-3",
+      "counseling-understanding-4",
+      "counseling-wellbeing-1",
+      "counseling-wellbeing-2",
+      "counseling-wellbeing-3",
+      "counseling-wellbeing-4",
+      "counseling-cashflow-1",
+      "counseling-cashflow-2",
+      "counseling-cashflow-3",
+      "counseling-cashflow-4",
+      "counseling-goals-1",
+      "counseling-goals-2",
+      "counseling-goals-3",
+      "counseling-goals-4",
+      "counseling-retirement-1",
+      "counseling-retirement-2",
+      "counseling-retirement-3",
+      "counseling-retirement-4",
+      "counseling-comparison-1",
+      "counseling-comparison-2",
+      "counseling-comparison-3",
+      "counseling-comparison-4",
+      "counseling-none-weather",
+      "counseling-none-recipe",
+      "counseling-none-sports",
+      "counseling-none-code",
+      "counseling-none-travel",
+      "counseling-none-music"
+    ],
+    "added_query_ids": [
+      "counseling-debt-1",
+      "counseling-debt-2",
+      "counseling-debt-3",
+      "counseling-debt-4",
+      "counseling-liquidity-1",
+      "counseling-liquidity-2",
+      "counseling-liquidity-3",
+      "counseling-liquidity-4",
+      "counseling-pension-1",
+      "counseling-pension-2",
+      "counseling-pension-3",
+      "counseling-pension-4",
+      "counseling-income-stop-1",
+      "counseling-income-stop-2",
+      "counseling-income-stop-3",
+      "counseling-income-stop-4",
+      "counseling-family-1",
+      "counseling-family-2",
+      "counseling-family-3",
+      "counseling-family-4"
+    ]
+  }
 }
