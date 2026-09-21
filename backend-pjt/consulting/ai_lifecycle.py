@@ -169,6 +169,13 @@ def validate_terminal_payload(payload):
         output = payload.get('output')
         if not isinstance(output, dict) or not isinstance(output.get('response'), str):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'completed output이 올바르지 않습니다.')
+        presentation_entry_status = output.get('presentation_entry_status')
+        if presentation_entry_status not in (None, 'succeeded', 'failed'):
+            raise LifecycleError(
+                422,
+                'REQUEST_SCHEMA_INVALID',
+                'presentation_entry_status가 올바르지 않습니다.',
+            )
         _validate_error_review_output(output)
         if 'ui_action' in output:
             raise LifecycleError(
@@ -423,6 +430,9 @@ def create_v2_assistant_message(session, payload, step_id):
         extracted_changed = True
     if isinstance(output.get('review'), dict):
         extracted['review'] = output['review']
+        extracted_changed = True
+    if output.get('presentation_entry_status') in ('succeeded', 'failed'):
+        extracted['presentation_entry_status'] = output['presentation_entry_status']
         extracted_changed = True
     if extracted_changed:
         message.extracted_data = extracted

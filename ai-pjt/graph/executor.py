@@ -390,6 +390,18 @@ async def execute_route_plan(
                 else None
             ),
         )
+        if plan.get("request_mode") == "presentation_entry":
+            output = {
+                **output,
+                "presentation_entry_status": (
+                    "succeeded"
+                    if any(
+                        result.get("status") == "completed"
+                        for result in task_results.values()
+                    )
+                    else "failed"
+                ),
+            }
         has_execution_failure = any(
             result.get("status") != "completed"
             for result in task_results.values()

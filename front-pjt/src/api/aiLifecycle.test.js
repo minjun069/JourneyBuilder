@@ -46,5 +46,5 @@ test('동일 session·step·보고서 버전은 동일한 최초 안내 key를 �
 
   assert.equal(first, second)
   assert.notEqual(first, changed)
-  assert.match(first, /^presentation-entry-[0-9a-f]{64}$/)
+  assert.match(first, /^presentation-entry-v2-[0-9a-f]{64}$/)
 })
