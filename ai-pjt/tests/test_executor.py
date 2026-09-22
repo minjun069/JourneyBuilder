@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from core.model_contracts import ModelOutputBlockedError
+from core.runtime_instrumentation import RuntimeStage
 from graph.aggregation import (
     aggregate_task_results,
     compose_aggregate_response,
@@ -374,6 +376,36 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIn("검증된 독립 결과", report.output["response"])
+
+    async def test_model_output_policy_block_is_propagated_to_transport(self) -> None:
+        async def blocked(_: dict) -> dict:
+            raise ModelOutputBlockedError(
+                "model output contained a direct identifier or secret"
+            )
+
+        task = consumer_task("task-1", "answer_question", "input_assist")
+        task["depends_on"] = []
+        task["bindings"] = {}
+        instrumentation, sink = bound_fake_instrumentation()
+
+        with self.assertRaises(ModelOutputBlockedError):
+            await execute_route_plan(
+                plan={"tasks": [task]},
+                request_id="request-test",
+                step_id="basic-info",
+                customer_info={},
+                agent_executors={"input_assist": blocked},
+                tool_executors={},
+                instrumentation=instrumentation,
+            )
+
+        task_failures = [
+            event
+            for event in sink.runtime_events
+            if event.stage is RuntimeStage.TASK_EXECUTION
+            and event.reason_code == "policy_blocked"
+        ]
+        self.assertEqual(len(task_failures), 1)
 
 
 class AggregationTests(unittest.TestCase):
