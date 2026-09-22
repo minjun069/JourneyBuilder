@@ -109,6 +109,7 @@ class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["route_plan"]["tasks"][0]["type"], "interpret_chart")
         self.assertEqual(len(agents["chart_interpret"].calls), 1)
+        self.assertEqual(result["output"]["presentation_entry_status"], "succeeded")
 
     async def test_elicit_is_a_plain_context_aware_agent(self) -> None:
         from graph.builder import build_graph

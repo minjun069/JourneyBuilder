@@ -29,11 +29,18 @@ class V2AISSEConsumerContractTests(TestCase):
 
     def test_terminal_models_consume_completed_and_failed_sse_shapes(self):
         completed = FIXTURE["cases"]["terminal_completed_proposal"]["terminal_payload"]
+        presentation = FIXTURE["cases"][
+            "terminal_completed_presentation_entry"
+        ]["terminal_payload"]
         failed = FIXTURE["cases"]["terminal_failed_llm_timeout"]["terminal_payload"]
 
         self.assertEqual(
             CompletedTerminal.model_validate(completed).model_dump(mode="json"),
             completed,
+        )
+        self.assertEqual(
+            CompletedTerminal.model_validate(presentation).model_dump(mode="json"),
+            presentation,
         )
         self.assertEqual(
             FailedTerminal.model_validate(failed).model_dump(mode="json"),

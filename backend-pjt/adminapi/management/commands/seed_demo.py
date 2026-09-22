@@ -35,6 +35,14 @@ from consulting.models import (
 DEMO_DOMAIN = 'retirewise.demo'
 DEMO_PASSWORD = 'demo-pass-2026!'
 
+# 연금 수령 기간 — PensionAsset.pension_period 는 CharField 다. 정수를 넣으면 Django 가
+# 조용히 '20' 으로 저장하고, 시뮬레이션 어댑터의 'N년' 형식 검사에서 떨어진다
+# (simulations/adapter.py _PENSION_PERIOD). 프론트 PensionAssetsForm.vue 의 select 가
+# 실제로 내보내는 문자열만 쓴다.
+PENSION_SAVINGS_YEARS = 20
+PENSION_PERIOD_LIFETIME = '종신'
+PENSION_PERIOD_SAVINGS = f'{PENSION_SAVINGS_YEARS}년'
+
 LAST_NAMES = '김이박최정강조윤장임한오서신권황안송류전홍'
 FIRST_NAMES = (
     '민준', '서연', '도윤', '지우', '하준', '서준', '지호', '수아', '지민', '예은',
@@ -284,6 +292,7 @@ class Command(BaseCommand):
             session=session, type='국민연금', name='국민연금',
             current_value=0, monthly_savings=0,
             receive_method='연금형', pension_start_age=65,
+            pension_period=PENSION_PERIOD_LIFETIME,
             expected_amount=(rng.randint(100, 160) if health == 'healthy'
                              else rng.randint(60, 110)) * 10_000,
         )
@@ -291,7 +300,8 @@ class Command(BaseCommand):
             session=session, type='연금저축', name='연금저축펀드',
             current_value=pension_total,
             monthly_savings=int(monthly_income * budget['pension_saving']),
-            receive_method='연금형', pension_start_age=65, pension_period=20,
+            receive_method='연금형', pension_start_age=65,
+            pension_period=PENSION_PERIOD_SAVINGS,
         )
 
         # 부동산 — 고액 자산가는 아파트, 소액은 보증금 (완료 요건 충족용으로 전원 1건)

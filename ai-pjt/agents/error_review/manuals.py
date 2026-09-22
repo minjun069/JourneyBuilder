@@ -8,6 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rag.catalog_paths import (
+    CatalogDocumentPathError,
+    resolve_catalog_document_path,
+)
+
 
 CATALOG_PATH = Path(__file__).resolve().parents[2] / "rag" / "data" / "catalog.json"
 SUPPORTED_STEPS = frozenset({
@@ -67,9 +72,14 @@ def load_error_review_manual(
     if len(matches) != 1:
         raise ErrorReviewManualError("step manual mapping must be unique")
     document: dict[str, Any] = matches[0]
-    repository_root = catalog_path.resolve().parents[3]
-    manual_path = (repository_root / str(document.get("path", ""))).resolve()
-    approved_root = (repository_root / "ai-pjt" / "rag" / "data").resolve()
+    try:
+        manual_path = resolve_catalog_document_path(
+            catalog_path,
+            document.get("path"),
+        )
+    except CatalogDocumentPathError as exc:
+        raise ErrorReviewManualError("mapped manual path is invalid") from exc
+    approved_root = catalog_path.resolve().parent
     if manual_path.parent != approved_root:
         raise ErrorReviewManualError("manual path escapes approved directory")
     try:

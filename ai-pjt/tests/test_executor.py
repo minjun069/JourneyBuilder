@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from core.model_contracts import ModelOutputBlockedError
+from core.runtime_instrumentation import RuntimeStage
 from graph.aggregation import (
     aggregate_task_results,
     compose_aggregate_response,
@@ -330,7 +332,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         task["depends_on"] = []
         task["bindings"] = {}
         report = await execute_route_plan(
-            plan={"tasks": [task]},
+            plan={"tasks": [task], "request_mode": "presentation_entry"},
             request_id="request-test",
             step_id="basic-info",
             customer_info={"sensitive": "must-not-leave-executor"},
@@ -341,6 +343,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("안전성 검증", report.output["response"])
         self.assertIn("다시 시도", report.output["response"])
+        self.assertEqual(report.output["presentation_entry_status"], "failed")
 
     async def test_partial_success_keeps_verified_result_without_failure_responder(self) -> None:
         async def failing(_: dict) -> dict:
@@ -373,6 +376,36 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIn("검증된 독립 결과", report.output["response"])
+
+    async def test_model_output_policy_block_is_propagated_to_transport(self) -> None:
+        async def blocked(_: dict) -> dict:
+            raise ModelOutputBlockedError(
+                "model output contained a direct identifier or secret"
+            )
+
+        task = consumer_task("task-1", "answer_question", "input_assist")
+        task["depends_on"] = []
+        task["bindings"] = {}
+        instrumentation, sink = bound_fake_instrumentation()
+
+        with self.assertRaises(ModelOutputBlockedError):
+            await execute_route_plan(
+                plan={"tasks": [task]},
+                request_id="request-test",
+                step_id="basic-info",
+                customer_info={},
+                agent_executors={"input_assist": blocked},
+                tool_executors={},
+                instrumentation=instrumentation,
+            )
+
+        task_failures = [
+            event
+            for event in sink.runtime_events
+            if event.stage is RuntimeStage.TASK_EXECUTION
+            and event.reason_code == "policy_blocked"
+        ]
+        self.assertEqual(len(task_failures), 1)
 
 
 class AggregationTests(unittest.TestCase):
@@ -465,6 +498,7 @@ class AggregationComposerTests(unittest.IsolatedAsyncioTestCase):
             "response": "첫 번째 결과\n\n두 번째 결과",
             "step_id": "intro",
             "action": None,
+            "presentation_entry_status": "succeeded",
         }
         with patch("core.llm.llm", Provider()):
             composed = await compose_aggregate_response(
@@ -477,6 +511,7 @@ class AggregationComposerTests(unittest.IsolatedAsyncioTestCase):
             composed["response"],
             "첫 번째 결과와 두 번째 결과를 함께 안내합니다.",
         )
+        self.assertEqual(composed["presentation_entry_status"], "succeeded")
 
     async def test_composer_new_number_falls_back_to_deterministic_join(self) -> None:
         class Runnable:

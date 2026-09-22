@@ -112,3 +112,39 @@ export function makeIndicator(key, value, age) {
   const zones = schema.getZones ? schema.getZones(age ?? 35) : schema.zones
   return { ...schema, value, zones }
 }
+
+// ── 백엔드 평면(flat) 응답 → 게이지 그룹 ────────────────────────────
+// reports 의 financial-indicators 본문은 지표마다 키가 하나씩 있는 평면 구조로 온다
+// (backend-pjt/reports/calculators.py calculate_financial_indicators).
+// 아래 표는 backend-pjt/adminapi/grading.py 의 INDICATOR_DEFS 와 같은
+// 한글 키·그룹·표시값 변환을 쓴다 — 한쪽을 고치면 다른 쪽도 같이 고친다.
+// [한글 키, 백엔드 키, 표시값 변환, 게이지 그룹]
+const FLAT_INDICATOR_DEFS = [
+  ['가계수지지표',      'household_balance',        (v) => Math.round((100 - v) * 10) / 10, 'cashflow'],
+  ['총저축성향지표',     'total_savings_propensity', null, 'cashflow'],
+  ['금융자산비중지표',   'financial_asset_ratio',    null, 'assets'],
+  ['총부채상환지표',     'debt_service_ratio',       null, 'assets'],
+  ['노후대비저축지표',   'retirement_savings',       null, 'assets'],
+  ['비상예비금지표',     'emergency_reserve',        null, 'risk'],
+  ['보장성보험준비지표', 'insurance_preparation',    null, 'risk'],
+]
+
+// financial-indicators 본문을 { age, groups: { cashflow, assets, risk } } 형태로 맞춘다.
+// 이미 groups 를 가진 본문(목업·시드 글에 첨부된 스냅샷)은 그대로 돌려준다.
+// 평면 본문에서 쓸 값이 하나도 없으면 groups 를 만들지 않고 원본을 돌려줘,
+// groups 유무로 데이터 없음을 판단하는 기존 호출부 동작을 바꾸지 않는다.
+export function toIndicatorGroups(fi) {
+  if (!fi || fi.groups) return fi ?? null
+
+  const groups = {}
+  for (const [key, sourceKey, transform, group] of FLAT_INDICATOR_DEFS) {
+    const raw = fi[sourceKey]
+    // 계산 불가(null)로 내려온 지표는 게이지에 찍을 값이 없으므로 건너뛴다
+    if (raw == null || raw === '' || !Number.isFinite(Number(raw))) continue
+    const value = transform ? transform(Number(raw)) : Number(raw)
+    ;(groups[group] ??= []).push({ key, value })
+  }
+
+  if (!Object.keys(groups).length) return fi
+  return { ...fi, groups }
+}

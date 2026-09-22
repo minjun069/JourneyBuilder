@@ -1,11 +1,17 @@
 """PB 대시보드 시연 환경 일괄 세팅 — 팀 공용 PB 계정 + 시드 고객.
 
-`create_pb` + `seed_demo` 를 한 번에 실행해 팀원 모두가 동일한 시연 상태를 갖게 한다.
+`create_pb` + `seed_demo` + `seed_community` 를 한 번에 실행해 팀원 모두가
+동일한 시연 상태(PB 계정 + 시드 고객 + 커뮤니티 피드)를 갖게 한다.
 
 - PB 계정은 시연 편의를 위해 비밀번호 검증을 의도적으로 건너뛴다(약한 비밀번호 허용).
   운영 서버에서는 이 커맨드 대신 `create_pb` 로 강한 비밀번호 계정을 만들 것.
 - 오염 방지 가드: 데모(@retirewise.demo)가 아닌 실제 고객 데이터가 이미 있는 DB 에서는
   `--yes` 를 명시해야 실행된다 (운영 DB 실수 실행 방지).
+- 커뮤니티 피드 재생성은 파괴적이다: 데모 고객 명의의 글을 hard delete 후
+  다시 만들기 때문에, 실사용자가 그 글에 남긴 댓글·좋아요도 cascade 로 사라진다
+  (실사용자 명의의 글 자체는 보존된다).
+- 시드 고객이 0명이면(`--count 0`) 커뮤니티 시드는 건너뛰고 경고만 남긴다
+  (데모 글 작성자가 없어 만들 수 없으며, 데모 유저 삭제로 기존 데모 글도 이미 소멸).
 """
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
@@ -18,7 +24,11 @@ DEFAULT_PB_PASSWORD = 'admin1234'
 
 
 class Command(BaseCommand):
-    help = '시연용 PB 계정과 가상 고객 시드를 일괄 생성한다 (로컬 시연 전용).'
+    help = (
+        '시연용 PB 계정·가상 고객 시드·커뮤니티 피드를 일괄 생성한다 (로컬 시연 전용). '
+        '커뮤니티 피드 재생성은 데모 고객 명의의 글을 hard delete 하므로 '
+        '그 글에 달린 실사용자의 댓글·좋아요도 함께 사라진다.'
+    )
 
     def add_arguments(self, parser):
         parser.add_argument('--count', type=int, default=40, help='시드 고객 수 (기본 40)')
@@ -59,7 +69,25 @@ class Command(BaseCommand):
         ))
 
         call_command('seed_demo', count=options['count'])
+
+        # seed_demo 가 데모 유저를 재생성하면 기존 데모 글이 cascade 소멸하므로 반드시 이후 실행.
+        # 단 시드 고객이 0명이면 글 작성자가 없어 seed_community 가 실패하므로 건너뛴다
+        # (seed_demo 는 이미 커밋됐고, 데모 글도 유저와 함께 사라져 상태는 일관적이다).
+        demo_customers = (
+            User.objects
+            .filter(is_staff=False, email__endswith=f'@{DEMO_DOMAIN}')
+            .count()
+        )
+        if demo_customers:
+            call_command('seed_community')
+            community_msg = '커뮤니티 시드 글'
+        else:
+            self.stdout.write(self.style.WARNING(
+                '시드 고객이 0명이라 커뮤니티 시드를 건너뜁니다. '
+                '커뮤니티 피드가 필요하면 --count 1 이상으로 다시 실행하세요.'
+            ))
+            community_msg = '커뮤니티 시드 생략'
         self.stdout.write(self.style.SUCCESS(
-            f"완료 — PB 1명 + 시드 고객 {options['count']}명 "
+            f"완료 — PB 1명 + 시드 고객 {options['count']}명 + {community_msg} "
             f"(시드 고객 공통 비밀번호: {DEMO_PASSWORD})"
         ))
