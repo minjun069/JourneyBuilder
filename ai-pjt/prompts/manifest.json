@@ -1,5 +1,5 @@
 {
-  "release": "2026-09-21.1",
+  "release": "2026-09-22.1",
   "prompts": [
     {
       "id": "aggregator.compose",
@@ -40,6 +40,111 @@
         {
           "key": "chart_guide",
           "label": "관련 설명 자료"
+        }
+      ]
+    },
+    {
+      "id": "counseling.compose",
+      "version": "4.0.0",
+      "sha256": "29dedbdd58152225e3431382f9ce40becbd9930cd7df2ff62577160ef8e7d2e8",
+      "purpose": "aggregator",
+      "output_schema": "counseling_addon",
+      "owner": "ai-team",
+      "risk": "financial_explanation",
+      "input_sections": [
+        {
+          "key": "question",
+          "label": "현재 사용자 질문"
+        },
+        {
+          "key": "conversation_context",
+          "label": "이전 대화 문맥"
+        },
+        {
+          "key": "answer",
+          "label": "검증된 기존 답변"
+        },
+        {
+          "key": "task_types",
+          "label": "완료된 작업 유형"
+        },
+        {
+          "key": "step_id",
+          "label": "현재 화면"
+        },
+        {
+          "key": "evidence",
+          "label": "상담 참고 근거"
+        }
+      ]
+    },
+    {
+      "id": "counseling.judge",
+      "version": "4.0.0",
+      "sha256": "a262b8fe9a156a01ee23064382ba58151f5d9b4d2cbd01d9eb4c76f2b6c5e07d",
+      "purpose": "aggregator",
+      "output_schema": "counseling_judgment",
+      "owner": "ai-team",
+      "risk": "financial_explanation",
+      "input_sections": [
+        {
+          "key": "question",
+          "label": "현재 사용자 질문"
+        },
+        {
+          "key": "conversation_context",
+          "label": "이전 대화 문맥"
+        },
+        {
+          "key": "answer",
+          "label": "검증된 기존 답변"
+        },
+        {
+          "key": "task_types",
+          "label": "완료된 작업 유형"
+        },
+        {
+          "key": "step_id",
+          "label": "현재 화면"
+        },
+        {
+          "key": "evidence",
+          "label": "상담 참고 근거"
+        },
+        {
+          "key": "addon",
+          "label": "검토할 보충문과 사용 근거"
+        }
+      ]
+    },
+    {
+      "id": "counseling.plan",
+      "version": "4.0.0",
+      "sha256": "899fa6914a53cc0681a8d03672cd4977073b92a22caacce6d67d385226f0a859",
+      "purpose": "aggregator",
+      "output_schema": "counseling_plan",
+      "owner": "ai-team",
+      "risk": "financial_explanation",
+      "input_sections": [
+        {
+          "key": "question",
+          "label": "현재 사용자 질문"
+        },
+        {
+          "key": "conversation_context",
+          "label": "이전 대화 문맥"
+        },
+        {
+          "key": "answer",
+          "label": "검증된 기존 답변"
+        },
+        {
+          "key": "task_types",
+          "label": "완료된 작업 유형"
+        },
+        {
+          "key": "step_id",
+          "label": "현재 화면"
         }
       ]
     },

@@ -157,6 +157,16 @@ class Settings:
         self.rag_index_retention_days = _read_positive_int(
             "RAG_INDEX_RETENTION_DAYS", 30, active_environ
         )
+        self.counseling_rag_enabled = _read_bool(
+            "AI_COUNSELING_RAG_ENABLED", False, active_environ
+        )
+        self.counseling_rag_timeout_seconds = _read_positive_int(
+            "AI_COUNSELING_RAG_TIMEOUT_SECONDS", 12, active_environ
+        )
+        if self.counseling_rag_timeout_seconds > 30:
+            raise RuntimeConfigurationError(
+                "AI_COUNSELING_RAG_TIMEOUT_SECONDS must be at most 30"
+            )
         self.embed_dim = _read_positive_int(
             "EMBED_DIM",
             _EMBED_DIM_DEFAULTS.get(self.embedding_provider, 3072),

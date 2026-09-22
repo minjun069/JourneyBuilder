@@ -49,8 +49,8 @@ SHA-256을 `DocumentMetadata`로 변환한다. 경로가 collection pattern을 �
 
 `data/counseling-candidate.json`은 기존 운영 catalog와 분리된 `pending` 후보다.
 `financial-knowledge/counseling-*.md` 9개에 출처·권리·SHA-256·적용 범위를 연결한다.
-마지막 병합 RAG baseline 및 세션별 고객 이해 문단을 고려한 자료이며, 검색·세션
-갱신 runtime은 아직 연결하지 않았다. 실제 고객 문단은 공용 corpus에 넣지 않는다.
+마지막 병합 RAG baseline은 아래 opt-in 런타임으로 연결했다. 세션별 고객 이해 문단의
+별도 저장·갱신은 후속 범위이며 실제 고객 문단은 공용 corpus에 넣지 않는다.
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
@@ -93,6 +93,46 @@ F25 절을 따른다. 행동 사례의 `project_checks`는 제품 회귀 조건�
 두 집합을 기록한다. 검색 성적은 문서 단위로 측정하므로 해당 절을 정확히 찾았거나
 상담을 잘했다고 해석하지 않는다. 무조건 혼합한 검색에서는 기존 문서가 밀리는
 회귀와 무관 질문 오탐이 남아 있어 운영 승격 근거로 사용할 수 없다.
+
+## 마지막 병합의 상담 검색 활성화
+
+루트 Compose의 `.env` 또는 직접 실행하는 AI 서비스 환경에 다음 값을 설정하고
+AI 프로세스를 다시 시작한다. 기본 false에서는 추가 검색·모델 호출이 없다.
+
+```dotenv
+AI_COUNSELING_RAG_ENABLED=true
+AI_COUNSELING_RAG_TIMEOUT_SECONDS=12
+```
+
+성공한 작업의 검증 답변을 다듬은 뒤 `counseling.plan`이 상담 필요성과 주제를 판단한다.
+필요한 경우 후보 본문을 검색하고 `counseling.compose`가 보충문을 생성한 다음
+`counseling.judge`의 근거·관련성·비모순·개인 사실·진단 범위 검토를 통과해야 덧붙인다.
+기존 답변·수치·action·review를 보존하며 실패·빈 검색·검토 거부에는 기존 답변을 반환한다.
+검색은 최대 1회, 추가 모델 단계는 최대 3회이고 전체 보충 한도는 1~30초다. 요청 전체 취소는
+전파한다. 감사·단순 용어·조회·정정·설명 거절에는 상담 검색을 생략하도록 계획한다.
+상위 단계가 선택한 대화의 정정·거절을 다시 축약하지 않으며 내용이 16,000자를 넘으면
+모델·검색 호출 없이 보충을 생략한다. 세 단계는 논리 호출 수이며 SDK 내부 HTTP 시도 수와는 다르다.
+
+검색기는 고객 원문 대신 닫힌 topic만 받는다. 후보 9문서의 해시·권리·pending 상태를
+검증하고 관리 절을 제외한 37개 완전한 상담 카드를 BM25로 검색한다. 최대 3개,
+BM25 점수 1.0 이상·서로 다른 일반 검색어 토큰 2개 이상 일치를 후보 기준으로 사용한다.
+이는 관련성의 확률이나 기존 hash embedding 평가 점수가 아니다. 실제 의미 적합성은
+추가 모델 평가가 필요하다. 외부 embedding·DB·승인 인덱스·active pointer를 사용하지 않는다.
+문서 cache는 프로세스 수명 동안 유지하므로 corpus 갱신 후에는 프로세스를 재시작한다.
+
+다음 명령은 `ai-pjt`에서 외부 서비스 없이 실제 후보 검색을 확인한다.
+
+```bash
+python -c 'from rag.counseling_retriever import CounselingTopic, get_counseling_retriever; print([(e.source_id, round(e.score, 2)) for e in get_counseling_retriever().retrieve(CounselingTopic.DEBT)])'
+python -m unittest rag.tests.test_counseling_retriever -q
+python -m unittest tests.test_counseling tests.test_counseling_integration -q
+```
+
+마지막 두 상담 runtime 테스트의 모델은 mock이다. 실제 모델 품질·지연·비용과 80대화 비교는
+별도 측정이며, corpus 승인 상태와 기존 평가 서식의 미실행 표시는 바꾸지 않는다.
+coverage 자료의 `runtime_implemented=false`는 자료 작성 시점의 상태로 보존하며
+현재 서비스의 활성화 여부를 판정하는 데 사용하지 않는다. 자료의 검사 성공도 후보 문서
+운영 승인이나 세션 이해 문단 구현을 뜻하지 않는다.
 
 ## 승인 corpus 재현 검사
 
