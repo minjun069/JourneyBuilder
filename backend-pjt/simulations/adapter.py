@@ -27,6 +27,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 import re
 
+from .pension import derive_expected_amount
+
 
 # 모듈 input_adapter._ASSET_TYPES 와 같아야 한다.
 ASSET_TYPES = ("예금/적금", "주식", "펀드/ETF", "채권", "가상자산")
@@ -66,10 +68,24 @@ class InputIssue:
 
 
 @dataclass(frozen=True, slots=True)
+class InputNotice:
+    """BE 가 입력을 바꿔 계산했다는 사실 하나.
+
+    모듈 InputMappingNotice 와 같은 모양(code·field_name)이다. 모듈 출력의 notices
+    뒤에 그대로 붙여 보내므로 화면은 둘을 구분하지 않아도 된다.
+    message 를 담지 않는 이유도 같다 — 문구는 화면이 code 로 정한다.
+    """
+
+    code: str
+    field_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class SimulationInput:
     saved_data: dict = field(repr=False)
     confirmed_empty_sections: tuple[str, ...]
     issues: tuple[InputIssue, ...]
+    notices: tuple[InputNotice, ...] = ()
 
     @property
     def ok(self) -> bool:
@@ -212,9 +228,18 @@ def _financial_assets(snapshot: Mapping, out: dict, c: _Collector) -> None:
     out["financial_assets"] = mapped
 
 
-def _pension_assets(snapshot: Mapping, out: dict, c: _Collector) -> None:
+def _pension_assets(
+    snapshot: Mapping,
+    out: dict,
+    c: _Collector,
+    *,
+    age: int | None,
+    end_age: int | None,
+    default_annual_rate: float | None,
+) -> list[InputNotice]:
     rows = _rows(snapshot.get("pension_assets"))
     mapped = []
+    notices: list[InputNotice] = []
     for index, row in enumerate(rows):
         path = f"pension_assets[{index}]"
         receive_method = _text(row.get("receive_method"))
@@ -256,9 +281,41 @@ def _pension_assets(snapshot: Mapping, out: dict, c: _Collector) -> None:
         c.age(
             row, "pension_start_age", path, "연금 개시 나이", minimum=1, maximum=MAX_AGE
         )
-        c.amount(row, "expected_amount", path, "예상 월 수령액")
-        mapped.append({key: row.get(key) for key in _PENSION_FIELDS})
+
+        # 적립형 연금(IRP·연금저축)은 상담에서 '적립액/월 납입액'을 받고 예상 월
+        # 수령액을 받지 않는다. 비어 있으면 적어 둔 값으로 환산해 계산만 진행한다.
+        #
+        # **이 값은 절대 저장하지 않는다.** PensionAsset.expected_amount 는 NULL 로
+        # 남아야 한다. 저장하면 reports/calculators.calculate_lifetime_cashflow 가
+        # 같은 연금을 두 번 센다 — 적립액(current_value)은 순자산으로 계속 불어나며
+        # 인출되지 않는데, expected_amount*12 가 동시에 영구 소득으로 더해진다.
+        # 그 이중 계상은 별도 과제이고, 여기서 저장해 불러오면 안 된다.
+        #
+        # 파생은 원본 row 를 들고 있는 지금만 가능하다. 아래 mapped 는
+        # _PENSION_FIELDS 만 남기므로 current_value·monthly_savings·
+        # expected_return_rate 가 그 시점에는 이미 사라진다.
+        effective = row
+        if row.get("expected_amount") is None:
+            derived = derive_expected_amount(
+                row,
+                current_age=age,
+                end_age=end_age,
+                default_annual_rate=default_annual_rate,
+            )
+            if derived is not None:
+                # 사본이다. 스냅샷 원본은 그대로 둔다(파일 상단 '원본 불변').
+                effective = {**row, "expected_amount": derived}
+                notices.append(
+                    InputNotice(
+                        code="pension_expected_amount_estimated", field_name=path
+                    )
+                )
+        # 사용자가 직접 적은 값은 손대지 않는다. 파생에 실패하면 여기서 기존
+        # "예상 월 수령액을 입력해 주세요" 가 그대로 남는다.
+        c.amount(effective, "expected_amount", path, "예상 월 수령액")
+        mapped.append({key: effective.get(key) for key in _PENSION_FIELDS})
     out["pension_assets"] = mapped
+    return notices
 
 
 def _contiguous(ages: list[int]) -> list[dict]:
@@ -405,17 +462,32 @@ def build_simulation_input(
     snapshot: Mapping,
     *,
     confirmed_empty_sections: tuple[str, ...] = (),
+    default_annual_rate: float | None = None,
 ) -> SimulationInput:
     """스냅샷을 모듈 입력으로 바꾸고 규격 위반을 전부 모은다.
 
     issues 가 비어 있지 않으면 호출부는 모듈을 부르지 않고 422 를 반환한다.
+
+    default_annual_rate 는 연금 행에 기대수익률이 없을 때 쓸 연 수익률이다. 이
+    파일은 정책 파일을 읽지 않는다 — 승인된 값을 가진 호출부(services.prepare_input)
+    가 넘긴다. 넘기지 않으면 자기 수익률이 없는 행은 환산하지 않는다(숫자를 지어내지
+    않는다).
     """
     c = _Collector()
     out: dict = {}
 
+    # 연금 환산이 basic_info 의 나이·기대수명을 쓴다. 순서를 바꾸면 '종신' 연금을
+    # 환산할 수 없게 된다.
     age, retirement_age, end_age = _basic_info(snapshot, out, c)
     _financial_assets(snapshot, out, c)
-    _pension_assets(snapshot, out, c)
+    notices = _pension_assets(
+        snapshot,
+        out,
+        c,
+        age=age,
+        end_age=end_age,
+        default_annual_rate=default_annual_rate,
+    )
     _goal_periods(snapshot, out, c, age, retirement_age, end_age)
 
     for section in _PRESENCE_ONLY_SECTIONS:
@@ -437,4 +509,5 @@ def build_simulation_input(
         saved_data=out,
         confirmed_empty_sections=confirmed,
         issues=tuple(c.issues),
+        notices=tuple(notices),
     )

@@ -92,9 +92,16 @@ def prepare_input(snapshot: dict, *, confirmed_empty_sections: tuple[str, ...] =
 
     confirmed_empty_sections 는 호출부가 세션에서 읽어 넘긴다(services 의 동명 헬퍼).
     빠뜨리면 "금융자산 없음" 을 확인한 세션이 항상 422 INPUT_NOT_READY 가 된다.
+
+    연금 환산 기본 수익률도 여기서 정책에서 읽어 넘긴다. 어댑터는 정책 파일을 읽지
+    않는다(순수 변환 유지). load_policy() 는 lru_cache 뒤에 있어 추가 I/O 가 없고,
+    정책이 깨져 있으면 어댑터가 아니라 여기서 503 으로 멈춘다.
     """
+    assumptions, _ = load_policy()
     prepared = build_simulation_input(
-        snapshot, confirmed_empty_sections=confirmed_empty_sections
+        snapshot,
+        confirmed_empty_sections=confirmed_empty_sections,
+        default_annual_rate=assumptions['annual_return_mean'],
     )
     if prepared.issues:
         raise SimulationError(
@@ -148,4 +155,15 @@ def run_analysis(prepared, assumptions: dict[str, Any], scenarios=()) -> tuple[d
             details={'analysis_error': analysis_error_to_dict(error)['error']},
         ) from None
     payload = analysis_to_dict(result)
+    # BE 가 입력을 보정했으면 모듈 안내 뒤에 같은 모양으로 덧붙인다. 별도 채널을
+    # 만들지 않는 이유는 하나다 — 화면이 안내를 한 곳에서만 읽으면 새 안내를 버릴
+    # 수 없다. 모듈이 만든 dict 라 그 자리에서 수정해도 공유 상태가 아니다.
+    payload['notices'] = [
+        *payload['notices'],
+        *(
+            {'code': notice.code, 'field_name': notice.field_name}
+            # 계약 테스트의 가짜 prepared 처럼 notices 가 없는 객체도 통과시킨다.
+            for notice in getattr(prepared, 'notices', ())
+        ),
+    ]
     return payload, int((time.perf_counter() - started) * 1000)

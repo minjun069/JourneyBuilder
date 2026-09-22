@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import SimulationIssueList from '@/components/simulation/SimulationIssueList.vue'
+import { sectionLabel } from '@/components/simulation/fieldLabel.js'
 import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
 
@@ -55,6 +56,14 @@ const noticeLabels = {
   real_estate_not_modeled: '부동산 평가·처분·임대료는 반영하지 않습니다.',
   liabilities_not_modeled: '부채 원금·이자·상환은 반영하지 않습니다.',
   milestones_not_modeled: '일회성 재무목표 수입·지출은 반영하지 않습니다.',
+  pension_expected_amount_estimated:
+    '예상 월 수령액을 적지 않은 연금은 적립액·월 납입액·수익률로 환산해 계산했습니다.',
+  pension_horizon_limited:
+    '기대수명 이후의 연금 수령분은 계획 기간 밖이라 반영하지 않았습니다.',
+  pension_outside_horizon:
+    '수령 기간이 계획 기간과 겹치지 않아 이 연금은 반영하지 않았습니다.',
+  other_financial_asset_not_modeled:
+    '모형이 다루는 자산 유형이 아니어서 이 금융자산은 반영하지 않았습니다.',
 }
 
 watch(
@@ -244,6 +253,9 @@ async function recalculate() {
         <summary>계산 범위와 가정</summary>
         <ul>
           <li v-for="notice in analysis.notices" :key="`${notice.code}-${notice.field_name}`">
+            <span v-if="sectionLabel(notice.field_name)" class="notice-where">
+              {{ sectionLabel(notice.field_name) }}
+            </span>
             {{ noticeLabels[notice.code] ?? `추가 계산 안내: ${notice.code}` }}
           </li>
         </ul>
@@ -322,6 +334,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th, td { padding: 8px; border-bottom: 1px solid #ececf5; text-align: right; white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; }
+.notice-where { border-radius: 6px; padding: 2px 7px; background: rgba(26, 31, 60, 0.07); font-size: 12px; font-weight: 700; }
 .notices { color: #5b6175; font-size: 12px; }
 .notices summary { cursor: pointer; font-weight: 800; }
 .compact { gap: 9px; height: 100%; overflow-y: auto; }
