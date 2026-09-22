@@ -1,13 +1,23 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useReportStore } from '@/stores/report'
 
-defineProps({
+const props = defineProps({
   title: { type: String, required: true },
-  reportKey: { type: String, required: true },
+  // 보고서 키 하나 또는 여러 개. 여러 개면 모두 준비된 경우에만 본문을 보여준다.
+  reportKey: { type: [String, Array], required: true },
+  // false 이면 본문을 흰 패널로 감싸지 않는다(카드가 여러 장인 홈 화면용).
+  panel: { type: Boolean, default: true },
 })
 
 const reportStore = useReportStore()
+
+const reportKeys = computed(() => (
+  Array.isArray(props.reportKey) ? props.reportKey : [props.reportKey]
+))
+const hasReports = computed(() => (
+  reportKeys.value.length > 0 && reportKeys.value.every((key) => reportStore.hasReport(key))
+))
 
 onMounted(() => {
   reportStore.loadLatestReports()
@@ -21,13 +31,14 @@ onMounted(() => {
     </div>
 
     <div v-if="reportStore.loading" class="state-card">보고서를 불러오는 중입니다.</div>
-    <div v-else-if="reportStore.error" class="state-card error">보고서를 불러오지 못했습니다.</div>
-    <div v-else-if="!reportStore.hasReport(reportKey)" class="state-card">
+    <div v-else-if="reportStore.error" class="state-card error" role="alert">보고서를 불러오지 못했습니다.</div>
+    <div v-else-if="!hasReports" class="state-card">
       AI 상담을 완료하면 생성된 보고서를 여기에서 확인할 수 있습니다.
     </div>
-    <div v-else class="report-panel">
+    <div v-else-if="panel" class="report-panel">
       <slot />
     </div>
+    <slot v-else />
   </div>
 </template>
 

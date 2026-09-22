@@ -1,18 +1,7 @@
 <template>
+  <!-- 형제 탭과 같은 로딩/오류/보고서 없음 상태를 공유한다. 세 보고서가 모두 준비돼야 본문을 그린다. -->
+  <DashboardReportShell title="재무 현황" :report-key="HOME_REPORT_KEYS" :panel="false">
   <div class="home-view">
-
-    <!-- 헤더 -->
-    <div class="page-header">
-      <div class="header-left">
-        <h1 class="page-title">재무 현황</h1>
-      </div>
-    </div>
-
-    <div v-if="reportStore.error" class="data-warning" role="alert">
-      보고서 데이터를 검증할 수 없어 예시 데이터를 표시하고 있습니다.
-    </div>
-
-    <div class="section-rule"></div>
 
     <!-- 섹션: 은퇴 준비 상태 -->
     <div class="section">
@@ -127,17 +116,23 @@
     </div>
 
   </div>
+  </DashboardReportShell>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { useReportStore } from '@/stores/report'
 
+import DashboardReportShell from '@/components/dashboard/DashboardReportShell.vue'
 import RetirementScoreCard from '@/components/dashboard/RetirementScoreCard.vue'
 import StatCard from '@/components/dashboard/StatCard.vue'
 
 import AssetPieEcharts from '@/components/charts/AssetPieEcharts.vue'
 import CashFlowBarEcharts from '@/components/charts/CashFlowBarEcharts.vue'
+import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue'
+
+// 홈은 자산현황표·현금흐름표·가계재무지표를 합쳐 보여주므로 셋 모두 준비됐을 때만 본문을 그린다.
+const HOME_REPORT_KEYS = ['asset_statement', 'cash_flow', 'financial-indicators']
 
 const reportStore = useReportStore()
 const selectedPeriod = ref(reportStore.periods[reportStore.periods.length - 1])
@@ -145,8 +140,6 @@ const selectedCashflowPeriod = ref(reportStore.periods[reportStore.periods.lengt
 
 const currentData = computed(() => reportStore.dashboardOverview(selectedPeriod.value))
 const currentCashflow = computed(() => reportStore.dashboardCashflow(selectedCashflowPeriod.value))
-
-import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue'
 
 const groups = computed(() => {
   const indicators = currentData.value?.financialIndicators
@@ -166,39 +159,6 @@ const groups = computed(() => {
   flex-direction: column;
   gap: 20px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* 헤더 */
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.page-title {
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.4px;
-  color: #1a1a2e;
-  margin: 0;
-}
-
-.data-warning {
-  padding: 12px 16px;
-  border: 1px solid #fecaca;
-  border-radius: 10px;
-  background: #fef2f2;
-  color: #b91c1c;
-  font-size: 14px;
-  font-weight: 600;
 }
 
 /* 공통 카드 */
