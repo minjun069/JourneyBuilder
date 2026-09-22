@@ -145,7 +145,11 @@ def secure_invoke(
     started = perf_counter()
     try:
         result = runnable.invoke(safe_messages)
-        block_forbidden_output(result)
+        block_forbidden_output(
+            result,
+            purpose=purpose,
+            operation_name=operation_name,
+        )
     except Exception as error:
         _record_model_call(
             purpose=purpose,
@@ -255,7 +259,11 @@ async def secure_ainvoke(
     started = perf_counter()
     try:
         result = await runnable.ainvoke(safe_messages)
-        block_forbidden_output(result)
+        block_forbidden_output(
+            result,
+            purpose=purpose,
+            operation_name=operation_name,
+        )
     except Exception as error:
         _record_model_call(
             purpose=purpose,

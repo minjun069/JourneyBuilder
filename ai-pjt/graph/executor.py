@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from core.model_boundary import bind_model_call_recorder
+from core.model_contracts import ModelOutputBlockedError
 from core.field_registry import load_field_registry
 from core.monitoring import OperationStage, OperationStatus
 from core.operation_observation import bind_operation_recorder
@@ -263,6 +264,15 @@ async def execute_route_plan(
                             instrumentation.record_prompt_invocation
                         ):
                             raw_result = await executor(execution_input)
+        except ModelOutputBlockedError as error:
+            error_identity = exception_identity_fields(error)
+            instrumentation.fail(
+                task_span,
+                reason_code="policy_blocked",
+                output={"status": "failed", "reason_code": "policy_blocked"},
+                **error_identity,
+            )
+            raise
         except Exception as error:
             # 이 except 는 사용자에게 executor_error 안내문만 남기므로, 여기서 기록하지
             # 않으면 배포본에서 원인을 되짚을 수 있는 흔적이 전혀 남지 않는다.

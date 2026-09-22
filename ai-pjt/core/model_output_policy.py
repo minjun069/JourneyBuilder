@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 from core.masking import is_reference_token
-from core.model_contracts import ModelOutputBlockedError
+from core.model_contracts import ModelOutputBlockedError, ModelPurpose
 
 
 DIRECT_TEXT_PATTERNS = (
@@ -35,9 +35,22 @@ FORBIDDEN_OUTPUT_FIELDS = frozenset({
 })
 
 
-def block_forbidden_output(result: Any) -> None:
+def block_forbidden_output(
+    result: Any,
+    *,
+    purpose: ModelPurpose,
+    operation_name: str | None = None,
+) -> None:
     payload = serializable_output(result)
-    if contains_forbidden_text(payload) or contains_forbidden_field(payload):
+    if contains_forbidden_text(
+        payload,
+        purpose=purpose,
+        operation_name=operation_name,
+    ) or contains_forbidden_field(
+        payload,
+        purpose=purpose,
+        operation_name=operation_name,
+    ):
         raise ModelOutputBlockedError(
             "model output contained a direct identifier or secret"
         )
@@ -78,7 +91,12 @@ def redact_direct_text(value: Any) -> Any:
     return value
 
 
-def contains_forbidden_text(value: Any) -> bool:
+def contains_forbidden_text(
+    value: Any,
+    *,
+    purpose: ModelPurpose | None = None,
+    operation_name: str | None = None,
+) -> bool:
     if isinstance(value, bytes):
         value = value.decode("utf-8", errors="replace")
     if isinstance(value, str):
@@ -90,21 +108,53 @@ def contains_forbidden_text(value: Any) -> bool:
                 decoded = json.loads(stripped)
             except json.JSONDecodeError:
                 return False
-            return contains_forbidden_field(decoded)
+            return contains_forbidden_field(
+                decoded,
+                purpose=purpose,
+                operation_name=operation_name,
+            )
         return False
     if isinstance(value, Mapping):
-        return any(contains_forbidden_text(child) for child in value.values())
+        return any(
+            contains_forbidden_text(
+                child,
+                purpose=purpose,
+                operation_name=operation_name,
+            )
+            for child in value.values()
+        )
     if isinstance(value, Sequence):
-        return any(contains_forbidden_text(child) for child in value)
+        return any(
+            contains_forbidden_text(
+                child,
+                purpose=purpose,
+                operation_name=operation_name,
+            )
+            for child in value
+        )
     return False
 
 
-def contains_forbidden_field(value: Any) -> bool:
+def contains_forbidden_field(
+    value: Any,
+    *,
+    purpose: ModelPurpose | None = None,
+    operation_name: str | None = None,
+    path: tuple[str | int, ...] = (),
+) -> bool:
     if isinstance(value, Mapping):
         for key, child in value.items():
             normalized = str(key).lower().replace("-", "_")
+            child_path = (*path, str(key))
             forbidden = (
-                normalized in FORBIDDEN_OUTPUT_FIELDS
+                (
+                    normalized in FORBIDDEN_OUTPUT_FIELDS
+                    and not _is_allowed_business_name_path(
+                        child_path,
+                        purpose=purpose,
+                        operation_name=operation_name,
+                    )
+                )
                 or normalized.endswith("_email")
                 or normalized.endswith("_phone")
                 or normalized.endswith("_account_number")
@@ -115,9 +165,47 @@ def contains_forbidden_field(value: Any) -> bool:
             )
             if forbidden and child not in (None, "") and not is_reference_token(child):
                 return True
-            if contains_forbidden_field(child):
+            if contains_forbidden_field(
+                child,
+                purpose=purpose,
+                operation_name=operation_name,
+                path=child_path,
+            ):
                 return True
         return False
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        return any(contains_forbidden_field(child) for child in value)
+        return any(
+            contains_forbidden_field(
+                child,
+                purpose=purpose,
+                operation_name=operation_name,
+                path=(*path, index),
+            )
+            for index, child in enumerate(value)
+        )
+    return False
+
+
+def _is_allowed_business_name_path(
+    path: tuple[str | int, ...],
+    *,
+    purpose: ModelPurpose | None,
+    operation_name: str | None,
+) -> bool:
+    """Allow form-row labels that the field-registry validator checks next."""
+
+    if (
+        purpose is not ModelPurpose.INPUT_ASSIST
+        or operation_name != "input_assist.extract"
+        or not path
+        or path[-1] != "name"
+    ):
+        return False
+    for index, part in enumerate(path[:-3]):
+        if (
+            part == "changes"
+            and isinstance(path[index + 1], int)
+            and path[index + 2] == "value"
+        ):
+            return True
     return False
