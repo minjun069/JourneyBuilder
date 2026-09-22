@@ -1,0 +1,551 @@
+{
+  "schema_version": "counseling-frameworks/v1",
+  "as_of_date": "2026-09-22",
+  "status": "design-only",
+  "no_total_score": true,
+  "official_certification": false,
+  "sources": [
+    {
+      "id": "kr-process-2021",
+      "publisher": "한국FPSB(문서 발행 당시); 현행 파일 호스트 IFPK",
+      "title": "재무설계 업무수행기준규정",
+      "url": "https://www.ifpk.org/download?attach_file_usn=10651&data_usn=156664",
+      "original_url": "https://www.fpsbkorea.org/download?attach_file_usn=10651&data_usn=156664",
+      "published_at": "2021-12-29",
+      "locator": "PDF 물리2쪽 제3조; 4쪽 제6조⑤; 7쪽 제10~11조; 8~9쪽 제12~14조; 10~11쪽 제17~18조",
+      "verification": "동일 첨부 ID의 12쪽 원문 확인. 표시된 최종 개정일이며 이후 개정 부재는 확인하지 않음.",
+      "rights": "reference-only; 개별 재사용 허락 미확인, 원문·표·번역 전문 미적재",
+      "verified_at": "2026-09-22",
+      "usage": "reference-only",
+      "raw_content_ingested": false,
+      "rights_url": "https://www.ifpk.org/?mnu_usn=4"
+    },
+    {
+      "id": "cfpboard-duties",
+      "publisher": "CFP Board",
+      "title": "Code of Ethics and Standards of Conduct",
+      "url": "https://www.cfp.net/ethics/code-of-ethics-and-standards-of-conduct",
+      "published_at": null,
+      "locator": "Standards A.11, A.14(a)~(c)",
+      "verification": "공식 현행 웹 본문에서 해당 의무 확인",
+      "rights": "reference-only; All rights reserved, Terms of Use §6. 원문 전문·공식 채점표 미적재",
+      "rights_url": "https://www.cfp.net/terms-of-use",
+      "verified_at": "2026-09-22",
+      "usage": "reference-only",
+      "raw_content_ingested": false
+    },
+    {
+      "id": "cfpboard-process",
+      "publisher": "CFP Board",
+      "title": "Practice Standards Reference Guide",
+      "url": "https://www.cfp.net/ethics/compliance-resources/2020/11/practice-standards-reference-guide",
+      "published_at": "2020-11-04",
+      "locator": "공식 링크의 PDF 물리2~7쪽, seven-step process",
+      "verification": "공식 웹 안내 및 연결된 8쪽 PDF 확인",
+      "rights": "reference-only; CFP Board Terms of Use §6, 원문 전문 미적재",
+      "rights_url": "https://www.cfp.net/terms-of-use",
+      "verified_at": "2026-09-22",
+      "usage": "reference-only",
+      "raw_content_ingested": false
+    },
+    {
+      "id": "miti-421",
+      "publisher": "Moyers, Manuel, Ernst; MINT 배포",
+      "title": "Motivational Interviewing Treatment Integrity Coding Manual 4.2.1",
+      "url": "https://motivationalinterviewing.org/sites/default/files/miti4_2.pdf",
+      "published_at": null,
+      "locator": "PDF 물리3~4쪽 표본·목표·global, 13쪽 utterance, 32~33쪽 요약·숙련 한계, 35~36쪽 Appendix A·J.3",
+      "verification": "공식 배포 PDF와 MITI 4.2 페이지 확인. 원문 draft 표시와 배포 페이지의 이용조건을 함께 기록.",
+      "rights": "공식 배포 페이지에 CC non-commercial share-alike 표기. 구체 라이선스 버전·상업 이용과 번역 조건은 미확인. 원문 corpus 적재 없이 자체 관찰항목의 참고만 사용.",
+      "rights_url": "https://motivationalinterviewing.org/miti-42",
+      "verified_at": "2026-09-22",
+      "usage": "reference-only",
+      "raw_content_ingested": false
+    },
+    {
+      "id": "kr-client-checklist",
+      "publisher": "한국재무설계협회(IFPK), 과거 한국FPSB 주소에서 이동",
+      "title": "재무설계와 고객권리 — 재무설계에 대한 만족도는 어떻게 점검하나요?",
+      "url": "https://www.ifpk.org/?mnu_usn=132",
+      "original_url": "https://fpsb-test.hmaster.co.kr/?mnu_usn=132",
+      "published_at": null,
+      "locator": "만족도 체크리스트 번호1~13",
+      "verification": "test 호스트를 근거로 채택하지 않고 과거 fpsbkorea.org 주소의 현행 연결 페이지에서 13문항 확인. 발행일·공식 점수 산식 미표시.",
+      "rights": "reference-only; 개별 원문 재사용 허락 미확인, 번호·주제의 자체 요약만 기록",
+      "verified_at": "2026-09-22",
+      "usage": "reference-only",
+      "raw_content_ingested": false,
+      "rights_url": "https://www.ifpk.org/?mnu_usn=4"
+    },
+    {
+      "id": "cfpb-wellbeing-scale",
+      "publisher": "Consumer Financial Protection Bureau",
+      "title": "Measuring financial well-being: User guide",
+      "url": "https://files.consumerfinance.gov/f/201512_cfpb_financial-well-being-user-guide-scale.pdf",
+      "published_at": null,
+      "locator": "PDF 물리6~7쪽 §2.1, 10~11쪽 §3.3, 12~15쪽 §4.1~4.4, 16쪽 §4.5",
+      "verification": "공식 PDF의 척도 문항·응답·연령·조사 방식에 따른 환산 조건을 검토. 공식 한국어판은 확인하지 못함. 원점수 합산 후 공식 환산표를 사용하며 단순 합계를 공식0~100점으로 쓰지 않는다.",
+      "rights": "CFPB 자체 제작 정보 public domain. 이번 패키지는 원문 문항·환산표를 적재하지 않으며 자체 한국어 설명으로 공식 점수를 산출하지 않음.",
+      "rights_url": "https://www.consumerfinance.gov/privacy/website-privacy-policy/",
+      "verified_at": "2026-09-22",
+      "usage": "reference-only",
+      "raw_content_ingested": false
+    }
+  ],
+  "axes": [
+    {
+      "id": "process",
+      "name": "재무진단 업무 수행",
+      "framework_ids": [
+        "kr-fpsb-six-step"
+      ]
+    },
+    {
+      "id": "explanation",
+      "name": "설명과 기술 사용 근거",
+      "framework_ids": [
+        "cfpboard-communication-technology"
+      ]
+    },
+    {
+      "id": "conversation",
+      "name": "협력과 관점 이해",
+      "framework_ids": [
+        "miti-4.2.1"
+      ]
+    },
+    {
+      "id": "customer-experience",
+      "name": "고객 체감 서비스",
+      "framework_ids": [
+        "kr-client-satisfaction"
+      ]
+    },
+    {
+      "id": "financial-wellbeing",
+      "name": "재무적 안녕",
+      "framework_ids": [
+        "cfpb-financial-wellbeing"
+      ]
+    }
+  ],
+  "frameworks": [
+    {
+      "id": "kr-fpsb-six-step",
+      "axis_id": "process",
+      "source_ids": [
+        "kr-process-2021"
+      ],
+      "name": "한국FPSB 6단계(확인한 2021년 개정본)",
+      "measurement_unit": "합의된 상담 업무·과정, 한 답변의 부분 증거와 구분",
+      "evaluator": "재무진단 범위와 원문을 이해한 검토자",
+      "applicability": "단계1~3의 프로젝트 관찰 항목만 해당 상황에 적용",
+      "limitations": [
+        "AI 자격·공인 준수 판정이 아니다.",
+        "원문6단계와 기존 제품의 자체5업무절차를 합치지 않는다."
+      ],
+      "structure": {
+        "stages": [
+          {
+            "id": 1,
+            "name": "관계정립",
+            "scope": "included"
+          },
+          {
+            "id": 2,
+            "name": "정보수집",
+            "scope": "included"
+          },
+          {
+            "id": 3,
+            "name": "분석·평가",
+            "scope": "included"
+          },
+          {
+            "id": 4,
+            "name": "제안서 작성·제시",
+            "scope": "out-of-scope"
+          },
+          {
+            "id": 5,
+            "name": "실행",
+            "scope": "out-of-scope"
+          },
+          {
+            "id": 6,
+            "name": "모니터링",
+            "scope": "out-of-scope"
+          }
+        ]
+      },
+      "official_scoring_in_this_project": false
+    },
+    {
+      "id": "cfpboard-seven-step",
+      "axis_id": null,
+      "source_ids": [
+        "cfpboard-process"
+      ],
+      "name": "CFP Board 7단계",
+      "measurement_unit": "재무설계 업무 과정",
+      "evaluator": "비교 참고 검토자",
+      "applicability": "reference-only",
+      "limitations": [
+        "한국FPSB6단계와 혼합해 새 공식 프로세스를 만들지 않는다.",
+        "프로젝트 평가 criterion을 이 체계에서 추가하지 않는다."
+      ],
+      "structure": {
+        "stage_count": 7
+      },
+      "official_scoring_in_this_project": false
+    },
+    {
+      "id": "cfpboard-communication-technology",
+      "axis_id": "explanation",
+      "source_ids": [
+        "cfpboard-duties"
+      ],
+      "name": "CFP Board A.11·A.14",
+      "measurement_unit": "고객 설명과 디지털 도구의 선택·활용 근거",
+      "evaluator": "금융 사실 및 기술 검증 자료에 접근하는 검토자",
+      "applicability": "A.11 응답 검토; A.14 도구 사용 시 별도 근거 검토",
+      "limitations": [
+        "전문직 의무의 자체 증거검토이며 공식 점수표가 아니다.",
+        "A.14 전체 충족을 유창한 설명만으로 판정하지 않는다.",
+        "공감이나 숨은 의도 추론은 A.11의 별도 공식 항목이 아니다."
+      ],
+      "structure": {
+        "standards": [
+          "A.11",
+          "A.14(a)",
+          "A.14(b)",
+          "A.14(c)"
+        ]
+      },
+      "official_scoring_in_this_project": false
+    },
+    {
+      "id": "miti-4.2.1",
+      "axis_id": "conversation",
+      "source_ids": [
+        "miti-421"
+      ],
+      "name": "MITI 4.2.1",
+      "measurement_unit": "정해진 관찰 구간의 글로벌 평정과 발화별 코딩",
+      "evaluator": "매뉴얼을 학습하고 코딩을 조율한 사람 평가자",
+      "applicability": "공식 적용은 목표·표본·원문 코딩 조건 확인 후 별도. 현재는 협력·관점 이해의 자체 관찰만 사용.",
+      "limitations": [
+        "현재 짧은 합성 사례에는 공식 MITI 채점·숙련 판정을 하지 않는다.",
+        "목표 행동과 변화 대화가 없는 진단에 기술적 점수·전체 MI 지표를 강요하지 않는다.",
+        "nondirective 적용과 일반 AI 관찰은 별도 명칭을 쓰며 공식 전체 MITI와 구분한다."
+      ],
+      "structure": {
+        "global_rating_range": [
+          1,
+          5
+        ],
+        "global_dimensions": [
+          "Cultivating Change Talk",
+          "Softening Sustain Talk",
+          "Partnership",
+          "Empathy"
+        ],
+        "official_scores_implemented": false
+      },
+      "official_scoring_in_this_project": false
+    },
+    {
+      "id": "kr-client-satisfaction",
+      "axis_id": "customer-experience",
+      "source_ids": [
+        "kr-client-checklist"
+      ],
+      "name": "한국FPSB로 소개된 고객 체크리스트의 현행 IFPK 게시본",
+      "measurement_unit": "고객이 경험한 서비스",
+      "evaluator": "실제 고객 본인",
+      "applicability": "관련 원문 번호별 자기보고, 무응답과 해당없음 구분",
+      "limitations": [
+        "AI나 외부평가자가 고객 만족을 대신 채점하지 않는다.",
+        "실제 누출 부재나 자격 보유는 고객 인식만으로 검증할 수 없다.",
+        "공식 총점·합격선 없음. 임의 합계나 평균을 공인 만족도 점수로 만들지 않는다.",
+        "이해상충 항목5는 상품 추천이 없다고 자동 제외하지 않는다. 항목12는 고객 관리의 서비스 범위가 정해졌을 때 검토하며 세션 기억과 동일시하지 않는다."
+      ],
+      "structure": {
+        "verified_item_count": 13,
+        "primary_item_numbers": [
+          1,
+          2,
+          3,
+          6,
+          7,
+          8,
+          11,
+          13
+        ],
+        "conditional_item_numbers": [
+          4,
+          5,
+          9,
+          10,
+          12
+        ]
+      },
+      "official_scoring_in_this_project": false
+    },
+    {
+      "id": "cfpb-financial-wellbeing",
+      "axis_id": "financial-wellbeing",
+      "source_ids": [
+        "cfpb-wellbeing-scale"
+      ],
+      "name": "CFPB Financial Well-Being Scale",
+      "measurement_unit": "고객의 재무적 안녕에 대한 자기보고",
+      "evaluator": "실제 응답자와 해당 도구 사용 조건을 확인한 조사 담당자",
+      "applicability": "유효한 언어판·공식 문항/응답·연령/조사 방식 확인 후 별도 조사",
+      "limitations": [
+        "답변 품질, 즉시 안심, 고객 프로필에서 공식 점수를 추정하지 않는다.",
+        "공식 한국어판 미확인. 자체 번역·발췌 문항으로 공식0~100점 환산 금지.",
+        "공식 절대 합격선이나 이 패키지의 채점 엔진은 없다.",
+        "변화 주장에는 비교 가능한 반복 측정이, AI의 인과 효과 주장에는 추가 연구 설계가 필요하다."
+      ],
+      "structure": {
+        "standard_item_count": 10,
+        "official_score_range": [
+          0,
+          100
+        ],
+        "official_scores_implemented": false
+      },
+      "official_scoring_in_this_project": false
+    }
+  ],
+  "criteria": [
+    {
+      "id": "kr-1-scope",
+      "axis_id": "process",
+      "framework_id": "kr-fpsb-six-step",
+      "source_locator": "제3조 단계1·제6조",
+      "kind": "project-evidence-check",
+      "project_check": "고객 기대와 진단 범위를 맞추고 자격·수행 가능한 일을 과장하지 않는가",
+      "required_evidence": [
+        "현재 요청",
+        "범위 안내",
+        "실제 기능 계약"
+      ],
+      "process_stage": 1
+    },
+    {
+      "id": "kr-2-goals",
+      "axis_id": "process",
+      "framework_id": "kr-fpsb-six-step",
+      "source_locator": "제3조 단계2",
+      "kind": "project-evidence-check",
+      "project_check": "고객이 말한 목표·우선순위와 추정한 동기를 구분하고 정정을 반영하는가",
+      "required_evidence": [
+        "관련 대화",
+        "고객 이해 문단의 전후 상태"
+      ],
+      "process_stage": 2
+    },
+    {
+      "id": "kr-2-data",
+      "axis_id": "process",
+      "framework_id": "kr-fpsb-six-step",
+      "source_locator": "제3조 단계2",
+      "kind": "project-evidence-check",
+      "project_check": "판단에 필요한 정량·정성 정보의 누락과 충돌을 구분하고 필요한 것만 확인하는가",
+      "required_evidence": [
+        "입력·누락 상태",
+        "관련 대화",
+        "검증 결과"
+      ],
+      "process_stage": 2
+    },
+    {
+      "id": "kr-3-analysis",
+      "axis_id": "process",
+      "framework_id": "kr-fpsb-six-step",
+      "source_locator": "제10~11조",
+      "kind": "project-evidence-check",
+      "project_check": "고객 목표와 확인된 분석을 연결하고 조건·한계를 유지하는가",
+      "required_evidence": [
+        "목표와 우선순위",
+        "검증된 보고서",
+        "적용 가정"
+      ],
+      "process_stage": 3
+    },
+    {
+      "id": "a11-accuracy",
+      "axis_id": "explanation",
+      "framework_id": "cfpboard-communication-technology",
+      "source_locator": "A.11",
+      "kind": "project-evidence-check",
+      "project_check": "수치·조건·확인 여부를 보존하고 미확인 해석을 사실로 만들지 않는가",
+      "required_evidence": [
+        "실제 응답",
+        "허용된 근거·검증 데이터"
+      ],
+      "process_stage": null
+    },
+    {
+      "id": "a11-scope",
+      "axis_id": "explanation",
+      "framework_id": "cfpboard-communication-technology",
+      "source_locator": "A.11",
+      "kind": "project-evidence-check",
+      "project_check": "요청과 합의 범위 안에서 답하며 허용되지 않은 실행·보장을 하지 않는가",
+      "required_evidence": [
+        "실제 응답",
+        "요청과 기능 범위"
+      ],
+      "process_stage": null
+    },
+    {
+      "id": "a11-response",
+      "axis_id": "explanation",
+      "framework_id": "cfpboard-communication-technology",
+      "source_locator": "A.11",
+      "kind": "project-evidence-check",
+      "project_check": "질문을 해결하고 이미 확인된 내용을 불필요하게 다시 묻지 않는가",
+      "required_evidence": [
+        "원 질문·이전 맥락",
+        "실제 응답"
+      ],
+      "process_stage": null
+    },
+    {
+      "id": "a11-clarity",
+      "axis_id": "explanation",
+      "framework_id": "cfpboard-communication-technology",
+      "source_locator": "A.11",
+      "kind": "project-evidence-check",
+      "project_check": "필요한 용어·가정·다음 확인 이유를 고객이 이해할 수 있는 표현으로 전달하는가",
+      "required_evidence": [
+        "실제 응답",
+        "고객이 밝힌 이해 수준·설명 선호"
+      ],
+      "process_stage": null
+    },
+    {
+      "id": "a14-care",
+      "axis_id": "explanation",
+      "framework_id": "cfpboard-communication-technology",
+      "source_locator": "A.14(a)",
+      "kind": "project-evidence-check",
+      "project_check": "해당 과업에 사용한 도구와 사용 범위의 선택 근거가 확인되는가",
+      "required_evidence": [
+        "도구 선택 근거",
+        "실행 또는 설계 검토 artifact"
+      ],
+      "process_stage": null
+    },
+    {
+      "id": "a14-assumptions",
+      "axis_id": "explanation",
+      "framework_id": "cfpboard-communication-technology",
+      "source_locator": "A.14(b)",
+      "kind": "project-evidence-check",
+      "project_check": "계산 가정·기준시점·출력의 의미를 실제 도구 결과와 맞게 설명하는가",
+      "required_evidence": [
+        "실제 응답",
+        "도구 가정·기준일·검증된 결과"
+      ],
+      "process_stage": null
+    },
+    {
+      "id": "a14-reliability",
+      "axis_id": "explanation",
+      "framework_id": "cfpboard-communication-technology",
+      "source_locator": "A.14(c)",
+      "kind": "project-evidence-check",
+      "project_check": "도구의 신뢰성·객관성·과업 적합성을 뒷받침하는 검증 자료가 있는가",
+      "required_evidence": [
+        "관련 테스트·검증 보고서",
+        "도구·정책 버전",
+        "검증 한계"
+      ],
+      "process_stage": null
+    },
+    {
+      "id": "custom-partnership",
+      "axis_id": "conversation",
+      "framework_id": "miti-4.2.1",
+      "source_locator": "Partnership·§J.3 참고",
+      "kind": "project-evidence-check",
+      "project_check": "고객의 선택권을 보존하고 AI 제안이나 가족에 대한 간접 진술을 합의로 바꾸지 않는가",
+      "required_evidence": [
+        "관련 대화 구간",
+        "실제 응답"
+      ],
+      "process_stage": null
+    },
+    {
+      "id": "custom-empathy",
+      "axis_id": "conversation",
+      "framework_id": "miti-4.2.1",
+      "source_locator": "Empathy·§J.3 참고",
+      "kind": "project-evidence-check",
+      "project_check": "고객이 말한 걱정의 의미를 정확히 반영하며 숨은 의도를 확인 없이 단정하지 않는가",
+      "required_evidence": [
+        "관련 대화 구간",
+        "실제 응답",
+        "고객의 정정"
+      ],
+      "process_stage": null
+    }
+  ],
+  "scope": {
+    "included_process_stages": [
+      1,
+      2,
+      3
+    ],
+    "excluded_process_stages": [
+      4,
+      5,
+      6
+    ],
+    "notes": [
+      "범위 선택은 현재 제품에 대한 프로젝트 해석이며 규정 자체가 AI에 단계1~3만 적용된다고 정한 것이 아니다.",
+      "진단 결과 설명·지원되는 가정 비교는 단계4의 선택한 실행전략에 따른 권고안 작성·제시와 구분한다. 권고안은 단일 행위일 수도 있어 복잡성이나 상품 수로 범위를 나누지 않는다.",
+      "세션 정정·재진단은 단계6의 지속적 사후 모니터링 계약과 구분한다.",
+      "기존 승인 corpus의 자체5절 업무수행 안내를 원본6단계와 동일한 공식 체계로 바꾸지 않는다."
+    ]
+  },
+  "comparison": {
+    "baseline_variant_id": "baseline-aggregation-rag",
+    "variant_ids": [
+      "control-current-response",
+      "baseline-aggregation-rag",
+      "aggregation-rag-with-understanding",
+      "generation-stage-rag"
+    ],
+    "hold_constant": [
+      "같은 26개 사례·검증된 재무 입력·보고서·허용 출처 버전",
+      "같은 모델·디코딩 설정과 재현 가능한 실행 기록",
+      "변형마다 의도한 상담 근거·문단·주입 시점의 차이만 분리"
+    ],
+    "procedure": [
+      "대조군과 병합 baseline, 병합 baseline과 문단 추가 변형, 병합 baseline과 생성 단계 RAG를 각각 대응 비교한다.",
+      "익명화하고 순서를 무작위화한 실제 응답을 검토자가 독립 검토하고 불일치 이유를 조율한다.",
+      "관찰 기회가 없는 항목은 해당 없음, 근거가 없으면 미관찰로 남긴다. 둘을 실패나 0점으로 합치지 않는다.",
+      "한 턴의 부분 증거에서 전체 업무 준수·공식 자격·고객 만족·재무안녕을 추정하지 않는다.",
+      "기존 제품 회귀·정확성·세션 경계 검사는 별도 유지하며 공감으로 상쇄하지 않는다.",
+      "지연·호출·비용·AX 행동 지표는 각자의 기존 측정 계약으로 별도 기록한다."
+    ],
+    "official_or_combined_score": false
+  },
+  "corrections_to_supplied_material": [
+    "만족도 체크리스트의 현행 연결 페이지는 13문항이다. 누락된 11~13번을 보존하며 게시 기관과 문서 발행 당시 기관을 구분한다.",
+    "MITI는 통상 정해진 표본 구간을 코딩한다. 단순 1턴에 전체 MITI 점수를 붙이지 않는다.",
+    "프로젝트의 CFPB 한국어 설명은 공식 검증판이 아니므로 공식 환산의 입력으로 사용하지 않는다."
+  ],
+  "evaluation_states": [
+    "not-observed",
+    "supported",
+    "concern",
+    "not-applicable"
+  ],
+  "measured_outcomes": null
+}

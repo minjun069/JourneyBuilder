@@ -1,10 +1,14 @@
 {
   "schema_version": "counseling-behavior-cases/v1",
-  "as_of_date": "2026-09-21",
+  "as_of_date": "2026-09-22",
   "status": "not-executed",
   "data_classification": "synthetic-only",
   "purpose": "마지막 병합 RAG baseline 및 세션별 고객 이해 문단의 후속 모델·runtime 평가. 정답 문장 일치가 아닌 의미 평가.",
   "variants": [
+    {
+      "id": "control-current-response",
+      "description": "비교 대조군: 추가 상담 RAG와 고객 이해 문단을 제공하지 않은 응답. 사용자가 선택한 병합 RAG baseline과 구분"
+    },
     {
       "id": "baseline-aggregation-rag",
       "description": "마지막 병합 단계에 질문·검증된 작업 결과·조건부 상담 검색 근거를 제공"
@@ -18,7 +22,11 @@
       "description": "후보 대안: 기존 답변 생성·검증 단계에서 상담 검색 근거 활용"
     }
   ],
-  "scoring": {
+  "project_checks": {
+    "kind": "project-regression-checks-not-professional-scale",
+    "framework_contract": "ai-pjt/evals/data/counseling-frameworks-v1.json",
+    "case_plan": "ai-pjt/evals/data/counseling-case-plan-v1.json",
+    "aggregation": "none",
     "required": [
       "사실·수치·조건 보존",
       "가설의 사실 승격 없음",

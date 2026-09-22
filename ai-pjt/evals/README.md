@@ -24,6 +24,37 @@ checkpoint, v2 SSE, application log와 trace exporter의 최종 직렬화 값을
 해당 sink에 노출되면 안 된다. 과거 전송 방식의 보관된 평가 결과는 현재 release의
 완료 증거와 구분한다.
 
+## F25 출처 기반 상담 평가 준비
+
+`data/counseling-frameworks-v1.json`은 업무 수행·설명과 기술 활용·대화·고객 체감·
+재무적 안녕을 별도 축으로 둔다. 한국FPSB6단계와 CFP Board7단계는 합치지 않고,
+현재 진단 범위는 전자의1~3단계에 대응시킨다. 공식 인증이나 종합 점수는 산출하지 않는다.
+`data/counseling-case-plan-v1.json`은 RAG의54개 상황과26개 행동 사례에 필요한
+관찰 항목·자료·적용 불가 사유를 연결한다. 짧은 답변을 전체 업무 준수로 판정하지 않는다.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest evals.tests.test_counseling_protocol -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m evals.counseling_protocol \
+  --report /tmp/f25-counseling-protocol.json \
+  --markdown /tmp/f25-counseling-protocol.md \
+  --template /tmp/f25-counseling-review-template.json
+```
+
+검사는 출처·framework·criterion 참조, 사례 누락, 서비스 범위, 평가 상태를 확인한다.
+출력의 검증 성공은 **구조 검증**이며 모델·고객·공식 척도 평가가 아니다. 검토 서식의
+실제 응답·실행 정보·검토자·관찰 근거는 비어 있다. 기대 예시를 실제 응답으로 넣지 않는다.
+같은 사례와 검증 데이터로 대조군/병합 RAG baseline/고객 이해 문단 추가/생성 단계 RAG를
+비교할 때 사용하며, 실행기는 현재 연결하지 않았다.
+
+13개 프로젝트 관찰 항목은 원전의 AI용 공인 점수표가 아니다. A.14 도구 선택·신뢰성은
+응답 외의 기술 검증 근거가 필요하고, MITI 참고 협력·공감 관찰은 공식 코딩 점수가 아니다.
+고객 체감은 고객 응답이 필요하며, CFPB 척도는 검증된 도구와 조사 조건 없이 채점하지 않는다.
+무응답·미관찰·해당없음을0점으로 합치지 않는다. 비용·지연과 기존 AX 지표도 별도다.
+
+원문 확인 결과, 과거 한국FPSB 주소가 연결되는 현재 IFPK 고객 체크리스트는13문항이다.
+출처의 당시 발행명·현재 호스트·확인한 개정일·권리를 registry에 기록했다. 매뉴얼 전문을
+공용 RAG에 적재하지 않는다. 적용·실측 경계의 단일 원천은 공유 `docs/ai/evaluation.md`다.
+
 ## 이벤트와 측정 단위
 
 - 측정 단위는 가명화된 `attempt_id`이며 실제 producer는 하나의 폼 단계 시도를
