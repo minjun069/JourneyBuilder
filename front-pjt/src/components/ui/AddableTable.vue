@@ -1,5 +1,6 @@
 <script setup>
 import { createSecureUuid } from '@/utils/secureUuid'
+import { toCanonicalMoney } from '@/utils/canonicalMoney'
 
 const props = defineProps({
   modelValue: { type: Array, required: true },
@@ -50,6 +51,16 @@ function isDisabled(row, col) {
 function toggleFreqNone(row, col) {
   const f = row[col.key]
   if (f) f.none = !f.none
+}
+
+// 원 단위 칸은 저장될 금액을 바로 읽어 준다. 10,000배 오입력을 입력 시점에 드러내는 것이 목적이다.
+function moneyPreview(row, col) {
+  if (col.unit !== '원' || isDisabled(row, col)) return ''
+  const raw = row[col.key]
+  if (raw === '' || raw == null) return ''
+  const won = toCanonicalMoney(raw)
+  if (won == null || !Number.isFinite(won)) return ''
+  return `${won.toLocaleString('ko-KR')}원`
 }
 </script>
 
@@ -123,18 +134,21 @@ function toggleFreqNone(row, col) {
                 </template>
               </div>
 
-              <div v-else class="cell-field">
-                <input
-                  class="cell-input"
-                  :class="{
-                    'cell-input--right': col.align === 'right',
-                    'cell-input--disabled': isDisabled(row, col),
-                  }"
-                  v-model="row[col.key]"
-                  :placeholder="isDisabled(row, col) ? '—' : (col.placeholder ?? '')"
-                  :disabled="isDisabled(row, col)"
-                />
-                <span v-if="col.unit" class="cell-unit">{{ col.unit }}</span>
+              <div v-else class="cell-wrap">
+                <div class="cell-field">
+                  <input
+                    class="cell-input"
+                    :class="{
+                      'cell-input--right': col.align === 'right',
+                      'cell-input--disabled': isDisabled(row, col),
+                    }"
+                    v-model="row[col.key]"
+                    :placeholder="isDisabled(row, col) ? '—' : (col.placeholder ?? '')"
+                    :disabled="isDisabled(row, col)"
+                  />
+                  <span v-if="col.unit" class="cell-unit">{{ col.unit }}</span>
+                </div>
+                <span v-if="moneyPreview(row, col)" class="cell-preview">{{ moneyPreview(row, col) }}</span>
               </div>
 
             </td>
@@ -194,7 +208,14 @@ tbody td:last-child { border-right: none; }
 }
 
 /* ── 기본 text 입력 ── */
+.cell-wrap { width: 1px; min-width: 100%; }
+
 .cell-field { display: flex; align-items: baseline; gap: 3px; width: 1px; min-width: 100%; }
+
+.cell-preview {
+  display: block; margin-top: 1px; font-size: 10px; color: #9498b5;
+  text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
 .cell-unit { font-size: 11px; font-weight: 600; color: #9498b5; white-space: nowrap; flex-shrink: 0; }
 

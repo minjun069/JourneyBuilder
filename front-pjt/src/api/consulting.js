@@ -197,12 +197,12 @@ export function mapRealEstateAssets(form) {
     ...persistedIdentity(a),
     type:                 str(a.type),
     name:                 str(a.name),
-    current_value:        money(a.value, 'eok'),
-    acquisition_price:    money(a.purchase, 'eok'),
+    current_value:        money(a.value),
+    acquisition_price:    money(a.purchase),
     acquisition_date:     str(a.date),
     monthly_rental_income:money(a.monthly),
     rental_deposit:       money(a.deposit),
-    secured_loan:         money(a.loan, 'eok'),
+    secured_loan:         money(a.loan),
   }))
 }
 
@@ -211,7 +211,7 @@ export function mapLiabilities(form) {
     ...persistedIdentity(a),
     type:              str(a.type),
     name:              str(a.name),
-    balance:           money(a.value, 'eok'),
+    balance:           money(a.value),
     interest_rate:     num(a.rate),
     rate_type:         str(a.rateType),
     base_rate:         str(a.baseRate),
@@ -274,7 +274,7 @@ export function mapGoalMilestones(form) {
         age:      num(m.age),
         category: str(m.category),
         content:  str(m.content),
-        amount:   money(m.amount, 'eok'),
+        amount:   money(m.amount),
         note:     str(m.note),
       })
     }

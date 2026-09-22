@@ -141,7 +141,7 @@ export function readCanonicalValue(currentForm, change) {
 
 function uiValue(field, value) {
   if (field === 'is_fixed' && typeof value === 'boolean') return value ? '고정' : '변동'
-  if (field === 'monthly_income' && typeof value === 'number') return value / 10000
+  // 금액은 AI·서버·화면이 모두 원 단위다. monthly_income 만 만 단위로 내리던 예외를 제거했다.
   return value
 }
 
