@@ -3,6 +3,11 @@ import { computed } from 'vue'
 import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
 
+// 글에 첨부된 스냅샷을 받는다. 없으면 기존처럼 store 를 본다(대시보드·AI 화면 동작 유지)
+const props = defineProps({
+  data: { type: Object, default: null },
+})
+
 const reportStore = useReportStore()
 
 const ASSET_VISUAL = {
@@ -18,7 +23,7 @@ const LIABILITY_VISUAL = {
   long:  { icon: '🏚', accent: '#ef4444' },
 }
 
-const bs = computed(() => reportStore.reports?.asset_statement)
+const bs = computed(() => props.data ?? reportStore.reports?.asset_statement)
 
 const assetGroups      = computed(() =>
   (bs.value?.asset_groups ?? []).map(g => ({ ...g, ...ASSET_VISUAL[g.key] }))

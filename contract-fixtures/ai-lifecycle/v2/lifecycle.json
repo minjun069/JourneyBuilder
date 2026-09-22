@@ -484,6 +484,39 @@
         }
       }
     },
+    "terminal_completed_presentation_entry": {
+      "category": "normal",
+      "boundary": "django_to_browser_sse",
+      "terminal_payload": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture_presentation_001",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "status": "completed",
+        "completed_at": "2026-09-21T06:00:42Z",
+        "output": {
+          "response": "보고서의 핵심을 안내합니다.",
+          "step_id": "lifetime-cashflow",
+          "presentation_entry_status": "succeeded"
+        }
+      },
+      "browser_event": {
+        "event": "done",
+        "data": {
+          "contract_version": "2.0",
+          "request_id": "ai_req_fixture_presentation_001",
+          "status": "completed",
+          "message": {
+            "id": 12,
+            "role": "assistant",
+            "content": "보고서의 핵심을 안내합니다.",
+            "extracted_data": {
+              "presentation_entry_status": "succeeded"
+            }
+          }
+        }
+      }
+    },
     "terminal_missing_status": {
       "category": "missing",
       "boundary": "ai_to_django_sse",

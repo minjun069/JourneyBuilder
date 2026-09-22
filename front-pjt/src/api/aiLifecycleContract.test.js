@@ -21,3 +21,16 @@ test('공용 lifecycle fixture는 모든 필수 범주와 v2 version을 유지�
   }
   assert.equal(AI_CONTRACT_VERSION, fixture.contract_version)
 })
+
+test('Presentation 완료 fixture는 검증된 성공 표식을 Browser에 전달한다', () => {
+  const presentation = fixture.cases.terminal_completed_presentation_entry
+
+  assert.equal(
+    presentation.terminal_payload.output.presentation_entry_status,
+    'succeeded',
+  )
+  assert.equal(
+    presentation.browser_event.data.message.extracted_data.presentation_entry_status,
+    'succeeded',
+  )
+})

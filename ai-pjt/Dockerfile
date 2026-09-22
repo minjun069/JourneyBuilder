@@ -20,6 +20,10 @@ COPY --chown=app:app contract-fixtures/ai-lifecycle/v2/step-registry.json \
 COPY --chown=app:app contract-fixtures/financial-calculation/v1/policy.json \
     ./contract-fixtures/financial-calculation/v1/policy.json
 
+# CI unit tests mount the repository at /src, so verify static Agent assets in
+# the image's real /app layout before the image can be promoted.
+RUN python runtime_assets.py
+
 ARG APP_RELEASE=local
 ENV LANGFUSE_RELEASE=${APP_RELEASE}
 LABEL org.opencontainers.image.revision=${APP_RELEASE}
