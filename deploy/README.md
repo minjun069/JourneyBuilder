@@ -230,9 +230,11 @@ Git 증거는 `ai-pjt/evals/artifacts/f14-rollback-rehearsal.json`이 소유한�
 배포 이미지의 `ai-pjt/rag/artifacts/official__*.tar.gz` 중 checksum·qualification 검증을
 통과한 가장 높은 catalog semantic version을 `rag-bootstrap` one-shot이 선택한다. 같은
 physical index가 이미 있으면 byte-equivalent 여부를 확인해 재사용하고, 두 collection을
-한 transaction에서 활성화한다. 이 작업이 exit 0으로 끝나야 `ai-pjt`가 시작한다. 현재
-저장소에는 catalog 2.1.0 공식 artifact만 있으므로 2.2.0 파일이 RAG 담당자에 의해 생성·
-커밋되기 전까지는 2.1.0을 멱등하게 유지한다.
+한 transaction에서 활성화한다. production override는 이어서 pending 상담 후보 1.1.0의
+37개 카드를 실제 Gemini로 색인하고 독립 experiment pointer를 활성화한다. 사용자 긴급
+요청에 따라 이 배포 단계에서는 운영 승인과 50문항 재평가를 생략하며 pending 상태를
+그대로 로그에 남긴다. 이 one-shot이 exit 0으로 끝나야 `ai-pjt`가 시작한다. 현재 최신
+공식 artifact는 catalog 2.2.0이고 상담 후보는 공식 artifact에 합치지 않는다.
 
 - **재배포(코드 변경 없음, env 만 바뀐 경우)**: master 최신 파이프라인의 `deploy:production` 잡을 GitLab 에서 Retry. 또는 서버에서 러너 체크아웃 디렉터리로 가서 `bash deploy/deploy.sh --no-build`
 - **특정 서비스만 재기동·강제 재생성** (예: LLM 키 입력·회전 후의 ai-pjt): 러너 체크아웃에서 아래 형태로 실행한다
@@ -244,7 +246,7 @@ physical index가 이미 있으면 byte-equivalent 여부를 확인해 재사용
   - **`--project-name s15p21b109` 을 빼면 안 된다.** compose 는 프로젝트 이름을 현재 디렉터리 이름에서 정하므로, 홈에서 실행하면 프로젝트 `ubuntu` 로 운영 스택과 별개인 중복 컨테이너를 만들려 든다(`web` 이 `127.0.0.1:8080` 을 물어 포트 충돌). `deploy.sh` 가 이름을 고정하는 것과 같은 이유다
   - `app.env` 가 root:gitlab-runner 640, `/home/gitlab-runner` 가 0700 이라 `ubuntu` 계정은 `cd` 까지 `sudo` 안에서 해야 한다. deploy 잡을 Retry 하면 러너 권한으로 돌아 sudo 가 필요 없다
   - **`web`·`backend` 를 대상으로 할 때는 `migrate` 를 함께 지정한다** (`up -d --force-recreate --no-build migrate backend web`). `backend` 가 `migrate: service_completed_successfully` 에 의존해서 compose 가 기존 migrate 컨테이너를 *재생성이 아니라 기동*하려 드는데, 그 컨테이너가 참조하는 이미지가 사라진 상태면 `No such image` 로 명령 전체가 실패한다 (2026-09-11 실측)
-  - **`ai-pjt`를 대상으로 할 때는 `rag-bootstrap`을 함께 지정한다.** AI healthcheck가 두 active RAG index와 chunk 존재를 요구하므로 bootstrap을 건너뛴 강제 재생성은 정상 상태가 아니다
+  - **`ai-pjt`를 대상으로 할 때는 `rag-bootstrap`을 함께 지정한다.** production AI healthcheck가 공식 두 index와 상담 후보 pointer·chunk를 요구하므로 bootstrap을 건너뛴 강제 재생성은 정상 상태가 아니다
   - `--no-build` 를 붙이면 기존 `:latest` 를 그대로 써서 재빌드를 피하고, 이미지가 없을 때 조용히 빌드로 넘어가지 않고 즉시 실패한다. root 로 실행하므로 러너 체크아웃에 root 소유 파일을 남기지 않는 편이 안전하다(다음 잡의 `git clean` 이 깨진다)
 - **주의**: `master` 는 보호 브랜치이고(push·merge 는 Maintainer, force push 금지) **"파이프라인 통과 시 머지" 조건도 2026-09-10 에 켰다**(`only_allow_merge_if_pipeline_succeeds=true` — 아래 「master 머지 조건」 절). 빨간불 MR 이 막히는 것과 별개로, **테스트가 잡지 못하는 결함은 그대로 배포된다.** `deploy:production` 은 `rules` 상 MR 파이프라인에 존재하지 않으므로 빌드·헬스체크·롤백 전 과정은 머지 후에야 처음 실행된다
 - 검증 기록(2026-09-08, 서버): 기능 브랜치에서 `when: manual` 로 실행. 1차(파이프라인 #183374) 2초 실패 — 첫 배포 경로 `PREV: unbound variable` → deploy.sh 수정. 2차(파이프라인 #183408, 잡 #495972) **62초 성공**: 이미지 3종 빌드 → postgres·redis healthy → migrate 완료 → backend healthy → web healthy → 8080 200 → last_good 4개 기록. `https://j15b109.p.ssafy.io` 502 → **200**. ai-pjt 는 `GOOGLE_API_KEY is required` 로 재시작 반복(예상된 상태, LLM 키 조합 확정 후 입력). 호스트 노출 포트는 22/80/443 과 127.0.0.1 의 8080/8081 만

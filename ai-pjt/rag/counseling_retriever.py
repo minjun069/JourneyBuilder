@@ -153,21 +153,19 @@ class CounselingCardChunker:
         return chunks
 
 
-def _validate_active_index(
+def validate_counseling_candidate_index(
     *,
     store: IndexStore,
+    physical_collection: str,
     embedding_model: str,
     embedding_dimensions: int,
     manifest_path: Path,
     repository_root: Path,
 ) -> tuple[IndexManifest, CandidateCorpus]:
     corpus = load_candidate(manifest_path, repository_root=repository_root)
-    physical = store.active_collection(COUNSELING_CANDIDATE_COLLECTION)
-    if physical is None:
-        raise RuntimeError("counseling candidate has no active index")
-    manifest = store.get_manifest(physical)
-    if manifest is None or manifest.physical_collection != physical:
-        raise RuntimeError("active counseling candidate manifest is missing")
+    manifest = store.get_manifest(physical_collection)
+    if manifest is None or manifest.physical_collection != physical_collection:
+        raise RuntimeError("counseling candidate manifest is missing")
     expected_sources = tuple(sorted(
         (document.metadata.source_id, document.metadata.version)
         for document in corpus.documents
@@ -188,7 +186,7 @@ def _validate_active_index(
         raise RuntimeError("active counseling candidate manifest is incompatible")
 
     allowed = dict(expected_sources)
-    chunks = store.list_chunks(physical)
+    chunks = store.list_chunks(physical_collection)
     if len(chunks) != manifest.chunk_count:
         raise RuntimeError("active counseling candidate chunk count is inconsistent")
     for embedded in chunks:
@@ -208,6 +206,27 @@ def _validate_active_index(
         ):
             raise RuntimeError("active counseling candidate contains an unsafe chunk")
     return manifest, corpus
+
+
+def _validate_active_index(
+    *,
+    store: IndexStore,
+    embedding_model: str,
+    embedding_dimensions: int,
+    manifest_path: Path,
+    repository_root: Path,
+) -> tuple[IndexManifest, CandidateCorpus]:
+    physical = store.active_collection(COUNSELING_CANDIDATE_COLLECTION)
+    if physical is None:
+        raise RuntimeError("counseling candidate has no active index")
+    return validate_counseling_candidate_index(
+        store=store,
+        physical_collection=physical,
+        embedding_model=embedding_model,
+        embedding_dimensions=embedding_dimensions,
+        manifest_path=manifest_path,
+        repository_root=repository_root,
+    )
 
 
 class CounselingRetriever:

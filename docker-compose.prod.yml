@@ -48,6 +48,9 @@ services:
 
   rag-bootstrap:
     <<: *logging
+    environment:
+      # 긴급 운영 요청: 공식 두 index 뒤 pending 상담 후보를 재평가 없이 별도 pointer로 활성화한다.
+      AI_COUNSELING_RAG_ENABLED: "true"
 
   ai-pjt:
     <<: [*restart, *logging]
@@ -61,6 +64,7 @@ services:
     environment:
       GOOGLE_GEMINI_BASE_URL: "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
       EMBEDDING_MODEL: "gemini-embedding-2"
+      AI_COUNSELING_RAG_ENABLED: "true"
 
   # gateway 는 루트 compose 에만 있어 여태 restart 정책이 없었다(도커 기본값 no).
   # 죽으면 사람이 올릴 때까지 /api 전체가 내려간다 — 상시 서비스이므로 다른 것과 같이 붙인다 (S15P21B109-128).

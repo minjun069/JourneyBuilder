@@ -140,6 +140,16 @@ context precision@5 `0.5170`, provenance `1.0000`, 무관 질문 6개의 false e
 collection leakage `0`으로 PASS했다. 이는 검색 실측이며 상담 응답 품질이나 AX 개선,
 운영 corpus 승인을 뜻하지 않는다.
 
+### 긴급 production bootstrap
+
+2026-09-22 명시적 긴급 운영 요청에 따라 production Compose는 상담 opt-in을 `true`로
+고정한다. `rag-bootstrap`은 공식 artifact의 두 pointer를 먼저 복원한 뒤 후보 1.1.0의
+37개 카드를 실제 Gemini로 멱등 색인하고 별도 experiment pointer를 활성화한다. 배포마다
+50문항을 다시 실행하거나 운영 승인 상태로 바꾸지 않으며 bootstrap 결과에
+`evaluation=skipped-by-explicit-production-request`, `acceptance=pending`을 남긴다.
+공식 두 pointer가 바뀌거나 후보 원문·manifest·청크·모델·차원 검증이 실패하면 one-shot과
+AI readiness가 실패해 기존 배포 rollback 경로로 들어간다.
+
 다음 명령은 활성 개발 DB와 Gemini 설정을 사용하는 실제 후보 검색 및 mock 회귀를 확인한다.
 
 ```bash
