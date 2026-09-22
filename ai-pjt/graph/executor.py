@@ -77,6 +77,9 @@ async def execute_route_plan(
     request_id: str,
     instrumentation: BoundRuntimeInstrumentation,
     response_composer: AggregateComposer | None = None,
+    counseling_enricher: AggregateComposer | None = None,
+    question: str = "",
+    conversation_context: Mapping[str, Any] | None = None,
 ) -> ExecutionReport:
     """Run validated tasks in source order and pass only explicit bindings.
 
@@ -430,6 +433,46 @@ async def execute_route_plan(
                         step_id=step_id,
                         field_registry=field_registry,
                     )
+        if (
+            counseling_enricher is not None
+            and task_results
+            and not has_execution_failure
+            and plan.get("outcome_reason") is None
+        ):
+            # Optional counseling never owns task values, actions or request success.
+            verified_output = deepcopy(output)
+            try:
+                with (
+                    bind_operation_recorder(instrumentation.record_operation),
+                    bind_model_call_recorder(instrumentation.record_model_call),
+                    bind_prompt_trace_sink(instrumentation.record_prompt_invocation),
+                ):
+                    enriched = await counseling_enricher(
+                        output=deepcopy(verified_output),
+                        step_id=step_id,
+                        question=question,
+                        conversation_context=deepcopy(dict(conversation_context or {})),
+                        task_types=tuple(
+                            str(task.get("type", "")) for task in aggregate_tasks
+                        ),
+                    )
+                original_response = str(verified_output.get("response", ""))
+                enriched_response = enriched.get("response")
+                if not isinstance(enriched_response, str) or not (
+                    enriched_response == original_response
+                    or enriched_response.startswith(original_response + "\n\n")
+                ):
+                    raise ValueError("counseling must preserve the verified response")
+                output = {**verified_output, "response": enriched_response}
+            except Exception as error:  # cancellation must propagate to the request owner
+                logger.warning(
+                    "counseling enrichment failed; verified response retained",
+                    extra={
+                        "event": "counseling_enrichment_fallback",
+                        "error_type": type(error).__name__,
+                    },
+                )
+                output = verified_output
     except Exception as error:
         logger.error(
             "aggregation raised",

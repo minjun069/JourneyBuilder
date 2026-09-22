@@ -73,6 +73,12 @@ services:
     command: ["python", "-m", "rag.bootstrap"]
     environment:
       DATABASE_URL: "${DATABASE_URL:?DATABASE_URL is required}"
+      EMBEDDING_PROVIDER: "gemini"
+      EMBEDDING_MODEL: "gemini-embedding-2"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:?GOOGLE_API_KEY is required}"
+      GOOGLE_GEMINI_BASE_URL: "https://gms.ssafy.io/gmsapi/generativelanguage.googleapis.com"
+      EMBED_DIM: "3072"
+      AI_COUNSELING_RAG_ENABLED: "${AI_COUNSELING_RAG_ENABLED:-false}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -136,10 +142,14 @@ services:
       AI_CONTEXT_EMBEDDING_BATCH_SIZE: "${AI_CONTEXT_EMBEDDING_BATCH_SIZE:-8}"
       RAG_FINANCIAL_COLLECTION: "financial-knowledge"
       RAG_INTERFACE_COLLECTION: "interface-guides"
+      RAG_COUNSELING_COLLECTION: "counseling-candidate"
       RAG_TOP_K: "${RAG_TOP_K:-5}"
       RAG_FETCH_K: "${RAG_FETCH_K:-10}"
       RAG_MIN_DENSE_SCORE: "${RAG_MIN_DENSE_SCORE:-0.54}"
+      RAG_COUNSELING_MIN_DENSE_SCORE: "0.54"
       RAG_INDEX_RETENTION_DAYS: "${RAG_INDEX_RETENTION_DAYS:-30}"
+      AI_COUNSELING_RAG_ENABLED: "${AI_COUNSELING_RAG_ENABLED:-false}"
+      AI_COUNSELING_RAG_TIMEOUT_SECONDS: "${AI_COUNSELING_RAG_TIMEOUT_SECONDS:-12}"
       EMBED_DIM: "3072"
       READINESS_HTTP_URL: http://127.0.0.1:8001/api/system/v1/health
       READINESS_TIMEOUT_SECONDS: "${READINESS_TIMEOUT_SECONDS:-2}"

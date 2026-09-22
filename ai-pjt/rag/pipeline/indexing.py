@@ -25,6 +25,7 @@ OPERATIONAL_COLLECTIONS = {
     "financial-knowledge": "financial-knowledge",
     "interface-guides": "interface-guide",
 }
+COUNSELING_CANDIDATE_COLLECTION = "counseling-candidate"
 _TOKEN_PATTERN = re.compile(r"[0-9A-Za-z가-힣_]+")
 _MARKDOWN_HEADING = re.compile(r"(?m)^#{1,6}\s+(.+?)\s*$")
 _PRODUCT_TERM_HEADING = re.compile(r"(?m)^##\s+(.+?)\s*$")
@@ -70,12 +71,18 @@ class IndexPipeline:
         chunker: DeterministicChunker,
         embedding: EmbeddingAdapter,
         approved_sources: dict[str, tuple[str, str]] | None = None,
+        pending_candidate_sources: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         self.store = store
         self.chunker = chunker
         self.embedding = embedding
         self.approved_sources = (
             dict(approved_sources) if approved_sources is not None else None
+        )
+        self.pending_candidate_sources = (
+            dict(pending_candidate_sources)
+            if pending_candidate_sources is not None
+            else None
         )
 
     def build(
@@ -95,6 +102,8 @@ class IndexPipeline:
             )
 
         chunks = self.chunker.chunk_documents(documents)
+        if any(chunk.metadata.collection != target.collection for chunk in chunks):
+            raise ValueError("indexed chunk collection differs from target")
         vectors = self.embedding.embed_texts([chunk.text for chunk in chunks])
         if len(vectors) != len(chunks):
             raise ValueError("embedding adapter returned an unexpected batch size")
@@ -185,6 +194,9 @@ class IndexPipeline:
             raise ValueError("document kinds must use separate collections")
 
         if target.operational:
+            if target.collection == COUNSELING_CANDIDATE_COLLECTION:
+                self._validate_pending_candidate(documents, target)
+                return
             if self.approved_sources is None:
                 raise ValueError("operational indexing requires an approved source allowlist")
             expected_kind = OPERATIONAL_COLLECTIONS.get(target.collection)
@@ -230,6 +242,47 @@ class IndexPipeline:
         if invalid:
             raise ValueError(
                 f"synthetic target contains non-synthetic sources: {sorted(invalid)}"
+            )
+
+    def _validate_pending_candidate(
+        self,
+        documents: list[SourceDocument],
+        target: IndexTarget,
+    ) -> None:
+        """Allow only the named, hash-pinned pending counseling experiment."""
+
+        if target.artifact_kind != "experiment":
+            raise ValueError("pending counseling candidates must remain experiments")
+        if self.pending_candidate_sources is None:
+            raise ValueError(
+                "counseling candidate indexing requires a pending source allowlist"
+            )
+        invalid_versions = [
+            f"{document.metadata.source_id}@{document.metadata.version}"
+            for document in documents
+            if self.pending_candidate_sources.get(document.metadata.source_id)
+            != (document.metadata.version, document.metadata.sha256)
+        ]
+        if invalid_versions or len(documents) != len(self.pending_candidate_sources):
+            raise ValueError(
+                "counseling candidate contains an unregistered source id/version/hash: "
+                f"{sorted(invalid_versions)}"
+            )
+        invalid = [
+            document.metadata.source_id
+            for document in documents
+            if (
+                document.metadata.review_status != "pending"
+                or document.metadata.collection != "financial-knowledge"
+                or document.metadata.document_kind != "financial-knowledge"
+                or document.metadata.sensitivity != "public"
+                or len(document.metadata.sha256) != 64
+            )
+        ]
+        if invalid:
+            raise ValueError(
+                "counseling candidate contains a non-pending or unsafe source: "
+                f"{sorted(invalid)}"
             )
 
 

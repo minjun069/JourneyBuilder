@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+from functools import partial
 
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -47,6 +48,22 @@ _graph_input = graph_input
 _parse_v2_request = parse_v2_request
 _stream_v2_chat_events = stream_v2_chat_events
 _v2_validation_error = validation_error
+
+
+def build_counseling_enricher():
+    """Fail startup closed unless the enabled candidate index is compatible."""
+    if not settings.counseling_rag_enabled:
+        return None
+    from graph.counseling import enrich_counseling_response
+    from rag.counseling_retriever import get_counseling_retriever
+
+    retriever = get_counseling_retriever()
+
+    return partial(
+        enrich_counseling_response,
+        retriever=retriever,
+        timeout_seconds=settings.counseling_rag_timeout_seconds,
+    )
 
 
 async def _context_cleanup_loop(context_api, context_store) -> None:
@@ -109,6 +126,7 @@ async def lifespan(app: FastAPI):
                 checkpointer,
                 instrumentation=instrumentation,
                 tool_executors=build_graph_tool_executors(tool_runtime),
+                counseling_enricher=build_counseling_enricher(),
             )
             app.state.context_store = context_store
             app.state.context_api = build_context_state_api(checkpointer, context_store)

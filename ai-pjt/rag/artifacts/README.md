@@ -16,6 +16,11 @@
 artifact 생성·교체와 승인 corpus 갱신은 RAG 담당자만 수행한다. 다른 개발자와
 운영자는 전달받은 공식 파일의 checksum을 검사한 뒤 import만 수행한다.
 
+긴급 상담 production opt-in은 experiment artifact import 예외가 아니다. 공식 artifact
+두 개를 먼저 복원한 뒤 배포 이미지의 pending 원문을 `rag.bootstrap`이 직접 Gemini
+색인해 별도 `counseling-candidate` pointer로 활성화한다. 따라서 artifact import의
+`official + deployable` 제한은 유지된다.
+
 배포 이미지에는 이 디렉터리가 포함된다. `rag.bootstrap`은 모든 `official__*.tar.gz`
 파일의 checksum·qualification·manifest 결합을 검증하고 가장 높은 catalog semantic
 version 하나를 선택해 멱등 import 후 두 active pointer를 원자적으로 전환한다. Compose의

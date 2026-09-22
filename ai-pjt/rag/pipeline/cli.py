@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,11 @@ from .embeddings import (
     LlamaIndexEmbeddingAdapter,
 )
 from .evaluation import EvaluationThresholds, evaluate_retriever
-from .indexing import IndexPipeline, IndexedRetriever
+from .indexing import (
+    COUNSELING_CANDIDATE_COLLECTION,
+    IndexPipeline,
+    IndexedRetriever,
+)
 from .models import IndexTarget
 from .store import JsonVectorStore, PostgresIndexStore
 
@@ -27,6 +32,10 @@ _DEFAULT_CORPUS = _RAG_DIR / "fixtures" / "synthetic" / "corpus.json"
 _DEFAULT_GOLD = _RAG_DIR / "fixtures" / "synthetic" / "gold.json"
 _DEFAULT_CATALOG = _RAG_DIR / "data" / "catalog.json"
 _DEFAULT_GOLD_DIR = _RAG_DIR / "evaluation"
+_DEFAULT_COUNSELING_MANIFEST = _RAG_DIR / "data" / "counseling-candidate.json"
+_DEFAULT_COUNSELING_GOLD = (
+    _RAG_DIR / "evaluation" / "counseling-candidate-gold-v1.json"
+)
 _REPOSITORY_ROOT = _RAG_DIR.parents[1]
 _DEFAULT_POLICY = (
     _REPOSITORY_ROOT / "contract-fixtures" / "financial-calculation" / "v1" / "policy.json"
@@ -116,6 +125,28 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="required when a RAG owner creates or promotes an official candidate",
     )
+
+    counseling = subparsers.add_parser("run-counseling-candidate")
+    counseling.add_argument(
+        "--manifest", type=Path, default=_DEFAULT_COUNSELING_MANIFEST
+    )
+    counseling.add_argument("--repository-root", type=Path, default=_REPOSITORY_ROOT)
+    counseling.add_argument("--gold", type=Path, default=_DEFAULT_COUNSELING_GOLD)
+    counseling.add_argument("--report-dir", type=Path, required=True)
+    counseling.add_argument("--index-version")
+    counseling.add_argument("--environment-id", default="development")
+    counseling.add_argument("--operator-id")
+    counseling.add_argument("--source-revision")
+    counseling.add_argument("--top-k", type=int, default=5)
+    counseling.add_argument("--fetch-k", type=int, default=10)
+    counseling.add_argument(
+        "--minimum-dense-score",
+        type=float,
+        default=_OPERATIONAL_MINIMUM_DENSE_SCORE,
+    )
+    counseling.add_argument("--minimum-recall", type=float, default=0.85)
+    counseling.add_argument("--minimum-mrr", type=float, default=0.70)
+    counseling.add_argument("--promote", action="store_true")
     return parser
 
 
@@ -265,6 +296,17 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
+def _require_writable_report_directory(report_dir: Path) -> None:
+    """Fail before indexing or promotion when qualification evidence cannot persist."""
+
+    report_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=report_dir,
+        prefix=".rag-qualification-write-check-",
+    ):
+        pass
+
+
 def run_catalog_dry_run(args: argparse.Namespace) -> int:
     catalog = load_approved_catalog(
         args.catalog,
@@ -327,6 +369,175 @@ def run_catalog_dry_run(args: argparse.Namespace) -> int:
         outputs.append(output)
     print(json.dumps({"runs": outputs}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if all_passed else 1
+
+
+def run_counseling_candidate(args: argparse.Namespace) -> int:
+    """Build and qualify only the isolated pending counseling collection."""
+
+    from rag.counseling_corpus import load_candidate
+    from rag.counseling_retriever import CounselingCardChunker
+
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if not database_url:
+        raise ValueError("DATABASE_URL is required for counseling qualification")
+    if not args.environment_id.strip():
+        raise ValueError("environment-id must not be empty")
+    _require_writable_report_directory(args.report_dir)
+    candidate = load_candidate(
+        args.manifest,
+        repository_root=args.repository_root,
+    )
+    index_version = args.index_version or (
+        "candidate-" + candidate.version.replace(".", "-")
+    )
+    if index_version.startswith(("official-", "experiment-")):
+        raise ValueError("index-version must not repeat the artifact kind prefix")
+
+    source_revision = _source_revision(args.source_revision, args.repository_root)
+    embedding = _operational_embedding()
+    store = PostgresIndexStore(database_url)
+    store.ensure_schema()
+    documents = list(candidate.documents)
+    pipeline = IndexPipeline(
+        store=store,
+        chunker=CounselingCardChunker(),
+        embedding=embedding,
+        pending_candidate_sources={
+            document.metadata.source_id: (
+                document.metadata.version,
+                document.metadata.sha256,
+            )
+            for document in documents
+        },
+    )
+    retriever = IndexedRetriever(
+        store=store,
+        embedding=embedding,
+        hybrid=False,
+        fetch_k=args.fetch_k,
+        minimum_dense_score=args.minimum_dense_score,
+    )
+    thresholds = EvaluationThresholds(
+        minimum_recall=args.minimum_recall,
+        minimum_mrr=args.minimum_mrr,
+        minimum_provenance=1.0,
+        maximum_collection_leakage=0,
+        maximum_false_evidence=0,
+    )
+    monitored_collections = (
+        "financial-knowledge",
+        "interface-guides",
+        COUNSELING_CANDIDATE_COLLECTION,
+    )
+    active_before = {
+        collection: store.active_collection(collection)
+        for collection in monitored_collections
+    }
+    target = IndexTarget(
+        COUNSELING_CANDIDATE_COLLECTION,
+        index_version,
+        operational=True,
+        artifact_kind="experiment",
+    )
+    manifest = pipeline.build(documents, target)
+    report = evaluate_retriever(
+        retriever=retriever,
+        manifest=manifest,
+        gold_queries=load_gold_queries(args.gold),
+        evaluation_set_id="counseling-candidate-gemini-v1",
+        top_k=args.top_k,
+        thresholds=thresholds,
+    )
+
+    activation_performed = False
+    activation_error = None
+    if args.promote and report.passed:
+        try:
+            pipeline.promote(manifest, report)
+            activation_performed = True
+        except Exception as error:
+            activation_error = str(error)
+    active_after = {
+        collection: store.active_collection(collection)
+        for collection in monitored_collections
+    }
+    protected = ("financial-knowledge", "interface-guides")
+    pointer_isolation = all(
+        active_after[collection] == active_before[collection]
+        for collection in protected
+    )
+    activation_valid = (
+        not args.promote
+        or (
+            activation_performed
+            and activation_error is None
+            and active_after[COUNSELING_CANDIDATE_COLLECTION]
+            == manifest.physical_collection
+        )
+    )
+    overall_passed = report.passed and pointer_isolation and activation_valid
+    qualification = {
+        "schema_version": "rag-counseling-candidate-qualification/v1",
+        "qualification_id": f"experiment-{index_version}",
+        "environment_id": args.environment_id,
+        "operator_id": args.operator_id,
+        "source_revision": source_revision,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "acceptance": "pending",
+        "artifact_kind": "experiment",
+        "deployable": False,
+        "candidate": {
+            "path": _repository_relative_path(args.manifest, args.repository_root),
+            "version": candidate.version,
+            "sha256": candidate.manifest_sha256,
+            "document_count": len(candidate.documents),
+        },
+        "embedding": {
+            "provider": "gemini",
+            "model": embedding.model_id,
+            "dimensions": embedding.dimensions,
+            "endpoint": "gms",
+        },
+        "retrieval": {
+            "strategy": "postgres-dense-vector",
+            "top_k": args.top_k,
+            "fetch_k": args.fetch_k,
+            "minimum_dense_score": args.minimum_dense_score,
+        },
+        "thresholds": {
+            "recall_at_5_minimum": thresholds.minimum_recall,
+            "mrr_at_5_minimum": thresholds.minimum_mrr,
+            "provenance_minimum": thresholds.minimum_provenance,
+            "collection_leakage_maximum": thresholds.maximum_collection_leakage,
+            "false_evidence_maximum": thresholds.maximum_false_evidence,
+        },
+        "manifest": manifest.to_dict(),
+        "evaluation": report.to_dict(),
+        "pointer_isolation": {
+            "passed": pointer_isolation,
+            "protected_collections": list(protected),
+        },
+        "activation": {
+            "requested": args.promote,
+            "performed": activation_performed,
+            "error": activation_error,
+            "before": active_before,
+            "after": active_after,
+        },
+        "overall_decision": "PASS" if overall_passed else "FAIL",
+        "limitations": [
+            "The source manifest remains pending and is not an approved knowledge corpus.",
+            "This qualification measures retrieval only, not counseling response quality or AX impact.",
+            "The candidate pointer is independent from the two approved collection pointers.",
+        ],
+    }
+    qualification_path = (
+        args.report_dir
+        / f"experiment__{index_version}__counseling-qualification.json"
+    )
+    _write_json(qualification_path, qualification)
+    print(json.dumps(qualification, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if overall_passed else 1
 
 
 def run_operational(args: argparse.Namespace) -> int:
@@ -551,6 +762,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_catalog_dry_run(args)
         if args.command == "run-operational":
             return run_operational(args)
+        if args.command == "run-counseling-candidate":
+            return run_counseling_candidate(args)
     except Exception as error:
         print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 2

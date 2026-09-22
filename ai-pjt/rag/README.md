@@ -45,6 +45,126 @@ workspace에 기록한다.
 SHA-256을 `DocumentMetadata`로 변환한다. 경로가 collection pattern을 벗어나거나
 파일이 없거나 SHA-256이 다르면 embedding 호출 전에 실패한다.
 
+## F25 상담 지식 후보 재현 검사
+
+`data/counseling-candidate.json`은 기존 운영 catalog와 분리된 `pending` 후보다.
+`financial-knowledge/counseling-*.md` 9개에 출처·권리·SHA-256·적용 범위를 연결한다.
+마지막 병합 RAG baseline은 아래 opt-in 런타임으로 연결했다. 후보는 별도
+`counseling-candidate` PostgreSQL collection으로만 적재한다. 세션별 고객 이해 문단의
+별도 저장·갱신은 후속 범위이며 실제 고객 문단은 공용 corpus에 넣지 않는다.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+  rag.tests.test_counseling_candidate rag.tests.test_counseling_coverage -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m rag.evaluation.counseling_coverage \
+  --report /tmp/f25-counseling-coverage.json \
+  --markdown /tmp/f25-counseling-coverage.md
+PYTHONDONTWRITEBYTECODE=1 python3 -m rag.evaluation.counseling_candidate \
+  --report /tmp/f25-counseling-candidate-report.json
+```
+
+기본 실행은 후보 50문항 검색, 기존 금융지식 46문항 기준선, 혼합 corpus에서의 두
+질문 세트를 각각 평가한다. `--candidate-only`는 후보 검색만 검사한다. pending을
+approved나 synthetic으로 바꾸지 않고 임시 파일 인덱스만 사용한다. 출력은
+`deployable=false`, `llm_evaluated=false`이며 활성 포인터·DB·공식 artifact는 바꾸지 않는다.
+검색 기준 미달은 종료 코드 1, 무결성·입력 오류는 2다. 혼합 결과는 별도 비교값으로
+확인하며 기준을 통과해도 운영 Gemini qualification을 대신하지 않는다.
+
+`evaluation/counseling-behavior-cases-v1.json`은 가설·정정·변화 없음·세션 격리·수치
+보존·거짓 안심·부채 부담·자산 유동성·연금·소득 중단·가족 목표 충돌 등 80개 가상
+사례다. 기존26개에 3턴 이상 대화54개를 추가했으며, 고객 이해 문단 예시는 문장 일치 정답이 아니다.
+현재 `not-executed`이며 파일 검사와 실제 모델·저장 동작 검증을 구분한다.
+설계·승격 조건의 단일 원천은 공유 문서 `docs/ai/retrieval.md`의 F25 절이다.
+
+출처 기반의 상담 평가축·사례 연결·미실행 검토 서식은 [evals 안내](../evals/README.md)의
+F25 절을 따른다. 행동 사례의 `project_checks`는 제품 회귀 조건이며 공식 상담 척도가
+아니다. 한국FPSB·CFP Board·MITI·고객 체크리스트·CFPB를 하나의 총점으로 합치지 않는다.
+
+`evaluation/counseling-coverage-v1.json`은 실제 24단계와 `general`의 상담 상황120개를
+기존 지식·후보 문서의 정확한 절에 연결한다. `knowledge_mode`는 필요한 지식 종류,
+`retrieval_timing`은 검색 없이 응답할지·먼저 확인/조회할지를 나타내며 runtime
+라우팅 규칙이 아니다. 지도 검사는 빠진 단계·잘못된 문서/절 참조·검색 생략 조건의
+모순을 찾는다. `before`는 `278bd53`의 승인 금융지식 15개와 후보 6개 기준이며,
+`after=documented`는 문서의 대응 범위다. 실제 상황 빈도·사용자 만족도·AX 성과는
+측정하지 않았다. 표는 위 명령으로 생성해 전체 상황과 확인 조건을 검토할 수 있다.
+
+후보 1.1.0은 신규 부채·자산 유동성·연금 불확실성 3문서와 기존 현금흐름·목표
+2문서의 확장으로 상담 절을 21개에서 37개로 늘렸다. 제도·산식은 기존 문서를
+재사용한다. 검색 gold의 최초 30문항은 유지하고 새 20문항을 추가했으며 `cohorts`에
+두 집합을 기록한다. 검색 성적은 문서 단위로 측정하므로 해당 절을 정확히 찾았거나
+상담을 잘했다고 해석하지 않는다. 무조건 혼합한 검색에서는 기존 문서가 밀리는
+회귀와 무관 질문 오탐이 남아 있어 운영 승격 근거로 사용할 수 없다.
+
+## 마지막 병합의 상담 검색 활성화
+
+루트 Compose의 `.env` 또는 직접 실행하는 AI 서비스 환경에 다음 값을 설정하고
+AI 프로세스를 다시 시작한다. 기본 false에서는 추가 검색·모델 호출이 없다.
+
+```dotenv
+AI_COUNSELING_RAG_ENABLED=true
+AI_COUNSELING_RAG_TIMEOUT_SECONDS=12
+```
+
+성공한 작업의 검증 답변을 다듬은 뒤 `counseling.plan`이 상담 필요성과 주제를 판단한다.
+필요한 경우 후보 본문을 검색하고 `counseling.compose`가 보충문을 생성한 다음
+`counseling.judge`의 근거·관련성·비모순·개인 사실·진단 범위 검토를 통과해야 덧붙인다.
+기존 답변·수치·action·review를 보존하며 실패·빈 검색·검토 거부에는 기존 답변을 반환한다.
+검색은 최대 1회, 추가 모델 단계는 최대 3회이고 전체 보충 한도는 1~30초다. 요청 전체 취소는
+전파한다. 감사·단순 용어·조회·정정·설명 거절에는 상담 검색을 생략하도록 계획한다.
+상위 단계가 선택한 대화의 정정·거절을 다시 축약하지 않으며 내용이 16,000자를 넘으면
+모델·검색 호출 없이 보충을 생략한다. 세 단계는 논리 호출 수이며 SDK 내부 HTTP 시도 수와는 다르다.
+
+검색기는 고객 원문 대신 닫힌 topic만 받는다. 후보 9문서의 해시·권리·pending 상태를
+검증하고 관리 절을 제외한 37개 완전한 상담 카드를 Gemini `gemini-embedding-2`
+3,072차원으로 PostgreSQL dense 검색한다. cosine similarity `0.54` 미만은 제외하고 최대
+3개만 반환한다. 시작 시 독립 active pointer, manifest의 corpus digest·source version·
+모델·차원·chunker·개수와 실제 chunk의 pending/public/collection/vector 차원을 다시
+검증한다. 활성화 상태에서 하나라도 누락·불일치하면 서비스 시작과 readiness가 실패한다.
+
+후보 구축·평가·승격은 승인 corpus의 `run-operational`과 분리된 다음 명령만 사용한다.
+50문항의 Recall@5 0.85, MRR@5 0.70, provenance 1.0, collection leakage와 false evidence
+0건을 모두 통과해야 `--promote`가 상담 pointer 하나만 바꾼다. 실패하면 기존 상담 pointer를
+유지하고, `financial-knowledge`·`interface-guides` pointer는 성공·실패와 무관하게 불변이다.
+
+```bash
+./ops.sh counseling-qualify \
+  --report-dir .local/reports \
+  --environment-id <개발자-id> \
+  --operator-id <실행자-id> \
+  --index-version <후보-index-version> \
+  --promote
+```
+
+2026-09-22 개발 Compose 실측은 50문항 Recall@5 `1.0000`, MRR@5 `0.9886`,
+context precision@5 `0.5170`, provenance `1.0000`, 무관 질문 6개의 false evidence `0`,
+collection leakage `0`으로 PASS했다. 이는 검색 실측이며 상담 응답 품질이나 AX 개선,
+운영 corpus 승인을 뜻하지 않는다.
+
+### 긴급 production bootstrap
+
+2026-09-22 명시적 긴급 운영 요청에 따라 production Compose는 상담 opt-in을 `true`로
+고정한다. `rag-bootstrap`은 공식 artifact의 두 pointer를 먼저 복원한 뒤 후보 1.1.0의
+37개 카드를 실제 Gemini로 멱등 색인하고 별도 experiment pointer를 활성화한다. 배포마다
+50문항을 다시 실행하거나 운영 승인 상태로 바꾸지 않으며 bootstrap 결과에
+`evaluation=skipped-by-explicit-production-request`, `acceptance=pending`을 남긴다.
+공식 두 pointer가 바뀌거나 후보 원문·manifest·청크·모델·차원 검증이 실패하면 one-shot과
+AI readiness가 실패해 기존 배포 rollback 경로로 들어간다.
+
+다음 명령은 활성 개발 DB와 Gemini 설정을 사용하는 실제 후보 검색 및 mock 회귀를 확인한다.
+
+```bash
+python -c 'from rag.counseling_retriever import CounselingTopic, get_counseling_retriever; print([(e.source_id, round(e.score, 4)) for e in get_counseling_retriever().retrieve(CounselingTopic.DEBT)])'
+python -m unittest rag.tests.test_counseling_retriever -q
+python -m unittest tests.test_counseling tests.test_counseling_integration -q
+```
+
+마지막 두 상담 runtime 테스트의 모델은 mock이다. 별도 개발 smoke에서 실제 Gemini 검색·
+생성·독립 검토를 거친 보충문 주입 1건을 확인했지만, 실제 모델 품질·지연·비용과 80대화
+비교는 별도 측정이며 corpus 승인 상태와 기존 평가 서식의 미실행 표시는 바꾸지 않는다.
+coverage 자료의 `runtime_implemented=false`는 자료 작성 시점의 상태로 보존하며
+현재 서비스의 활성화 여부를 판정하는 데 사용하지 않는다. 자료의 검사 성공도 후보 문서
+운영 승인이나 세션 이해 문단 구현을 뜻하지 않는다.
+
 ## 승인 corpus 재현 검사
 
 외부 API와 DB 없이 승인 corpus 25개와 gold query 66개를 검사한다.

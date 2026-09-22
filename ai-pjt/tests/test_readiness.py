@@ -116,11 +116,15 @@ class ReadinessTests(unittest.TestCase):
                 "financial-knowledge",
                 "financial-knowledge__official-catalog-2-1-0",
                 42,
+                "gemini-embedding-2",
+                3072,
             ),
             (
                 "interface-guides",
                 "interface-guides__official-catalog-2-1-0",
                 38,
+                "gemini-embedding-2",
+                3072,
             ),
         ]
         connection = MagicMock()
@@ -147,10 +151,10 @@ class ReadinessTests(unittest.TestCase):
 
     def test_postgres_probe_rejects_missing_or_empty_rag_index(self) -> None:
         for rows in (
-            [("financial-knowledge", "financial-index", 42)],
+            [("financial-knowledge", "financial-index", 42, "gemini-embedding-2", 3072)],
             [
-                ("financial-knowledge", "financial-index", 42),
-                ("interface-guides", "interface-index", 0),
+                ("financial-knowledge", "financial-index", 42, "gemini-embedding-2", 3072),
+                ("interface-guides", "interface-index", 0, "gemini-embedding-2", 3072),
             ],
         ):
             with self.subTest(rows=rows):
@@ -172,6 +176,56 @@ class ReadinessTests(unittest.TestCase):
                             "postgresql://runtime:secret@postgres/db",
                             2.0,
                         )
+
+    def test_enabled_counseling_requires_its_pointer_and_embedding_contract(self) -> None:
+        rows = [
+            ("financial-knowledge", "financial-index", 42, "gemini-embedding-2", 3072),
+            ("interface-guides", "interface-index", 38, "gemini-embedding-2", 3072),
+            ("counseling-candidate", "counseling-index", 37, "gemini-embedding-2", 3072),
+        ]
+        cursor = MagicMock()
+        cursor.__enter__.return_value = cursor
+        cursor.fetchone.return_value = (1,)
+        cursor.fetchall.return_value = rows
+        connection = MagicMock()
+        connection.__enter__.return_value = connection
+        connection.cursor.return_value = cursor
+        connect = Mock(return_value=connection)
+
+        with patch.dict(sys.modules, {"psycopg": SimpleNamespace(connect=connect)}):
+            readiness.check_postgres(
+                "postgresql://runtime:secret@postgres/db",
+                2.0,
+                frozenset(
+                    {
+                        "financial-knowledge",
+                        "interface-guides",
+                        "counseling-candidate",
+                    }
+                ),
+                "gemini-embedding-2",
+                3072,
+            )
+
+        cursor.fetchall.return_value = [
+            (*row[:4], 2048) if row[0] == "counseling-candidate" else row
+            for row in rows
+        ]
+        with patch.dict(sys.modules, {"psycopg": SimpleNamespace(connect=connect)}):
+            with self.assertRaisesRegex(RuntimeError, "embedding contract"):
+                readiness.check_postgres(
+                    "postgresql://runtime:secret@postgres/db",
+                    2.0,
+                    frozenset(
+                        {
+                            "financial-knowledge",
+                            "interface-guides",
+                            "counseling-candidate",
+                        }
+                    ),
+                    "gemini-embedding-2",
+                    3072,
+                )
 
     def test_main_redacts_dependency_error_details(self) -> None:
         secret = "do-not-print-this-secret"

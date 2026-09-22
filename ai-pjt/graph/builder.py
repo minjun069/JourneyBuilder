@@ -29,6 +29,7 @@ def build_graph(
     agent_graphs: Mapping[str, Any] | None = None,
     tool_executors: Mapping[str, RuntimeExecutor] | None = None,
     response_composer: AggregateComposer | None = compose_aggregate_response,
+    counseling_enricher: AggregateComposer | None = None,
 ):
     """Wire planner, executor, validation, and context nodes."""
 
@@ -55,6 +56,7 @@ def build_graph(
         agent_executors=agent_executors,
         tool_executors=active_tools,
         response_composer=response_composer,
+        counseling_enricher=counseling_enricher,
     )
 
     builder = StateGraph(ChatState)

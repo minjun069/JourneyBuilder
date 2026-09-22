@@ -1,7 +1,8 @@
 """Container readiness probe for the AI service.
 
 The probe deliberately avoids calling an LLM or the Backend. It verifies the
-local HTTP service, PostgreSQL, and the two active RAG indexes required by QA.
+local HTTP service, PostgreSQL, the two approved RAG indexes, and the isolated
+counseling candidate index when that experiment is enabled.
 """
 
 from __future__ import annotations
@@ -18,9 +19,10 @@ from urllib.request import urlopen
 DEFAULT_HTTP_URL = "http://127.0.0.1:8001/api/system/v1/health"
 DEFAULT_TIMEOUT_SECONDS = 2.0
 MAX_TIMEOUT_SECONDS = 10.0
-REQUIRED_RAG_COLLECTIONS = frozenset(
+BASE_RAG_COLLECTIONS = frozenset(
     {"financial-knowledge", "interface-guides"}
 )
+COUNSELING_RAG_COLLECTION = "counseling-candidate"
 
 
 class ReadinessConfigurationError(ValueError):
@@ -43,6 +45,18 @@ def _read_timeout(environ: Mapping[str, str]) -> float:
     return timeout
 
 
+def _read_bool(name: str, default: bool, environ: Mapping[str, str]) -> bool:
+    raw_value = environ.get(name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise ReadinessConfigurationError(f"{name} must be true or false")
+
+
 def check_http(url: str, timeout: float) -> None:
     """Require the existing liveness endpoint to return its expected payload."""
 
@@ -55,8 +69,14 @@ def check_http(url: str, timeout: float) -> None:
         raise RuntimeError("AI health endpoint returned an unexpected payload")
 
 
-def check_postgres(database_url: str, timeout: float) -> None:
-    """Require PostgreSQL and both populated operational RAG indexes."""
+def check_postgres(
+    database_url: str,
+    timeout: float,
+    required_collections: frozenset[str] = BASE_RAG_COLLECTIONS,
+    embedding_model: str = "gemini-embedding-2",
+    embedding_dimensions: int = 3072,
+) -> None:
+    """Require populated active indexes with the runtime embedding contract."""
 
     import psycopg
 
@@ -70,7 +90,9 @@ def check_postgres(database_url: str, timeout: float) -> None:
                 """
                 SELECT active.logical_collection,
                        active.physical_collection,
-                       COUNT(chunks.chunk_id)
+                       COUNT(chunks.chunk_id),
+                       manifests.manifest->>'embedding_model',
+                       (manifests.manifest->>'embedding_dimensions')::integer
                 FROM rag_active_indexes AS active
                 JOIN rag_index_manifests AS manifests
                   ON manifests.physical_collection = active.physical_collection
@@ -79,17 +101,23 @@ def check_postgres(database_url: str, timeout: float) -> None:
                 LEFT JOIN rag_index_chunks AS chunks
                   ON chunks.physical_collection = active.physical_collection
                 WHERE active.logical_collection = ANY(%s)
-                GROUP BY active.logical_collection, active.physical_collection
+                GROUP BY active.logical_collection, active.physical_collection,
+                         manifests.manifest
                 """,
-                (sorted(REQUIRED_RAG_COLLECTIONS),),
+                (sorted(required_collections),),
             )
             active_rows = cursor.fetchall()
 
     active_collections = {row[0] for row in active_rows}
-    if active_collections != REQUIRED_RAG_COLLECTIONS:
+    if active_collections != required_collections:
         raise RuntimeError("required active RAG indexes are missing")
     if any(int(row[2]) < 1 for row in active_rows):
         raise RuntimeError("an active RAG index contains no chunks")
+    if any(
+        row[3] != embedding_model or int(row[4]) != embedding_dimensions
+        for row in active_rows
+    ):
+        raise RuntimeError("an active RAG index has an incompatible embedding contract")
 
 
 def check_readiness(
@@ -109,8 +137,33 @@ def check_readiness(
     if not http_url:
         raise ReadinessConfigurationError("READINESS_HTTP_URL must not be empty")
 
+    embedding_model = active_environ.get(
+        "EMBEDDING_MODEL", "gemini-embedding-2"
+    ).strip()
+    if not embedding_model:
+        raise ReadinessConfigurationError("EMBEDDING_MODEL must not be empty")
+    try:
+        embedding_dimensions = int(active_environ.get("EMBED_DIM", "3072"))
+    except ValueError as error:
+        raise ReadinessConfigurationError("EMBED_DIM must be an integer") from error
+    if embedding_dimensions < 1:
+        raise ReadinessConfigurationError("EMBED_DIM must be positive")
+    required_collections = set(BASE_RAG_COLLECTIONS)
+    if _read_bool("AI_COUNSELING_RAG_ENABLED", False, active_environ):
+        required_collections.add(COUNSELING_RAG_COLLECTION)
+
     (http_probe or check_http)(http_url, timeout)
-    (database_probe or check_postgres)(database_url, timeout)
+    postgres_probe = database_probe or check_postgres
+    if database_probe is not None:
+        postgres_probe(database_url, timeout)
+    else:
+        postgres_probe(
+            database_url,
+            timeout,
+            frozenset(required_collections),
+            embedding_model,
+            embedding_dimensions,
+        )
 
 
 def main() -> int:

@@ -29,11 +29,15 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.rag_top_k, 5)
         self.assertEqual(settings.llm_temperature, 0.0)
-        self.assertEqual(settings.prompt_release, "2026-09-21.1")
+        self.assertEqual(settings.prompt_release, "2026-09-22.1")
         self.assertEqual(settings.rag_fetch_k, 10)
         self.assertEqual(settings.rag_min_dense_score, 0.54)
+        self.assertEqual(settings.rag_counseling_min_dense_score, 0.54)
         self.assertEqual(settings.rag_financial_collection, "financial-knowledge")
         self.assertEqual(settings.rag_interface_collection, "interface-guides")
+        self.assertEqual(settings.rag_counseling_collection, "counseling-candidate")
+        self.assertFalse(settings.counseling_rag_enabled)
+        self.assertEqual(settings.counseling_rag_timeout_seconds, 12)
         self.assertEqual(settings.embed_dim, 3072)
         self.assertEqual(settings.context_memory_interval_seconds, 5)
         self.assertEqual(settings.context_memory_top_k, 5)
@@ -96,17 +100,36 @@ class SettingsTests(unittest.TestCase):
             Settings({**BASE_ENV, "RAG_TOP_K": "5", "RAG_FETCH_K": "4"})
         with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_MIN_DENSE_SCORE"):
             Settings({**BASE_ENV, "RAG_MIN_DENSE_SCORE": "1.1"})
+        with self.assertRaisesRegex(
+            RuntimeConfigurationError, "RAG_COUNSELING_MIN_DENSE_SCORE"
+        ):
+            Settings({**BASE_ENV, "RAG_COUNSELING_MIN_DENSE_SCORE": "1.1"})
         with self.assertRaisesRegex(RuntimeConfigurationError, "LLM_TEMPERATURE"):
             Settings({**BASE_ENV, "LLM_TEMPERATURE": "1.1"})
         self.assertEqual(
             Settings({**BASE_ENV, "PROMPT_RELEASE": "ignored"}).prompt_release,
-            "2026-09-21.1",
+            "2026-09-22.1",
         )
         with self.assertRaisesRegex(
             RuntimeConfigurationError,
             "AI_CONTEXT_MEMORY_TOP_K",
         ):
             Settings({**BASE_ENV, "AI_CONTEXT_MEMORY_TOP_K": "0"})
+
+    def test_counseling_is_opt_in_and_has_a_bounded_budget(self) -> None:
+        enabled = Settings({**BASE_ENV, "AI_COUNSELING_RAG_ENABLED": "true"})
+        self.assertTrue(enabled.counseling_rag_enabled)
+        for value in ("0", "-1", "31", "nan"):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                RuntimeConfigurationError, "AI_COUNSELING_RAG_TIMEOUT_SECONDS"
+            ):
+                Settings({**BASE_ENV, "AI_COUNSELING_RAG_TIMEOUT_SECONDS": value})
+        with self.assertRaisesRegex(RuntimeConfigurationError, "AI_COUNSELING_RAG_ENABLED"):
+            Settings({**BASE_ENV, "AI_COUNSELING_RAG_ENABLED": "yes"})
+        with self.assertRaisesRegex(RuntimeConfigurationError, "RAG_COUNSELING_COLLECTION"):
+            Settings(
+                {**BASE_ENV, "RAG_COUNSELING_COLLECTION": "financial-knowledge"}
+            ).validate_runtime()
 
     def test_langfuse_requires_complete_safe_configuration_when_enabled(self) -> None:
         enabled = {

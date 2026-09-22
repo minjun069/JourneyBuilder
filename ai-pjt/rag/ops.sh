@@ -10,6 +10,7 @@ usage() {
 Usage:
   ops.sh up | status | stop | db-check
   ops.sh qualify [run-operational options]
+  ops.sh counseling-qualify [run-counseling-candidate options]
   ops.sh export [artifact export options]
   ops.sh import [artifact import options]
 
@@ -19,6 +20,8 @@ Optional: RAG_POSTGRES_PORT, RAG_POSTGRES_DB, RAG_POSTGRES_USER
 
 qualify additionally requires GOOGLE_API_KEY. Official qualification also needs
 --artifact-kind official --operator-id <id> --confirm-rag-owner --promote.
+counseling-qualify keeps the source pending and only promotes its independent
+counseling-candidate experiment pointer after the 50-query Gemini gate passes.
 EOF
 }
 
@@ -98,6 +101,13 @@ case "${command}" in
     RAG_SOURCE_REVISION="$(source_revision)" \
       compose run --rm --build --no-TTY operator \
       -m rag.pipeline.cli run-operational "$@"
+    ;;
+  counseling-qualify)
+    require_local_database_environment
+    : "${GOOGLE_API_KEY:?GOOGLE_API_KEY is required for Gemini qualification}"
+    RAG_SOURCE_REVISION="$(source_revision)" \
+      compose run --rm --build --no-TTY operator \
+      -m rag.pipeline.cli run-counseling-candidate "$@"
     ;;
   export)
     require_local_database_environment
