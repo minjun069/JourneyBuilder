@@ -28,7 +28,7 @@
           "job": null
         },
         "frontend_draft": {
-          "earnings": 250,
+          "earnings": 2500000,
           "job": ""
         }
       },
@@ -100,7 +100,7 @@
           "job": "직장인"
         },
         "frontend_draft": {
-          "earnings": 300,
+          "earnings": 3000000,
           "job": "직장인"
         },
         "database_write_count": 0

@@ -62,8 +62,8 @@ defineExpose({ form })
     <div class="field-row">
       <span class="field-label">소득</span>
       <span class="field-unit">월 세후</span>
-      <input class="field-input" type="number" v-model="form.earnings" min="0" placeholder="200" />
-      <span class="field-unit">만 원</span>
+      <input class="field-input" type="number" v-model="form.earnings" min="0" placeholder="3,900,000" />
+      <span class="field-unit">원</span>
     </div>
 
     <div class="field-row">

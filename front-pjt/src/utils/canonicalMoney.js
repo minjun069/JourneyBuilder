@@ -3,13 +3,17 @@ function numberValue(value) {
   return Number.isNaN(number) ? null : number
 }
 
-export function toCanonicalMoney(value, defaultUnit = 'man') {
-  const defaultMultiplier = defaultUnit === 'eok' ? 100000000 : 10000
+const UNIT_MULTIPLIER = { won: 1, man: 10000, eok: 100000000 }
+
+// 저장·조회·AI 계약이 모두 원(KRW) 정수다(ai-pjt/core/field_registry.py).
+// 화면 입력도 같은 단위로 읽는다 — 숫자만 넣으면 그대로 원이다.
+// 만/억 접미사는 계속 인정한다: '150만' → 1,500,000, '4억8000만' → 480,000,000.
+export function toCanonicalMoney(value, defaultUnit = 'won') {
+  const defaultMultiplier = UNIT_MULTIPLIER[defaultUnit] ?? 1
 
   if (value === '' || value == null) return null
 
   // Number values already crossed the Frontend adapter boundary and are KRW.
-  // Only raw user-entered strings may use the screen's implicit 만/억 unit.
   if (typeof value === 'number') {
     return Number.isFinite(value) ? Math.round(value) : null
   }

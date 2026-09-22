@@ -257,7 +257,7 @@ defineExpose({ form })
                     </template>
                   </div>
                 </td>
-                <td><input class="cell-input cell-r" v-model="item.amount" placeholder="예) 200만" /></td>
+                <td><input class="cell-input cell-r" v-model="item.amount" placeholder="예) 2,000,000" /></td>
                 <td>
                   <div class="toggle-group">
                     <span class="tog" :class="{ on: item.type === '고정' }" @click="item.type = '고정'">고정</span>
@@ -308,7 +308,7 @@ defineExpose({ form })
                   </div>
                 </td>
                 <td><input class="cell-input" v-model="m.content"  placeholder="예) 주택 구입" :disabled="m.committed" /></td>
-                <td><input class="cell-input cell-r" v-model="m.amount" placeholder="예) 3억" :disabled="m.committed" /></td>
+                <td><input class="cell-input cell-r" v-model="m.amount" placeholder="예) 300,000,000" :disabled="m.committed" /></td>
                 <td><input class="cell-input" v-model="m.note" placeholder="" :disabled="m.committed" /></td>
                 <td class="td-act">
                   <button v-if="!m.committed" class="commit-btn"  @click="commitMilestone(i)">입력</button>
