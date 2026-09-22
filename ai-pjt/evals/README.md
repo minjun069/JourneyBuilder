@@ -29,11 +29,11 @@ checkpoint, v2 SSE, application log와 trace exporter의 최종 직렬화 값을
 `data/counseling-frameworks-v1.json`은 업무 수행·설명과 기술 활용·대화·고객 체감·
 재무적 안녕을 별도 축으로 둔다. 한국FPSB6단계와 CFP Board7단계는 합치지 않고,
 현재 진단 범위는 전자의1~3단계에 대응시킨다. 공식 인증이나 종합 점수는 산출하지 않는다.
-`data/counseling-case-plan-v1.json`은 RAG의54개 상황과26개 행동 사례에 필요한
+`data/counseling-case-plan-v1.json`은 RAG의120개 상황과80개 행동 사례에 필요한
 관찰 항목·자료·적용 불가 사유를 연결한다. 짧은 답변을 전체 업무 준수로 판정하지 않는다.
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest evals.tests.test_counseling_protocol -q
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest evals.tests.test_counseling_protocol evals.tests.test_counseling_diversity -q
 PYTHONDONTWRITEBYTECODE=1 python3 -m evals.counseling_protocol \
   --report /tmp/f25-counseling-protocol.json \
   --markdown /tmp/f25-counseling-protocol.md \
@@ -45,6 +45,28 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m evals.counseling_protocol \
 실제 응답·실행 정보·검토자·관찰 근거는 비어 있다. 기대 예시를 실제 응답으로 넣지 않는다.
 같은 사례와 검증 데이터로 대조군/병합 RAG baseline/고객 이해 문단 추가/생성 단계 RAG를
 비교할 때 사용하며, 실행기는 현재 연결하지 않았다.
+
+원래 54개 상황·26개 대화의 내용과 ID를 보존하고 66개 상황·54개 대화를 추가했다.
+새 사례의 `variation`은 같은 질문/다른 배경, 같은 재무/다른 고민, 이해 수정,
+개입 축소의 비교 방향·묶음·조건을 명시한다. 같은 질문 묶음의 질문과 같은 재무 묶음의
+재무 조건을 고정해 차이를 비교하며, 실제 24단계와 `general` 모두 최소4개 상황을 연결한다.
+`variation.background`와 `financial_state`는 모든 변형에 공통으로 제공할 합성 시작
+맥락이다. 고객 진술을 검증된 수치로 올리지 않으며, `previous_understanding`만 문단
+변형의 합성 초기 상태로 추가한다. 기대 답변·체크포인트는 모델 입력에서 제외한다.
+
+새 대화는 3턴 이상이며 `checkpoints`가 각 사용자 턴의 이해 초기화·수정·유지·철회,
+검색 필요성, 금지 추론, 다음 턴 재사용 기대를 소유한다. `retain`은 의미상 유지이지
+문자열 일치가 아니다. 기대 문단은 채점 참고이며 다음 턴의 모델 입력으로 주입하지 않는다.
+각 체크포인트는 해당 턴까지의 정보만으로 검토한다. 정정 이후 금지 조건을 정정 전 턴에
+소급하거나 폐기된 가설을 후속 턴의 보존 조건으로 유지하지 않는다.
+실제 응답과 관찰된 문단을 이어 실행하고, 고정 후속 발화의 전제가 맞지 않으면 의존하는
+후속 턴을 건너뛴 사유를 남긴다. 기존 assistant 발화는 합성 입력 문맥일 뿐 새 모델 출력이 아니다.
+
+검토 서식은 **80대화×4변형=320개** 단위이며 `turn_reviews`에 실제 응답·이해 전후·
+스크립트 전제·관찰 증거를 남길 빈 칸을 제공한다. 문단이 없는 세 변형에서는 문단 갱신
+검사를 해당 없음으로 두고 응답의 정정 반영은 계속 관찰한다. 모든 결과는 현재 미실행이다.
+`counseling_diversity.py`는 원본 보존·대응 조건·단계·턴 참조를 검사하며 의미 품질을 채점하지 않는다.
+합성 다양성·사례 수는 고객 대표성의 증거가 아니며 후속 실제 사용의 빈도와 실패로 보완한다.
 
 13개 프로젝트 관찰 항목은 원전의 AI용 공인 점수표가 아니다. A.14 도구 선택·신뢰성은
 응답 외의 기술 검증 근거가 필요하고, MITI 참고 협력·공감 관찰은 공식 코딩 점수가 아니다.

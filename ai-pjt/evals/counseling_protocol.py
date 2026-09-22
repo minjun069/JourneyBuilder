@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from rag.evaluation.counseling_coverage import evaluate_coverage
+from evals.counseling_diversity import validate_diversity
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -126,7 +127,8 @@ def _unexecuted(value: Any, field: str) -> None:
                        "official_scoring_in_this_project", "official_scores_implemented",
                        "official_or_combined_score", "runtime_implemented"}:
                 _require(child is False, f"{path} must be false in this design")
-            if key in {"measured_outcomes", "official_scores", "actual_response", "execution", "reviewer"}:
+            if key in {"measured_outcomes", "official_scores", "actual_response", "execution", "reviewer",
+                       "actual_understanding_before", "actual_understanding_after"}:
                 _require(child is None, f"{path} must be null without execution")
             _unexecuted(child, path)
     elif isinstance(value, list):
@@ -269,6 +271,9 @@ def validate_protocol(
     records = {"coverage": _indexed(coverage.get("cases"), "coverage.cases"),
                "behavior": _indexed(behavior.get("cases"), "behavior.cases")}
     expected = {(kind, identity) for kind, cases in records.items() for identity in cases}
+    diversity = validate_diversity(coverage, behavior)
+    example = next(case for case in records["behavior"].values()
+                   if case.get("variation", {}).get("axis") == "understanding-revision")
     plans = case_plan["plans"]
     _require(isinstance(plans, list) and bool(plans), "case_plan.plans must be a nonempty list")
     seen: set[tuple[str, str]] = set()
@@ -307,7 +312,22 @@ def validate_protocol(
         for axis_id, status in statuses.items():
             axis_counts[axis_id][kind][status] += 1
         source_case = records[kind][key[1]]
-        summaries.append({**plan, "label": source_case.get("question") if kind == "coverage" else source_case.get("category")})
+        summary = {**plan, "label": source_case.get("question") if kind == "coverage" else source_case.get("category")}
+        if kind == "behavior":
+            checkpoints = {item["turn_id"]: item for item in source_case.get("checkpoints", [])}
+            summary["turn_review_plan"] = []
+            for turn_index, turn in enumerate(source_case["turns"], 1):
+                if turn["role"] != "user":
+                    continue
+                turn_id = turn.get("turn_id", turn_index)
+                checkpoint = checkpoints.get(turn_id)
+                summary["turn_review_plan"].append({
+                    "turn_id": turn_id,
+                    "checkpoint_ref": f"{identity}/checkpoints/{turn_id}" if checkpoint else None,
+                    "expected_action": checkpoint["understanding_action"] if checkpoint else None,
+                    "carry_forward_from": checkpoint["carry_forward_from"] if checkpoint else None,
+                })
+        summaries.append(summary)
     _require(seen == expected, f"missing case mappings: {sorted(expected - seen)}")
     return {
         "schema_version": "counseling-protocol-report/v1",
@@ -320,6 +340,11 @@ def validate_protocol(
         "case_counts": {kind: len(cases) for kind, cases in records.items()},
         "variant_ids": list(behavior_variants),
         "review_template_slots": len(records["behavior"]) * len(behavior_variants),
+        "diversity": diversity,
+        "multiturn_design_example": {
+            "case_id": example["id"], "kind": "synthetic-expectation-not-observed",
+            "turns": example["turns"], "checkpoints": example["checkpoints"],
+        },
         "axis_applicability_counts": axis_counts,
         "sources": registry["sources"], "axes": registry["axes"], "frameworks": registry["frameworks"],
         "criteria": registry["criteria"], "scope": registry["scope"], "comparison": registry["comparison"],
@@ -336,6 +361,7 @@ def build_review_template(report: dict[str, Any]) -> dict[str, Any]:
         "llm_evaluated": False, "ax_gain_measured": False, "official_scores": None,
         "no_total_score": True, "official_certification": False,
         "evaluation_states": EVALUATION_STATES,
+        "evaluation_unit": "conversation-variant; turns are dependent observations, not additional independent samples",
         "reviews": [{
             "behavior_case_id": case["case_id"], "variant_id": variant,
             "actual_response": None, "execution": None, "reviewer": None,
@@ -344,7 +370,24 @@ def build_review_template(report: dict[str, Any]) -> dict[str, Any]:
                          for identity in case["criterion_ids"]],
             "customer_experience": None, "financial_wellbeing": None,
             "formal_miti": dict(case["formal_miti"]),
+            "turn_reviews": [_empty_turn_review(turn, variant) for turn in case["turn_review_plan"]],
         } for case in report["cases"] if case["kind"] == "behavior" for variant in report["variant_ids"]],
+    }
+
+
+def _empty_turn_review(turn: dict[str, Any], variant: str) -> dict[str, Any]:
+    has_understanding = variant == "aggregation-rag-with-understanding"
+    return {
+        **turn,
+        "actual_response": None, "execution": None,
+        "actual_understanding_before": None, "actual_understanding_after": None,
+        "script_compatibility": {"status": "not-observed", "evidence": [], "reason": None},
+        "response_observation": {"status": "not-observed", "evidence": [], "reason": None},
+        "understanding_observation": {
+            "status": "not-observed" if has_understanding else "not-applicable",
+            "evidence": [],
+            "reason": None if has_understanding else "이 변형에는 별도의 고객 이해 문단이 없다. 응답의 정정 반영은 별도로 관찰한다.",
+        },
     }
 
 
@@ -380,6 +423,32 @@ def render_markdown(report: dict[str, Any]) -> str:
              "## 적용 범위와 해석", ""]
     for note in report["scope"]["notes"] + report["plan_notes"] + report["corrections_to_supplied_material"]:
         lines.append(f"- {note}")
+    diversity = report["diversity"]
+    axis_labels = {
+        "same-question-different-background": "같은 질문, 다른 배경",
+        "same-finances-different-concern": "같은 재무 상태, 다른 고민",
+        "understanding-revision": "대화에 따른 이해 수정",
+        "reduced-intervention": "개입 축소",
+    }
+    lines += ["", "## 합성 다양성 확장", "",
+              "원래 54개 상황과 26개 대화는 내용·ID·순서를 보존했습니다. 아래는 추가한 사례 수이며 고객 모집단의 비율이 아닙니다.", "",
+              "| 확장 방향 | 추가 상황 | 추가 대화 |", "| --- | ---: | ---: |"]
+    for axis, label in axis_labels.items():
+        lines.append(f"| {label} | {diversity['added_axis_counts']['coverage'][axis]} | {diversity['added_axis_counts']['behavior'][axis]} |")
+    lines += ["", f"추가 대화 {diversity['dialogue_case_count']}개에 턴별 체크포인트 {diversity['checkpoint_count']}개가 있습니다. "
+              "이해 유지·수정은 의미를 검토하며 문장 일치로 채점하지 않습니다.", "",
+              "| 사용자 단계 | 관련 상황 수 |", "| --- | ---: |"]
+    for step, count in diversity["coverage_step_counts"].items():
+        lines.append(f"| {step} | {count} |")
+    lines += ["", "한 상황이 여러 단계에 관련될 수 있어 위 개수의 합은 고유 상황 수와 다릅니다.", "",
+              "### 이해 수정의 기대 흐름", "",
+              "아래는 합성 입력과 검토 기대이며 관찰된 모델 응답이 아닙니다. 기대 문단을 다음 턴 입력으로 주입하지 않습니다.", "",
+              "| 턴 | 사용자 입력 | 기대 동작 | 기대 이해 | 재사용할 앞선 턴 |", "| ---: | --- | --- | --- | --- |"]
+    example = report["multiturn_design_example"]
+    for turn, checkpoint in zip(example["turns"], example["checkpoints"]):
+        lines.append(f"| {turn['turn_id']} | {_cell(turn['content'])} | {checkpoint['understanding_action']} | "
+                     f"{_cell(checkpoint['expected_understanding'])} | {checkpoint['carry_forward_from'] or '없음'} |")
+    lines += ["", f"사례: `{example['case_id']}`. 320개 비교 단위 안의 턴별 증거이며, 반복 턴은 독립 고객 표본이 아닙니다."]
     lines += ["", "## 출처와 관찰 단위", ""]
     sources = {source["id"]: source for source in report["sources"]}
     for framework in report["frameworks"]:

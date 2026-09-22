@@ -1997,6 +1997,2781 @@
         "부모 지원 중단이나 노후자금 사용을 정답으로 제시하지 않고 타인의 자금·의사·부양의무를 고객의 확정 자원이나 선택으로 추정하지 않는다."
       ],
       "evaluation_ids": ["counseling-family-2","answer-18"]
+    },
+    {
+      "id": "coverage-55",
+      "area": "시작 안내의 고객별 초점",
+      "step_ids": [
+        "intro"
+      ],
+      "question": "지금은 무엇부터 확인하면 되나요?",
+      "concern": "절차를 몰라 무엇을 준비할지 막막함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "처음 방문한 고객에게 현재 지원 범위와 첫 확인 순서를 짧게 안내한다.",
+      "required_context": [
+        "현재 제품의 시작·입력·진단 기능 계약",
+        "고객이 밝힌 첫 방문 상태"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "상품이나 실행을 제안하지 않고 첫 단계 하나만 안내한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-01",
+        "variant": "first-visit",
+        "background": "가상 사례. 합성 고객은 처음 방문했고 입력과 진단 결과의 차이를 먼저 알고 싶다고 말했다.",
+        "financial_state": [
+          "재무 입력은 아직 제출하지 않았다.",
+          "보고서는 아직 생성하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-56",
+      "area": "시작 안내의 고객별 초점",
+      "step_ids": [
+        "intro"
+      ],
+      "question": "지금은 무엇부터 확인하면 되나요?",
+      "concern": "서비스 사용이 금융상품 실행으로 이어질까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "재방문 여부보다 고객이 밝힌 진단 범위와 실행 권한의 경계를 우선 설명한다.",
+      "required_context": [
+        "현재 지원 범위와 실제 승인·실행 계약",
+        "재방문 맥락과 진단만 원하는 요청"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "입력 초안을 실행 승인으로 간주하지 않고 고객이 선택할 진단 경로를 안내한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-01",
+        "variant": "returning-visitor",
+        "background": "가상 사례. 합성 고객은 재방문했고 이번에는 자동 가입이나 매매 없이 진단만 보고 싶다고 밝혔다.",
+        "financial_state": [
+          "이전 입력 초안이 있다.",
+          "이번 대화에서 신규 실행을 승인하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-57",
+      "area": "불완전 정보 수집",
+      "step_ids": [
+        "collection"
+      ],
+      "question": "모르는 금액도 일단 적어야 하나요?",
+      "concern": "추측한 숫자가 확정 사실로 남을까 걱정함",
+      "primary_action": "clarify",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "모르는 값과 없는 값을 구분하고 실제 입력 계약에 맞는 미확인 처리부터 확인한다.",
+      "required_context": [
+        "해당 입력의 미확인·누락 처리 계약",
+        "고객이 확인한 항목과 모르는 항목"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "임의 금액이나 0을 넣지 않고 지금 확인 가능한 한 항목만 묻는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-02",
+        "variant": "unknown-balance",
+        "background": "가상 사례. 합성 고객은 현재 잔액을 확인하지 못했고 추측으로 적는 것이 불편하다고 말했다.",
+        "financial_state": [
+          "계좌 잔액은 미확인이다.",
+          "소득 입금일만 알고 있다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-58",
+      "area": "불완전 정보 수집",
+      "step_ids": [
+        "collection"
+      ],
+      "question": "모르는 금액도 일단 적어야 하나요?",
+      "concern": "오래된 숫자로 시작하면 틀린 진단을 받을까 걱정함",
+      "primary_action": "clarify",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "이미 있는 메모를 다시 요구하지 않고 기준일과 추정 여부를 구분할 수 있는지 확인한다.",
+      "required_context": [
+        "메모의 기준일과 추정 표시",
+        "현재 입력의 기준시점·잠정값 처리 계약"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "과거 메모를 현재 확정값으로 승격하지 않고 확인 전 한계를 짧게 설명한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-02",
+        "variant": "old-estimate",
+        "background": "가상 사례. 합성 고객은 과거 상담의 추정액을 메모해 왔으나 현재 값은 아니라고 밝혔다.",
+        "financial_state": [
+          "과거 추정 잔액만 보유한다.",
+          "현재 기준일 잔액은 미확인이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-59",
+      "area": "괜찮다는 말에 담긴 서로 다른 걱정",
+      "step_ids": [
+        "financial-satisfaction"
+      ],
+      "question": "이 정도면 괜찮은 건가요?",
+      "concern": "현재 흑자가 소득 공백에도 버틸 수 있다는 뜻인지 궁금함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "고객이 밝힌 소득 지속성 걱정과 월 흑자라는 단일 관찰을 분리하고 관련 검증 자료를 먼저 확인한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 월 현금흐름과 기준일",
+        "확정 소득 기간과 필수지출",
+        "고객이 말한 불안의 초점"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-balance-cash-flow",
+          "section": "해석 원칙"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-financial-wellbeing",
+          "section": "돈은 남는데 왜 계속 불안할까요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "흑자만으로 안전을 보장하지 않고 확인된 강점과 남은 조건을 함께 설명한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-03",
+        "variant": "income-interruption",
+        "background": "가상 사례. 합성 고객은 이번 달에는 돈이 남았지만 다음 계약이 확정되지 않아 불안하다고 말했다.",
+        "financial_state": [
+          "이번 달 현금흐름은 흑자라고 진술했다.",
+          "다음 소득 계약은 미확정이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-60",
+      "area": "괜찮다는 말에 담긴 서로 다른 걱정",
+      "step_ids": [
+        "financial-satisfaction"
+      ],
+      "question": "이 정도면 괜찮은 건가요?",
+      "concern": "현재 상태가 또래보다 뒤처졌다는 평가인지 걱정함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "확인된 자신의 진단과 조건을 모르는 타인 비교를 나누고 본인이 중요하게 여기는 목표에 연결한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "고객의 검증된 진단 자료",
+        "고객이 직접 말한 비교 고민과 목표",
+        "타인 재무정보는 미확인이라는 상태"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-balance-cash-flow",
+          "section": "해석 원칙"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-financial-wellbeing",
+          "section": "돈은 남는데 왜 계속 불안할까요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "타인의 숫자나 평균 순위를 만들어내지 않고 고객이 밝힌 고민을 정확히 반영한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-03",
+        "variant": "social-comparison",
+        "background": "가상 사례. 합성 고객은 당장의 납부 문제보다 지인들보다 적게 모았다는 생각 때문에 불안하다고 말했다.",
+        "financial_state": [
+          "당월 필수지출은 지급했다고 진술했다.",
+          "비교 대상의 자산·부채 조건은 모른다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-61",
+      "area": "입력 완료 여부의 서로 다른 의미",
+      "step_ids": [
+        "financial-info"
+      ],
+      "question": "이대로 진단해도 되나요?",
+      "concern": "비공개 선택을 존중받으면서 진단 한계를 알고 싶음",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "필수 항목과 실제 누락 상태를 확인하고 비공개 금액을 추정하지 않은 채 가능한 범위를 설명한다.",
+      "required_context": [
+        "실제 입력 누락 상태",
+        "필수 입력과 미제공 처리 계약",
+        "고객의 비공개 선택"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "data_or_tool",
+      "after": "data_dependency",
+      "ax_observation": [
+        "비공개 금액을 0이나 숨겨진 자산으로 단정하지 않고 강제 수집 없이 진단 한계를 설명한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-04",
+        "variant": "deliberate-omission",
+        "background": "가상 사례. 합성 고객은 계좌 한 항목을 공개하고 싶지 않아 비워 두었다고 말했다.",
+        "financial_state": [
+          "일부 금융자산 금액이 누락되어 있다.",
+          "소득·지출 입력은 초안 상태다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-62",
+      "area": "입력 완료 여부의 서로 다른 의미",
+      "step_ids": [
+        "financial-info"
+      ],
+      "question": "이대로 진단해도 되나요?",
+      "concern": "칸을 모두 채웠어도 현재 상태와 어긋날까 걱정함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "완료 표시와 자료의 현재성을 구분하고 영향을 받는 항목만 확인한다.",
+      "required_context": [
+        "실제 저장 snapshot과 기준일",
+        "이직으로 바뀌었다고 밝힌 항목",
+        "새 값의 확인 여부"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "data_or_tool",
+      "after": "data_dependency",
+      "ax_observation": [
+        "완료 표시만으로 자료가 최신이라고 말하지 않고 변하지 않은 항목을 반복해서 묻지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-04",
+        "variant": "stale-snapshot",
+        "background": "가상 사례. 합성 고객은 모든 칸을 채웠지만 최근 이직 전 정보를 사용했다고 밝혔다.",
+        "financial_state": [
+          "빈 입력칸은 없다고 진술했다.",
+          "소득 정보의 기준시점은 이직 전이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-63",
+      "area": "보고서 안내의 서로 다른 관심",
+      "step_ids": [
+        "presentation"
+      ],
+      "question": "어느 결과부터 보면 좋을까요?",
+      "concern": "전체 설명 대신 당장의 현금흐름을 먼저 이해하고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "밝힌 질문에 맞는 보고서 경로를 실제 UI 계약에서 안내하면 되므로 상담 검색이 필요하지 않다.",
+      "required_context": [
+        "현재 보고서 메뉴 계약",
+        "고객이 먼저 보려는 결제일 문제"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "모든 보고서를 장황하게 순회하지 않고 질문에 맞는 현금흐름 경로를 짧게 안내한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-05",
+        "variant": "near-term-payments",
+        "background": "가상 사례. 합성 고객은 은퇴 전체보다 다음 결제일에 돈이 부족한 이유부터 알고 싶다고 말했다.",
+        "financial_state": [
+          "여러 보고서 메뉴가 제시된 상태다.",
+          "다음 결제일 자금 부족을 걱정한다고 진술했다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-64",
+      "area": "보고서 안내의 서로 다른 관심",
+      "step_ids": [
+        "presentation"
+      ],
+      "question": "어느 결과부터 보면 좋을까요?",
+      "concern": "연금 전환 기간의 연결을 먼저 이해하고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "고객이 선택한 관심에 맞는 연금일정·연결 보고서의 사용 가능한 경로를 먼저 안내한다.",
+      "required_context": [
+        "현재 보고서 메뉴 계약",
+        "고객이 말한 은퇴와 연금 개시 간 관심"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "고객의 요청 없이 은퇴 나이나 연금 시점을 변경하지 않고 관련 결과를 보는 경로만 안내한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-05",
+        "variant": "pension-gap",
+        "background": "가상 사례. 합성 고객은 월별 납부보다 퇴직 후 연금 시작 전 기간을 먼저 보고 싶다고 말했다.",
+        "financial_state": [
+          "여러 보고서 메뉴가 제시된 상태다.",
+          "희망 은퇴와 연금 개시 시점이 다르다고 진술했다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-65",
+      "area": "은퇴 부족액과 결정 여지",
+      "step_ids": [
+        "retirement-fund"
+      ],
+      "question": "부족하다고 나오면 지금 무엇을 확인해야 하나요?",
+      "concern": "잠정 목표가 이미 실패로 판정된 것인지 궁금함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "부족액의 기준과 잠정 입력을 검증한 뒤 고객이 바꿀 수 있다고 직접 밝힌 조건을 구분한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 부족액과 가정",
+        "확정·잠정 은퇴 시점",
+        "고객이 허용한 설명 범위"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "은퇴자금 보고서"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "은퇴자금이 부족하다고 나오면 이미 늦었다는 뜻인가요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "잠정 시점을 확정 목표로 저장하거나 만회 가능성을 보장하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-06",
+        "variant": "flexible-goal",
+        "background": "가상 사례. 합성 고객은 은퇴 시점이 잠정적이며 결과의 가정부터 이해하고 싶다고 밝혔다.",
+        "financial_state": [
+          "현재 보고서에는 부족 표시가 있다고 진술했다.",
+          "희망 은퇴 시점은 확정하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-66",
+      "area": "은퇴 부족액과 결정 여지",
+      "step_ids": [
+        "retirement-fund"
+      ],
+      "question": "부족하다고 나오면 지금 무엇을 확인해야 하나요?",
+      "concern": "바꾸기 어려운 조건을 무시한 조언을 받을까 걱정함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "검증된 결과와 고객이 바꾸기 어렵다고 밝힌 조건을 함께 보며 진단에서 확인 가능한 가정을 먼저 짚는다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 부족액과 입력 가정",
+        "고객이 밝힌 고용 종료 조건",
+        "다른 소득·지출 가정의 확정 여부"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "은퇴자금 보고서"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "은퇴자금이 부족하다고 나오면 이미 늦었다는 뜻인가요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "고용 연장을 당연한 해결책으로 제시하지 않고 부족액이 뜻하는 조건을 설명한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-06",
+        "variant": "fixed-transition",
+        "background": "가상 사례. 합성 고객은 고용 종료일은 정해졌고 은퇴를 늦추라는 말보다 결과를 먼저 이해하고 싶다고 밝혔다.",
+        "financial_state": [
+          "고용 종료 시점이 정해졌다고 진술했다.",
+          "현재 보고서에는 부족 표시가 있다고 진술했다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-67",
+      "area": "준비도 충분 표시를 받아들이는 배경",
+      "step_ids": [
+        "retirement-readiness"
+      ],
+      "question": "충분이라고 나오면 안심해도 되나요?",
+      "concern": "새로운 생활 변화가 기존 결과에 빠졌는지 궁금함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "충분 표시의 일반적 한계는 설명하되 개인 결과 적용은 새 비용이 반영된 snapshot인지 먼저 확인한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "기존 보고서의 snapshot·기준일",
+        "새 비용의 확인 여부와 입력 반영 상태"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "은퇴준비도 보고서"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "괜찮다는 지표도 있는데 걱정해야 하나요 — 강점과 확인할 점"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "이전 충분 표시를 현재의 보장으로 재사용하지 않고 미반영 여부를 확인한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-07",
+        "variant": "recent-care-cost",
+        "background": "가상 사례. 합성 고객은 준비도 결과 이후 돌봄 비용이 생겨 수치가 그대로 유효한지 걱정한다고 말했다.",
+        "financial_state": [
+          "이전 보고서에는 준비도 충분 표시가 있다.",
+          "새 돌봄 비용의 반영 여부는 미확인이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-68",
+      "area": "준비도 충분 표시를 받아들이는 배경",
+      "step_ids": [
+        "retirement-readiness"
+      ],
+      "question": "충분이라고 나오면 안심해도 되나요?",
+      "concern": "조건부 진단과 미래 보장의 차이를 알고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "existing",
+      "retrieval_timing": "now",
+      "reason": "일반적 의미만 묻고 있으므로 재조회 없이 조건부 평가라는 뜻을 요청한 길이로 설명할 수 있다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "충분 표시의 정의와 한계",
+        "고객이 요청한 짧은 설명"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "은퇴준비도 보고서"
+        }
+      ],
+      "candidate_refs": [],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "개인 수치를 새로 조회하도록 요구하지 않고 한 문장으로 조건부 의미를 설명한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-07",
+        "variant": "unchanged-inputs",
+        "background": "가상 사례. 합성 고객은 입력 변화는 없고 충분이라는 표현이 미래 보장인지 한 문장으로 알고 싶다고 말했다.",
+        "financial_state": [
+          "입력 변화가 없다고 진술했다.",
+          "같은 보고서의 충분 표시를 다시 보고 있다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-69",
+      "area": "확률 질문의 서로 다른 사용 의도",
+      "step_ids": [
+        "retirement-simulation"
+      ],
+      "question": "성공확률은 어떻게 받아들이면 되나요?",
+      "concern": "확률을 확정 결과로 오해하지 않으려 함",
+      "primary_action": "answer",
+      "knowledge_mode": "existing",
+      "retrieval_timing": "now",
+      "reason": "성공 정의와 모형의 조건을 설명하는 데 개인 자산을 더 수집할 필요는 없다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "사용 중인 성공 정의와 시뮬레이션 가정"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-presentation-report-interpretation",
+          "section": "은퇴 시뮬레이션 주의사항"
+        }
+      ],
+      "candidate_refs": [],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "정확한 개인 확률을 추정하지 않고 모형 안의 결과라는 의미를 쉽게 설명한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-08",
+        "variant": "concept-first",
+        "background": "가상 사례. 합성 고객은 처음 시뮬레이션을 보며 개인 수치보다 성공이라는 말의 뜻부터 알고 싶다고 말했다.",
+        "financial_state": [
+          "개인 성공확률 수치는 질문에 제시하지 않았다.",
+          "모델의 성공 정의는 아직 설명받지 못했다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-70",
+      "area": "확률 질문의 서로 다른 사용 의도",
+      "step_ids": [
+        "retirement-simulation"
+      ],
+      "question": "성공확률은 어떻게 받아들이면 되나요?",
+      "concern": "모형 수치가 가족의 결정 압박을 정당화하는지 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "now",
+      "reason": "확률의 한계와 고객의 결정권을 함께 설명하되 가족의 의도나 합의를 추정하지 않는다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "모형 확률의 적용 범위",
+        "고객이 직접 말한 가족 발언",
+        "미확정인 은퇴 결정 상태"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-presentation-report-interpretation",
+          "section": "은퇴 시뮬레이션 주의사항"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "괜찮다는 지표도 있는데 걱정해야 하나요 — 강점과 확인할 점"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "높은 확률을 은퇴 실행 권고로 바꾸거나 가족의 동의를 대신 선언하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-08",
+        "variant": "decision-pressure",
+        "background": "가상 사례. 합성 고객은 가족이 높은 확률을 근거로 당장 은퇴하라고 한다며 해석 범위를 물었다.",
+        "financial_state": [
+          "가족이 결과를 은퇴 결정의 근거로 들었다고 진술했다.",
+          "실제 은퇴 결정이나 공동 합의는 확인되지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-71",
+      "area": "필요저축액과 생활 제약",
+      "step_ids": [
+        "required-savings"
+      ],
+      "question": "필요저축액을 맞추기 어렵다면 무엇부터 봐야 하나요?",
+      "concern": "한 달의 예외가 장기 목표 실패를 뜻하는지 궁금함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "일시 지출과 장기 저축 여력을 같은 기간으로 비교했는지 검증한 뒤 설명한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "필요저축액과 현금흐름의 기간·가정",
+        "일회성 지출과 반복 지출 구분"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "필요저축액 보고서"
+        },
+        {
+          "source_id": "retirewise-financial-goals-time-value",
+          "section": "필요저축액 해석"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-goals-life-events",
+          "section": "노후도 준비하고 가까운 목돈 지출도 감당하고 싶어요"
+        },
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "결과를 보고 다음에 무엇부터 확인할지 고르기"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "일회성 비용을 평생 지속되는 소비로 일반화하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-09",
+        "variant": "temporary-cost",
+        "background": "가상 사례. 합성 고객은 일시적인 이사 비용 때문에 이번 달 여유가 줄었다고 말했다.",
+        "financial_state": [
+          "이번 달 이사 지출이 발생했다고 진술했다.",
+          "필요저축액 산출 기간과 이사 비용 반영은 미확인이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-72",
+      "area": "필요저축액과 생활 제약",
+      "step_ids": [
+        "required-savings"
+      ],
+      "question": "필요저축액을 맞추기 어렵다면 무엇부터 봐야 하나요?",
+      "concern": "중요한 돌봄 선택을 무시하고 저축만 늘리라고 할까 걱정함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "확인된 현금흐름과 고객이 지키고 싶은 목표를 함께 보고 조정 가능한 가정이 무엇인지 확인한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 반복 지출과 가용 여력",
+        "고객이 유지하고 싶은 목표",
+        "필요저축액 산출 가정"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "필요저축액 보고서"
+        },
+        {
+          "source_id": "retirewise-financial-goals-time-value",
+          "section": "필요저축액 해석"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-goals-life-events",
+          "section": "노후도 준비하고 가까운 목돈 지출도 감당하고 싶어요"
+        },
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "결과를 보고 다음에 무엇부터 확인할지 고르기"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "돌봄 축소를 정답으로 지시하지 않고 비교에 필요한 조건을 함께 제시한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-question-different-background",
+        "family_id": "coverage-sq-09",
+        "variant": "ongoing-care",
+        "background": "가상 사례. 합성 고객은 정기 돌봄 지출이 있으며 그 지출을 유지하고 싶다고 말했다.",
+        "financial_state": [
+          "돌봄 지출이 반복된다고 진술했다.",
+          "돌봄 지출을 줄이기로 결정하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-73",
+      "area": "같은 순자산과 다른 관심",
+      "step_ids": [
+        "balance-sheet"
+      ],
+      "question": "순자산이 플러스라는 뜻만 설명해 주세요.",
+      "concern": "용어를 오해하지 않고 표를 읽고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "existing",
+      "retrieval_timing": "now",
+      "reason": "같은 자산 상태라도 일반 정의를 묻는 요청에는 개인의 모든 위험을 추가 진단할 필요가 없다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "순자산의 정의",
+        "고객이 요청한 정의 설명의 범위"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-balance-cash-flow",
+          "section": "재무상태표"
+        }
+      ],
+      "candidate_refs": [],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "플러스의 의미를 짧게 설명하되 즉시 생활비가 충분하다는 뜻으로 확대하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-01",
+        "variant": "net-worth-meaning",
+        "background": "가상 사례. 고객은 표를 처음 읽으며 순자산의 정의를 알고 싶다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 총자산 2억 원, 총부채 5천만 원이다.",
+          "합성 재무상태: 총자산 중 즉시 사용 가능한 현금은 500만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-74",
+      "area": "같은 순자산과 다른 관심",
+      "step_ids": [
+        "balance-sheet"
+      ],
+      "question": "순자산은 플러스인데 당장 쓸 돈이 적어도 괜찮나요?",
+      "concern": "자산 총액과 당장 사용 가능한 돈의 차이가 걱정됨",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "순자산 크기보다 유동성과 지급 시점을 구분해야 고객이 제기한 현금 접근성 문제를 설명할 수 있다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "현재 검증된 자산·부채 구성",
+        "사용 가능 현금과 가까운 지급 일정"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-balance-cash-flow",
+          "section": "해석 원칙"
+        },
+        {
+          "source_id": "retirewise-presentation-report-interpretation",
+          "section": "공통 해석 원칙"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-asset-liquidity",
+          "section": "곧 쓸 돈도 자산 총액에 들어 있으니 괜찮을까요"
+        },
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "괜찮다는 지표도 있는데 걱정해야 하나요 — 강점과 확인할 점"
+        }
+      ],
+      "before": "partial",
+      "gap": "278bd53 당시의 범위 한계: 양호 지표의 한계는 있으나 순자산과 실제 쓸 수 있는 자금을 구분하는 고객 맞춤 질문 순서가 부족하다. 현재는 해당 보강 문서를 재사용한다.",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "총자산으로 안심시키거나 자산 매각을 바로 권고하지 않고 접근 가능한 자금을 구분한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-01",
+        "variant": "usable-cash",
+        "background": "가상 사례. 고객은 다음 달 생활비에 실제로 쓸 수 있는 자금이 적다고 걱정했다.",
+        "financial_state": [
+          "합성 재무상태: 총자산 2억 원, 총부채 5천만 원이다.",
+          "합성 재무상태: 총자산 중 즉시 사용 가능한 현금은 500만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-75",
+      "area": "같은 월 흑자와 다른 현금흐름 고민",
+      "step_ids": [
+        "cash-flow"
+      ],
+      "question": "남는 돈이 적으면 제가 관리를 잘못한 건가요?",
+      "concern": "적은 흑자를 도덕적 실패로 평가받을까 걱정함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "검증된 수입·지출과 기간을 설명하되 잔여액의 크기로 사람을 평가하지 않는다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 월 현금흐름과 지출 구성",
+        "고객이 직접 표현한 자책"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-balance-cash-flow",
+          "section": "현금흐름표"
+        },
+        {
+          "source_id": "retirewise-presentation-report-interpretation",
+          "section": "공통 해석 원칙"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-financial-wellbeing",
+          "section": "형편이 빠듯한데 괜찮다는 말만 듣고 싶지는 않아요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "소비 성격을 확인하지 않고 낭비나 절제 부족으로 단정하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-02",
+        "variant": "small-surplus",
+        "background": "가상 사례. 고객은 월 잔여액이 적다는 사실을 자신의 실패로 받아들인다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 월수입 300만 원, 월지출 280만 원이다.",
+          "합성 재무상태: 급여일은 25일, 주요 카드 결제일은 10일이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-76",
+      "area": "같은 월 흑자와 다른 현금흐름 고민",
+      "step_ids": [
+        "cash-flow"
+      ],
+      "question": "월로는 남는데 결제일마다 막히는 이유를 보고 싶어요.",
+      "concern": "합계 흑자와 납부 시점의 부족이 동시에 생기는 이유가 궁금함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "동일한 월 합계라도 입금일과 지급일의 차이가 설명의 핵심이므로 검증된 일정을 확인한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 입금·청구 일정",
+        "월초 잔액과 사용 가능한 현금"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-balance-cash-flow",
+          "section": "현금흐름표"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-cashflow-resilience",
+          "section": "한 달로는 남는데 결제일마다 돈이 모자라요 — 입금일과 청구일"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "월 흑자만 반복하지 않고 시점 차이를 설명하며 결제일 변경을 대신 실행하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-02",
+        "variant": "payment-timing",
+        "background": "가상 사례. 고객은 월 합계보다 결제일 자금 부족의 시점을 알고 싶다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 월수입 300만 원, 월지출 280만 원이다.",
+          "합성 재무상태: 급여일은 25일, 주요 카드 결제일은 10일이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-77",
+      "area": "같은 지표와 다른 평가 관심",
+      "step_ids": [
+        "financial-indicators"
+      ],
+      "question": "빨간 표시가 있으면 저는 재무관리를 못하는 건가요?",
+      "concern": "진단 색을 자신에 대한 종합 평가로 받아들임",
+      "primary_action": "answer",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "now",
+      "reason": "지표 색깔은 내부 기준에 따른 표시이며 개인의 가치나 전체 재무 실패를 판정하지 않는다는 일반적 한계는 바로 설명할 수 있다. 개인 지표의 수치·원인을 추가 해석할 때만 검증된 결과를 사용한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "지표 색깔·판정 표시의 정의와 적용 한계",
+        "고객이 직접 표현한 자책",
+        "개별 수치·원인을 추가 해석할 때: 검증된 지표와 정책·입력 버전"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-financial-indicator-policy",
+          "section": "기준의 성격"
+        },
+        {
+          "source_id": "retirewise-household-financial-indicator-policy",
+          "section": "결과 표현"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "괜찮다는 지표도 있는데 걱정해야 하나요 — 강점과 확인할 점"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "빨간 표시를 사람의 등급으로 사용하지 않고 강점과 확인할 지점을 함께 남긴다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-03",
+        "variant": "indicator-label",
+        "background": "가상 사례. 고객은 지표 색깔 때문에 자신이 무능하다는 생각이 든다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 월수입 400만 원, 생활비 300만 원이다.",
+          "합성 재무상태: 비상자금 600만 원, 정기 원리금 상환액은 월 50만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-78",
+      "area": "같은 지표와 다른 평가 관심",
+      "step_ids": [
+        "financial-indicators"
+      ],
+      "question": "지표가 여러 개면 어느 계산부터 확인해야 하나요?",
+      "concern": "수치가 중복되거나 서로 모순되는지 이해하고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "existing",
+      "retrieval_timing": "now",
+      "reason": "계산의 분모·기간·입력부터 비교하는 일반적 확인 순서는 기존 지표 설명만으로 답할 수 있다. 실제 지표 사이의 일치 여부를 판정할 때만 검증된 결과를 사용한다. 기준 278bd53에서 다룬 기존 설명을 재사용한다.",
+      "required_context": [
+        "지표의 공통 계산 규칙과 기준 성격",
+        "실제 계산의 일치 여부를 추가 판단할 때: 검증된 산식·분모·기간·입력"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-financial-indicator-policy",
+          "section": "공통 계산 규칙"
+        },
+        {
+          "source_id": "retirewise-household-financial-indicator-policy",
+          "section": "기준의 성격"
+        }
+      ],
+      "candidate_refs": [],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "자책한다고 추정하지 않고 검증 가능한 계산 관계에 집중한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-03",
+        "variant": "indicator-priority",
+        "background": "가상 사례. 고객은 불안보다 지표 간 관계와 계산 확인 순서가 궁금하다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 월수입 400만 원, 생활비 300만 원이다.",
+          "합성 재무상태: 비상자금 600만 원, 정기 원리금 상환액은 월 50만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-79",
+      "area": "같은 목표 부족액과 다른 고민",
+      "step_ids": [
+        "financial-goal-result"
+      ],
+      "question": "부족액이 있으니 이 목표를 포기해야 하나요?",
+      "concern": "부족액을 목표 포기의 결론으로 해석함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "부족액의 가정과 고객이 중요하게 여기는 이유를 확인한 뒤 조건부 진단의 의미를 설명한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 부족액과 목표 기간",
+        "고객이 지키고 싶은 목표의 의미"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-financial-goals-time-value",
+          "section": "목표 우선순위"
+        },
+        {
+          "source_id": "retirewise-presentation-report-interpretation",
+          "section": "보고서별 정의와 읽는 순서"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-goals-life-events",
+          "section": "노후도 준비하고 가까운 목돈 지출도 감당하고 싶어요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "포기나 무조건 달성을 정답으로 제시하지 않고 선택 가능한 확인 항목을 남긴다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-04",
+        "variant": "giving-up",
+        "background": "가상 사례. 고객은 결과를 보며 오랫동안 바라던 목표를 포기해야 할까 걱정한다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 목표 금액은 3천만 원, 해당 목표에 배정한 금액은 2천만 원이다.",
+          "합성 재무상태: 목표까지 남은 기간은 3년, 현재 월 잔여액은 30만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-80",
+      "area": "같은 목표 부족액과 다른 고민",
+      "step_ids": [
+        "financial-goal-result"
+      ],
+      "question": "배우자의 돈도 더하면 달성한 것으로 볼 수 있나요?",
+      "concern": "가족 재산을 가용 목표 자금으로 볼 수 있는지 궁금함",
+      "primary_action": "answer",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "now",
+      "reason": "동일한 본인 재무조건에 타인 자금을 더하려면 소유와 사용 합의를 분리해야 하며 임의 포함하지 않는다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "고객이 직접 밝힌 자금 소유와 사용 합의 부재",
+        "타인 자금을 가용 자금으로 간주하지 않는 해석 원칙",
+        "개인 달성 결과를 추가 해석할 때: 실제 입력의 소유·포함 범위"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-financial-goals-time-value",
+          "section": "목표 우선순위"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-goals-life-events",
+          "section": "배우자와 돈을 어디에 쓸지 우선순위가 달라요"
+        }
+      ],
+      "before": "partial",
+      "gap": "278bd53 당시에는 복수 목표의 일반 원칙은 있었으나 타인의 자금 소유와 공동 사용 합의를 분리한 가족 사례가 부족했다. 현재는 이미 보강된 배우자 우선순위 절을 재사용한다.",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "배우자의 동의나 자산 규모를 추정하지 않고 확인 전에는 달성으로 판정하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-04",
+        "variant": "shared-ownership",
+        "background": "가상 사례. 고객은 배우자의 별도 재산을 목표 자금에 포함해도 되는지 물었으며 사용 합의는 없다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 목표 금액은 3천만 원, 해당 목표에 배정한 금액은 2천만 원이다.",
+          "합성 재무상태: 목표까지 남은 기간은 3년, 현재 월 잔여액은 30만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-81",
+      "area": "같은 연금 공백과 다른 질문",
+      "step_ids": [
+        "pension-schedule"
+      ],
+      "question": "연금이 나오기 전 기간의 생활비는 어디서 확인하나요?",
+      "concern": "연금 수령 전의 자금 흐름을 이해하고 싶음",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "연금 전 공백과 수령 후 흐름을 나누어 검증된 일정·생활비·다른 소득의 연결을 확인한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 연금 일정과 은퇴 시점",
+        "공백 기간 현금흐름·다른 소득"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "연금일정 보고서"
+        },
+        {
+          "source_id": "retirewise-presentation-report-interpretation",
+          "section": "연결 설명 예시의 경계"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-pension-uncertainty",
+          "section": "은퇴하고 연금이 나오기 전까지 어떻게 보나요"
+        }
+      ],
+      "before": "partial",
+      "gap": "278bd53 당시의 범위 한계: 공백의 존재와 연결 조건은 있으나 예상 연금과 현재 확보한 공백 재원을 구분하는 상담 사례가 부족하다. 현재는 해당 보강 문서를 재사용한다.",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "예상 연금액을 공백 기간에도 이미 들어오는 소득으로 계산하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-05",
+        "variant": "gap-period",
+        "background": "가상 사례. 고객은 은퇴 직후 공백 기간이 가장 걱정된다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 희망 은퇴 시점은 60세, 입력한 연금 개시 시점은 65세다.",
+          "합성 재무상태: 예상 월 연금은 150만 원, 은퇴 후 월 생활비 가정은 200만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-82",
+      "area": "같은 연금 공백과 다른 질문",
+      "step_ids": [
+        "pension-schedule"
+      ],
+      "question": "월 연금과 생활비는 같은 시점의 돈으로 비교한 건가요?",
+      "concern": "현재가치와 미래가치의 혼용이 걱정됨",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "같은 숫자라도 기준시점과 물가 가정을 맞춘 비교인지 검증해야 질문에 답할 수 있다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "금액별 현재·미래 가치 기준",
+        "사용한 물가 가정과 기간",
+        "검증된 보고서의 표시 단위"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "은퇴자금 보고서"
+        },
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "연금일정 보고서"
+        },
+        {
+          "source_id": "retirewise-financial-goals-time-value",
+          "section": "현재가치와 미래가치"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-pension-uncertainty",
+          "section": "같은 연금액인데 미래에도 생활이 가능할까요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "새 물가 수치를 만들어 넣지 않고 기존 가정의 기준시점과 한계를 설명한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-05",
+        "variant": "purchasing-power",
+        "background": "가상 사례. 고객은 연금 공백보다 장래 구매력을 현재 생활비와 섞었는지 궁금하다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 희망 은퇴 시점은 60세, 입력한 연금 개시 시점은 65세다.",
+          "합성 재무상태: 예상 월 연금은 150만 원, 은퇴 후 월 생활비 가정은 200만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-83",
+      "area": "같은 생애 현금흐름 감소와 다른 해석",
+      "step_ids": [
+        "lifetime-cashflow"
+      ],
+      "question": "이 나이에 잔액이 줄어드는 원인만 짚어 주세요.",
+      "concern": "어떤 입력 사건이 그래프에 반영됐는지 궁금함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "관련 구조화 사건과 같은 snapshot의 결과를 확인한 뒤 관찰된 연결만 설명한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "동일 snapshot의 구조화 현금흐름 사건",
+        "입력한 목돈 지출의 반영 시점"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "생애 현금흐름 보고서"
+        },
+        {
+          "source_id": "retirewise-presentation-report-interpretation",
+          "section": "공통 해석 원칙"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "입력이 비어 있거나 결과가 달라졌을 때 설명할 수 있는 범위"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "그래프 모양만 보고 원인을 지어내거나 실제 확인되지 않은 사건을 단정하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-06",
+        "variant": "event-explanation",
+        "background": "가상 사례. 고객은 그래프 급락과 입력한 목돈 지출의 연결을 확인하고 싶다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 입력된 65세 시점에 연간 지출이 2천만 원 증가한다.",
+          "합성 재무상태: 같은 시점의 연금 수입은 변하지 않는다고 설정했다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-84",
+      "area": "같은 생애 현금흐름 감소와 다른 해석",
+      "step_ids": [
+        "lifetime-cashflow"
+      ],
+      "question": "잔액이 한 번 줄면 그때부터 생활이 무너지는 건가요?",
+      "concern": "한 시점의 감소를 장기 파탄으로 일반화함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "검증된 감소 사건과 이후 흐름을 구분하고 모델 가정 아래의 관찰 범위를 설명한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "감소 전후의 검증된 잔액·수입·지출",
+        "보고서의 기간과 고갈 정의"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-retirement-planning-report-interpretation",
+          "section": "생애 현금흐름 보고서"
+        },
+        {
+          "source_id": "retirewise-presentation-report-interpretation",
+          "section": "공통 해석 원칙"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-retirement-diagnosis",
+          "section": "입력이 비어 있거나 결과가 달라졌을 때 설명할 수 있는 범위"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "한 번의 감소를 파탄으로 확정하거나 반대로 평생 안전을 보장하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-06",
+        "variant": "catastrophic-reading",
+        "background": "가상 사례. 고객은 특정 해 감소를 이후 생활 전체의 실패로 받아들이며 걱정한다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 입력된 65세 시점에 연간 지출이 2천만 원 증가한다.",
+          "합성 재무상태: 같은 시점의 연금 수입은 변하지 않는다고 설정했다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-85",
+      "area": "같은 불규칙 소득과 다른 이해 요구",
+      "step_ids": [
+        "income"
+      ],
+      "question": "이 수입을 월평균으로 입력하면 무엇이 빠지나요?",
+      "concern": "평균 하나로 소득 변동이 사라질까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "now",
+      "reason": "평균의 역할과 달별 입금 차이가 보여 주는 정보를 설명하고 실제 지원 입력 계약을 확인한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "현재 월소득 입력 방식",
+        "수입의 반복성·기간·입금 간격"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-balance-cash-flow",
+          "section": "현금흐름표"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-cashflow-resilience",
+          "section": "수입이 들쭉날쭉해서 평균 월급만으로는 모르겠어요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "평균으로 적었다고 매달 그 금액을 받는 것으로 해석하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-07",
+        "variant": "average-input",
+        "background": "가상 사례. 고객은 입력용 평균과 달별 차이를 동시에 보존하는 방법을 알고 싶다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 최근 세 달 수입은 각각 200만 원, 500만 원, 200만 원이다.",
+          "합성 재무상태: 매달 필수지출은 220만 원으로 설정했다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-86",
+      "area": "같은 불규칙 소득과 다른 이해 요구",
+      "step_ids": [
+        "income"
+      ],
+      "question": "수입이 적은 달이 있으면 제가 일을 못한 건가요?",
+      "concern": "수입 변동을 개인 실패로 해석함",
+      "primary_action": "answer",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "now",
+      "reason": "소득의 변동성과 필수지출의 지속성을 분리하되 원인이 확인되지 않은 상태에서 능력을 평가하지 않는다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "고객이 직접 밝힌 수입 구조",
+        "달별 차이의 알려진 원인과 미확인 부분"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-household-balance-cash-flow",
+          "section": "현금흐름표"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-cashflow-resilience",
+          "section": "수입이 들쭉날쭉해서 평균 월급만으로는 모르겠어요"
+        }
+      ],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "직업·능력·성실성을 추정하지 않고 불규칙 소득이 진단에 주는 한계만 설명한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-07",
+        "variant": "personal-failure",
+        "background": "가상 사례. 고객은 적은 달의 수입을 자신의 역량 부족이라고 느낀다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 최근 세 달 수입은 각각 200만 원, 500만 원, 200만 원이다.",
+          "합성 재무상태: 매달 필수지출은 220만 원으로 설정했다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-87",
+      "area": "같은 자산 집중과 다른 사용 목적",
+      "step_ids": [
+        "financial-assets"
+      ],
+      "question": "곧 쓸 돈이 있는데 금융자산 비중이 좋으면 괜찮나요?",
+      "concern": "자산 비중과 목적별 가용성의 차이를 알고 싶음",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "금융자산 비중과 집중·변동·사용 시점은 다른 질문이므로 목적별 자금과 검증된 구성을 구분한다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 금융자산 구성",
+        "가까운 사용 목적과 필요한 시점",
+        "현금화 가능 조건"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-financial-assets-risk-diversification",
+          "section": "금융자산비중 해석"
+        },
+        {
+          "source_id": "retirewise-financial-assets-risk-diversification",
+          "section": "분산투자와 목적별 구분"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-asset-liquidity",
+          "section": "자산이 한곳에 몰려 있으면 무조건 나쁜가요"
+        }
+      ],
+      "before": "partial",
+      "gap": "278bd53 당시의 범위 한계: 기존 문서는 지표 한계를 설명하지만 높은 비중을 안심 근거로 쓰는 고객에게 확인할 순서와 상담 예시가 부족하다. 현재는 해당 보강 문서를 재사용한다.",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "좋은 비중 표시만으로 가까운 자금 수요를 충족한다고 말하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-08",
+        "variant": "near-use",
+        "background": "가상 사례. 고객은 이 중 일부를 가까운 시기의 주거 비용으로 쓸 생각이라고 밝혔다.",
+        "financial_state": [
+          "합성 재무상태: 금융자산 5천만 원 중 4천만 원이 한 투자자산에 있다.",
+          "합성 재무상태: 즉시 사용 가능한 예금은 1천만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-88",
+      "area": "같은 자산 집중과 다른 사용 목적",
+      "step_ids": [
+        "financial-assets"
+      ],
+      "question": "한 자산에 몰려 있어도 금융자산 비중 자체는 높을 수 있나요?",
+      "concern": "금융자산 비중과 분산 정도를 혼동하지 않으려 함",
+      "primary_action": "answer",
+      "knowledge_mode": "existing",
+      "retrieval_timing": "now",
+      "reason": "지표 정의와 집중 위험의 차이는 일반 개념으로 설명하고 요청하지 않은 매매·자금 배분으로 확장하지 않는다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "금융자산 비중의 정의",
+        "고객이 밝힌 개념 설명 범위"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-financial-assets-risk-diversification",
+          "section": "금융자산비중 해석"
+        }
+      ],
+      "candidate_refs": [],
+      "before": "covered",
+      "gap": "",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "분류 설명에 집중하고 특정 자산 처분이나 상품 이동을 권하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-08",
+        "variant": "classification-only",
+        "background": "가상 사례. 고객은 매매 판단 없이 지표의 분류 방식만 확인하고 싶다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 금융자산 5천만 원 중 4천만 원이 한 투자자산에 있다.",
+          "합성 재무상태: 즉시 사용 가능한 예금은 1천만 원이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-89",
+      "area": "같은 부채 일정과 다른 부담",
+      "step_ids": [
+        "liabilities"
+      ],
+      "question": "지금 납부액이 적어도 만기가 오면 다른 문제인가요?",
+      "concern": "현재 납부 여력과 만기 부담을 구분하고 싶음",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "after_verified_data",
+      "reason": "현재 납부액과 원금 상환 시점을 각각 확인해야 기간별 부담을 설명할 수 있다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "검증된 상환 방식·만기·원금 일정",
+        "만기에 사용할 자금의 확정 여부"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-debt-repayment-dsr",
+          "section": "주요 상환방식"
+        },
+        {
+          "source_id": "retirewise-debt-repayment-dsr",
+          "section": "금리와 만기 위험"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-debt-burden",
+          "section": "대출이 여러 개라 어디에서 부담이 생기는지 모르겠어요"
+        }
+      ],
+      "before": "partial",
+      "gap": "278bd53 당시의 범위 한계: 만기위험 사실은 있으나 차환을 당연시하지 않고 미확인 재원을 구분하는 상담 흐름이 부족하다. 현재는 해당 보강 문서를 재사용한다.",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "현재 월 부담이 작다는 이유로 만기 위험이 없다고 말하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-09",
+        "variant": "maturity-worry",
+        "background": "가상 사례. 고객은 현재 생활보다 내년 상환 시점이 가장 걱정된다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 대출 잔액은 3천만 원이며 현재 월 납부액은 20만 원이다.",
+          "합성 재무상태: 1년 뒤 원금 상환 시점이 예정되어 있다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-90",
+      "area": "같은 부채 일정과 다른 부담",
+      "step_ids": [
+        "liabilities"
+      ],
+      "question": "대출이 있다는 사실만으로 재무 상태가 나쁜 건가요?",
+      "concern": "부채 존재와 감당 가능한 부담을 혼동함",
+      "primary_action": "answer",
+      "knowledge_mode": "combined",
+      "retrieval_timing": "now",
+      "reason": "부채의 존재 자체와 감당 가능한 상환 부담은 다르다는 일반적 한계를 먼저 설명할 수 있다. 고객의 실제 감당 가능성을 추가 판단할 때만 검증된 재무 자료를 사용하며 책임감이나 성격을 추정하지 않는다. 기준 278bd53의 문서 범위를 before에 유지하고 이미 마련된 설명을 재사용하는 사례 확장이다.",
+      "required_context": [
+        "부채 존재와 상환 부담을 구분하는 일반 원리",
+        "고객이 직접 표현한 평가받는 걱정",
+        "개인별 감당 가능성을 추가 판단할 때만: 검증된 소득·필수지출·상환조건"
+      ],
+      "existing_refs": [
+        {
+          "source_id": "retirewise-debt-repayment-dsr",
+          "section": "DSR 구분"
+        },
+        {
+          "source_id": "retirewise-debt-repayment-dsr",
+          "section": "내부 진단 기준"
+        }
+      ],
+      "candidate_refs": [
+        {
+          "source_id": "retirewise-counseling-debt-burden",
+          "section": "빚은 줄었는데 매달 갚기가 더 버거워요"
+        }
+      ],
+      "before": "partial",
+      "gap": "278bd53 당시의 범위 한계: DSR 차이와 확인 항목은 있지만 비율이 양호해도 부담을 호소하는 고객에게 지표를 재해석하는 상담 예시가 부족하다. 현재는 해당 보강 문서를 재사용한다.",
+      "improvement": "reuse",
+      "after": "documented",
+      "ax_observation": [
+        "빚이 있다는 사실로 사람을 평가하지 않고 확인된 부담과 미확인 조건을 나눈다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "same-finances-different-concern",
+        "family_id": "coverage-sf-09",
+        "variant": "judgment-fear",
+        "background": "가상 사례. 고객은 빚의 존재 자체로 무책임하다는 평가를 받을까 걱정한다고 말했다.",
+        "financial_state": [
+          "합성 재무상태: 대출 잔액은 3천만 원이며 현재 월 납부액은 20만 원이다.",
+          "합성 재무상태: 1년 뒤 원금 상환 시점이 예정되어 있다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-91",
+      "area": "나이 정정과 기존 목표 보존",
+      "step_ids": [
+        "basic-info"
+      ],
+      "question": "앞서 54세라고 한 건 오타이고 45세예요. 은퇴 희망 시점은 그대로예요.",
+      "concern": "하나의 오타를 고치면서 다른 목표까지 바뀔까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "정정된 나이와 유지한다고 밝힌 목표를 분리해 반영할 문제로 외부 지식 검색이 필요하지 않다.",
+      "required_context": [
+        "정정 전 이해 문단과 최신 발화",
+        "실제 입력 변경안·승인·저장 계약"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "나이 가설을 정정하되 은퇴 목표를 임의 재설정하지 않고 저장 완료를 근거 없이 주장하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-01",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단에는 54세이며 희망 은퇴 시점은 잠정적이라고 기록되어 있다. 고객은 나이만 명시적으로 정정한다.",
+        "financial_state": [
+          "합성 고객의 최신 진술 나이는 45세다.",
+          "희망 은퇴 시점은 이번 발화에서 바꾸지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-92",
+      "area": "안정 선호에 대한 과도한 추론 정정",
+      "step_ids": [
+        "financial-mindset"
+      ],
+      "question": "투자가 싫다는 뜻은 아니었어요. 곧 쓸 돈은 손대기 어렵다는 뜻이에요.",
+      "concern": "특정 자금 제약이 고정된 성격으로 굳어질까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "고객의 정정은 유동성 목적에 대한 새 근거이며 전체 투자 성향의 확정 근거는 아니다.",
+      "required_context": [
+        "기존 투자 회피 가설",
+        "최신 정정과 가까운 사용 목적"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "모든 투자 반대라는 가설을 제거하고 목적별 제약으로 좁히며 새 위험등급을 추정하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-02",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 고객을 모든 투자에 반대하는 사람으로 추정했다. 고객은 가까운 자금 사용 목적이 문제라고 정정한다.",
+        "financial_state": [
+          "가까운 시기의 지출 자금이 있다고 진술했다.",
+          "전체 투자 선호는 아직 확인하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-93",
+      "area": "불안의 의미 정정",
+      "step_ids": [
+        "financial-satisfaction"
+      ],
+      "question": "제가 불안한 건 돈이 부족해서가 아니라 가족과 얘기할 때 숫자를 설명하기 어려워서예요.",
+      "concern": "자신이 밝히지 않은 부족 상태로 평가받는 것이 불편함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "고민의 초점을 고객의 직접 진술로 수정하고 재무 상태의 판단은 기존 확인 수준을 유지한다.",
+      "required_context": [
+        "기존 자금 부족 가설과 근거",
+        "최신 발화의 설명 선호"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "부족 가설을 확정 사실로 유지하지 않고 가족의 반응이나 성향을 추정하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-03",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 고객이 자금 부족을 두려워한다고 추정했다. 최신 발화는 설명의 어려움을 고민으로 밝힌다.",
+        "financial_state": [
+          "새 소득·지출 수치는 제공하지 않았다.",
+          "가족의 실제 재무 목표나 합의는 확인하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-94",
+      "area": "미제공과 0원 혼동 정정",
+      "step_ids": [
+        "financial-info"
+      ],
+      "question": "그 항목은 0원이 아니라 아직 확인하지 못한 거예요.",
+      "concern": "누락이 0으로 굳어져 진단을 왜곡할까 걱정함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "현재 입력 상태와 오류 여부를 먼저 확인하고 미확인을 확정 0으로 사용하는 가설을 철회한다.",
+      "required_context": [
+        "해당 항목의 실제 저장·누락 상태",
+        "이전 이해 문단과 최신 정정"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "data_or_tool",
+      "after": "data_dependency",
+      "ax_observation": [
+        "0과 미확인을 구분하고 관련 결과를 재검증하기 전 그대로 정확하다고 선언하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-04",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단에는 특정 자산이 없다고 기록되어 있다. 고객은 잔액 미확인이었다고 정정한다.",
+        "financial_state": [
+          "해당 자산의 실제 잔액은 미확인이다.",
+          "다른 입력 항목의 변경은 요청하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-95",
+      "area": "가족 자산의 소유 정정",
+      "step_ids": [
+        "financial-assets"
+      ],
+      "question": "그 예금은 제 돈이 아니라 어머니 돈이에요. 제가 쓸 수 있다고 한 적은 없어요.",
+      "concern": "타인의 돈으로 자신의 여력을 과대평가할까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "소유와 사용 권한에 관한 직접 정정이 이전의 가용 자금 추정보다 우선한다.",
+      "required_context": [
+        "소유를 추정한 이전 문단",
+        "최신 정정과 실제 입력 포함 여부"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "어머니 자금을 고객의 확정 여력에서 제외하는 이해를 남기고 어머니 동의나 잔액을 추정하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-05",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단에 가족 예금이 고객의 가용 자금처럼 기재되어 있다. 고객은 소유와 사용 권한을 정정한다.",
+        "financial_state": [
+          "해당 예금은 어머니 소유라는 최신 진술이 있다.",
+          "고객의 사용 합의는 확인되지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-96",
+      "area": "예상 연금과 수령 중 연금 정정",
+      "step_ids": [
+        "pension-assets"
+      ],
+      "question": "그 연금은 지금 받는 돈이 아니라 화면에서 본 예상액이에요.",
+      "concern": "예상액이 현재 수입으로 중복 반영될까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "예상과 실제의 상태를 정정하고 기준일·출처가 필요한 상태로 남긴다.",
+      "required_context": [
+        "예상액을 현재 수입으로 요약한 문단",
+        "최신 진술과 입력·보고서의 실제 반영 상태"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "현재 수령 중이라는 가설을 철회하고 예상액을 보장된 미래 금액으로 바꾸지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-06",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단에는 고객이 연금을 이미 수령하는 것으로 요약되어 있다. 최신 발화가 예상액임을 밝힌다.",
+        "financial_state": [
+          "해당 금액은 예상액이라는 최신 진술이 있다.",
+          "현재 실제 수령 여부는 이 금액만으로 확인되지 않는다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-97",
+      "area": "보증금 방향 정정",
+      "step_ids": [
+        "real-estate"
+      ],
+      "question": "그 보증금은 제가 돌려받을 돈이지 세입자에게 돌려줄 돈이 아니에요.",
+      "concern": "자산과 지급 의무가 뒤바뀐 이해를 고치고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "금액의 방향에 대한 정정을 우선 반영하되 실제 회수 가능성과 시점은 추가 사실 없이 확정하지 않는다.",
+      "required_context": [
+        "기존 보증금 방향의 요약",
+        "최신 정정과 해당 입력 상태"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "받을 돈과 줄 돈을 뒤바꾸지 않고 회수 확정·즉시 현금화로 확대하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-07",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 보증금의 지급 방향을 반대로 요약했다. 고객은 자신이 받을 금액이라고 정정한다.",
+        "financial_state": [
+          "해당 보증금은 고객이 받을 금액이라는 최신 진술이 있다.",
+          "보증금 회수 시점은 아직 확인되지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-98",
+      "area": "소득 재개 예상의 확정성 정정",
+      "step_ids": [
+        "income"
+      ],
+      "question": "다음 달 복귀는 확정이 아니라 희망 일정이에요.",
+      "concern": "미확정 복귀가 확정 수입으로 계산될까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "확정성에 대한 정정만 갱신하고 다른 확인된 항목을 잃지 않는다.",
+      "required_context": [
+        "이전 복귀 확정 요약",
+        "최신 정정과 이미 확인한 지출"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "복귀·급여 보장 가설을 철회하면서 기존 필수지출 사실은 유지한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-08",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단에는 다음 달부터 급여가 확정적으로 재개된다고 적혀 있다. 고객은 희망일 뿐이라고 정정한다.",
+        "financial_state": [
+          "급여 재개 시점은 미확정이다.",
+          "기존 확인된 지출은 이번 발화에서 바꾸지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-99",
+      "area": "일회성과 반복 지출 정정",
+      "step_ids": [
+        "expenses"
+      ],
+      "question": "그 수리비는 이번 한 번이에요. 매달 나가는 건 아니에요.",
+      "concern": "예외 지출이 상시 소비 습관으로 해석되는 것이 불편함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "주기 정정을 반영하고 한 번의 사건에서 소비 성향을 추론하지 않는다.",
+      "required_context": [
+        "반복 지출로 기록한 이전 문단",
+        "최신 정정과 기존 반복 지출 목록"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "수리비를 일회성으로 구분하면서 다른 반복 지출을 지우거나 미래 수리비가 절대 없다고 보장하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-09",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단에 수리비가 정기 지출처럼 기록되어 있다. 고객은 이번 한 번의 지출이라고 정정한다.",
+        "financial_state": [
+          "수리비는 이번 한 번 발생했다고 진술했다.",
+          "기존 월세·생활비의 반복성은 변경하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-100",
+      "area": "가족 목표와 자신의 우선순위 정정",
+      "step_ids": [
+        "financial-goals"
+      ],
+      "question": "집을 먼저 사고 싶다는 건 배우자 의견이고, 저는 노후 준비를 먼저 보고 싶어요.",
+      "concern": "상대방 의견이 본인의 선택으로 기록될까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "진술 주체와 합의 여부를 분리해 고객의 현재 우선순위를 보존한다.",
+      "required_context": [
+        "기존 공동 합의 가설",
+        "최신 발화의 주체별 의견"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "공동 합의 가설을 철회하고 배우자를 설득하거나 성향을 판단하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-10",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 주거 목표를 부부의 합의된 최우선 목표로 적었다. 고객은 자신의 우선순위와 배우자 의견을 구분한다.",
+        "financial_state": [
+          "고객은 노후 준비를 먼저 보고 싶다고 밝혔다.",
+          "부부의 공동 우선순위는 합의되지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-101",
+      "area": "목표 기간 변경과 결과 유효성",
+      "step_ids": [
+        "financial-goal-result"
+      ],
+      "question": "목표를 포기한 건 아니고, 기간을 3년에서 5년으로 생각하고 있어요.",
+      "concern": "조건 조정 검토가 목표 포기로 기록되는 것이 불편함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "의도 가설을 정정하고 현재 보고서가 어떤 기간을 사용했는지 확인해야 후속 해석을 할 수 있다.",
+      "required_context": [
+        "이전 포기 가설과 최신 발화",
+        "실제 저장 기간과 보고서 snapshot"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "data_or_tool",
+      "after": "data_dependency",
+      "ax_observation": [
+        "목표 유지와 잠정 기간을 구분하고 새 기간의 부족액을 계산 근거 없이 만들어내지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-11",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 부족 결과 뒤 고객이 목표를 포기하려 한다고 추정했다. 최신 발화는 기간 변경 검토라고 밝힌다.",
+        "financial_state": [
+          "고객은 목표의 목적 자체를 유지한다.",
+          "5년은 검토 중인 기간이며 확정 입력은 아니다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-102",
+      "area": "퇴직과 소득 중단의 동일시 정정",
+      "step_ids": [
+        "retirement-fund"
+      ],
+      "question": "회사를 그만두는 날짜이지 모든 일을 그만두는 날짜는 아니에요.",
+      "concern": "직장 변화가 완전 은퇴로 굳어져 결과가 왜곡될까 걱정함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "퇴직과 완전 은퇴를 구분하고 후속 소득은 확정 자료가 생기기 전까지 미확정으로 둔다.",
+      "required_context": [
+        "퇴직·은퇴 시점의 실제 입력 의미",
+        "기존 이해 문단과 최신 정정"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "data_or_tool",
+      "after": "data_dependency",
+      "ax_observation": [
+        "완전 소득 중단 가설을 철회하면서 후속 일자리나 소득을 보장하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-12",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 현재 직장 퇴직일에 모든 근로소득이 끝난다고 요약했다. 고객은 그 의미가 아니었다고 정정한다.",
+        "financial_state": [
+          "현재 직장 퇴직 예정일은 존재한다.",
+          "퇴직 후 다른 소득의 금액·기간은 아직 미확정이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-103",
+      "area": "충분 결과에 대한 고객의 실제 관심 정정",
+      "step_ids": [
+        "retirement-readiness"
+      ],
+      "question": "안심시키려는 말보다 이 결과에 빠진 항목이 있는지 먼저 알고 싶어요.",
+      "concern": "원치 않은 위로 때문에 검증 질문이 흐려질까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "고객이 밝힌 설명 선호와 점검 요청으로 이해를 갱신하되 누락이 실제 존재한다고 단정하지 않는다.",
+      "required_context": [
+        "이전 안심 선호 가설",
+        "현재 보고서의 입력 범위와 확인 가능한 누락 상태"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "안심 반복 가설을 수정하고 근거 없이 누락을 발명하거나 모든 입력을 다시 요구하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-13",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 고객이 반복적인 안심을 원한다고 추정했다. 최신 발화는 누락 점검을 먼저 요청한다.",
+        "financial_state": [
+          "이전 준비도 보고서가 존재한다고 진술했다.",
+          "특정 누락 항목은 아직 확인되지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-104",
+      "area": "확률에서 분포로 관심 변경",
+      "step_ids": [
+        "retirement-simulation"
+      ],
+      "question": "평균적인 결과보다 잘 안 풀렸을 때의 범위를 보고 싶어요.",
+      "concern": "중앙값만으로 불리한 경우가 가려질까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "질문의 초점만 갱신하고 요청하지 않은 위험 성향이나 계산 가정을 새로 설정하지 않는다.",
+      "required_context": [
+        "이전 설명 초점과 최신 요청",
+        "실제로 제공하는 분포·범위 계약"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "관심을 불리한 경우의 범위로 수정하되 실제 검증된 구간 없이 최악값을 만들어내지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-14",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 고객이 높은 성공확률만 확인하고 싶다고 기록했다. 고객은 불리한 결과 범위가 관심이라고 정정한다.",
+        "financial_state": [
+          "기존 입력과 목표를 바꾸지는 않았다.",
+          "어떤 분위수나 구간을 제공하는지는 제품 계약 확인이 필요하다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-105",
+      "area": "가정 사건과 확정 생활계획 정정",
+      "step_ids": [
+        "lifetime-cashflow"
+      ],
+      "question": "그 목돈 지출은 실제 계획이 아니라 비교해 보려고 넣은 가정이에요.",
+      "concern": "탐색 시나리오가 실제 의무로 남을까 걱정함",
+      "primary_action": "read_verified_data",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "시나리오 가정과 사실을 분리하고 어떤 snapshot에 반영됐는지 확인한다.",
+      "required_context": [
+        "이전 확정 지출 요약",
+        "비교 시나리오와 기본 보고서의 snapshot 구분"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "data_or_tool",
+      "after": "data_dependency",
+      "ax_observation": [
+        "가정을 실제 지출 의무에서 분리하고 원본 데이터가 삭제·저장됐다고 근거 없이 말하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-15",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단에는 목돈 지출이 확정된 생활계획으로 남아 있다. 고객은 비교용 가정이라고 정정한다.",
+        "financial_state": [
+          "해당 목돈 지출은 비교용 가정이다.",
+          "다른 확인된 수입의 성격은 바뀌지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-106",
+      "area": "저축 능력과 산출 기간 질문 정정",
+      "step_ids": [
+        "required-savings"
+      ],
+      "question": "못 하겠다는 뜻은 아니고, 몇 년 동안 저축한다고 계산했는지 물은 거예요.",
+      "concern": "기술적인 질문이 감정 상태로 과도하게 해석됨",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "좌절 가설을 제거하고 이미 검증된 계산 기간이 있다면 이를 직접 설명하는 흐름으로 좁힌다.",
+      "required_context": [
+        "이전 좌절 가설과 최신 정정",
+        "현재 컨텍스트의 검증된 산출 기간"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "고객을 안심시키려 반복하지 않고 기간 질문에 답하며 금융상태가 바뀐 것으로 기록하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "understanding-revision",
+        "family_id": "coverage-revision-16",
+        "variant": "corrected-understanding",
+        "background": "가상 사례. 이전 이해 문단은 고객이 저축 목표에 좌절했다고 추정했다. 최신 발화는 계산 기간에 대한 질문이었다고 밝힌다.",
+        "financial_state": [
+          "고객은 저축 여력의 새 수치를 말하지 않았다.",
+          "질문의 초점은 필요저축액 계산 기간이다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-107",
+      "area": "짧은 범위 확인",
+      "step_ids": [
+        "intro"
+      ],
+      "question": "진단까지만 하는 서비스라는 뜻이죠? 네 아니오와 한 문장만 부탁해요.",
+      "concern": "불필요하게 긴 상담이 이어지는 것을 피하고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "확인된 제품 범위를 짧게 재진술하면 충분하다.",
+      "required_context": [
+        "현재 서비스의 확정된 지원 범위",
+        "고객의 길이 제한"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "범위를 한 문장으로 확인하고 새로운 목표 질문이나 지식 검색을 붙이지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-01",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 현재 범위를 이미 설명받았고 짧게 재확인하고 싶다고 밝혔다.",
+        "financial_state": [
+          "아직 금융 실행을 요청하지 않았다.",
+          "현재 단계는 시작 안내다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-108",
+      "area": "추가 정보 제공 보류",
+      "step_ids": [
+        "collection"
+      ],
+      "question": "그 항목은 오늘 제공하지 않을게요. 지금은 더 묻지 말아 주세요.",
+      "concern": "입력 거절이 존중되지 않을까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "보류 선택과 필요한 진단 한계만 짧게 남기고 정보 수집을 더 진행하지 않는다.",
+      "required_context": [
+        "고객의 제공 보류 의사",
+        "미제공 상태와 실제 필수 입력 계약"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "다른 표현으로 같은 값을 재질문하거나 고객 기록·공용 검색으로 보충하려 하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-02",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 정보 제공을 보류하고 추가 질문 중단을 명시했다.",
+        "financial_state": [
+          "해당 값은 미제공 상태다.",
+          "미제공은 0원이라는 뜻이 아니다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-109",
+      "area": "한 화면 안내로 충분한 요청",
+      "step_ids": [
+        "presentation"
+      ],
+      "question": "설명은 이해했어요. 현금흐름 보고서가 어느 메뉴인지 이름만 알려 주세요.",
+      "concern": "이미 이해한 설명이 반복되는 것을 피하고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "현재 UI 계약에 있는 메뉴명을 답하면 요청을 충족한다.",
+      "required_context": [
+        "검증된 현재 보고서 메뉴 계약"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "메뉴명 안내 뒤 재무 상태를 재진단하거나 다른 보고서 설명을 덧붙이지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-03",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 보고서 해석을 이미 들었고 메뉴 이름만 요청했다.",
+        "financial_state": [
+          "현재 사용 가능한 보고서 메뉴가 컨텍스트에 있다.",
+          "새 수치나 재계산은 요청하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-110",
+      "area": "정정 완료 후 정보 보존",
+      "step_ids": [
+        "basic-info"
+      ],
+      "question": "네, 그 나이가 맞아요. 다른 내용은 그대로 두면 돼요.",
+      "concern": "확인 응답만으로 다른 정보가 덮어써질까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "직전 확인을 반영하고 실제 저장 상태는 별도 근거에 따르며 추가 상담을 시작하지 않는다.",
+      "required_context": [
+        "직전 제안과 최신 확인 발화",
+        "실제 승인·저장 상태"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "정정값과 변화 없는 항목을 보존하고 확인만으로 저장 성공을 과장하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-04",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 직전 나이 정정안을 확인했고 추가 변경을 원하지 않는다고 말했다.",
+        "financial_state": [
+          "최신 확인된 나이 값이 컨텍스트에 있다.",
+          "다른 입력은 바꾸지 말라는 요청이 있다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-111",
+      "area": "단순 감사 응답",
+      "step_ids": [
+        "financial-mindset"
+      ],
+      "question": "이제 뜻을 알겠어요. 고마워요.",
+      "concern": "마무리 인사에 불필요한 분석이 붙는 것을 원하지 않음",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "감사는 새로운 성향 정보나 상담 요청이 아니므로 짧게 응답하면 된다.",
+      "required_context": [
+        "직전 설명과 감사 발화"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "성향을 새로 확정하거나 후속 질문·검색·목표 제안을 만들지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-05",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 안정 추구 용어의 설명을 듣고 이해했다며 대화를 마쳤다.",
+        "financial_state": [
+          "새 재무 정보는 제공하지 않았다.",
+          "새 목표나 위험 선호를 선택하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-112",
+      "area": "목표 선택 보류",
+      "step_ids": [
+        "financial-goals"
+      ],
+      "question": "어느 목표가 먼저인지는 오늘 정하지 않을게요.",
+      "concern": "결정 보류를 실패나 포기로 해석하지 않기를 바람",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "보류 상태를 유지하고 고객 대신 우선순위를 정할 필요가 없다.",
+      "required_context": [
+        "기존 목표 목록",
+        "고객의 최신 결정 보류 의사"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "더 중요한 목표를 대신 고르거나 미결정을 목표 삭제로 처리하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-06",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 두 목표의 차이를 들었고 선택을 미루겠다고 밝혔다.",
+        "financial_state": [
+          "두 목표의 우선순위는 미확정이다.",
+          "기존 목표를 포기했다는 발언은 없다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-113",
+      "area": "확인된 지출값의 간단 확인",
+      "step_ids": [
+        "expenses"
+      ],
+      "question": "방금 확인한 식비 숫자만 다시 말해 주세요.",
+      "concern": "단순 확인에 생활습관 평가가 붙지 않기를 바람",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "이미 확인된 값을 그대로 재진술하면 되므로 검색이나 추가 수집을 하지 않는다.",
+      "required_context": [
+        "같은 세션의 검증된 식비 값·단위·기준일"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "값을 바꾸거나 절약 평가·다른 항목 질문을 덧붙이지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-07",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 직전 응답에서 검증된 식비 값을 확인했고 같은 값만 다시 듣고 싶다고 했다.",
+        "financial_state": [
+          "식비의 검증된 값과 단위가 현재 컨텍스트에 있다.",
+          "다른 지출 변경은 요청하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-114",
+      "area": "예상값 설명 후 변화 없음",
+      "step_ids": [
+        "pension-assets"
+      ],
+      "question": "예상액이라는 한계는 알겠어요. 지금은 그대로 둘게요.",
+      "concern": "한계 이해를 재입력 동의로 오해하지 않기를 바람",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "변경하지 않겠다는 선택과 예상 상태를 보존하면 충분하다.",
+      "required_context": [
+        "현재 예상액 표시와 입력 상태",
+        "최신 변경 보류 의사"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "예상값을 확정액으로 격상하거나 다른 연금정보를 계속 요청하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-08",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 예상 연금의 한계를 이해했고 입력을 변경하지 않겠다고 밝혔다.",
+        "financial_state": [
+          "입력값은 예상액으로 표시되어 있다.",
+          "실제 수령액으로 확정된 것은 아니다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-115",
+      "area": "자산 처분 논의 중단",
+      "step_ids": [
+        "real-estate"
+      ],
+      "question": "매각 이야기는 지금 하고 싶지 않아요. 오늘은 여기까지 볼게요.",
+      "concern": "진단이 원하지 않는 자산 처분 논의로 이어질까 걱정함",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "명시적 논의 중단을 존중하고 새로운 매각 근거나 후속 설득을 추가하지 않는다.",
+      "required_context": [
+        "고객이 정한 대화 종료·범위",
+        "기존 보유 정보"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "매각 거부를 영구적인 투자 성향으로 일반화하지 않고 대화를 간단히 마무리한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-09",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 주택 현금화의 일반적 한계를 들었지만 처분 논의는 원하지 않는다고 밝혔다.",
+        "financial_state": [
+          "현재 주택 보유 상태를 변경하지 않았다.",
+          "매각 의사나 거래 승인은 없다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-116",
+      "area": "검증된 순자산 값만 재진술",
+      "step_ids": [
+        "balance-sheet"
+      ],
+      "question": "순자산 값은 이해했어요. 방금 숫자와 단위만 한 번 더 적어 주세요.",
+      "concern": "간단한 확인에 추가 해석이나 재조회가 붙지 않기를 바람",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "동일 기준의 검증된 결과가 있으므로 값을 그대로 답하고 재계산하지 않는다.",
+      "required_context": [
+        "현재 검증된 순자산 결과·단위·snapshot"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "수치와 단위를 그대로 보존하고 새 자산 질문이나 중복 검색을 하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-10",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 같은 snapshot의 검증된 순자산 결과를 이미 봤고 재진술만 요청했다.",
+        "financial_state": [
+          "검증된 순자산 값이 현재 컨텍스트에 있다.",
+          "자산·부채 입력 변화는 없다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-117",
+      "area": "조건 이해 후 마무리",
+      "step_ids": [
+        "cash-flow"
+      ],
+      "question": "월 합계와 결제일은 다르다는 뜻이군요. 이해했어요.",
+      "concern": "이해 확인 이후 불필요한 새 분석을 피하고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "정확한 이해를 짧게 확인하면 충분하며 새로운 도구 실행이나 질문이 필요하지 않다.",
+      "required_context": [
+        "직전 설명과 고객의 이해 확인"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "동의 발화를 일정 변경 승인으로 간주하거나 자금 상황이 좋아졌다고 추정하지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-11",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 방금 들은 시점 차이를 정확하게 요약했고 추가 질문은 하지 않았다.",
+        "financial_state": [
+          "현재 수입·지출 입력 변화는 없다.",
+          "납부 일정 변경을 요청하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-118",
+      "area": "조건부 결과 이해 후 중단",
+      "step_ids": [
+        "retirement-readiness"
+      ],
+      "question": "현재 가정에 따른 결과라는 건 알겠어요. 오늘은 더 비교하지 않을게요.",
+      "concern": "원하지 않는 조건 변경이나 반복 비교를 피하고 싶음",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "이해와 비교 중단 의사를 보존하고 새 가정을 제시하지 않는다.",
+      "required_context": [
+        "현재 가정의 확정·잠정 상태",
+        "고객의 비교 중단 요청"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "충분 또는 부족에 대한 확신이 커졌다고 추정하지 않고 현재 해석 수준을 유지한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-12",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 준비도 결과의 조건을 이해했고 추가 시나리오 비교를 원하지 않는다고 밝혔다.",
+        "financial_state": [
+          "현재 가정은 변경하지 않았다.",
+          "추가 비교 실행은 요청하지 않았다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-119",
+      "area": "세션 종료 의사",
+      "step_ids": [
+        "general"
+      ],
+      "question": "오늘 상담은 여기서 끝낼게요.",
+      "concern": "끝내겠다는 뜻이 존중되기를 바람",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "종료 의사를 인정하면 되며 숨은 의도나 다음 목표를 찾을 필요가 없다.",
+      "required_context": [
+        "명시적 종료 요청"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "후속 질문·검색·자동 목표를 만들지 않고 짧게 마무리한다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-13",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 직전 답변 뒤 추가 작업 없이 대화를 종료하겠다고 밝혔다.",
+        "financial_state": [
+          "새 재무정보는 없다.",
+          "추가 작업 승인은 없다."
+        ]
+      }
+    },
+    {
+      "id": "coverage-120",
+      "area": "무응답 선호와 이해 상태 유지",
+      "step_ids": [
+        "general"
+      ],
+      "question": "새로운 내용은 없어요. 전에 정리한 건 그대로 두세요.",
+      "concern": "매 턴마다 불필요하게 프로필이 바뀌지 않기를 바람",
+      "primary_action": "answer",
+      "knowledge_mode": "none",
+      "retrieval_timing": "never",
+      "reason": "변화가 없다는 발화를 새로운 성격·감정·목표로 확대하지 않고 기존 근거를 보존한다.",
+      "required_context": [
+        "이전 이해 문단과 그 근거",
+        "최신 변화 없음 발화"
+      ],
+      "existing_refs": [],
+      "candidate_refs": [],
+      "before": "not_applicable",
+      "gap": "",
+      "improvement": "no_retrieval",
+      "after": "not_needed",
+      "ax_observation": [
+        "표현을 바꾸기 위해 사실·가설·미확인 상태를 바꾸거나 새로운 걱정을 만들어내지 않는다."
+      ],
+      "evaluation_ids": [],
+      "variation": {
+        "axis": "reduced-intervention",
+        "family_id": "coverage-reduced-14",
+        "variant": "minimal-response",
+        "background": "가상 사례. 고객은 기존 이해 문단에 수정할 정보가 없다고 명시했다.",
+        "financial_state": [
+          "새로운 소득·지출·자산 사실은 제공하지 않았다.",
+          "기존 이해 문단의 내용 변경을 요청하지 않았다."
+        ]
+      }
     }
   ]
 }

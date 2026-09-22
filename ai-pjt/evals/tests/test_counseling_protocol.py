@@ -32,7 +32,7 @@ class CounselingProtocolTests(unittest.TestCase):
         report = evaluate_protocol()
         expected = {(kind, case["id"]) for kind, source in (("coverage", self.coverage), ("behavior", self.behavior)) for case in source["cases"]}
         self.assertEqual(expected, {(case["kind"], case["case_id"]) for case in report["cases"]})
-        self.assertEqual({"coverage": 54, "behavior": 26}, report["case_counts"])
+        self.assertEqual({"coverage": 120, "behavior": 80}, report["case_counts"])
         self.assertTrue(report["document_validation"]["references_validated"])
         self.assertFalse(report["document_validation"]["response_quality_assessed"])
         self.assertFalse(report["llm_evaluated"])
@@ -164,7 +164,7 @@ class CounselingProtocolTests(unittest.TestCase):
         actual = {(review["behavior_case_id"], review["variant_id"]) for review in template["reviews"]}
         self.assertEqual(expected, actual)
         self.assertEqual(len(expected), len(template["reviews"]))
-        self.assertEqual(104, len(template["reviews"]))
+        self.assertEqual(320, len(template["reviews"]))
         plan_by_id = {case["case_id"]: case for case in self.plan["plans"] if case["kind"] == "behavior"}
         for review in template["reviews"]:
             for field in ("actual_response", "execution", "reviewer", "customer_experience", "financial_wellbeing"):
@@ -175,6 +175,20 @@ class CounselingProtocolTests(unittest.TestCase):
                 self.assertEqual("not-observed", criterion["status"])
                 self.assertEqual([], criterion["evidence"])
                 self.assertIsNone(criterion["reason"])
+            source = next(case for case in self.behavior["cases"] if case["id"] == review["behavior_case_id"])
+            self.assertEqual(sum(turn["role"] == "user" for turn in source["turns"]), len(review["turn_reviews"]))
+            for turn in review["turn_reviews"]:
+                for field in ("actual_response", "execution", "actual_understanding_before", "actual_understanding_after"):
+                    self.assertIsNone(turn[field])
+                self.assertEqual("not-observed", turn["response_observation"]["status"])
+                self.assertEqual("not-observed", turn["script_compatibility"]["status"])
+                self.assertEqual("not-observed" if review["variant_id"] == "aggregation-rag-with-understanding" else "not-applicable",
+                                 turn["understanding_observation"]["status"])
+                checkpoints = {item["turn_id"]: item for item in source.get("checkpoints", [])}
+                if checkpoints:
+                    checkpoint = checkpoints[turn["turn_id"]]
+                    self.assertEqual(checkpoint["understanding_action"], turn["expected_action"])
+                    self.assertEqual(checkpoint["carry_forward_from"], turn["carry_forward_from"])
         serialized = json.dumps(template, ensure_ascii=False)
         # Evidence instructions may name an expected field to warn against using
         # it as a result; neither that field nor its answer belongs in a slot.
@@ -184,12 +198,14 @@ class CounselingProtocolTests(unittest.TestCase):
             if case.get("example_understanding"):
                 self.assertTrue(case["example_understanding"] not in serialized,
                                 f"expected understanding copied into template: {case['id']}")
+            for checkpoint in case.get("checkpoints", []):
+                self.assertNotIn(checkpoint["expected_understanding"], serialized)
 
     def test_markdown_explains_sources_units_and_nonmeasurement(self):
         report = self.validate()
         markdown = render_markdown(report)
-        self.assertIn("지식 지도 54개와 합성 대화 26개", markdown)
-        self.assertIn("104개 후속 검토 칸은 모두 미실행", markdown)
+        self.assertIn("지식 지도 120개와 합성 대화 80개", markdown)
+        self.assertIn("320개 후속 검토 칸은 모두 미실행", markdown)
         self.assertIn("공식 점수: 없음", markdown)
         self.assertIn("관찰 성공·실패 수가 아닙니다", markdown)
         for source in self.registry["sources"]:

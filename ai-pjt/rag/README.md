@@ -70,8 +70,8 @@ approved나 synthetic으로 바꾸지 않고 임시 파일 인덱스만 사용�
 확인하며 기준을 통과해도 운영 Gemini qualification을 대신하지 않는다.
 
 `evaluation/counseling-behavior-cases-v1.json`은 가설·정정·변화 없음·세션 격리·수치
-보존·거짓 안심·부채 부담·자산 유동성·연금·소득 중단·가족 목표 충돌 등 26개 가상
-사례다. 고객 이해 문단 예시는 문장 일치 정답이 아니다.
+보존·거짓 안심·부채 부담·자산 유동성·연금·소득 중단·가족 목표 충돌 등 80개 가상
+사례다. 기존26개에 3턴 이상 대화54개를 추가했으며, 고객 이해 문단 예시는 문장 일치 정답이 아니다.
 현재 `not-executed`이며 파일 검사와 실제 모델·저장 동작 검증을 구분한다.
 설계·승격 조건의 단일 원천은 공유 문서 `docs/ai/retrieval.md`의 F25 절이다.
 
@@ -79,7 +79,7 @@ approved나 synthetic으로 바꾸지 않고 임시 파일 인덱스만 사용�
 F25 절을 따른다. 행동 사례의 `project_checks`는 제품 회귀 조건이며 공식 상담 척도가
 아니다. 한국FPSB·CFP Board·MITI·고객 체크리스트·CFPB를 하나의 총점으로 합치지 않는다.
 
-`evaluation/counseling-coverage-v1.json`은 실제 24단계와 `general`의 상담 상황을
+`evaluation/counseling-coverage-v1.json`은 실제 24단계와 `general`의 상담 상황120개를
 기존 지식·후보 문서의 정확한 절에 연결한다. `knowledge_mode`는 필요한 지식 종류,
 `retrieval_timing`은 검색 없이 응답할지·먼저 확인/조회할지를 나타내며 runtime
 라우팅 규칙이 아니다. 지도 검사는 빠진 단계·잘못된 문서/절 참조·검색 생략 조건의
