@@ -1,24 +1,36 @@
-"""Topic-only, in-memory sparse retrieval of pending public counseling prose.
+"""Topic-only PostgreSQL vector retrieval for pending counseling evidence.
 
-This intentionally does not use an approved index, database, embedding provider,
-or customer query. Scores are raw BM25 lexical scores, not confidence values or
-the cosine scores in the older hash-embedding candidate evaluation.
+Only fixed public topic queries reach Gemini. The active index remains isolated
+under ``counseling-candidate`` and every startup revalidates its pending source
+snapshot, embedding contract, and projected counseling cards.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import re
+from dataclasses import dataclass, replace
 from enum import Enum
 from functools import lru_cache
+from math import isfinite
 from pathlib import Path
-import re
 from types import MappingProxyType
 
 from guardrails.boundary_policy import evaluate_rag_content
-from rag.counseling_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, load_candidate
-from rag.pipeline.chunking import MarkdownStructureChunker
-from rag.pipeline.indexing import IndexedRetriever
-from rag.pipeline.models import EmbeddedChunk, SourceDocument
+from rag.counseling_corpus import (
+    DEFAULT_MANIFEST,
+    REPOSITORY_ROOT,
+    CandidateCorpus,
+    load_candidate,
+)
+from rag.pipeline.embeddings import EmbeddingAdapter, LlamaIndexEmbeddingAdapter
+from rag.pipeline.indexing import (
+    COUNSELING_CANDIDATE_COLLECTION,
+    IndexedRetriever,
+    corpus_digest,
+)
+from rag.pipeline.models import Chunk, IndexManifest, SourceDocument
+from rag.pipeline.store import IndexStore, PostgresIndexStore
 
 
 class CounselingTopic(str, Enum):
@@ -48,8 +60,6 @@ TOPIC_QUERIES = MappingProxyType({
 })
 
 MAX_EVIDENCE = 3
-MIN_BM25_SCORE = 1.0
-MIN_QUERY_TERM_MATCHES = 2
 _H2_SECTION = re.compile(r"(?m)^## ([^\n]+)\n")
 _ADMIN_HEADINGS = frozenset({
     "기존 금융지식 재사용", "출처와 이용 범위", "갱신·폐기 기준", "갱신·폐기 조건",
@@ -72,15 +82,10 @@ class CounselingEvidence:
 
 
 def _project_sections(document: SourceDocument) -> list[SourceDocument]:
-    """Keep complete counseling cards, excluding administrative provenance.
+    """Keep complete counseling cards while removing administrative provenance."""
 
-The original bytes have already passed the manifest hash check. Projected chunks
-retain original source metadata internally and get their own chunk content hash.
-Inline '재사용:' sentences name internal references, not customer-facing advice.
-Unknown metadata is rejected instead of accidentally exposing it in a prompt.
-"""
     headings = list(_H2_SECTION.finditer(document.text))
-    projected = []
+    projected: list[SourceDocument] = []
     for index, match in enumerate(headings):
         heading = match.group(1).strip()
         if heading in _ADMIN_HEADINGS:
@@ -93,64 +98,213 @@ Unknown metadata is rejected instead of accidentally exposing it in a prompt.
         text = f"## {heading}\n\n{body}"
         if _INTERNAL_CONTENT.search(text):
             raise ValueError("counseling projection contains internal provenance")
-        # Reject embedded instructions before retrieval; public source status
-        # does not turn source prose into trusted model/tool instructions.
         if not evaluate_rag_content(text).allowed:
             continue
         projected.append(SourceDocument(metadata=document.metadata, text=text))
     return projected
 
 
+class CounselingCardChunker:
+    """Project each reviewed card as one deterministic candidate-index chunk."""
+
+    @property
+    def chunker_id(self) -> str:
+        return "counseling-card-v1"
+
+    def chunk_documents(self, documents: list[SourceDocument]) -> list[Chunk]:
+        chunks: list[Chunk] = []
+        for document in sorted(
+            documents,
+            key=lambda item: (item.metadata.source_id, item.metadata.version),
+        ):
+            chunks.extend(self.chunk_document(document))
+        return chunks
+
+    def chunk_document(self, document: SourceDocument) -> list[Chunk]:
+        indexed = SourceDocument(
+            metadata=replace(
+                document.metadata,
+                collection=COUNSELING_CANDIDATE_COLLECTION,
+            ),
+            text=document.text,
+        )
+        chunks: list[Chunk] = []
+        for ordinal, section in enumerate(_project_sections(indexed)):
+            content_hash = hashlib.sha256(section.text.encode("utf-8")).hexdigest()
+            identity = "\x1f".join((
+                section.metadata.source_id,
+                section.metadata.version,
+                self.chunker_id,
+                str(ordinal),
+                "0",
+                str(len(section.text)),
+                content_hash,
+            ))
+            chunks.append(Chunk(
+                chunk_id=hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32],
+                text=section.text,
+                metadata=section.metadata,
+                ordinal=ordinal,
+                start_offset=0,
+                end_offset=len(section.text),
+                content_hash=content_hash,
+                chunker_id=self.chunker_id,
+            ))
+        return chunks
+
+
+def _validate_active_index(
+    *,
+    store: IndexStore,
+    embedding_model: str,
+    embedding_dimensions: int,
+    manifest_path: Path,
+    repository_root: Path,
+) -> tuple[IndexManifest, CandidateCorpus]:
+    corpus = load_candidate(manifest_path, repository_root=repository_root)
+    physical = store.active_collection(COUNSELING_CANDIDATE_COLLECTION)
+    if physical is None:
+        raise RuntimeError("counseling candidate has no active index")
+    manifest = store.get_manifest(physical)
+    if manifest is None or manifest.physical_collection != physical:
+        raise RuntimeError("active counseling candidate manifest is missing")
+    expected_sources = tuple(sorted(
+        (document.metadata.source_id, document.metadata.version)
+        for document in corpus.documents
+    ))
+    expected_chunks = CounselingCardChunker().chunk_documents(list(corpus.documents))
+    expected_by_id = {chunk.chunk_id: chunk for chunk in expected_chunks}
+    if (
+        manifest.collection != COUNSELING_CANDIDATE_COLLECTION
+        or manifest.artifact_kind != "experiment"
+        or manifest.corpus_digest != corpus_digest(list(corpus.documents))
+        or manifest.document_count != len(corpus.documents)
+        or manifest.chunk_count != len(expected_chunks)
+        or manifest.chunker_id != CounselingCardChunker().chunker_id
+        or manifest.embedding_model != embedding_model
+        or manifest.embedding_dimensions != embedding_dimensions
+        or manifest.source_versions != expected_sources
+    ):
+        raise RuntimeError("active counseling candidate manifest is incompatible")
+
+    allowed = dict(expected_sources)
+    chunks = store.list_chunks(physical)
+    if len(chunks) != manifest.chunk_count:
+        raise RuntimeError("active counseling candidate chunk count is inconsistent")
+    for embedded in chunks:
+        metadata = embedded.chunk.metadata
+        expected = expected_by_id.get(embedded.chunk.chunk_id)
+        if (
+            expected is None
+            or embedded.chunk != expected
+            or metadata.collection != COUNSELING_CANDIDATE_COLLECTION
+            or metadata.review_status != "pending"
+            or metadata.sensitivity != "public"
+            or allowed.get(metadata.source_id) != metadata.version
+            or embedded.chunk.chunker_id != manifest.chunker_id
+            or len(embedded.vector) != embedding_dimensions
+            or _INTERNAL_CONTENT.search(embedded.chunk.text)
+            or not evaluate_rag_content(embedded.chunk.text).allowed
+        ):
+            raise RuntimeError("active counseling candidate contains an unsafe chunk")
+    return manifest, corpus
+
+
 class CounselingRetriever:
-    """An immutable corpus snapshot; no request or session data is cached."""
+    """Read the validated active candidate index using Gemini dense vectors."""
 
     def __init__(
-        self, *, manifest_path: Path = DEFAULT_MANIFEST,
+        self,
+        *,
+        store: IndexStore | None = None,
+        embedding: EmbeddingAdapter | None = None,
+        manifest_path: Path = DEFAULT_MANIFEST,
         repository_root: Path = REPOSITORY_ROOT,
+        fetch_k: int | None = None,
+        minimum_dense_score: float | None = None,
     ) -> None:
-        corpus = load_candidate(manifest_path, repository_root=repository_root)
-        chunker = MarkdownStructureChunker(900, 100)
-        chunks = []
-        for document in corpus.documents:
-            for section in _project_sections(document):
-                section_chunks = chunker.chunk_document(section)
-                # The application conditions, example and limits must travel
-                # together. A future oversized card needs explicit revision.
-                if len(section_chunks) != 1 or section_chunks[0].text != section.text:
-                    raise ValueError("counseling card no longer fits one complete chunk")
-                chunks.append(EmbeddedChunk(chunk=section_chunks[0], vector=()))
-        self._chunks = tuple(chunks)
+        if (store is None) != (embedding is None):
+            raise ValueError("store and embedding must be provided together")
+        if store is None or embedding is None:
+            from core.config import settings
+            from core.llm import embed_model
+
+            store = PostgresIndexStore(settings.db_url)
+            embedding = LlamaIndexEmbeddingAdapter(
+                embed_model,
+                model_id=settings.embedding_model,
+                dimensions=settings.embed_dim,
+            )
+            fetch_k = settings.rag_fetch_k if fetch_k is None else fetch_k
+            minimum_dense_score = (
+                settings.rag_counseling_min_dense_score
+                if minimum_dense_score is None
+                else minimum_dense_score
+            )
+        self._store = store
+        self._embedding = embedding
+        self._manifest, corpus = _validate_active_index(
+            store=store,
+            embedding_model=embedding.model_id,
+            embedding_dimensions=embedding.dimensions,
+            manifest_path=manifest_path,
+            repository_root=repository_root,
+        )
+        self._allowed_sources = frozenset(
+            document.metadata.source_id for document in corpus.documents
+        )
         self.candidate_version = corpus.version
         self.manifest_sha256 = corpus.manifest_sha256
+        self._retriever = IndexedRetriever(
+            store=store,
+            embedding=embedding,
+            hybrid=False,
+            fetch_k=fetch_k or 10,
+            minimum_dense_score=(
+                0.54 if minimum_dense_score is None else minimum_dense_score
+            ),
+        )
+
+    @property
+    def physical_collection(self) -> str:
+        return self._manifest.physical_collection
 
     def retrieve(self, topic: CounselingTopic) -> list[CounselingEvidence]:
         if type(topic) is not CounselingTopic:
             raise TypeError("counseling retrieval requires a CounselingTopic enum")
         if topic is CounselingTopic.NONE:
             return []
-        query = TOPIC_QUERIES[topic]
-        query_terms = set(IndexedRetriever._tokens(query))
-        ranked = IndexedRetriever._bm25(list(self._chunks), query, len(self._chunks))
-        evidence = []
-        for embedded, score in ranked:
-            if score < MIN_BM25_SCORE:
-                continue
-            matched = query_terms.intersection(IndexedRetriever._tokens(embedded.chunk.text))
-            if len(matched) < MIN_QUERY_TERM_MATCHES:
-                continue
-            # The heading is useful for ranking, but only the full counseling
-            # body crosses the model boundary. Source IDs remain separate.
-            _, _, body = embedded.chunk.text.partition("\n\n")
+        results = self._retriever.retrieve(
+            COUNSELING_CANDIDATE_COLLECTION,
+            TOPIC_QUERIES[topic],
+            top_k=MAX_EVIDENCE,
+        )
+        evidence: list[CounselingEvidence] = []
+        for result in results:
+            metadata = result.chunk.metadata
+            _, separator, body = result.chunk.text.partition("\n\n")
+            if (
+                metadata.source_id not in self._allowed_sources
+                or metadata.collection != COUNSELING_CANDIDATE_COLLECTION
+                or metadata.review_status != "pending"
+                or not separator
+                or not body.startswith("적용 상황:")
+                or _INTERNAL_CONTENT.search(body)
+                or not evaluate_rag_content(body).allowed
+                or not isfinite(result.score)
+            ):
+                raise RuntimeError("invalid counseling candidate search result")
             evidence.append(CounselingEvidence(
-                evidence_id=f"E{len(evidence) + 1}", text=body,
-                source_id=embedded.chunk.metadata.source_id, score=float(score),
+                evidence_id=f"E{len(evidence) + 1}",
+                text=body,
+                source_id=metadata.source_id,
+                score=float(result.score),
             ))
-            if len(evidence) == MAX_EVIDENCE:
-                break
         return evidence
 
 
 @lru_cache(maxsize=1)
 def get_counseling_retriever() -> CounselingRetriever:
-    """Lazily load only the checked public corpus; failed loads are not cached."""
+    """Create one validated runtime adapter; failed startup checks are not cached."""
+
     return CounselingRetriever()

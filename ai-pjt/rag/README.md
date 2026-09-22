@@ -49,7 +49,8 @@ SHA-256을 `DocumentMetadata`로 변환한다. 경로가 collection pattern을 �
 
 `data/counseling-candidate.json`은 기존 운영 catalog와 분리된 `pending` 후보다.
 `financial-knowledge/counseling-*.md` 9개에 출처·권리·SHA-256·적용 범위를 연결한다.
-마지막 병합 RAG baseline은 아래 opt-in 런타임으로 연결했다. 세션별 고객 이해 문단의
+마지막 병합 RAG baseline은 아래 opt-in 런타임으로 연결했다. 후보는 별도
+`counseling-candidate` PostgreSQL collection으로만 적재한다. 세션별 고객 이해 문단의
 별도 저장·갱신은 후속 범위이며 실제 고객 문단은 공용 corpus에 넣지 않는다.
 
 ```bash
@@ -114,22 +115,42 @@ AI_COUNSELING_RAG_TIMEOUT_SECONDS=12
 모델·검색 호출 없이 보충을 생략한다. 세 단계는 논리 호출 수이며 SDK 내부 HTTP 시도 수와는 다르다.
 
 검색기는 고객 원문 대신 닫힌 topic만 받는다. 후보 9문서의 해시·권리·pending 상태를
-검증하고 관리 절을 제외한 37개 완전한 상담 카드를 BM25로 검색한다. 최대 3개,
-BM25 점수 1.0 이상·서로 다른 일반 검색어 토큰 2개 이상 일치를 후보 기준으로 사용한다.
-이는 관련성의 확률이나 기존 hash embedding 평가 점수가 아니다. 실제 의미 적합성은
-추가 모델 평가가 필요하다. 외부 embedding·DB·승인 인덱스·active pointer를 사용하지 않는다.
-문서 cache는 프로세스 수명 동안 유지하므로 corpus 갱신 후에는 프로세스를 재시작한다.
+검증하고 관리 절을 제외한 37개 완전한 상담 카드를 Gemini `gemini-embedding-2`
+3,072차원으로 PostgreSQL dense 검색한다. cosine similarity `0.54` 미만은 제외하고 최대
+3개만 반환한다. 시작 시 독립 active pointer, manifest의 corpus digest·source version·
+모델·차원·chunker·개수와 실제 chunk의 pending/public/collection/vector 차원을 다시
+검증한다. 활성화 상태에서 하나라도 누락·불일치하면 서비스 시작과 readiness가 실패한다.
 
-다음 명령은 `ai-pjt`에서 외부 서비스 없이 실제 후보 검색을 확인한다.
+후보 구축·평가·승격은 승인 corpus의 `run-operational`과 분리된 다음 명령만 사용한다.
+50문항의 Recall@5 0.85, MRR@5 0.70, provenance 1.0, collection leakage와 false evidence
+0건을 모두 통과해야 `--promote`가 상담 pointer 하나만 바꾼다. 실패하면 기존 상담 pointer를
+유지하고, `financial-knowledge`·`interface-guides` pointer는 성공·실패와 무관하게 불변이다.
 
 ```bash
-python -c 'from rag.counseling_retriever import CounselingTopic, get_counseling_retriever; print([(e.source_id, round(e.score, 2)) for e in get_counseling_retriever().retrieve(CounselingTopic.DEBT)])'
+./ops.sh counseling-qualify \
+  --report-dir .local/reports \
+  --environment-id <개발자-id> \
+  --operator-id <실행자-id> \
+  --index-version <후보-index-version> \
+  --promote
+```
+
+2026-09-22 개발 Compose 실측은 50문항 Recall@5 `1.0000`, MRR@5 `0.9886`,
+context precision@5 `0.5170`, provenance `1.0000`, 무관 질문 6개의 false evidence `0`,
+collection leakage `0`으로 PASS했다. 이는 검색 실측이며 상담 응답 품질이나 AX 개선,
+운영 corpus 승인을 뜻하지 않는다.
+
+다음 명령은 활성 개발 DB와 Gemini 설정을 사용하는 실제 후보 검색 및 mock 회귀를 확인한다.
+
+```bash
+python -c 'from rag.counseling_retriever import CounselingTopic, get_counseling_retriever; print([(e.source_id, round(e.score, 4)) for e in get_counseling_retriever().retrieve(CounselingTopic.DEBT)])'
 python -m unittest rag.tests.test_counseling_retriever -q
 python -m unittest tests.test_counseling tests.test_counseling_integration -q
 ```
 
-마지막 두 상담 runtime 테스트의 모델은 mock이다. 실제 모델 품질·지연·비용과 80대화 비교는
-별도 측정이며, corpus 승인 상태와 기존 평가 서식의 미실행 표시는 바꾸지 않는다.
+마지막 두 상담 runtime 테스트의 모델은 mock이다. 별도 개발 smoke에서 실제 Gemini 검색·
+생성·독립 검토를 거친 보충문 주입 1건을 확인했지만, 실제 모델 품질·지연·비용과 80대화
+비교는 별도 측정이며 corpus 승인 상태와 기존 평가 서식의 미실행 표시는 바꾸지 않는다.
 coverage 자료의 `runtime_implemented=false`는 자료 작성 시점의 상태로 보존하며
 현재 서비스의 활성화 여부를 판정하는 데 사용하지 않는다. 자료의 검사 성공도 후보 문서
 운영 승인이나 세션 이해 문단 구현을 뜻하지 않는다.

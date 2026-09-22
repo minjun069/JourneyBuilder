@@ -51,6 +51,7 @@ uv pip compile \
 | startup 필수 | `AI_MASKING_PSEUDONYM_KEY` | 서비스 token과 다른 32바이트 이상 가명화 secret |
 | 선택 | `RAG_FINANCIAL_COLLECTION`, `RAG_INTERFACE_COLLECTION` | 승인 catalog의 논리 collection. 기본값은 각각 `financial-knowledge`, `interface-guides` |
 | 선택 | `RAG_TOP_K`, `RAG_FETCH_K`, `RAG_MIN_DENSE_SCORE` | 최종 5건, dense·BM25 후보 10건, dense 최소 0.54 |
+| 상담 후보 | `RAG_COUNSELING_COLLECTION`, `RAG_COUNSELING_MIN_DENSE_SCORE`, `AI_COUNSELING_RAG_ENABLED` | 고정 collection `counseling-candidate`, Gemini dense 최소 0.54, 기본 비활성 |
 | 선택 | `RAG_INDEX_RETENTION_DAYS`, `EMBED_DIM` | retired 인덱스 30일 보관, embedding 차원 |
 | Langfuse 조건부 필수 | `LANGFUSE_ENABLED`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | 활성화할 때 세 연결값을 모두 명시하며 URL credential을 금지 |
 | Langfuse 선택 | `LANGFUSE_TRACING_ENVIRONMENT` | 환경 분리 |
@@ -151,6 +152,8 @@ docker run --rm \
 3. 현재 LangGraph checkpointer가 사용하는 PostgreSQL에서 `SELECT 1`이 성공한다.
 4. `financial-knowledge`와 `interface-guides` 모두 active pointer와 일치하는 manifest,
    1개 이상의 chunk를 가진다.
+5. 상담 RAG가 활성화됐으면 `counseling-candidate`도 active pointer·manifest·청크를 가지며
+   세 인덱스의 embedding model·차원이 runtime 설정과 일치한다.
 
 성공하면 `ready`를 출력하고 exit 0, 실패하면 예외 종류만 출력하고 exit 1을 반환한다. DSN·credential·원격 URL이 오류 출력에 포함되지 않도록 예외 메시지는 출력하지 않는다. Dockerfile의 `HEALTHCHECK`가 이 exit code를 `healthy` 또는 `unhealthy`로 변환한다.
 

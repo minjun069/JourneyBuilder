@@ -146,6 +146,9 @@ class Settings:
         self.rag_interface_collection = active_environ.get(
             "RAG_INTERFACE_COLLECTION", "interface-guides"
         ).strip()
+        self.rag_counseling_collection = active_environ.get(
+            "RAG_COUNSELING_COLLECTION", "counseling-candidate"
+        ).strip()
         self.rag_collection = self.rag_financial_collection
         self.rag_top_k = _read_positive_int("RAG_TOP_K", 5, active_environ)
         self.rag_fetch_k = _read_positive_int("RAG_FETCH_K", 10, active_environ)
@@ -153,6 +156,9 @@ class Settings:
             raise RuntimeConfigurationError("RAG_FETCH_K must be at least RAG_TOP_K")
         self.rag_min_dense_score = _read_unit_float(
             "RAG_MIN_DENSE_SCORE", 0.54, active_environ
+        )
+        self.rag_counseling_min_dense_score = _read_unit_float(
+            "RAG_COUNSELING_MIN_DENSE_SCORE", 0.54, active_environ
         )
         self.rag_index_retention_days = _read_positive_int(
             "RAG_INDEX_RETENTION_DAYS", 30, active_environ
@@ -225,6 +231,10 @@ class Settings:
         if self.rag_interface_collection != "interface-guides":
             raise RuntimeConfigurationError(
                 "RAG_INTERFACE_COLLECTION must be interface-guides"
+            )
+        if self.rag_counseling_collection != "counseling-candidate":
+            raise RuntimeConfigurationError(
+                "RAG_COUNSELING_COLLECTION must be counseling-candidate"
             )
 
         self._require_runtime_value("DATABASE_URL", self.db_url)

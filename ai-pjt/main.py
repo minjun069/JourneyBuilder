@@ -51,13 +51,17 @@ _v2_validation_error = validation_error
 
 
 def build_counseling_enricher():
-    """Keep pending-corpus experiments explicit and avoid loading them when disabled."""
+    """Fail startup closed unless the enabled candidate index is compatible."""
     if not settings.counseling_rag_enabled:
         return None
     from graph.counseling import enrich_counseling_response
+    from rag.counseling_retriever import get_counseling_retriever
+
+    retriever = get_counseling_retriever()
 
     return partial(
         enrich_counseling_response,
+        retriever=retriever,
         timeout_seconds=settings.counseling_rag_timeout_seconds,
     )
 

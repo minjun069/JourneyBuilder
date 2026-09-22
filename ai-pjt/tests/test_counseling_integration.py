@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -30,7 +31,17 @@ from core.masking import MaskingSink
 from core.observability_masking import FakeSerializedInstrumentationSink, build_masked_runtime_instrumentation
 from graph.counseling import enrich_counseling_response
 from graph.executor import execute_route_plan
-from rag.counseling_retriever import CounselingRetriever, CounselingTopic, get_counseling_retriever
+from rag.counseling_corpus import DEFAULT_MANIFEST, REPOSITORY_ROOT, load_candidate
+from rag.counseling_retriever import (
+    CounselingCardChunker,
+    CounselingRetriever,
+    CounselingTopic,
+    get_counseling_retriever,
+)
+from rag.pipeline.embeddings import DeterministicHashEmbedding
+from rag.pipeline.indexing import COUNSELING_CANDIDATE_COLLECTION, IndexPipeline
+from rag.pipeline.models import IndexTarget
+from rag.pipeline.store import JsonVectorStore
 from tests.instrumentation import bound_fake_instrumentation, fake_instrumentation
 
 
@@ -112,7 +123,38 @@ class RecordingModel:
 class CounselingIntegrationTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         get_counseling_retriever.cache_clear()
-        self.actual = CounselingRetriever()
+        self.temporary = TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        corpus = load_candidate(DEFAULT_MANIFEST, repository_root=REPOSITORY_ROOT)
+        store = JsonVectorStore(Path(self.temporary.name))
+        embedding = DeterministicHashEmbedding(2048)
+        pipeline = IndexPipeline(
+            store=store,
+            chunker=CounselingCardChunker(),
+            embedding=embedding,
+            pending_candidate_sources={
+                document.metadata.source_id: (
+                    document.metadata.version,
+                    document.metadata.sha256,
+                )
+                for document in corpus.documents
+            },
+        )
+        manifest = pipeline.build(
+            list(corpus.documents),
+            IndexTarget(
+                COUNSELING_CANDIDATE_COLLECTION,
+                "integration-v1",
+                operational=True,
+                artifact_kind="experiment",
+            ),
+        )
+        store.activate(COUNSELING_CANDIDATE_COLLECTION, manifest.physical_collection)
+        self.actual = CounselingRetriever(
+            store=store,
+            embedding=embedding,
+            minimum_dense_score=0.0,
+        )
         self.evidence = self.actual.retrieve(CounselingTopic.DEBT)
         self.assertTrue(self.evidence, "the real pending corpus must supply debt explanations")
         self.retriever = RecordingRetriever(self.actual)
@@ -243,7 +285,7 @@ class CounselingIntegrationTests(unittest.IsolatedAsyncioTestCase):
             index_write = stack.enter_context(patch("rag.pipeline.store.PostgresIndexStore.upsert", side_effect=AssertionError("operational index mutation")))
             operational = stack.enter_context(patch("rag.retriever.get_retriever", side_effect=AssertionError("operational collection access")))
             stack.enter_context(patch("core.llm.llm", self.model))
-            result = await self.execute(enricher=partial(enrich_counseling_response, retriever=CounselingRetriever()))
+            result = await self.execute(enricher=partial(enrich_counseling_response, retriever=self.actual))
         self.assertIn(ADDON, result.output["response"])
         self.assertEqual(before, {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths})
         self.assertEqual(json.loads(paths[0].read_text(encoding="utf-8"))["acceptance"]["status"], "pending")
@@ -351,6 +393,8 @@ class CounselingStartupTests(unittest.IsolatedAsyncioTestCase):
                 stack.enter_context(patch.object(main, "_context_cleanup_loop", AsyncMock()))
                 stack.enter_context(patch.object(main, "_context_memory_loop", AsyncMock()))
                 factory = stack.enter_context(patch("rag.counseling_retriever.get_counseling_retriever"))
+                candidate_retriever = object()
+                factory.return_value = candidate_retriever
                 build = stack.enter_context(patch.object(main, "build_graph", return_value=object()))
                 app = SimpleNamespace(state=SimpleNamespace())
                 async with main.lifespan(app):
@@ -358,9 +402,11 @@ class CounselingStartupTests(unittest.IsolatedAsyncioTestCase):
                     if enabled:
                         self.assertIs(enricher.func, enrich_counseling_response)
                         self.assertEqual(enricher.keywords["timeout_seconds"], 7.0)
+                        self.assertIs(enricher.keywords["retriever"], candidate_retriever)
+                        factory.assert_called_once_with()
                     else:
                         self.assertIsNone(enricher)
-                    factory.assert_not_called()
+                        factory.assert_not_called()
                 settings.validate_runtime.assert_called_once()
                 exporter.shutdown.assert_called_once()
 
