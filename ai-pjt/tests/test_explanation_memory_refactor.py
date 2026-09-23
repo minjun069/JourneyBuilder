@@ -121,7 +121,7 @@ class ChartFactTests(unittest.TestCase):
         fixture = json.loads((root / "contract-fixtures/ai-lifecycle/v2/chart-payloads.json").read_text())
         cls.payload = fixture["cases"]["lifetime_cashflow_ready"]["django_ai_request_fragment"]["chart_payload"]
 
-    def test_report_metadata_is_neither_model_context_nor_numeric_evidence(self):
+    def test_report_metadata_is_not_numeric_evidence_in_policy_projection(self):
         facts = project_chart_facts(self.payload)
         for key in ("schema_version", "source_report", "input_snapshot_digest", "provenance", "knowledge_scope", "assumptions"):
             self.assertNotIn(f'"{key}"', json.dumps(facts))
@@ -136,11 +136,11 @@ class ChartFactTests(unittest.TestCase):
         fraction_only = {"status": "ready", "summary": {"ratio": 0.12}}
         self.assertEqual(unauthorized_numeric_claims("12%", fraction_only), {"12"})
 
-    def test_entry_projection_omits_long_series_but_keeps_display_values(self):
-        facts = project_chart_facts(self.payload, entry=True)
-        self.assertNotIn("series", facts)
-        self.assertNotIn("details", facts)
-        self.assertLessEqual(len(facts["highlights"]), 3)
+    def test_policy_projection_keeps_report_facts_and_display_values(self):
+        facts = project_chart_facts(self.payload)
+        self.assertIn("series", facts)
+        self.assertIn("details", facts)
+        self.assertEqual(len(facts["highlights"]), len(self.payload["highlights"]))
         self.assertEqual(unauthorized_numeric_claims("713,000,000원", facts), set())
 
 

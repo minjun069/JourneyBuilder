@@ -29,7 +29,7 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.rag_top_k, 5)
         self.assertEqual(settings.llm_temperature, 0.0)
-        self.assertEqual(settings.prompt_release, "2026-09-23.1")
+        self.assertEqual(settings.prompt_release, "2026-09-23.2")
         self.assertEqual(settings.rag_fetch_k, 10)
         self.assertEqual(settings.rag_min_dense_score, 0.54)
         self.assertEqual(settings.rag_counseling_min_dense_score, 0.54)
@@ -108,7 +108,7 @@ class SettingsTests(unittest.TestCase):
             Settings({**BASE_ENV, "LLM_TEMPERATURE": "1.1"})
         self.assertEqual(
             Settings({**BASE_ENV, "PROMPT_RELEASE": "ignored"}).prompt_release,
-            "2026-09-23.1",
+            "2026-09-23.2",
         )
         with self.assertRaisesRegex(
             RuntimeConfigurationError,
