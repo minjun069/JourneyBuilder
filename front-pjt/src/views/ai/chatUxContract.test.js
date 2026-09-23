@@ -95,10 +95,12 @@ test('행 추가형 재무 폼은 넓은 입력 패널과 내용 기반 열 너�
     assert.match(view, new RegExp(`'${stepId}'`))
   }
   assert.match(view, /TABULAR_FORM_STEP_IDS\.has\(stepId\) \? 55 : 71\.4/)
+  assert.match(view, /Math\.min\(85, Math\.max\(35, nextLeft\)\)/)
   assert.match(view, /input-panel--tabular/)
   assert.match(addableTable, /function inputWidth/)
   assert.match(addableTable, /--input-width/)
   assert.match(addableTable, /width: var\(--input-width, 100%\)/)
+  assert.match(addableTable, /vertical-align: top/)
 })
 
 test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 idle timeout을 둔다', () => {
