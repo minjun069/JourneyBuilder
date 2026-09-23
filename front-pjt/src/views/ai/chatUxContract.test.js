@@ -8,6 +8,7 @@ const store = readFileSync(new URL('../../stores/consultation.js', import.meta.u
 const validation = readFileSync(new URL('../../utils/formValidation.js', import.meta.url), 'utf8')
 const consultingApi = readFileSync(new URL('../../api/consulting.js', import.meta.url), 'utf8')
 const reportStore = readFileSync(new URL('../../stores/report.js', import.meta.url), 'utf8')
+const addableTable = readFileSync(new URL('../../components/ui/AddableTable.vue', import.meta.url), 'utf8')
 
 test('새 AI 답변은 공통 애니메이션 큐와 안전한 Markdown 렌더러를 사용한다', () => {
   assert.match(view, /function streamAiMessages/)
@@ -71,6 +72,20 @@ test('빈 금융자산은 명시적인 없음 확인 API로 완료 처리한다'
   assert.match(store, /async function confirmNoFinancialAssets/)
   assert.match(store, /confirmEmptyFinancialAssets/)
   assert.match(consultingApi, /data\/financial-assets\/confirm-empty\//)
+})
+
+test('행 추가형 재무 폼은 넓은 입력 패널과 내용 기반 열 너비를 사용한다', () => {
+  for (const stepId of [
+    'financial-assets', 'pension-assets', 'real-estate',
+    'liabilities', 'income', 'expenses',
+  ]) {
+    assert.match(view, new RegExp(`'${stepId}'`))
+  }
+  assert.match(view, /TABULAR_FORM_STEP_IDS\.has\(stepId\) \? 55 : 71\.4/)
+  assert.match(view, /input-panel--tabular/)
+  assert.match(addableTable, /function inputWidth/)
+  assert.match(addableTable, /--input-width/)
+  assert.match(addableTable, /width: var\(--input-width, 100%\)/)
 })
 
 test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 idle timeout을 둔다', () => {
