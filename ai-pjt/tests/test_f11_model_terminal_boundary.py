@@ -90,6 +90,9 @@ class ModelBoundaryTests(unittest.TestCase):
         messages = prompt_messages(prompt, {
             "step_id": "basic-info",
             "question": "사용자 런타임 입력",
+            "user_message": "사용자 런타임 입력",
+            "conversation": {},
+            "report": {},
             "feedback": "",
         })
 
@@ -105,6 +108,9 @@ class ModelBoundaryTests(unittest.TestCase):
                 prompt_messages(prompt, {
                     "step_id": "basic-info",
                     "question": "질문",
+                    "user_message": "질문",
+                    "conversation": {},
+                    "report": {},
                     "feedback": "",
                 }),
                 purpose=ModelPurpose.QA,
@@ -113,7 +119,7 @@ class ModelBoundaryTests(unittest.TestCase):
 
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0].prompt_id, "qa.plan")
-        self.assertEqual(records[0].prompt_version, "4.0.0")
+        self.assertEqual(records[0].prompt_version, prompt.version)
         self.assertEqual(len(records[0].prompt_hash), 64)
         self.assertEqual(records[0].prompt_policy_version, "3.0")
 
@@ -131,6 +137,9 @@ class ModelBoundaryTests(unittest.TestCase):
                     prompt_messages(prompt, {
                         "step_id": "basic-info",
                         "question": "질문",
+                        "user_message": "질문",
+                        "conversation": {},
+                        "report": {},
                         "feedback": "",
                     }),
                     purpose=ModelPurpose.QA,
@@ -142,7 +151,7 @@ class ModelBoundaryTests(unittest.TestCase):
         self.assertEqual(prompt_events, [])
         event = model_events[0]
         self.assertEqual(event["prompt_id"], "qa.plan")
-        self.assertEqual(event["prompt_version"], "4.0.0")
+        self.assertEqual(event["prompt_version"], prompt.version)
         self.assertEqual(len(event["prompt_hash"]), 64)
         self.assertTrue(event["prompt_release"])
         self.assertEqual(event["prompt_policy_version"], "3.0")

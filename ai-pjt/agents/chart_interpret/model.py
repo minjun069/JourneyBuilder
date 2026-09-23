@@ -19,6 +19,8 @@ async def explain_chart(
     payload: Mapping[str, Any],
     *,
     entry: bool,
+    previous_response: str = "",
+    feedback: tuple[str, ...] = (),
 ) -> str:
     try:
         knowledge = load_chart_knowledge(
@@ -36,12 +38,15 @@ async def explain_chart(
             "chart_facts": payload,
             "chart_guide": knowledge,
             "response_mode": "initial_entry" if entry else "detail",
+            "previous_response": previous_response,
+            "feedback": list(feedback),
         }),
         purpose=ModelPurpose.CHART_INTERPRET,
         operation_name="chart_interpret.generate",
         sensitive_payload={
             "message": state["message"],
             "chart_facts": payload,
+            "previous_response": previous_response,
         },
         prompt=CHART_PROMPT,
     )

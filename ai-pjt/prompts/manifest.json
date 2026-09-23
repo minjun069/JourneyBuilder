@@ -1,5 +1,5 @@
 {
-  "release": "2026-09-23.2",
+  "release": "2026-09-23.3",
   "prompts": [
     {
       "id": "aggregator.compose",
@@ -25,16 +25,28 @@
       "owner": "ai-team",
       "risk": "financial_explanation",
       "input_sections": [
-        {"key": "answer", "label": "검증된 기존 답변"},
-        {"key": "question", "label": "현재 사용자 질문"},
-        {"key": "conversation_context", "label": "이전 대화 문맥"},
-        {"key": "evidence", "label": "상담 참고 근거"}
+        {
+          "key": "answer",
+          "label": "검증된 기존 답변"
+        },
+        {
+          "key": "question",
+          "label": "현재 사용자 질문"
+        },
+        {
+          "key": "conversation_context",
+          "label": "이전 대화 문맥"
+        },
+        {
+          "key": "evidence",
+          "label": "상담 참고 근거"
+        }
       ]
     },
     {
       "id": "chart_interpret.explain",
-      "version": "4.0.0",
-      "sha256": "af12014486b2efb58d806ad7317c865ea020fde71b9ce32e03c28c2bb6c8559e",
+      "version": "4.1.0",
+      "sha256": "625dc118708831ef1cc8fe45ee4c48c4af054a2c4a4a95e7c41c646ec98f86f9",
       "purpose": "chart_interpret",
       "output_schema": null,
       "owner": "ai-team",
@@ -55,6 +67,14 @@
         {
           "key": "chart_guide",
           "label": "관련 설명 자료"
+        },
+        {
+          "key": "previous_response",
+          "label": "이전 답변"
+        },
+        {
+          "key": "feedback",
+          "label": "검증 결과"
         }
       ]
     },
@@ -210,8 +230,8 @@
     },
     {
       "id": "qa.answer",
-      "version": "4.0.0",
-      "sha256": "87f6894492ee83c46dabd350e6952303eb979b6ad160fade72786a5b316596a6",
+      "version": "4.1.0",
+      "sha256": "8f1d7cff16ffe0c73d09d07b9a5b5edc4891018620a103faf008ee1990fe52ea",
       "purpose": "qa",
       "output_schema": null,
       "owner": "ai-team",
@@ -220,6 +240,18 @@
         {
           "key": "question",
           "label": "사용자 질문"
+        },
+        {
+          "key": "user_message",
+          "label": "사용자 원문"
+        },
+        {
+          "key": "conversation",
+          "label": "최근 대화와 관련 기억"
+        },
+        {
+          "key": "report",
+          "label": "현재 보고서의 확인된 내용"
         },
         {
           "key": "customer_info",
@@ -241,8 +273,8 @@
     },
     {
       "id": "qa.judge",
-      "version": "4.0.0",
-      "sha256": "4c107bf5e8cc3117dab6147b11e842f15ac7c296c77a1f14c37ac54b81c6efae",
+      "version": "4.1.0",
+      "sha256": "03c8b516a84b9330b41fd1a622281e2a8d994bda16fdfedd8097b3c541b7e512",
       "purpose": "qa",
       "output_schema": "qa_judge_result",
       "owner": "ai-team",
@@ -251,6 +283,18 @@
         {
           "key": "question",
           "label": "사용자 질문"
+        },
+        {
+          "key": "user_message",
+          "label": "사용자 원문"
+        },
+        {
+          "key": "conversation",
+          "label": "최근 대화와 관련 기억"
+        },
+        {
+          "key": "report",
+          "label": "현재 보고서의 확인된 내용"
         },
         {
           "key": "customer_info",
@@ -272,8 +316,8 @@
     },
     {
       "id": "qa.plan",
-      "version": "4.0.0",
-      "sha256": "ae729c9852695770d73431df1ec3758e7e599f06939070f6870782486d13c8f1",
+      "version": "4.1.0",
+      "sha256": "6e34fca21e5144f01ecc4d4cc044dbd3206a5a73ba7d7c68c8c0c928f952e909",
       "purpose": "qa",
       "output_schema": "qa_plan_result",
       "owner": "ai-team",
@@ -282,6 +326,18 @@
         {
           "key": "question",
           "label": "사용자 질문"
+        },
+        {
+          "key": "user_message",
+          "label": "사용자 원문"
+        },
+        {
+          "key": "conversation",
+          "label": "최근 대화와 관련 기억"
+        },
+        {
+          "key": "report",
+          "label": "현재 보고서의 확인된 내용"
         },
         {
           "key": "step_id",

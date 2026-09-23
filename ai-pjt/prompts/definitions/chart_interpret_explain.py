@@ -42,13 +42,25 @@ highlights의 각 항목과 중요한 사건·경고를 빠뜨리지 말고, 같
 [사용자 상세 질문]
 
 detail이면 질문에 직접 답하고 관련 수치, 변화 시점, 구조화된 원인과 적용 가정을
-종합해 현재 상태와 가능한 계획 방향을 설명합니다. 질문과 관계없는 수치는 나열하지 않습니다.""",
+종합해 현재 상태와 가능한 계획 방향을 설명합니다. 질문과 관계없는 수치는 나열하지 않습니다.
+
+[보완 요청]
+
+검증 결과가 있으면 이전 답변에서 해당 부분을 고쳐 다시 설명합니다.
+unauthorized_numeric_claim은 보고서에 없는 수치를 사용했다는 뜻이고,
+unsupported_causal_claim은 보고서에서 확인되지 않은 원인을 설명했다는 뜻입니다.
+recalculation_claim이면 직접 계산한 설명을 제거하고 제공된 표시값을 사용합니다.
+initial_entry_too_long이면 최초 안내를 1,200자 이내, 목록은 최대 3개로 줄입니다.
+확인된 경고와 그에 따른 다음 행동은 남깁니다. 검증 코드나 수정 과정은 답변에 쓰지 않습니다.""",
     (
         ("user_request", "사용자 요청"),
         ("response_mode", "설명 방식"),
         ("chart_facts", "Backend가 검증한 차트 보고서 전체"),
         ("chart_guide", "관련 설명 자료"),
+        ("previous_response", "이전 답변"),
+        ("feedback", "검증 결과"),
     ),
     advisor=True,
     risk="financial_explanation",
+    version="4.1.0",
 )

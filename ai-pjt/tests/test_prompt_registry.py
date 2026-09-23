@@ -40,13 +40,15 @@ class PromptRegistryTests(unittest.TestCase):
         }
         self.assertEqual(len(modules), len(prompt_ids()))
         self.assertEqual(len(prompt_ids()), 13)
-        self.assertTrue(all(get_prompt(prompt_id).version == "4.0.0" for prompt_id in prompt_ids()))
 
     def test_prompt_payload_contract_rejects_missing_and_unknown_fields(self) -> None:
         prompt = get_prompt("qa.plan")
         payload = {
             "step_id": "basic-info",
             "question": "질문",
+            "user_message": "원문 질문",
+            "conversation": {},
+            "report": {},
             "feedback": "",
         }
         self.assertEqual(prompt.validate_payload(payload), payload)
@@ -67,6 +69,9 @@ class PromptRegistryTests(unittest.TestCase):
         rendered = render_prompt_payload(classifier, {
             "step_id": "basic-info",
             "question": "질문",
+            "user_message": "원문 질문",
+            "conversation": {},
+            "report": {},
             "feedback": "",
         })
 

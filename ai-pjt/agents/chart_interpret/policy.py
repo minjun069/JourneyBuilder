@@ -113,7 +113,7 @@ def fallback_response(payload: Mapping[str, Any], *, entry: bool) -> str:
         if isinstance(item, Mapping) and item.get("label") and item.get("display")
     ][:3]
     if highlights:
-        conclusion = f"{title}의 우선 확인 항목은 {highlights[0]['label']} {highlights[0]['display']}입니다."
+        conclusion = f"{title}에서 확인된 주요 값입니다."
         bullets = "\n".join(
             f"- {item['label']}: {item['display']}" for item in highlights
         )
@@ -125,24 +125,33 @@ def fallback_response(payload: Mapping[str, Any], *, entry: bool) -> str:
         for item in payload.get("warnings", [])
         if isinstance(item, Mapping) and item.get("message")
     ]
-    caution = warnings[0] if warnings else "적용 가정이나 입력값이 바뀌면 보고서를 다시 계산해야 합니다."
+    caution = "\n".join(dict.fromkeys(warnings)) if warnings else "적용 가정이나 입력값이 바뀌면 보고서를 다시 계산해야 합니다."
     if entry:
         return f"{conclusion}\n\n{bullets}\n\n주의: {caution}"
     return f"{conclusion}\n\n{bullets}\n\n해석 한계: {caution}"
 
 
-def response_is_allowed(
+def response_validation_issues(
     response: str,
     payload: Mapping[str, Any],
     *,
     entry: bool,
-) -> bool:
+) -> tuple[str, ...]:
+    """Explain existing rejection rules without adding new semantic policy."""
+    issues: list[str] = []
+    if unauthorized_numeric_claims(response, payload):
+        issues.append("unauthorized_numeric_claim")
+    if unsupported_causal_claims(response, payload):
+        issues.append("unsupported_causal_claim")
+    if recalculation_claims(response):
+        issues.append("recalculation_claim")
     bullet_count = sum(
         line.lstrip().startswith(("- ", "* ")) for line in response.splitlines()
     )
-    progressive = not entry or (len(response) <= 1_200 and bullet_count <= 3)
-    return not (
-        unauthorized_numeric_claims(response, payload)
-        or unsupported_causal_claims(response, payload)
-        or recalculation_claims(response)
-    ) and progressive
+    if entry and (len(response) > 1_200 or bullet_count > 3):
+        issues.append("initial_entry_too_long")
+    return tuple(issues)
+
+
+def response_is_allowed(response: str, payload: Mapping[str, Any], *, entry: bool) -> bool:
+    return not response_validation_issues(response, payload, entry=entry)

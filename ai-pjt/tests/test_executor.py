@@ -123,6 +123,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         async def qa(payload: dict) -> dict:
             calls.append(("qa", payload))
+            self.assertEqual(payload["user_message"], "그 값이 뭔가요?")
             self.assertEqual(payload["task_input"]["bindings"], {
                 "value": 2_500_000,
                 "unit": "KRW",
@@ -155,6 +156,7 @@ class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
             agent_executors={"qa": qa, "input_assist": input_assist},
             tool_executors={"lookup_reference_value": lookup},
             instrumentation=bound_fake_instrumentation()[0],
+            question="그 값이 뭔가요?",
         )
 
         self.assertEqual([name for name, _ in calls], ["lookup", "qa", "input_assist"])
