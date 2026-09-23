@@ -75,7 +75,7 @@ function onResizeMove(event) {
   if (isPresentationPhase.value) {
     leftWidth.value = Math.min(45, Math.max(15, nextLeft))
   } else {
-    leftWidth.value = Math.min(85, Math.max(55, nextLeft))
+    leftWidth.value = Math.min(85, Math.max(35, nextLeft))
   }
   rightWidth.value = 100 - leftWidth.value
 }

@@ -212,7 +212,7 @@ tbody tr:last-child td { border-bottom: none; }
 
 tbody td {
   padding: 13px 14px;
-  vertical-align: middle;
+  vertical-align: top;
   border-bottom: 1px solid #e5e7ed;
   background: #ffffff;
 }
