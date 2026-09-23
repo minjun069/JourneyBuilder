@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { toGoalPhases } from './financialGoalData.js'
+import { buildGoalTimeline, toGoalPhases, toInputPeriodPhases } from './financialGoalData.js'
 
 // 백엔드 calculate_financial_goal_result 가 실제로 내려주는 pre_retirement 모양(구간 없는 객체)
 // — 커뮤니티 글 53번에 첨부된 스냅샷과 같은 구조다
@@ -148,4 +148,29 @@ test('세 배열 중 빠진 것이 있어도 배열로 채워 돌려준다', () 
   assert.deepEqual(phase.desired_expenses, [])
   assert.deepEqual(phase.expected_expenses, [])
   assert.deepEqual(phase.achieved_funds, [])
+})
+
+test('은퇴 후 고정 단계명 대신 사용자가 입력한 기간을 구간으로 다시 만든다', () => {
+  const phases = toInputPeriodPhases(phaseArray())
+
+  assert.deepEqual(
+    phases.map(phase => [phase.phase_name, phase.start_age, phase.end_age]),
+    [['60~70세', 60, 70], ['71~80세', 71, 80]],
+  )
+  assert.deepEqual(phases[0].achieved_funds.map(event => event.age), [65])
+})
+
+test('타임라인은 짧은 입력 구간에도 최소 폭을 보장한다', () => {
+  const timeline = buildGoalTimeline(toGoalPhases({
+    desired_expenses: [
+      { from_age: 60, to_age: 60, items: [] },
+      { from_age: 61, to_age: 61, items: [] },
+      { from_age: 62, to_age: 62, items: [] },
+    ],
+    expected_expenses: [],
+    achieved_funds: [],
+  }))
+
+  assert.deepEqual(timeline.phases.map(phase => phase.layoutWidth), [220, 220, 220])
+  assert.equal(timeline.minWidth, 740)
 })
