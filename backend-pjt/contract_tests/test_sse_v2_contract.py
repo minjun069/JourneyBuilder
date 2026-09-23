@@ -24,10 +24,23 @@ class SSEV2ContractTests(unittest.TestCase):
     def test_event_state_machine_has_one_terminal_event(self) -> None:
         allowed = set(self.contract["allowed_events"])
         terminal = set(self.contract["terminal_events"])
-        self.assertEqual(allowed, {"start", "done", "error"})
+        self.assertEqual(allowed, {"start", "progress", "heartbeat", "done", "error"})
         self.assertEqual(terminal, {"done", "error"})
         names = [item["event"] for item in self.contract["browser_events"]]
-        self.assertEqual(names, ["start", "done"])
+        self.assertEqual(names, ["start", "progress", "heartbeat", "done"])
+
+    def test_progress_events_are_opt_in_transient_metadata(self) -> None:
+        policy = self.contract["progress_policy"]
+        self.assertEqual(
+            self.contract["optional_browser_headers"]["X-AI-Progress-Events"],
+            "v1",
+        )
+        self.assertEqual(policy["events"], ["progress", "heartbeat"])
+        self.assertEqual(policy["heartbeat_seconds"], 15)
+        self.assertFalse(policy["stored"])
+        self.assertFalse(policy["replayed"])
+        self.assertFalse(policy["includes_percentage"])
+        self.assertFalse(policy["includes_content"])
 
     def test_every_fixture_event_keeps_version_and_request_identity(self) -> None:
         for boundary in ("ai_events", "browser_events"):
@@ -52,6 +65,7 @@ class SSEV2ContractTests(unittest.TestCase):
         })
         self.assertEqual(policy["frontend_polling_flows"], [])
         self.assertEqual(self.contract["timeouts_seconds"]["stream_read_idle"], 120)
+        self.assertEqual(self.contract["timeouts_seconds"]["processing_expiry"], 180)
 
 
 if __name__ == "__main__":

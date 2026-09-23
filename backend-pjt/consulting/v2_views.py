@@ -20,11 +20,21 @@ from .ai_lifecycle import (
     require_idempotency_key,
     validate_browser_message,
 )
+from .ai_execution import (
+    expire_stale_execution,
+    make_expired_state,
+    processing_expires_at,
+)
 from .ai_security import recover_terminal_state
 from .ai_tokenization import ReferenceTokenVault
 from .chart_payload import PRESENTATION_CHART_STEP_IDS
 from .models import AIRequestExecution, ConsultingSession, Message
-from .v2_sse import proxy_v2_ai_stream, replay_v2_stream
+from .v2_sse import (
+    PROGRESS_EVENTS_HEADER,
+    PROGRESS_EVENTS_VERSION,
+    proxy_v2_ai_stream,
+    replay_v2_stream,
+)
 
 
 def error_response(error):
@@ -33,6 +43,19 @@ def error_response(error):
 
 def get_owned_session(session_id, user):
     return ConsultingSession.objects.filter(id=session_id, user=user).first()
+
+
+def progress_events_requested(request):
+    value = request.headers.get(PROGRESS_EVENTS_HEADER)
+    if value is None:
+        return False
+    if value != PROGRESS_EVENTS_VERSION:
+        raise LifecycleError(
+            400,
+            'REQUEST_INVALID',
+            '지원하지 않는 진행 이벤트 capability입니다.',
+        )
+    return True
 
 
 class EventStreamRenderer(JSONRenderer):
@@ -75,6 +98,7 @@ class V2MessageStreamView(V2APIView):
 
         try:
             body = validate_browser_message(request.data)
+            progress_events = progress_events_requested(request)
             if (
                 session.status == ConsultingSession.Status.COMPLETED
                 and body['step_id'] not in PRESENTATION_CHART_STEP_IDS
@@ -112,19 +136,46 @@ class V2MessageStreamView(V2APIView):
                 if state is not cached_state:
                     store.save_terminal(state)
                 if state['status'] == 'processing':
-                    if state.get('retry_after_disconnect') is True:
+                    with transaction.atomic():
+                        locked_replay_session = (
+                            ConsultingSession.objects.select_for_update()
+                            .filter(id=session.id, user=request.user)
+                            .first()
+                        )
+                        if locked_replay_session is None:
+                            raise LifecycleError(
+                                404,
+                                'SESSION_NOT_FOUND',
+                                '상담 세션을 찾을 수 없습니다.',
+                            )
                         execution = (
-                            AIRequestExecution.objects.filter(
+                            AIRequestExecution.objects.select_for_update()
+                            .filter(
                                 request_id=state['request_id'],
-                                session=session,
+                                session=locked_replay_session,
                                 thread_id=state['thread_id'],
                                 payload_digest=state.get('payload_digest'),
-                                status=AIRequestExecution.Status.PROCESSING,
                             )
                             .first()
                         )
+                        did_expire = False
+                        expired_state = None
+                        if execution is not None:
+                            did_expire, expired_state = expire_stale_execution(
+                                execution,
+                                store,
+                            )
+                    if did_expire:
+                        return self._stream_response(replay_v2_stream(
+                            expired_state or make_expired_state(state),
+                        ))
+                    if state.get('retry_after_disconnect') is True:
                         token_vault = store.get_token_vault(state['request_id'])
-                        if execution is None or token_vault is None:
+                        if (
+                            execution is None
+                            or execution.status != AIRequestExecution.Status.PROCESSING
+                            or token_vault is None
+                        ):
                             raise LifecycleError(
                                 503,
                                 'AI_STATE_UNAVAILABLE',
@@ -141,6 +192,7 @@ class V2MessageStreamView(V2APIView):
                                 resumed_state,
                                 store,
                                 token_vault=token_vault,
+                                progress_events=progress_events,
                             )
                         )
                     raise LifecycleError(
@@ -165,16 +217,26 @@ class V2MessageStreamView(V2APIView):
                 )
                 if locked_session is None:
                     raise LifecycleError(404, 'SESSION_NOT_FOUND', '상담 세션을 찾을 수 없습니다.')
-                if AIRequestExecution.objects.filter(
-                    session=locked_session,
-                    status=AIRequestExecution.Status.PROCESSING,
-                ).exists():
-                    raise LifecycleError(
-                        409,
-                        'AI_STREAM_IN_PROGRESS',
-                        '이 상담의 다른 AI 스트림 요청이 처리 중입니다.',
-                        True,
+                active_execution = (
+                    AIRequestExecution.objects.select_for_update()
+                    .filter(
+                        session=locked_session,
+                        status=AIRequestExecution.Status.PROCESSING,
                     )
+                    .first()
+                )
+                if active_execution is not None:
+                    did_expire, _ = expire_stale_execution(
+                        active_execution,
+                        store,
+                    )
+                    if not did_expire:
+                        raise LifecycleError(
+                            409,
+                            'AI_STREAM_IN_PROGRESS',
+                            '이 상담의 다른 AI 스트림 요청이 처리 중입니다.',
+                            True,
+                        )
 
                 user_message = Message.objects.create(
                     session=locked_session,
@@ -225,6 +287,7 @@ class V2MessageStreamView(V2APIView):
                     user_message=user_message,
                     payload_digest=ai_payload_digest,
                     request_payload=ai_payload,
+                    expires_at=processing_expires_at(),
                 )
                 store.save_token_vault(token_vault)
                 store.save_active(state)
@@ -245,6 +308,7 @@ class V2MessageStreamView(V2APIView):
                     state,
                     store,
                     token_vault=token_vault,
+                    progress_events=progress_events,
                 )
             )
         except LifecycleError as exc:

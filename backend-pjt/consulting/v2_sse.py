@@ -18,7 +18,19 @@ from .sse import SSEProtocolError, aiter_sse_events, encode_sse
 
 
 logger = logging.getLogger(__name__)
-_ALLOWED_EVENTS = {'start', 'done', 'error'}
+PROGRESS_EVENTS_HEADER = 'X-AI-Progress-Events'
+PROGRESS_EVENTS_VERSION = 'v1'
+_ALLOWED_EVENTS = {'start', 'progress', 'heartbeat', 'done', 'error'}
+_TRANSIENT_EVENTS = {'progress', 'heartbeat'}
+_PROGRESS_PHASES = {
+    'preparing',
+    'planning',
+    'executing',
+    'reviewing',
+    'composing',
+    'validating',
+    'saving',
+}
 
 
 def ai_v2_stream_url():
@@ -26,7 +38,7 @@ def ai_v2_stream_url():
     return f'{base}/api/ai/v2/chat/stream'
 
 
-async def stream_v2_ai_response(payload):
+async def stream_v2_ai_response(payload, *, progress_events=False):
     import httpx
 
     timeout = httpx.Timeout(
@@ -35,15 +47,18 @@ async def stream_v2_ai_response(payload):
         write=settings.AI_SERVICE_TIMEOUT_SECONDS,
         pool=settings.AI_SERVICE_TIMEOUT_SECONDS,
     )
+    headers = {
+        'Authorization': f'Bearer {settings.AI_SERVICE_BEARER_TOKEN}',
+        'Accept': 'text/event-stream',
+    }
+    if progress_events:
+        headers[PROGRESS_EVENTS_HEADER] = PROGRESS_EVENTS_VERSION
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream(
             'POST',
             ai_v2_stream_url(),
             json=payload,
-            headers={
-                'Authorization': f'Bearer {settings.AI_SERVICE_BEARER_TOKEN}',
-                'Accept': 'text/event-stream',
-            },
+            headers=headers,
         ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
@@ -64,6 +79,28 @@ def _validate_identity(data, payload):
             raise SSEProtocolError(f'{field} does not match the stream request')
 
 
+def _validate_transient_event(event_name, data, previous_sequence):
+    event_sequence = data.get('event_seq')
+    if (
+        isinstance(event_sequence, bool)
+        or not isinstance(event_sequence, int)
+        or event_sequence <= previous_sequence
+    ):
+        raise SSEProtocolError('transient SSE event_seq must increase')
+    identity_fields = {
+        'contract_version', 'request_id', 'session_id', 'thread_id', 'event_seq',
+    }
+    if event_name == 'heartbeat':
+        if set(data) - identity_fields:
+            raise SSEProtocolError('heartbeat contains unsupported fields')
+        return event_sequence
+    if set(data) - (identity_fields | {'phase', 'status'}):
+        raise SSEProtocolError('progress contains unsupported fields')
+    if data.get('phase') not in _PROGRESS_PHASES or data.get('status') != 'active':
+        raise SSEProtocolError('progress event is invalid')
+    return event_sequence
+
+
 def _serialize_message(message):
     return {
         'id': message.id,
@@ -81,6 +118,20 @@ def _browser_start(state):
         'thread_id': state['thread_id'],
         'user_message_id': state['user_message_id'],
     }
+
+
+def _browser_transient(event_name, state, data):
+    payload = {
+        'contract_version': CONTRACT_VERSION,
+        'request_id': state['request_id'],
+        'event_seq': data['event_seq'],
+    }
+    if event_name == 'progress':
+        payload.update({
+            'phase': data['phase'],
+            'status': 'active',
+        })
+    return payload
 
 
 def _browser_error(state, error):
@@ -135,22 +186,38 @@ async def proxy_v2_ai_stream(
     store,
     *,
     token_vault: ReferenceTokenVault,
+    progress_events=False,
 ):
     yield encode_sse('start', _browser_start(state))
 
     terminal = False
+    event_sequence = 0
     try:
         token_vault.assert_scope(
             user_id=state['user_id'],
             session_id=state['session_id'],
             request_id=state['request_id'],
         )
-        async for event_name, data in aiter_sse_events(stream_v2_ai_response(payload)):
+        upstream = stream_v2_ai_response(payload, progress_events=progress_events)
+        async for event_name, data in aiter_sse_events(upstream):
             if event_name not in _ALLOWED_EVENTS:
                 raise SSEProtocolError(f'unsupported SSE event: {event_name}')
             _validate_identity(data, payload)
 
             if event_name == 'start':
+                continue
+            if event_name in _TRANSIENT_EVENTS:
+                if not progress_events:
+                    raise SSEProtocolError('transient event was not negotiated')
+                event_sequence = _validate_transient_event(
+                    event_name,
+                    data,
+                    event_sequence,
+                )
+                yield encode_sse(
+                    event_name,
+                    _browser_transient(event_name, state, data),
+                )
                 continue
             validated = validate_terminal_payload(data)
             if event_name == 'error':
@@ -193,16 +260,33 @@ async def proxy_v2_ai_stream(
 
         raise SSEProtocolError('SSE stream ended without a terminal event')
     except asyncio.CancelledError:
-        logger.info('Django v2 SSE 클라이언트 연결 종료', extra={'request_id': state['request_id']})
+        logger.info(
+            'Django v2 SSE 클라이언트 연결 종료',
+            extra={
+                'request_id': state['request_id'],
+                'reason_code': 'browser_stream_disconnected',
+            },
+        )
         if not terminal:
             # The AI may already have atomically committed context and its
             # terminal while delivery to Django was interrupted. Keep the
             # original request identity and vault so an idempotent retry can
             # query/replay that exact terminal instead of creating a new turn.
-            await sync_to_async(store.save_active, thread_sensitive=True)({
-                **state,
-                'retry_after_disconnect': True,
-            })
+            try:
+                await asyncio.shield(
+                    sync_to_async(store.save_active, thread_sensitive=True)({
+                        **state,
+                        'retry_after_disconnect': True,
+                    })
+                )
+            except Exception:
+                logger.exception(
+                    'Django v2 SSE 재연결 표식 저장 실패',
+                    extra={
+                        'request_id': state['request_id'],
+                        'reason_code': 'disconnect_resume_marker_failed',
+                    },
+                )
         raise
     except Exception as exc:
         if isinstance(exc, ReferenceTokenValidationError):

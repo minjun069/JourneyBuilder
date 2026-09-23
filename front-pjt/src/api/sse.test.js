@@ -87,6 +87,72 @@ test('delta 이벤트는 지원하지 않는다', async () => {
 })
 
 
+test('진행 단계와 heartbeat는 단조 증가 sequence만 허용한다', async () => {
+  async function* source() {
+    yield { event: 'start', data: { contract_version: '2.0', request_id: 'req-1' } }
+    yield {
+      event: 'progress',
+      data: {
+        contract_version: '2.0',
+        request_id: 'req-1',
+        event_seq: 1,
+        phase: 'planning',
+        status: 'active',
+      },
+    }
+    yield {
+      event: 'heartbeat',
+      data: { contract_version: '2.0', request_id: 'req-1', event_seq: 2 },
+    }
+    yield { event: 'done', data: { contract_version: '2.0', request_id: 'req-1' } }
+  }
+
+  const events = []
+  for await (const event of validateSSEEvents(source())) events.push(event)
+
+  assert.deepEqual(
+    events.map(({ event }) => event),
+    ['start', 'progress', 'heartbeat', 'done'],
+  )
+})
+
+
+test('진행 이벤트의 역순·미등록 단계·추가 정보는 거절한다', async () => {
+  const invalidEvents = [
+    { event: 'heartbeat', data: { event_seq: 0 } },
+    { event: 'progress', data: { event_seq: 1, phase: 'internal', status: 'active' } },
+    { event: 'heartbeat', data: { event_seq: 1, content: '금지' } },
+  ]
+  for (const invalid of invalidEvents) {
+    async function* source() {
+      yield { event: 'start', data: { contract_version: '2.0', request_id: 'req-1' } }
+      yield {
+        event: invalid.event,
+        data: {
+          contract_version: '2.0',
+          request_id: 'req-1',
+          ...invalid.data,
+        },
+      }
+    }
+    await assert.rejects(async () => {
+      for await (const event of validateSSEEvents(source())) void event
+    }, SSEProtocolError)
+  }
+})
+
+
+test('terminal 없는 EOF는 재연결 가능한 전송 종료로 분류한다', async () => {
+  async function* source() {
+    yield { event: 'start', data: { request_id: 'req-1' } }
+  }
+
+  await assert.rejects(async () => {
+    for await (const event of validateSSEEvents(source())) void event
+  }, (error) => error instanceof SSEProtocolError && error.code === 'SSE_TERMINAL_MISSING')
+})
+
+
 test('v2 SSE 완료 이벤트는 저장된 assistant message를 검증한다', async () => {
   async function* source() {
     yield {

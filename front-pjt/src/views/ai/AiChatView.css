@@ -395,6 +395,13 @@
   height: 18px;
 }
 
+.stream-progress-status {
+  margin: 0;
+  color: var(--color-text-secondary, #666);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
 .typing-dots span {
   width: 7px;
   height: 7px;

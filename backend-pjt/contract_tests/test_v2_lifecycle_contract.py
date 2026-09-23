@@ -30,6 +30,7 @@ from consulting.ai_lifecycle import (  # noqa: E402
     validate_browser_message,
     validate_terminal_payload,
 )
+from consulting.ai_execution import AI_PROCESSING_EXPIRY_SECONDS  # noqa: E402
 
 
 FIXTURE = json.loads(
@@ -120,6 +121,7 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
         timing = FIXTURE['timing']
         self.assertEqual(CONTRACT_VERSION, FIXTURE['contract_version'])
         self.assertEqual(AI_EXECUTION_DEADLINE_SECONDS, timing['ai_execution_deadline_seconds'])
+        self.assertEqual(AI_PROCESSING_EXPIRY_SECONDS, timing['processing_expiry_seconds'])
         self.assertEqual(ACTIVE_STATE_TTL_SECONDS, timing['active_state_ttl_seconds'])
         self.assertEqual(TERMINAL_STATE_TTL_SECONDS, timing['terminal_state_ttl_seconds'])
         self.assertEqual(TERMINAL_STATE_TTL_SECONDS, timing['idempotency_ttl_seconds'])

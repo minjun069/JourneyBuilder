@@ -33,6 +33,7 @@
   },
   "timing": {
     "ai_execution_deadline_seconds": 60,
+    "processing_expiry_seconds": 180,
     "service_connect_timeout_seconds": 5,
     "stream_read_idle_timeout_seconds": 120,
     "active_state_ttl_seconds": 600,

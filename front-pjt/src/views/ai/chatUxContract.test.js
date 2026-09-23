@@ -109,6 +109,18 @@ test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 i
   assert.match(stream, /AI_STREAM_IN_PROGRESS/)
   assert.doesNotMatch(stream, /cancelActiveStream\(\)/)
   assert.match(store, /STREAM_IDLE_TIMEOUT_MS = 120_000/)
+  assert.match(stream, /resolvedIdempotencyKey/)
+  assert.match(stream, /attempt < 2/)
+  assert.match(stream, /SSE_TERMINAL_MISSING/)
+  assert.match(consultingApi, /'X-AI-Progress-Events': 'v1'/)
+})
+
+test('진행 이벤트는 본문 대신 공개 단계 하나만 표시하고 heartbeat는 문구를 바꾸지 않는다', () => {
+  assert.match(view, /STREAM_PROGRESS_MESSAGES/)
+  assert.match(view, /event === 'progress'/)
+  assert.match(view, /event === 'start' \|\| event === 'heartbeat'/)
+  assert.match(view, /stream-progress-status/)
+  assert.match(view, /streamProgressPhase\.value = null/)
 })
 
 test('Presentation 최초 진입은 보고서 버전별 자동 안내를 한 번만 요청한다', () => {
