@@ -105,14 +105,14 @@ AI_COUNSELING_RAG_ENABLED=true
 AI_COUNSELING_RAG_TIMEOUT_SECONDS=12
 ```
 
-성공한 작업의 검증 답변을 다듬은 뒤 `counseling.plan`이 상담 필요성과 주제를 판단한다.
-필요한 경우 후보 본문을 검색하고 `counseling.compose`가 보충문을 생성한 다음
-`counseling.judge`의 근거·관련성·비모순·개인 사실·진단 범위 검토를 통과해야 덧붙인다.
-기존 답변·수치·action·review를 보존하며 실패·빈 검색·검토 거부에는 기존 답변을 반환한다.
-검색은 최대 1회, 추가 모델 단계는 최대 3회이고 전체 보충 한도는 1~30초다. 요청 전체 취소는
-전파한다. 감사·단순 용어·조회·정정·설명 거절에는 상담 검색을 생략하도록 계획한다.
+Aggregator가 질문의 명시적 금융 개념을 닫힌 topic으로 고른 뒤 후보 본문을 최대 한 번 검색한다.
+근거가 있으면 `aggregator.counseling`이 검증 답변을 한 번 다듬고 관련 설명을 본문 흐름에
+통합한다. action·review·step과 기존 수치·조건·승인 문장을 보존한다. 원 답변 뒤에 별도
+보충문만 붙인 출력, 새 처리 주장·내부 출처·수치, 모델 오류·timeout은 검증 답변으로 복귀한다.
+모델 호출은 최대 1회이고 전체 검색·생성 한도는 1~30초다. 요청 전체 취소는 전파한다.
+감사·단순 용어·조회·정정·설명 거절에는 상담 검색을 생략한다.
 상위 단계가 선택한 대화의 정정·거절을 다시 축약하지 않으며 내용이 16,000자를 넘으면
-모델·검색 호출 없이 보충을 생략한다. 세 단계는 논리 호출 수이며 SDK 내부 HTTP 시도 수와는 다르다.
+상담 모델·검색 호출 없이 원 답변을 유지한다. 논리 호출 수는 SDK 내부 HTTP 시도 수와 다르다.
 
 검색기는 고객 원문 대신 닫힌 topic만 받는다. 후보 9문서의 해시·권리·pending 상태를
 검증하고 관리 절을 제외한 37개 완전한 상담 카드를 Gemini `gemini-embedding-2`
@@ -158,8 +158,8 @@ python -m unittest rag.tests.test_counseling_retriever -q
 python -m unittest tests.test_counseling tests.test_counseling_integration -q
 ```
 
-마지막 두 상담 runtime 테스트의 모델은 mock이다. 별도 개발 smoke에서 실제 Gemini 검색·
-생성·독립 검토를 거친 보충문 주입 1건을 확인했지만, 실제 모델 품질·지연·비용과 80대화
+마지막 두 상담 runtime 테스트의 모델은 mock이다. 과거 개발 smoke의 실제 Gemini 검색·
+생성·독립 검토 결과는 이전 append-only 경로의 기록이다. 새 단일 재작성 경로의 실제 모델 품질·지연·비용과 80대화
 비교는 별도 측정이며 corpus 승인 상태와 기존 평가 서식의 미실행 표시는 바꾸지 않는다.
 coverage 자료의 `runtime_implemented=false`는 자료 작성 시점의 상태로 보존하며
 현재 서비스의 활성화 여부를 판정하는 데 사용하지 않는다. 자료의 검사 성공도 후보 문서

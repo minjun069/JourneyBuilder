@@ -39,7 +39,7 @@ class PromptRegistryTests(unittest.TestCase):
             if path.stem not in {"__init__", "_factory"}
         }
         self.assertEqual(len(modules), len(prompt_ids()))
-        self.assertEqual(len(prompt_ids()), 15)
+        self.assertEqual(len(prompt_ids()), 13)
         self.assertTrue(all(get_prompt(prompt_id).version == "4.0.0" for prompt_id in prompt_ids()))
 
     def test_prompt_payload_contract_rejects_missing_and_unknown_fields(self) -> None:
@@ -103,18 +103,11 @@ class PromptRegistryTests(unittest.TestCase):
     def test_qa_has_one_planning_answering_and_review_prompt(self) -> None:
         self.assertEqual({key for key in prompt_ids() if key.startswith("qa.")}, {"qa.plan", "qa.answer", "qa.judge"})
 
-    def test_counseling_uses_same_grounding_inputs_for_composition_and_review(self) -> None:
+    def test_aggregator_counseling_rewrites_with_grounding(self) -> None:
+        self.assertEqual({key for key in prompt_ids() if key.startswith("counseling.")}, set())
         self.assertEqual(
-            {key for key in prompt_ids() if key.startswith("counseling.")},
-            {"counseling.plan", "counseling.compose", "counseling.judge"},
-        )
-        self.assertEqual(
-            get_prompt("counseling.judge").required_input_keys,
-            get_prompt("counseling.compose").required_input_keys | {"addon"},
-        )
-        self.assertEqual(
-            get_prompt("counseling.compose").required_input_keys,
-            get_prompt("counseling.plan").required_input_keys | {"evidence"},
+            get_prompt("aggregator.counseling").required_input_keys,
+            {"answer", "question", "conversation_context", "evidence"},
         )
 
 

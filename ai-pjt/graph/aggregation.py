@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import deepcopy
 import logging
+from math import isfinite
 import re
 from typing import Any
 
@@ -12,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 from core.observability_masking import masked_exception_fields
+from graph.counseling import EXECUTION_CLAIM, INTERNAL_OR_LINK, WRITTEN_QUANTITY, counseling_evidence
 from prompts import get_prompt
 from tools.output_policy import validate_form_update_contract
 
@@ -154,28 +157,53 @@ async def compose_aggregate_response(
     output: Mapping[str, Any],
     step_id: str,
     field_registry: list[dict[str, Any]],
+    question: str = "",
+    conversation_context: Mapping[str, Any] | None = None,
+    task_types: Sequence[str] = (),
+    counseling_retriever: Any = None,
+    timeout_seconds: float = 12.0,
 ) -> dict[str, Any]:
-    """Polish every successful answer once, keeping verified content and actions."""
+    """Rewrite once after optional counseling retrieval, preserving verified facts."""
 
     response = output.get("response")
     if not isinstance(response, str) or not response.strip():
         return deepcopy(dict(output))
-    prompt = get_prompt("aggregator.compose")
-
     from core.llm import llm
 
     try:
-        runnable = llm.with_structured_output(AggregatorModelOutput)
-        raw = await secure_ainvoke(
-            runnable,
-            prompt_messages(prompt, {
-                "answer": response,
-            }),
-            purpose=ModelPurpose.AGGREGATOR,
-            operation_name="aggregator.compose",
-            sensitive_payload={"answer": response},
-            prompt=prompt,
-        )
+        if counseling_retriever is not None and (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not isfinite(timeout_seconds)
+            or not 0 < timeout_seconds <= 30
+        ):
+            raise ValueError("invalid counseling composition timeout")
+        async with asyncio.timeout(timeout_seconds if counseling_retriever is not None else None):
+            context, evidence = ({}, [])
+            if counseling_retriever is not None:
+                context, evidence = await counseling_evidence(
+                    question=question,
+                    conversation_context=conversation_context or {},
+                    task_types=task_types,
+                    retriever=counseling_retriever,
+                )
+            prompt = get_prompt("aggregator.counseling") if evidence else get_prompt("aggregator.compose")
+            payload = (
+                {"answer": response, "question": question, "conversation_context": context,
+                 "evidence": evidence}
+                if evidence else {"answer": response}
+            )
+            raw = await secure_ainvoke(
+                llm.with_structured_output(AggregatorModelOutput),
+                prompt_messages(prompt, payload),
+                purpose=ModelPurpose.AGGREGATOR,
+                operation_name=prompt.prompt_id,
+                sensitive_payload=(
+                    {"answer": response, "question": question, "conversation_context": context}
+                    if evidence else {"answer": response}
+                ),
+                prompt=prompt,
+            )
         composed = (
             raw
             if isinstance(raw, AggregatorModelOutput)
@@ -183,7 +211,18 @@ async def compose_aggregate_response(
         )
         if _NUMBER_TOKEN.findall(composed.response) != _NUMBER_TOKEN.findall(response):
             raise ValueError("aggregator changed verified numeric tokens or order")
-        if _protected_sentences(composed.response) != _protected_sentences(response):
+        if evidence:
+            if composed.response.strip().startswith(response.strip()) and composed.response.strip() != response.strip():
+                raise ValueError("aggregator appended counseling instead of revising the answer")
+            protected = _protected_sentences(response)
+            actual = _protected_sentences(composed.response)
+            remaining = iter(actual)
+            if any(not any(item == expected for item in remaining) for expected in protected):
+                raise ValueError("aggregator changed a verified condition or approval statement")
+            for pattern in (WRITTEN_QUANTITY, EXECUTION_CLAIM, INTERNAL_OR_LINK):
+                if pattern.findall(composed.response) != pattern.findall(response):
+                    raise ValueError("aggregator added a quantity, execution claim or internal reference")
+        elif _protected_sentences(composed.response) != _protected_sentences(response):
             raise ValueError("aggregator changed a verified value, condition or approval statement")
         validation = validate_form_update_contract({
             "step_id": step_id,

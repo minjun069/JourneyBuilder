@@ -26,6 +26,7 @@ from core.observability_masking import (
 )
 from core.terminal_masking import TerminalPayloadMasker
 from graph.builder import build_graph
+from graph.aggregation import compose_aggregate_response
 from graph.task_catalog import TASK_TYPE_CONTRACTS
 from tools.graph_adapter import build_graph_tool_executors
 from tools.runtime import build_production_tool_runtime
@@ -50,18 +51,17 @@ _stream_v2_chat_events = stream_v2_chat_events
 _v2_validation_error = validation_error
 
 
-def build_counseling_enricher():
+def build_response_composer():
     """Fail startup closed unless the enabled candidate index is compatible."""
     if not settings.counseling_rag_enabled:
-        return None
-    from graph.counseling import enrich_counseling_response
+        return compose_aggregate_response
     from rag.counseling_retriever import get_counseling_retriever
 
     retriever = get_counseling_retriever()
 
     return partial(
-        enrich_counseling_response,
-        retriever=retriever,
+        compose_aggregate_response,
+        counseling_retriever=retriever,
         timeout_seconds=settings.counseling_rag_timeout_seconds,
     )
 
@@ -126,7 +126,7 @@ async def lifespan(app: FastAPI):
                 checkpointer,
                 instrumentation=instrumentation,
                 tool_executors=build_graph_tool_executors(tool_runtime),
-                counseling_enricher=build_counseling_enricher(),
+                response_composer=build_response_composer(),
             )
             app.state.context_store = context_store
             app.state.context_api = build_context_state_api(checkpointer, context_store)
