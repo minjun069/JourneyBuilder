@@ -65,6 +65,19 @@ test('재무정보 안내는 말풍선 안에도 다음 단계 action을 제공�
   assert.match(financialInfo, /stepId: 'financial-assets'/)
 })
 
+test('재무 만족도 안내는 다섯 영역의 구체적인 설명을 후속 말풍선으로 제공한다', () => {
+  const financialSatisfaction = guides.slice(
+    guides.indexOf("'financial-satisfaction':"),
+    guides.indexOf("'financial-info':"),
+  )
+
+  assert.doesNotMatch(financialSatisfaction, /type: 'container'/)
+  assert.match(financialSatisfaction, /각 영역의 구체적인 내용은 다음과 같습니다/)
+  for (const label of ['현금흐름 관리', '위험 관리', '투자', '재무관리', '상속']) {
+    assert.match(financialSatisfaction, new RegExp(`\\*\\*${label}\\*\\*:`))
+  }
+})
+
 test('빈 금융자산은 명시적인 없음 확인 API로 완료 처리한다', () => {
   assert.match(validation, /보유 금융자산 없음/)
   assert.match(view, /confirmNoFinancialAssets: true/)
