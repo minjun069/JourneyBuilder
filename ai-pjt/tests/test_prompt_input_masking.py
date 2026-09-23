@@ -95,6 +95,7 @@ class PromptInputMaskingTests(unittest.TestCase):
         amount = 1012345678
         payload = {
             "question": "현재 정보를 알려줘", "feedback": "", "bindings": {}, "evidence": [],
+            "user_message": "현재 정보를 알려줘", "conversation": {}, "report": {},
             "customer_info": {"current_form": {"monthly_income": amount, "phone": amount}},
         }
         prompt = get_prompt("qa.answer")
@@ -104,6 +105,27 @@ class PromptInputMaskingTests(unittest.TestCase):
         )
         self.assertIn(f"monthly_income: {amount}", messages[1].content)
         self.assertIn("phone: [DIRECT_IDENTIFIER]", messages[1].content)
+
+    def test_qa_followup_context_masks_contact_details(self) -> None:
+        from prompts import get_prompt
+
+        phone = "010-9876-5432"
+        email = "qa-followup@example.com"
+        payload = {
+            "question": "앞서 말한 항목 설명", "feedback": "", "bindings": {},
+            "evidence": [], "customer_info": {},
+            "user_message": f"그게 뭔가요? {phone}",
+            "conversation": {"recent_turns": [{"user": f"연락처는 {email}"}]},
+            "report": {"status": "ready", "warnings": [{"message": f"문의: {phone}"}]},
+        }
+        prompt = get_prompt("qa.answer")
+        messages, _ = _prepare_call(
+            prompt_messages(prompt, payload), purpose=ModelPurpose.QA,
+            sensitive_payload=payload, prompt=prompt,
+        )
+        self.assertNotIn(phone, messages[1].content)
+        self.assertNotIn(email, messages[1].content)
+        self.assertIn("그게 뭔가요?", messages[1].content)
 
     def test_user_text_cannot_collide_with_number_protection_markers(self) -> None:
         marker = "\x00RWALLOWEDNUMBER0\x00"
@@ -119,6 +141,7 @@ class PromptInputMaskingTests(unittest.TestCase):
 
         prompt = get_prompt("qa.answer")
         payload = {"question": "제 소득", "customer_info": {"monthly_income": 1500000000},
+                   "user_message": "제 소득", "conversation": {}, "report": {},
                    "bindings": {}, "evidence": [], "feedback": ""}
         pending = prompt_messages(prompt, payload)
         messages, _ = _prepare_call(

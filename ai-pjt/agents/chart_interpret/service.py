@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from time import monotonic
 
+from core.monitoring import OperationStage, OperationStatus
+from core.operation_observation import record_operation_observation
 from graph.state import ChatState
 
 from .model import explain_chart
@@ -12,6 +15,7 @@ from .policy import (
     fallback_response,
     recalculation_claims,
     response_is_allowed,
+    response_validation_issues,
     unauthorized_numeric_claims,
     unsupported_causal_claims,
 )
@@ -46,8 +50,44 @@ async def _run(state: ChatState) -> dict:
     # The model sees the complete verified report. Keep metadata out of the
     # numeric evidence used by the deterministic response policy.
     facts = project_chart_facts(payload)
-    response = await explain_chart(state, payload, entry=entry)
-    if not response_is_allowed(response, facts, entry=entry):
+    feedback: tuple[str, ...] = ()
+    response = ""
+    for attempt in range(2):
+        try:
+            response = await explain_chart(
+                state, payload, entry=entry, previous_response=response, feedback=feedback,
+            )
+        except Exception as error:
+            if attempt == 0:
+                raise
+            record_operation_observation(
+                stage=OperationStage.OUTPUT_VALIDATION,
+                status=OperationStatus.FAILED,
+                operation_name="chart_interpret.validate",
+                duration_ms=0,
+                agent="chart_interpret",
+                error_code=type(error).__name__,
+                output={"attempt": 2, "issues": ["repair_failed"], "fallback": True},
+            )
+            break
+        started = monotonic()
+        feedback = response_validation_issues(response, facts, entry=entry)
+        record_operation_observation(
+            stage=OperationStage.OUTPUT_VALIDATION,
+            status=OperationStatus.FAILED if feedback else OperationStatus.SUCCEEDED,
+            operation_name="chart_interpret.validate",
+            duration_ms=max(0, int((monotonic() - started) * 1000)),
+            agent="chart_interpret",
+            error_code=feedback[0] if feedback else None,
+            output={
+                "attempt": attempt + 1,
+                "issues": list(feedback),
+                "fallback": bool(feedback) and attempt == 1,
+            },
+        )
+        if not feedback:
+            break
+    if feedback:
         response = fallback_response(facts, entry=entry)
     return {
         "output": {

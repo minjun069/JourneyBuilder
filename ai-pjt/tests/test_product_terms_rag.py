@@ -151,7 +151,7 @@ def _embedded_term_chunks() -> list[EmbeddedChunk]:
 class ProductTermDocumentTests(unittest.TestCase):
     def test_every_term_has_required_markdown_fields(self) -> None:
         records = _term_records()
-        self.assertEqual(len(records), 188)
+        self.assertEqual(len(records), 189)
         self.assertEqual(len({term for term, _ in records}), len(records))
         for term, fields in records:
             with self.subTest(term=term):
@@ -172,7 +172,7 @@ class ProductTermDocumentTests(unittest.TestCase):
 
     def test_each_product_term_is_one_independent_chunk(self) -> None:
         chunks = MarkdownStructureChunker().chunk_document(_term_document())
-        self.assertEqual(len(chunks), 188)
+        self.assertEqual(len(chunks), 189)
         for chunk in chunks:
             with self.subTest(chunk=chunk.chunk_id):
                 self.assertEqual(len(re.findall(r"(?m)^##\s+", chunk.text)), 1)
@@ -196,12 +196,23 @@ class ProductTermRetrievalTests(unittest.TestCase):
             "현금화 용이성을 설명해줘": "유동성",
             "현금흐름 관리가 뭐야?": "현금흐름 관리",
             "재무 관리의 뜻": "재무관리",
+            "은퇴 시뮬레이션 어떻게 계산하나요?": "은퇴 시뮬레이션",
+            "계획 성공확률이 뭔가요?": "계획 성공확률",
         }
         for query, expected in cases.items():
             with self.subTest(query=query):
                 ranked = IndexedRetriever._bm25(self.embedded, query, top_k=3)
                 self.assertTrue(ranked)
                 self.assertEqual(_heading(ranked[0][0].chunk), expected)
+
+    def test_simulation_calculation_evidence_is_retrievable_with_success_definition(self) -> None:
+        for query in ("은퇴 시뮬레이션 계산 방식", "시뮬레이션 성공 확률은 무슨 뜻인가요?"):
+            with self.subTest(query=query):
+                ranked = IndexedRetriever._bm25(self.embedded, query, top_k=3)
+                text = ranked[0][0].chunk.text
+                self.assertIn("연말 잔액이 한 번도 음수가 되지 않은 경로의 비율", text)
+                self.assertIn("같은 수익률 경로", text)
+                self.assertIn("은퇴 준비도 비율과 계획 성공확률은 다른 지표", text)
 
     def test_title_exact_match_outranks_alias_then_body(self) -> None:
         text = """<!-- product-term-document -->

@@ -133,6 +133,51 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
             set(),
         )
 
+    async def test_rejected_explanation_is_repaired_once_with_existing_reasons(self):
+        valid = "확인된 순자산은 713,000,000원입니다."
+        model = AsyncMock(side_effect=[
+            SimpleNamespace(content="확인되지 않은 999999원입니다."),
+            SimpleNamespace(content=valid),
+        ])
+        with (
+            patch.object(chart_model, "secure_ainvoke", model),
+            patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
+            patch.object(chart_interpret, "record_operation_observation") as observed,
+        ):
+            result = await chart_interpret._run({
+                "message": "이 보고서의 핵심을 안내해 주세요.", "step_id": "lifetime-cashflow",
+                "request_mode": "presentation_entry", "chart_payload": deepcopy(self.ready),
+            })
+        self.assertEqual(model.await_count, 2)
+        self.assertIn("unauthorized_numeric_claim", str(model.await_args_list[1].args[1]))
+        self.assertEqual(result["output"]["response"], valid)
+        self.assertEqual(observed.call_args_list[-1].kwargs["output"],
+                         {"attempt": 2, "issues": [], "fallback": False})
+
+    async def test_failed_repair_preserves_every_verified_warning(self):
+        for repair in (SimpleNamespace(content="다시 만든 999999원입니다."), RuntimeError("provider unavailable")):
+            with self.subTest(repair=type(repair).__name__):
+                payload = deepcopy(self.ready)
+                warnings = ["연금 수령 기간을 확인해 주세요.", "이 결과는 미래를 보장하지 않습니다."]
+                payload["warnings"] = [{"message": message} for message in warnings]
+                model = AsyncMock(side_effect=[SimpleNamespace(content="근거 없는 999999원입니다."), repair])
+                with (
+                    patch.object(chart_model, "secure_ainvoke", model),
+                    patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
+                    patch.object(chart_interpret, "record_operation_observation") as observed,
+                ):
+                    result = await chart_interpret._run({
+                        "message": "처음 안내해 주세요.", "step_id": "lifetime-cashflow",
+                        "request_mode": "presentation_entry", "chart_payload": payload,
+                    })
+                response = result["output"]["response"]
+                self.assertEqual(model.await_count, 2)
+                self.assertNotIn("999999", response)
+                self.assertNotIn("provider unavailable", response)
+                for warning in warnings:
+                    self.assertIn(warning, response)
+                self.assertTrue(observed.call_args_list[-1].kwargs["output"]["fallback"])
+
     async def test_unsupported_cause_falls_back_to_payload_only(self):
         with (
             patch.object(

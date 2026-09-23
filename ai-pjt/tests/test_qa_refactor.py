@@ -134,6 +134,52 @@ class QAFlowTests(unittest.IsolatedAsyncioTestCase):
         ])
         self.assertEqual(result["output"]["response"], "확인된 답변입니다.")
 
+    async def test_followup_keeps_original_question_history_and_report_through_graph(self) -> None:
+        warning = "연금 수령액은 계획 종료 연령까지만 반영했습니다."
+        answer = f"앞서 말씀드린 항목은 연금 수령 기간입니다. {warning}"
+        state = {
+            "message": "앞서 확인할 항목을 구체적으로 설명한다.",
+            "user_message": "하나라면서요. 그게 뭔데요?",
+            "conversation_context": {
+                "summary": {"text": "시뮬레이션을 설명하는 대화", "version": 3},
+                "turns": [{"request_id": "storage-request", "user_message": "계획대로 살면 되나요?",
+                           "assistant_message": "확인할 연금 수령 기간 항목이 있습니다."}],
+                "retrieved_memories": [{"score": 0.9, "turn": {
+                    "user_message": "연금 기간도 확인해 주세요.", "assistant_message": "확인하겠습니다.",
+                }}],
+            },
+            "chart_payload": {
+                "status": "ready", "title": "은퇴 시뮬레이션", "schema_version": "2.1",
+                "warnings": [{"code": "pension_horizon_limited", "field_name": "pension_assets[0]",
+                              "message": warning}],
+            },
+        }
+        result, calls, _, _ = await self.run_flow(
+            plans=[qa.PlanResult(questions=[question("확인할 연금 수령 기간")])],
+            answers=[answer], state=state,
+        )
+        for _, payload in calls:
+            self.assertEqual(payload["user_message"], state["user_message"])
+            self.assertEqual(payload["question"], state["message"])
+            self.assertEqual(payload["conversation"]["recent_messages"][0]["assistant_message"],
+                             "확인할 연금 수령 기간 항목이 있습니다.")
+            self.assertEqual(payload["report"]["warnings"], [{"message": warning}])
+            self.assertNotIn("storage-request", str(payload))
+            self.assertNotIn("schema_version", str(payload))
+            self.assertNotIn("pension_assets[0]", str(payload))
+        self.assertEqual(result["output"]["response"], answer)
+
+    async def test_unready_report_does_not_authorize_old_numeric_facts(self) -> None:
+        _, calls, _, _ = await self.run_flow(
+            plans=[qa.PlanResult(questions=[question("확인할 항목")])],
+            state={"chart_payload": {"status": "guidance_only", "title": "은퇴 시뮬레이션",
+                                     "highlights": [{"label": "오래된 값", "display": "99999원"}],
+                                     "warnings": [{"message": "보고서를 다시 생성해 주세요."}]}},
+        )
+        for _, payload in calls:
+            self.assertNotIn("99999", str(payload))
+            self.assertIn("보고서를 다시 생성", str(payload["report"]))
+
     async def test_direct_answer_and_review_receive_identical_selected_facts(self) -> None:
         state = {
             "message": "제 나이는 얼마인가요?",
@@ -143,10 +189,12 @@ class QAFlowTests(unittest.IsolatedAsyncioTestCase):
             plans=[qa.PlanResult(questions=[question("제 나이")])], state=state,
         )
         self.assertEqual(len(calls), 3)
-        self.assertEqual(set(calls[0][1]), {"question", "step_id", "feedback"})
+        self.assertEqual(set(calls[0][1]), {
+            "question", "user_message", "conversation", "report", "step_id", "feedback",
+        })
         generated, reviewed = calls[1][1], calls[2][1]
         self.assertEqual(generated["customer_info"], {"current_form": {"age": 55}})
-        for key in ("question", "customer_info", "bindings", "evidence"):
+        for key in ("question", "user_message", "conversation", "report", "customer_info", "bindings", "evidence"):
             self.assertEqual(generated[key], reviewed[key])
         retriever.aretrieve.assert_not_awaited()
 

@@ -226,6 +226,7 @@ async def execute_route_plan(
                 "bindings": deepcopy(task_bindings),
             },
             "message": str(task.get("description", "")),
+            "user_message": question,
             "step_id": step_id,
             "customer_info": deepcopy(dict(customer_info)),
             "chart_payload": deepcopy(plan.get("chart_payload")),

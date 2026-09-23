@@ -10,6 +10,7 @@ from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 from core.monitoring import OperationStage, OperationStatus
 from core.observability_masking import exception_identity_fields
 from core.operation_observation import record_operation_observation
+from core.prompt_inputs import conversation_for_model, report_for_model
 from rag.retriever import format_docs, get_retriever
 from .model import (
     ANSWER_PROMPT as _ANSWER_PROMPT,
@@ -39,8 +40,13 @@ OFFICIAL_VALUE_UNAVAILABLE = (
 
 class QAState(TypedDict):
     message: str
+    user_message: NotRequired[str]
     step_id: str
     customer_info: dict
+    conversation_context: NotRequired[dict[str, Any]]
+    chart_payload: NotRequired[dict[str, Any] | None]
+    conversation: dict[str, Any]
+    report: dict[str, Any]
     task_input: NotRequired[dict[str, Any]]
     questions: list[dict[str, Any]]
     customer_context: dict[str, Any]
@@ -63,6 +69,8 @@ def _bindings(state: Mapping[str, Any]) -> dict[str, Any]:
 def _init(state: QAState) -> dict:
     return {
         "questions": [],
+        "conversation": conversation_for_model(state.get("conversation_context") or {}),
+        "report": report_for_model(state.get("chart_payload") or {}),
         "customer_context": relevant_customer_info(
             state["message"], state.get("customer_info", {}), state["step_id"]
         ),
@@ -81,7 +89,7 @@ async def _plan(state: QAState) -> dict:
     result = await secure_ainvoke(
         _plan_chain,
         prompt_messages(_PLAN_PROMPT, {
-            "question": state["message"],
+            **_question_context(state),
             "step_id": state["step_id"],
             "feedback": state["feedback"],
         }),
@@ -155,9 +163,18 @@ async def _search(query: str) -> str:
     return format_docs(nodes)
 
 
-def _answer_context(state: QAState) -> dict[str, Any]:
+def _question_context(state: QAState) -> dict[str, Any]:
     return {
         "question": state["message"],
+        "user_message": state.get("user_message") or state["message"],
+        "conversation": state.get("conversation", {}),
+        "report": state.get("report", {}),
+    }
+
+
+def _answer_context(state: QAState) -> dict[str, Any]:
+    return {
+        **_question_context(state),
         "customer_info": state["customer_context"],
         "bindings": _bindings(state),
         "evidence": state["evidence"],
@@ -241,6 +258,9 @@ def _search_result_metadata(
 def _model_sensitive_payload(state: QAState) -> dict[str, Any]:
     return {
         "message": state.get("message", ""),
+        "user_message": state.get("user_message", ""),
+        "conversation": state.get("conversation", {}),
+        "report": state.get("report", {}),
         "customer_info": state.get("customer_info", {}),
         "bindings": _bindings(state),
         "evidence": state.get("evidence", []),
