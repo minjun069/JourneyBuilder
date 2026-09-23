@@ -91,6 +91,24 @@ const visitedStepIds   = ref(new Set())
 const completedStepIds = ref(new Set())
 const skippedStepIds   = ref(new Set())
 
+const TABULAR_FORM_STEP_IDS = new Set([
+  'financial-assets',
+  'pension-assets',
+  'real-estate',
+  'liabilities',
+  'income',
+  'expenses',
+])
+const isTabularFormStep = computed(() => TABULAR_FORM_STEP_IDS.has(currentStepId.value))
+
+watch(currentStepId, (stepId) => {
+  const step = PROCESS_STEPS.find((item) => item.id === stepId)
+  if (step?.phase === 'presentation' || stepId === 'intro') return
+
+  leftWidth.value = TABULAR_FORM_STEP_IDS.has(stepId) ? 55 : 71.4
+  rightWidth.value = 100 - leftWidth.value
+})
+
 const isPresentationPhase = computed(() => {
   const step = PROCESS_STEPS.find((s) => s.id === currentStepId.value)
   return step?.phase === 'presentation'
@@ -1154,7 +1172,11 @@ onBeforeUnmount(() => {
               <span></span>
             </button>
 
-            <aside class="input-panel" :style="{ flexBasis: `${isPresentationPhase ? leftWidth : rightWidth}%` }">
+            <aside
+              class="input-panel"
+              :class="{ 'input-panel--tabular': isTabularFormStep }"
+              :style="{ flexBasis: `${isPresentationPhase ? leftWidth : rightWidth}%` }"
+            >
 
               <!-- ── 재무 진단 인라인 뷰 ── -->
               <template v-if="isPresentationPhase">

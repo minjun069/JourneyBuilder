@@ -50,6 +50,10 @@ function phaseIndexForAge(phases, age) {
   return index
 }
 
+const GOAL_PHASE_MIN_WIDTH = 220
+const GOAL_PHASE_YEAR_WIDTH = 18
+const GOAL_TIMELINE_SIDE_PADDING = 80
+
 export function toGoalPhases(source) {
   // 이미 구간 배열인 본문(목업·대시보드·AI 경로·은퇴 후)은 모양을 바꾸지 않는다
   if (Array.isArray(source)) return source.map(withPhaseArrays)
@@ -109,4 +113,75 @@ export function toGoalPhases(source) {
   }
 
   return phases
+}
+
+// 과거·현재 서버 응답은 은퇴 후 기간을 활동기·회상기·간병기 안에 묶어 둔다.
+// 화면에서는 그 고정 구분을 버리고 사용자가 입력한 desired_expenses 기간을 다시 구간으로 만든다.
+// 마일스톤도 함께 펼친 뒤 나이에 맞는 입력 구간으로 재배치하므로 기존 저장 본문도 그대로 호환된다.
+export function toInputPeriodPhases(source) {
+  const phases = toGoalPhases(source)
+  if (!phases.length) return []
+
+  return toGoalPhases({
+    desired_expenses: phases.flatMap(phase => phase.desired_expenses),
+    expected_expenses: phases.flatMap(phase => phase.expected_expenses),
+    achieved_funds: phases.flatMap(phase => phase.achieved_funds),
+  })
+}
+
+export function buildGoalTimeline(source) {
+  if (!source.length) return null
+
+  const phases = [...source].sort((a, b) => a.start_age - b.start_age)
+  const minAge = phases[0].start_age
+  const maxAge = phases[phases.length - 1].end_age
+
+  let offset = 0
+  const phasesWithLayout = phases.map((phase, index) => {
+    const boundaryAge = index < phases.length - 1
+      ? phases[index + 1].start_age
+      : phase.end_age
+    const span = Math.max(1, boundaryAge - phase.start_age)
+    const layoutWidth = Math.max(GOAL_PHASE_MIN_WIDTH, span * GOAL_PHASE_YEAR_WIDTH)
+    const result = { ...phase, span, boundaryAge, layoutWidth, layoutOffset: offset }
+    offset += layoutWidth
+    return result
+  })
+  const contentWidth = offset
+
+  function agePct(value) {
+    const age = Number(value)
+    if (!Number.isFinite(age) || age <= minAge) return 0
+    if (age >= maxAge) return 100
+
+    const phase = phasesWithLayout.find(item => age <= item.boundaryAge)
+      ?? phasesWithLayout[phasesWithLayout.length - 1]
+    const ageOffset = Math.min(Math.max(age - phase.start_age, 0), phase.span)
+    const pixelOffset = phase.layoutOffset + (ageOffset / phase.span) * phase.layoutWidth
+    return (pixelOffset / contentWidth) * 100
+  }
+
+  const innerBoundaries = phasesWithLayout.slice(1).map(phase => phase.start_age)
+  const ageMarkers = [...new Set([
+    ...phasesWithLayout.map(phase => phase.start_age),
+    ...phasesWithLayout.flatMap(phase => [
+      ...phase.expected_expenses.map(event => event.age),
+      ...phase.achieved_funds.map(event => event.age),
+    ]),
+  ])].sort((a, b) => a - b)
+  const allEvents = phasesWithLayout
+    .flatMap(phase => [
+      ...phase.expected_expenses.map(event => ({ ...event, kind: 'expense' })),
+      ...phase.achieved_funds.map(event => ({ ...event, kind: 'income' })),
+    ])
+    .sort((a, b) => a.age - b.age)
+
+  return {
+    phases: phasesWithLayout,
+    agePct,
+    innerBoundaries,
+    ageMarkers,
+    allEvents,
+    minWidth: contentWidth + GOAL_TIMELINE_SIDE_PADDING,
+  }
 }

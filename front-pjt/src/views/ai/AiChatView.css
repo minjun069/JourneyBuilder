@@ -546,6 +546,10 @@
   background: #e8e3d9;
 }
 
+.input-panel--tabular {
+  padding-inline: 18px;
+}
+
 .panel-header {
   display: flex;
   align-items: center;

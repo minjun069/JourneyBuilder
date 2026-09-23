@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useReportStore } from '@/stores/report'
 import { fmtKRW } from '@/utils/format'
-import { toGoalPhases } from '@/utils/financialGoalData'
+import { buildGoalTimeline, toGoalPhases, toInputPeriodPhases } from '@/utils/financialGoalData'
 
 // 글에 첨부된 스냅샷을 받는다. 없으면 기존처럼 store 를 본다(대시보드·AI 화면 동작 유지)
 const props = defineProps({
@@ -15,50 +15,10 @@ const gd = computed(() => props.data ?? reportStore.reports?.['financial-goal-re
 // 서버가 계산한 본문의 pre_retirement 는 구간 배열이 아니라 객체 하나로 온다.
 // 그리기 직전에 두 모양을 구간 배열로 맞춘다 — 목업·대시보드·AI 경로의 배열은 그대로 지나간다
 const prePhases  = computed(() => toGoalPhases(gd.value?.pre_retirement))
-const postPhases = computed(() => toGoalPhases(gd.value?.post_retirement_phases))
+const postPhases = computed(() => toInputPeriodPhases(gd.value?.post_retirement_phases))
 
-function makeTimeline(phases) {
-  if (!phases.length) return null
-  const minAge    = phases[0].start_age
-  const maxAge    = phases[phases.length - 1].end_age
-  // 구간이 하나뿐이고 시작·끝 나이가 같으면 0으로 나눠 위치가 전부 NaN 이 된다
-  const totalSpan = (maxAge - minAge) || 1
-
-  function agePct(age) {
-    return ((age - minAge) / totalSpan) * 100
-  }
-
-  const innerBoundaries = phases.slice(1).map(p => p.start_age)
-
-  const ageMarkers = [...new Set([
-    ...phases.map(p => p.start_age),
-    ...phases.flatMap(p => [
-      ...p.expected_expenses.map(e => e.age),
-      ...p.achieved_funds.map(e => e.age),
-    ]),
-  ])].sort((a, b) => a - b)
-
-  const allEvents = phases
-    .flatMap(p => [
-      ...p.expected_expenses.map(e => ({ ...e, kind: 'expense' })),
-      ...p.achieved_funds.map(e => ({ ...e, kind: 'income' })),
-    ])
-    .sort((a, b) => a.age - b.age)
-
-  // flex 값: 다음 구간 start까지의 거리 (마지막은 end-start)
-  // → agePct 기준(totalSpan = maxAge-minAge)과 일치
-  const phasesWithSpan = phases.map((p, i) => ({
-    ...p,
-    span: i < phases.length - 1
-      ? phases[i + 1].start_age - p.start_age
-      : p.end_age - p.start_age,
-  }))
-
-  return { phases: phasesWithSpan, agePct, innerBoundaries, ageMarkers, allEvents }
-}
-
-const preTl  = computed(() => makeTimeline(prePhases.value))
-const postTl = computed(() => makeTimeline(postPhases.value))
+const preTl  = computed(() => buildGoalTimeline(prePhases.value))
+const postTl = computed(() => buildGoalTimeline(postPhases.value))
 
 function style(i, isPre, total) {
   const hueStart = isPre ? 215 : 270
@@ -84,7 +44,8 @@ const fmt = fmtKRW
     <!-- 은퇴 전 -->
     <div v-if="preTl" class="section">
       <div class="section-label">은퇴 전</div>
-      <div class="tl-root">
+      <div class="timeline-scroll">
+      <div class="tl-root" :style="{ minWidth: `${preTl.minWidth}px` }">
         <div class="divider-overlay" aria-hidden="true">
           <!-- <div
             v-for="age in preTl.innerBoundaries" :key="age"
@@ -119,7 +80,7 @@ const fmt = fmtKRW
           <div
             v-for="(phase, i) in preTl.phases" :key="phase.phase_name + '-s'"
             class="tl-seg"
-            :style="{ flex: phase.span, background: style(i, true, preTl.phases.length).bg }"
+            :style="{ flex: phase.layoutWidth, background: style(i, true, preTl.phases.length).bg }"
           >
             <span class="seg-label" :style="{ color: style(i, true, preTl.phases.length).color }">{{ phase.phase_name }}</span>
           </div>
@@ -137,7 +98,7 @@ const fmt = fmtKRW
           <div
             v-for="(phase, i) in preTl.phases" :key="phase.phase_name + '-c'"
             class="popup-cell"
-            :style="{ flex: phase.span }"
+            :style="{ flex: phase.layoutWidth }"
           >
             <div class="popup-tail" :style="{ borderBottomColor: style(i, true, preTl.phases.length).border }"></div>
             <div class="expense-card" :style="{ borderColor: style(i, true, preTl.phases.length).border }">
@@ -156,6 +117,7 @@ const fmt = fmtKRW
         </div>
 
       </div>
+      </div>
     </div>
 
     <div class="divider-h"></div>
@@ -163,7 +125,8 @@ const fmt = fmtKRW
     <!-- 은퇴 후 -->
     <div v-if="postTl" class="section">
       <div class="section-label">은퇴 후</div>
-      <div class="tl-root">
+      <div class="timeline-scroll">
+      <div class="tl-root" :style="{ minWidth: `${postTl.minWidth}px` }">
         <div class="divider-overlay" aria-hidden="true">
           <!-- <div
             v-for="age in postTl.innerBoundaries" :key="age"
@@ -198,7 +161,7 @@ const fmt = fmtKRW
           <div
             v-for="(phase, i) in postTl.phases" :key="phase.phase_name + '-s'"
             class="tl-seg"
-            :style="{ flex: phase.span, background: style(i, false, postTl.phases.length).bg }"
+            :style="{ flex: phase.layoutWidth, background: style(i, false, postTl.phases.length).bg }"
           >
             <span class="seg-label" :style="{ color: style(i, false, postTl.phases.length).color }">{{ phase.phase_name }}</span>
           </div>
@@ -216,7 +179,7 @@ const fmt = fmtKRW
           <div
             v-for="(phase, i) in postTl.phases" :key="phase.phase_name + '-c'"
             class="popup-cell"
-            :style="{ flex: phase.span }"
+            :style="{ flex: phase.layoutWidth }"
           >
             <div class="popup-tail" :style="{ borderBottomColor: style(i, false, postTl.phases.length).border }"></div>
             <div class="expense-card" :style="{ borderColor: style(i, false, postTl.phases.length).border }">
@@ -234,6 +197,7 @@ const fmt = fmtKRW
           </div>
         </div>
 
+      </div>
       </div>
     </div>
 
@@ -269,6 +233,7 @@ const fmt = fmtKRW
 
 .divider-h { height: 1px; background: #e5e7eb; margin: 8px 0; flex-shrink: 0; }
 
+.timeline-scroll { width: 100%; overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
 .tl-root { position: relative; width: 100%; display: flex; flex-direction: column; padding: 0 40px; box-sizing: border-box; }
 
 /* 점선 오버레이 */

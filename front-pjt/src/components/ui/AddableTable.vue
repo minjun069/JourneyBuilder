@@ -62,6 +62,15 @@ function moneyPreview(row, col) {
   if (won == null || !Number.isFinite(won)) return ''
   return `${won.toLocaleString('ko-KR')}원`
 }
+
+// 표의 기본 열 너비는 유지하되 긴 입력값은 잘리지 않도록 실제 글자 수만큼 열을 넓힌다.
+function inputWidth(value) {
+  const text = String(value ?? '')
+  const units = [...text].reduce((width, character) => (
+    width + ((character.codePointAt(0) ?? 0) > 255 ? 1.8 : 1)
+  ), 0)
+  return `${Math.max(4, Math.ceil(units) + 2)}ch`
+}
 </script>
 
 <template>
@@ -98,7 +107,12 @@ function moneyPreview(row, col) {
               <div v-else-if="col.type === 'select'" class="cell-select-wrap">
                 <template v-if="row[col.key + '__sel'] === '기타'">
                   <span class="etc-back" title="되돌아가기" @click="clearEtc(row, col)">◂</span>
-                  <input class="cell-input cell-input--etc" v-model="row[col.key]" placeholder="직접 입력" />
+                  <input
+                    class="cell-input cell-input--etc"
+                    v-model="row[col.key]"
+                    placeholder="직접 입력"
+                    :style="{ '--input-width': inputWidth(row[col.key]) }"
+                  />
                 </template>
                 <template v-else>
                   <select
@@ -145,6 +159,7 @@ function moneyPreview(row, col) {
                     v-model="row[col.key]"
                     :placeholder="isDisabled(row, col) ? '—' : (col.placeholder ?? '')"
                     :disabled="isDisabled(row, col)"
+                    :style="{ '--input-width': inputWidth(row[col.key]) }"
                   />
                   <span v-if="col.unit" class="cell-unit">{{ col.unit }}</span>
                 </div>
@@ -164,70 +179,73 @@ function moneyPreview(row, col) {
 </template>
 
 <style scoped>
-.table-wrap { display: flex; flex-direction: column; gap: 8px; }
-.table-scroll { overflow-x: auto; }
+.table-wrap { display: flex; flex-direction: column; gap: 12px; }
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid #e1e4ec;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(42, 49, 78, 0.06);
+}
 
 .addable-table {
   width: 100%;
   min-width: max-content;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: auto;
-  border: 1px solid #d0ccc6;
 }
 
 thead th {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #9498b5;
-  text-align: center;
-  padding: 5px 8px;
-  background: #f7f5f2;
-  border-bottom: 1.5px solid #5e5ce6;
-  border-right: 1px solid #d0ccc6;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #777d91;
+  text-align: left;
+  padding: 16px 14px 12px;
+  background: #ffffff;
+  border-bottom: 2px solid #3d4358;
   white-space: nowrap;
 }
-thead th:last-child { border-right: none; }
 
-tbody tr { border-bottom: 1px solid #d0ccc6; }
-tbody tr:last-child { border-bottom: none; }
+tbody tr:last-child td { border-bottom: none; }
 
 tbody td {
-  padding: 5px 8px 4px;
+  padding: 13px 14px;
   vertical-align: middle;
-  border-right: 1px solid #eae5de;
+  border-bottom: 1px solid #e5e7ed;
+  background: #ffffff;
 }
-tbody td:last-child { border-right: none; }
 
 .empty-row td {
   text-align: center;
-  font-size: 12px;
-  color: #c4c0ba;
-  font-style: italic;
-  padding: 14px 0;
+  font-size: 14px;
+  color: #a0a5b5;
+  padding: 24px 14px;
 }
 
 /* ── 기본 text 입력 ── */
-.cell-wrap { width: 1px; min-width: 100%; }
+.cell-wrap { min-width: 100%; }
 
-.cell-field { display: flex; align-items: baseline; gap: 3px; width: 1px; min-width: 100%; }
+.cell-field { display: flex; align-items: baseline; gap: 5px; width: max-content; min-width: 100%; }
 
 .cell-preview {
-  display: block; margin-top: 1px; font-size: 10px; color: #9498b5;
-  text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block; margin-top: 4px; font-size: 11px; color: #8c92a6;
+  text-align: right; white-space: nowrap;
 }
 
-.cell-unit { font-size: 11px; font-weight: 600; color: #9498b5; white-space: nowrap; flex-shrink: 0; }
+.cell-unit { font-size: 13px; font-weight: 600; color: #8c92a6; white-space: nowrap; flex-shrink: 0; }
 
 .cell-input {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
+  width: var(--input-width, 100%);
+  min-width: 100%;
   border: none;
-  border-bottom: 1px solid #d0ccc6;
+  border-bottom: 1px solid #d7dae3;
   background: transparent;
-  padding: 2px 0 3px;
+  padding: 4px 0 5px;
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   color: #1a1f3c;
   outline: none;
   border-radius: 0;
@@ -235,16 +253,16 @@ tbody td:last-child { border-right: none; }
   transition: border-color 0.15s;
 }
 .cell-input:focus { border-bottom-color: #5e5ce6; }
-.cell-input::placeholder { color: #c4c0ba; font-style: italic; font-size: 11px; }
+.cell-input::placeholder { color: #b5b9c6; font-size: 13px; }
 .cell-input--right { text-align: right; }
 .cell-input--etc { font-style: italic; }
 .cell-input--disabled { color: #c4c0ba; border-bottom-color: #eae5de; cursor: not-allowed; }
 
 /* ── toggle ── */
-.toggle-group { display: flex; gap: 3px; justify-content: center; }
+.toggle-group { display: flex; gap: 6px; justify-content: flex-start; }
 .tog {
-  font-size: 10px; font-weight: 700; padding: 2px 7px;
-  border: 1px solid #d0ccc6; border-radius: 2px;
+  font-size: 12px; font-weight: 700; padding: 5px 10px;
+  border: 1px solid #d7dae3; border-radius: 7px;
   color: #9498b5; cursor: pointer; user-select: none;
   white-space: nowrap; transition: all 0.1s;
 }
@@ -257,12 +275,12 @@ tbody td:last-child { border-right: none; }
 }
 .cell-select {
   flex: 1; border: none; background: transparent; appearance: none;
-  padding: 2px 16px 3px 0; font: inherit; font-size: 13px;
+  padding: 4px 20px 5px 0; font: inherit; font-size: 15px;
   color: #1a1f3c; outline: none; cursor: pointer; min-width: 0;
 }
 .cell-select-wrap:focus-within { border-bottom-color: #5e5ce6; }
-.cell-select-arrow { position: absolute; right: 2px; font-size: 9px; color: #9498b5; pointer-events: none; }
-.etc-back { font-size: 10px; color: #b0b4cc; cursor: pointer; flex-shrink: 0; padding-right: 4px; transition: color 0.12s; }
+.cell-select-arrow { position: absolute; right: 2px; font-size: 11px; color: #9498b5; pointer-events: none; }
+.etc-back { font-size: 12px; color: #b0b4cc; cursor: pointer; flex-shrink: 0; padding-right: 5px; transition: color 0.12s; }
 .etc-back:hover { color: #5e5ce6; }
 
 /* ── date ── */
@@ -273,9 +291,9 @@ tbody td:last-child { border-right: none; }
   border: none;
   border-bottom: 1px solid #d0ccc6;
   background: transparent;
-  padding: 2px 0 3px;
+  padding: 4px 0 5px;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   color: #1a1f3c;
   outline: none;
   border-radius: 0;
@@ -286,10 +304,10 @@ tbody td:last-child { border-right: none; }
 .cell-input--date:focus { border-bottom-color: #5e5ce6; }
 
 /* ── frequency ── */
-.freq-wrap { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.freq-wrap { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .freq-none-btn {
-  font-size: 10px; font-weight: 700;
-  padding: 2px 7px; border-radius: 2px;
+  font-size: 12px; font-weight: 700;
+  padding: 5px 9px; border-radius: 7px;
   border: 1px solid #d0ccc6; color: #9498b5;
   background: none; cursor: pointer; white-space: nowrap;
   flex-shrink: 0; transition: all 0.1s;
@@ -298,32 +316,32 @@ tbody td:last-child { border-right: none; }
 .freq-unit-sel {
   border: none; border-bottom: 1px solid #d0ccc6;
   background: transparent; appearance: none;
-  font: inherit; font-size: 12px; color: #1a1f3c;
+  font: inherit; font-size: 14px; color: #1a1f3c;
   outline: none; cursor: pointer; width: 2.2em; text-align: center;
 }
 .freq-count-input {
   width: 2.5em; border: none; border-bottom: 1px solid #d0ccc6;
-  background: transparent; font: inherit; font-size: 12px;
+  background: transparent; font: inherit; font-size: 14px;
   color: #1a1f3c; outline: none; text-align: center;
   -moz-appearance: textfield; appearance: textfield;
 }
 .freq-count-input::-webkit-inner-spin-button,
 .freq-count-input::-webkit-outer-spin-button { -webkit-appearance: none; }
-.freq-label { font-size: 11px; color: #9498b5; font-weight: 600; }
+.freq-label { font-size: 13px; color: #9498b5; font-weight: 600; }
 
 /* ── action ── */
 .td-action { text-align: center; vertical-align: middle; }
 .remove-btn {
-  font-size: 14px; line-height: 1; color: #c4c0ba;
+  font-size: 18px; line-height: 1; color: #b6bac7;
   background: none; border: none; cursor: pointer;
   padding: 0 2px; transition: color 0.15s;
 }
 .remove-btn:hover { color: #e05c5c; }
 
 .add-btn {
-  align-self: flex-start; font-size: 11px; font-weight: 700;
-  color: #5e5ce6; background: none; border: 1px solid #5e5ce6;
-  border-radius: 10px; padding: 2px 10px; cursor: pointer;
+  align-self: flex-start; font-size: 13px; font-weight: 700;
+  color: #5055bd; background: #f3f3ff; border: 1px solid #cfd1f7;
+  border-radius: 9px; padding: 7px 13px; cursor: pointer;
   letter-spacing: 0.04em; transition: background 0.15s, color 0.15s;
 }
 .add-btn:hover { background: #5e5ce6; color: #fff; }
