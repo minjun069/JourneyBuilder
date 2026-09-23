@@ -43,6 +43,15 @@ test('Consultation Store가 세션·채팅·SSE·폼 저장을 소유한다', ()
   assert.doesNotMatch(consultationStoreSource, /getReports|presentationData|dashboardOverview/)
 })
 
+test('기존 상담 이어하기는 상태와 무관하게 최신 세션을 선택한다', () => {
+  const resumeStart = consultationStoreSource.indexOf('async function continueLatestSession')
+  const resumeEnd = consultationStoreSource.indexOf('async function loadActiveSession')
+  const resumeSource = consultationStoreSource.slice(resumeStart, resumeEnd)
+
+  assert.match(resumeSource, /const latest = list\[0\]/)
+  assert.doesNotMatch(resumeSource, /onboarding|in_progress|\.find\(/)
+})
+
 test('Report Store가 보고서와 시뮬레이션의 조회·계산·세션별 캐시를 소유한다', () => {
   assert.match(reportStoreSource, /getReports/)
   assert.match(reportStoreSource, /runBaselineSimulation/)

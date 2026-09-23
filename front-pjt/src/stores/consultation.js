@@ -60,7 +60,7 @@ export const useConsultationStore = defineStore('consultation', () => {
   // 기존 상담 이어하기: 최신 세션 선택
   async function continueLatestSession() {
     const list = await loadSessions()
-    const latest = list.find((session) => ['onboarding', 'in_progress'].includes(session.status)) ?? list[0]
+    const latest = list[0]
     clearActiveSession()
     if (!latest) return null
 
