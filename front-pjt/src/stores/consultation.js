@@ -103,6 +103,13 @@ export const useConsultationStore = defineStore('consultation', () => {
     isAiRequestActive.value = true
     let idleTimedOut = false
     let idleTimer = null
+    const resolvedIdempotencyKey = idempotencyKey ?? createIdempotencyKey()
+    const requestBody = {
+      content,
+      step_id: stepId,
+      form_data: mapCurrentForm(stepId, form ?? {}),
+      request_mode: requestMode,
+    }
     const resetIdleTimer = () => {
       clearTimeout(idleTimer)
       idleTimer = setTimeout(() => {
@@ -110,26 +117,40 @@ export const useConsultationStore = defineStore('consultation', () => {
         controller.abort()
       }, STREAM_IDLE_TIMEOUT_MS)
     }
+    const isUnexpectedTransportClose = (error) => (
+      !controller.signal.aborted
+      && (
+        error?.code === 'SSE_TERMINAL_MISSING'
+        || (error?.name === 'TypeError' && error?.status == null)
+      )
+    )
 
     try {
-      resetIdleTimer()
-      const events = streamMessagesV2(
-        sessionId.value,
-        {
-          content,
-          step_id: stepId,
-          form_data: mapCurrentForm(stepId, form ?? {}),
-          request_mode: requestMode,
-        },
-        {
-          idempotencyKey: idempotencyKey ?? createIdempotencyKey(),
-          signal: controller.signal,
-        },
-      )
-      for await (const event of events) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         resetIdleTimer()
-        if (event.data?.request_id) requestId.value = event.data.request_id
-        yield event
+        try {
+          const events = streamMessagesV2(
+            sessionId.value,
+            requestBody,
+            {
+              idempotencyKey: resolvedIdempotencyKey,
+              signal: controller.signal,
+            },
+          )
+          for await (const event of events) {
+            resetIdleTimer()
+            if (event.data?.request_id) requestId.value = event.data.request_id
+            yield event
+          }
+          return
+        } catch (error) {
+          if (attempt === 0 && isUnexpectedTransportClose(error)) {
+            await new Promise((resolve) => setTimeout(resolve, 400))
+            if (controller.signal.aborted) throw error
+            continue
+          }
+          throw error
+        }
       }
     } catch (error) {
       if (idleTimedOut) {
@@ -159,7 +180,7 @@ export const useConsultationStore = defineStore('consultation', () => {
       },
     )) {
       // Error Review는 구조화된 최종 결과만 화면에 반영한다.
-      if (event === 'start') continue
+      if (event === 'start' || event === 'progress' || event === 'heartbeat') continue
       if (event === 'done') return data.message
       if (event === 'error') {
         const reviewError = new Error(data.error.message)

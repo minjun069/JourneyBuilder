@@ -31,6 +31,7 @@ from graph.task_catalog import TASK_TYPE_CONTRACTS
 from tools.graph_adapter import build_graph_tool_executors
 from tools.runtime import build_production_tool_runtime
 from transport.chat_service import (
+    PROGRESS_EVENTS_VERSION,
     graph_input,
     parse_v2_request,
     stream_v2_chat_events,
@@ -184,12 +185,22 @@ async def service_contract_error_handler(
 async def chat_v2_stream(
     raw_request: Request,
     authorization: str | None = Header(default=None, alias="Authorization"),
+    progress_events_version: str | None = Header(
+        default=None,
+        alias="X-AI-Progress-Events",
+    ),
 ):
     verify_service_authorization(
         authorization,
         settings.ai_service_bearer_token,
     )
     request = await parse_v2_request(raw_request)
+    if progress_events_version not in {None, PROGRESS_EVENTS_VERSION}:
+        raise ServiceContractError(
+            status_code=422,
+            code="REQUEST_SCHEMA_INVALID",
+            message="지원하지 않는 진행 이벤트 capability입니다.",
+        )
     return StreamingResponse(
         stream_v2_chat_events(
             app.state.chat_graph,
@@ -198,6 +209,7 @@ async def chat_v2_stream(
             app.state.terminal_masker,
             getattr(app.state, "context_memory", None),
             instrumentation=app.state.instrumentation,
+            progress_events=progress_events_version == PROGRESS_EVENTS_VERSION,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

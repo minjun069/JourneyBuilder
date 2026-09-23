@@ -1,7 +1,8 @@
 export class SSEProtocolError extends Error {
-  constructor(message) {
+  constructor(message, code = 'SSE_PROTOCOL_ERROR') {
     super(message)
     this.name = 'SSEProtocolError'
+    this.code = code
   }
 }
 
@@ -84,9 +85,20 @@ export async function* readSSEStream(body) {
 
 
 export async function* validateSSEEvents(events) {
-  const allowedEvents = new Set(['start', 'done', 'error'])
+  const allowedEvents = new Set(['start', 'progress', 'heartbeat', 'done', 'error'])
+  const transientEvents = new Set(['progress', 'heartbeat'])
+  const progressPhases = new Set([
+    'preparing',
+    'planning',
+    'executing',
+    'reviewing',
+    'composing',
+    'validating',
+    'saving',
+  ])
   let requestId = null
   let started = false
+  let eventSequence = 0
 
   for await (const event of events) {
     if (!allowedEvents.has(event.event)) {
@@ -104,10 +116,34 @@ export async function* validateSSEEvents(events) {
     if (requestId && event.data.request_id !== requestId) {
       throw new SSEProtocolError('SSE request_id가 요청 도중 변경되었습니다.')
     }
+    if (transientEvents.has(event.event)) {
+      if (
+        !Number.isInteger(event.data.event_seq)
+        || event.data.event_seq <= eventSequence
+      ) {
+        throw new SSEProtocolError('SSE 진행 이벤트 순서가 올바르지 않습니다.')
+      }
+      eventSequence = event.data.event_seq
+      const allowedFields = event.event === 'progress'
+        ? new Set(['contract_version', 'request_id', 'event_seq', 'phase', 'status'])
+        : new Set(['contract_version', 'request_id', 'event_seq'])
+      if (Object.keys(event.data).some((key) => !allowedFields.has(key))) {
+        throw new SSEProtocolError('SSE 진행 이벤트에 허용되지 않은 정보가 있습니다.')
+      }
+      if (
+        event.event === 'progress'
+        && (!progressPhases.has(event.data.phase) || event.data.status !== 'active')
+      ) {
+        throw new SSEProtocolError('SSE 진행 단계가 올바르지 않습니다.')
+      }
+    }
     yield event
     if (event.event === 'done' || event.event === 'error') return
   }
-  throw new SSEProtocolError('SSE 연결이 완료 이벤트 없이 종료되었습니다.')
+  throw new SSEProtocolError(
+    'SSE 연결이 완료 이벤트 없이 종료되었습니다.',
+    'SSE_TERMINAL_MISSING',
+  )
 }
 
 

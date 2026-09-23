@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from django.db import close_old_connections
 from django.test import TransactionTestCase
+from django.utils import timezone
 
 from accounts.models import User
 
@@ -162,6 +163,18 @@ class F12TerminalReceiptSecurityTests(TransactionTestCase):
         self.assertEqual(AITerminalReceipt.objects.count(), 0)
         self.assertEqual(Message.objects.filter(role=Message.Role.ASSISTANT).count(), 0)
 
+    def test_durable_expiry_rejects_late_terminal_from_in_memory_state(self):
+        AIRequestExecution.objects.filter(
+            request_id='F12-SYNTHETIC-REQUEST-TRM-001',
+        ).update(status=AIRequestExecution.Status.EXPIRED)
+
+        with self.assertRaises(LifecycleError) as captured:
+            finalize_terminal_result(self.state(), self.payload())
+
+        self.assertEqual(captured.exception.code, 'TERMINAL_CONFLICT')
+        self.assertEqual(AITerminalReceipt.objects.count(), 0)
+        self.assertEqual(Message.objects.filter(role=Message.Role.ASSISTANT).count(), 0)
+
     def test_receipt_recovers_completed_result_after_redis_loss(self):
         finalized = finalize_terminal_result(self.state(), self.payload())
 
@@ -179,6 +192,30 @@ class F12TerminalReceiptSecurityTests(TransactionTestCase):
         )
         self.assertEqual(AITerminalReceipt.objects.count(), 1)
         self.assertEqual(Message.objects.filter(role=Message.Role.ASSISTANT).count(), 1)
+
+    def test_expired_execution_recovers_terminal_state_after_redis_loss(self):
+        completed_at = timezone.now()
+        AIRequestExecution.objects.filter(
+            request_id='F12-SYNTHETIC-REQUEST-TRM-001',
+        ).update(
+            status=AIRequestExecution.Status.EXPIRED,
+            completed_at=completed_at,
+            request_payload={},
+        )
+
+        recovered = recover_terminal_state(
+            'F12-SYNTHETIC-REQUEST-TRM-001',
+            state=None,
+            expected_session_id=self.session_a.id,
+            expected_user_id=self.user_a.id,
+        )
+
+        self.assertEqual(recovered['status'], 'expired')
+        self.assertEqual(
+            recovered['completed_at'],
+            completed_at.isoformat().replace('+00:00', 'Z'),
+        )
+        self.assertEqual(recovered['error']['code'], 'UPSTREAM_UNAVAILABLE')
 
     def test_failed_result_creates_receipt_without_assistant_message(self):
         payload = self.payload(

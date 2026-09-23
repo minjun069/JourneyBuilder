@@ -16,6 +16,7 @@ from .ai_lifecycle import (
     create_v2_assistant_message,
     isoformat_utc,
 )
+from .ai_execution import expired_state_from_execution
 from .ai_services import build_thread_id
 from .models import AIRequestExecution, AITerminalReceipt, ConsultingSession, Message
 
@@ -68,7 +69,31 @@ def recover_terminal_state(
         .first()
     )
     if receipt is None:
-        return state
+        execution = (
+            AIRequestExecution.objects.select_related('session')
+            .filter(
+                request_id=request_id,
+                status=AIRequestExecution.Status.EXPIRED,
+            )
+            .first()
+        )
+        if execution is None:
+            return state
+        if (
+            expected_session_id is not None
+            and execution.session_id != expected_session_id
+        ) or (
+            expected_user_id is not None
+            and execution.session.user_id != expected_user_id
+        ):
+            return state
+        if state is not None and (
+            state.get('request_id') != execution.request_id
+            or state.get('session_id') != execution.session_id
+            or state.get('user_id') != execution.session.user_id
+        ):
+            return state
+        return expired_state_from_execution(execution)
     if (
         expected_session_id is not None
         and receipt.session_id != expected_session_id
@@ -172,6 +197,13 @@ def finalize_terminal_result(state, payload):
                     _receipt_state(receipt, bound),
                     receipt.assistant_message,
                     True,
+                )
+
+            if execution.status != AIRequestExecution.Status.PROCESSING:
+                raise LifecycleError(
+                    409,
+                    'TERMINAL_CONFLICT',
+                    '종결된 AI 실행에는 새 terminal 결과를 저장할 수 없습니다.',
                 )
 
             if redis_replay:

@@ -34,12 +34,18 @@ test('Frontend는 인증과 멱등 키가 필요한 v2 SSE endpoint를 사용한
   assert.match(consultingApiSource, /response\.status === 401/)
 })
 
-test('Frontend 정상 이벤트는 start, done 순서다', () => {
-  assert.deepEqual(contract.allowed_events, ['start', 'done', 'error'])
+test('Frontend 정상 이벤트는 협상된 진행·heartbeat 뒤 terminal 순서다', () => {
+  assert.deepEqual(
+    contract.allowed_events,
+    ['start', 'progress', 'heartbeat', 'done', 'error'],
+  )
   assert.deepEqual(
     contract.browser_events.map(({ event }) => event),
-    ['start', 'done'],
+    ['start', 'progress', 'heartbeat', 'done'],
   )
+  assert.equal(contract.optional_browser_headers['X-AI-Progress-Events'], 'v1')
+  assert.equal(contract.progress_policy.heartbeat_seconds, 15)
+  assert.equal(contract.progress_policy.includes_content, false)
   assert.doesNotMatch(aiChatViewSource, /event === 'delta'/)
 })
 
@@ -56,6 +62,8 @@ test('처리 중 중복은 새 요청을 만들지 않고 완료 결과만 재�
     contract.idempotency.same_key_completed.replay_events,
     ['start', 'done'],
   )
+  assert.equal(contract.idempotency.unexpected_disconnect_auto_reconnect_attempts, 1)
+  assert.equal(contract.idempotency.transient_events_replayed, false)
 })
 
 test('Planner가 라우팅한 Elicit 턴은 일반 채팅과 같은 v2 SSE를 사용한다', () => {
