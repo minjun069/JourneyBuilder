@@ -1,10 +1,8 @@
 """The current production prompt set, one immutable definition per module."""
 
 from prompts.definitions.aggregator_compose import PROMPT as AGGREGATOR_COMPOSE
+from prompts.definitions.aggregator_counseling import PROMPT as AGGREGATOR_COUNSELING
 from prompts.definitions.chart_interpret_explain import PROMPT as CHART_INTERPRET_EXPLAIN
-from prompts.definitions.counseling_plan import PROMPT as COUNSELING_PLAN
-from prompts.definitions.counseling_compose import PROMPT as COUNSELING_COMPOSE
-from prompts.definitions.counseling_judge import PROMPT as COUNSELING_JUDGE
 from prompts.definitions.elicit_respond import PROMPT as ELICIT_RESPOND
 from prompts.definitions.error_review_analyze import PROMPT as ERROR_REVIEW_ANALYZE
 from prompts.definitions.input_assist_extract import PROMPT as INPUT_ASSIST_EXTRACT
@@ -19,10 +17,8 @@ from prompts.definitions.summary_extract import PROMPT as SUMMARY_EXTRACT
 
 ALL_PROMPTS = (
     AGGREGATOR_COMPOSE,
+    AGGREGATOR_COUNSELING,
     CHART_INTERPRET_EXPLAIN,
-    COUNSELING_PLAN,
-    COUNSELING_COMPOSE,
-    COUNSELING_JUDGE,
     ELICIT_RESPOND,
     ERROR_REVIEW_ANALYZE,
     INPUT_ASSIST_EXTRACT,

@@ -17,7 +17,6 @@ def build_execution_node(
     agent_executors: Mapping[str, RuntimeExecutor],
     tool_executors: Mapping[str, RuntimeExecutor],
     response_composer: AggregateComposer | None,
-    counseling_enricher: AggregateComposer | None = None,
 ):
     """Bind runtime dependencies and return the execution graph node."""
 
@@ -43,7 +42,6 @@ def build_execution_node(
             request_id=str(state.get("request_id") or "request-unknown"),
             instrumentation=observed,
             response_composer=response_composer,
-            counseling_enricher=counseling_enricher,
             question=str(state.get("message") or ""),
             conversation_context=route_plan.get("conversation_context", {}),
         )
