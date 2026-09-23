@@ -1,5 +1,5 @@
 {
-  "release": "2026-09-23.1",
+  "release": "2026-09-23.2",
   "prompts": [
     {
       "id": "aggregator.compose",
@@ -34,7 +34,7 @@
     {
       "id": "chart_interpret.explain",
       "version": "4.0.0",
-      "sha256": "a82d5f91d0615c065283955c2f6206909d8fff96a40ff1956f8d703700665e21",
+      "sha256": "af12014486b2efb58d806ad7317c865ea020fde71b9ce32e03c28c2bb6c8559e",
       "purpose": "chart_interpret",
       "output_schema": null,
       "owner": "ai-team",
@@ -50,7 +50,7 @@
         },
         {
           "key": "chart_facts",
-          "label": "설명할 차트 정보"
+          "label": "Backend가 검증한 차트 보고서 전체"
         },
         {
           "key": "chart_guide",

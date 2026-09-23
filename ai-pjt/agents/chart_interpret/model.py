@@ -9,7 +9,6 @@ from core.llm import llm
 from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 from prompts import get_prompt
 from rag.chart_knowledge import ChartKnowledgeError, load_chart_knowledge
-from .context import project_chart_facts
 
 
 CHART_PROMPT = get_prompt("chart_interpret.explain")
@@ -30,13 +29,11 @@ async def explain_chart(
     except ChartKnowledgeError:
         knowledge = ""
 
-    facts = project_chart_facts(payload, entry=entry)
-
     result = await secure_ainvoke(
         llm,
         prompt_messages(CHART_PROMPT, {
             "user_request": state["message"],
-            "chart_facts": facts,
+            "chart_facts": payload,
             "chart_guide": knowledge,
             "response_mode": "initial_entry" if entry else "detail",
         }),
@@ -44,7 +41,7 @@ async def explain_chart(
         operation_name="chart_interpret.generate",
         sensitive_payload={
             "message": state["message"],
-            "chart_facts": facts,
+            "chart_facts": payload,
         },
         prompt=CHART_PROMPT,
     )

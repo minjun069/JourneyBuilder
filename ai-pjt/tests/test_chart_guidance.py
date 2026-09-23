@@ -42,6 +42,13 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
         model = AsyncMock(return_value=SimpleNamespace(
             content="핵심 결론입니다.\n\n- 첫 흐름\n- 둘째 흐름\n\n주의: 장기 가정을 확인하세요.",
         ))
+        payload = deepcopy(self.ready)
+        payload["connections"] = [{
+            "step_id": "cash-flow",
+            "title": "현금흐름",
+            "highlights": [{"label": "월 순현금흐름", "display": "1,000,000원/월"}],
+            "compatibility": {"latest": True, "status": "ready"},
+        }]
         with (
             patch.object(chart_model, "secure_ainvoke", model),
             patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
@@ -50,12 +57,33 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
                 "message": "이 보고서의 핵심을 먼저 안내해 주세요.",
                 "step_id": "lifetime-cashflow",
                 "request_mode": "presentation_entry",
-                "chart_payload": deepcopy(self.ready),
+                "chart_payload": payload,
             })
 
         self.assertEqual(result["output"]["response"].count("\n- "), 2)
         invocation_payload = model.await_args.args[1]
+        for key in ("source_report", "provenance", "series", "details", "events", "connections"):
+            self.assertIn(key, str(invocation_payload))
+        self.assertEqual(model.await_args.kwargs["sensitive_payload"]["chart_facts"], payload)
         self.assertNotIn("customer_info", str(invocation_payload))
+
+    async def test_report_metadata_number_does_not_become_answer_evidence(self):
+        with (
+            patch.object(
+                chart_model,
+                "secure_ainvoke",
+                AsyncMock(return_value=SimpleNamespace(content="보고서 ID는 701원입니다.")),
+            ),
+            patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
+        ):
+            result = await chart_interpret._run({
+                "message": "처음 안내해 주세요.",
+                "step_id": "lifetime-cashflow",
+                "request_mode": "presentation_entry",
+                "chart_payload": deepcopy(self.ready),
+            })
+
+        self.assertNotIn("701원", result["output"]["response"])
 
     async def test_new_numeric_claim_is_removed_by_deterministic_fallback(self):
         with (

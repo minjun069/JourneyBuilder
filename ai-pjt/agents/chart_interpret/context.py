@@ -32,17 +32,14 @@ def _explanation_value(value: Any) -> Any:
     return value
 
 
-def project_chart_facts(payload: Mapping[str, Any], *, entry: bool = False) -> dict[str, Any]:
-    """Prefer supplied display values; never derive percentage or currency values."""
+def project_chart_facts(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Select report facts, excluding metadata, for response validation."""
     if payload.get("status") != "ready":
         return {
             key: _explanation_value(payload[key])
             for key in ("title", "status", "warnings") if key in payload
         }
-    keys = _FACT_KEYS
-    if entry:
-        keys = ("title", "status", "highlights", "warnings", "assumption_details")
-    facts = {key: _explanation_value(payload[key]) for key in keys if key in payload}
-    if entry and isinstance(facts.get("highlights"), list):
-        facts["highlights"] = facts["highlights"][:3]
-    return facts
+    return {
+        key: _explanation_value(payload[key])
+        for key in _FACT_KEYS if key in payload
+    }

@@ -43,7 +43,9 @@ async def _run(state: ChatState) -> dict:
         raise ValueError("invalid chart payload contract")
 
     entry = state.get("request_mode") == "presentation_entry"
-    facts = project_chart_facts(payload, entry=entry)
+    # The model sees the complete verified report. Keep metadata out of the
+    # numeric evidence used by the deterministic response policy.
+    facts = project_chart_facts(payload)
     response = await explain_chart(state, payload, entry=entry)
     if not response_is_allowed(response, facts, entry=entry):
         response = fallback_response(facts, entry=entry)
