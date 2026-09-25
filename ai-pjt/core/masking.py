@@ -233,6 +233,7 @@ _FREE_TEXT_FIELDS = frozenset(
         "query",
         "raw",
         "response",
+        "summary",
         "text",
     }
 )
@@ -617,6 +618,8 @@ class _PayloadMasker:
         normalized = key.lower().replace("-", "_")
         if self._is_secret_field(normalized):
             return _FieldDecision(data_class=DataClass.SECRET)
+        if path == ("output", "elicitation", "summary"):
+            return _FieldDecision(data_class=DataClass.PROJECT_HIGH_RISK_FINANCIAL)
         if normalized == "name" and self._is_form_item_name_path(path):
             return _FieldDecision(data_class=DataClass.PROJECT_HIGH_RISK_FINANCIAL)
         if self._is_direct_identifier_field(normalized):

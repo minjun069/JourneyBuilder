@@ -244,10 +244,20 @@ class V2MessageStreamView(V2APIView):
                     content=body['content'],
                     extracted_data=(
                         {
-                            'system_event': 'presentation_entry',
+                            'system_event': (
+                                'mindset_elicitation_start'
+                                if body.get('request_mode') == 'mindset_elicitation'
+                                else 'presentation_entry'
+                            ),
                             'step_id': body['step_id'],
                         }
-                        if body.get('request_mode') == 'presentation_entry'
+                        if (
+                            body.get('request_mode') == 'presentation_entry'
+                            or (
+                                body.get('request_mode') == 'mindset_elicitation'
+                                and body['elicitation_state']['event'] == 'start'
+                            )
+                        )
                         else None
                     ),
                 )
@@ -260,6 +270,7 @@ class V2MessageStreamView(V2APIView):
                     step_id=body['step_id'],
                     form_data=body['form_data'],
                     request_mode=body.get('request_mode', 'chat'),
+                    elicitation_state=body.get('elicitation_state'),
                 )
                 token_vault = ReferenceTokenVault(
                     user_id=request.user.id,

@@ -1,3 +1,5 @@
+import { isMindsetResult } from '../utils/mindsetElicitation.js'
+
 export class SSEProtocolError extends Error {
   constructor(message, code = 'SSE_PROTOCOL_ERROR') {
     super(message)
@@ -163,6 +165,9 @@ export async function* validateV2SSEEvents(events) {
         || typeof message.content !== 'string'
       ) {
         throw new SSEProtocolError('SSE 완료 메시지 형식이 올바르지 않습니다.')
+      }
+      if (message.extracted_data?.elicitation != null && !isMindsetResult(message.extracted_data.elicitation)) {
+        throw new SSEProtocolError('경제 관념 수집 결과 형식이 올바르지 않습니다.')
       }
     }
     if (event.event === 'error') {

@@ -15,6 +15,7 @@ from core.context_window import (
 )
 from core.field_registry import load_field_registry
 from core.model_boundary import bind_model_call_recorder
+from core.mindset_elicitation import ElicitationState
 from core.operation_observation import bind_operation_recorder
 from core.observability_masking import (
     exception_identity_fields,
@@ -288,6 +289,10 @@ def build_plan_node(
             )
 
         request_mode = state.get("request_mode")
+        if request_mode == "mindset_elicitation":
+            if state.get("step_id") != "financial-mindset":
+                raise ValueError("mindset collection requires financial-mindset step")
+            ElicitationState.model_validate(state.get("elicitation_state"))
         direct_request = {
             "error_review": (
                 "review_validation_error",
@@ -296,6 +301,10 @@ def build_plan_node(
             "presentation_entry": (
                 "interpret_chart",
                 "Presentation 단계 최초 진입 핵심 안내",
+            ),
+            "mindset_elicitation": (
+                "collect_qualitative_info",
+                state["message"],
             ),
         }.get(request_mode)
         if direct_request is not None:
@@ -333,6 +342,7 @@ def build_plan_node(
             direct_plan.update({
                 "chart_payload": deepcopy(state.get("chart_payload")),
                 "request_mode": state.get("request_mode", "chat"),
+                "elicitation_state": deepcopy(state.get("elicitation_state")),
                 "conversation_context": context_window_payload(window),
             })
             observed.succeed(planner_span, output=direct_plan)

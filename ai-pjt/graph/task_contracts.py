@@ -162,6 +162,16 @@ def _validate_completed_result(
     field_registry: list[dict[str, Any]],
     issues: list[TaskValidationIssue],
 ) -> None:
+    if result.get("elicitation") is not None:
+        if task.get("type") != "collect_qualitative_info":
+            issues.append(_issue("INVALID_ELICITATION_TASK", "result.elicitation", "수집 결과는 정성 수집 task에서만 반환합니다."))
+        validation = validate_form_update_contract({
+            "step_id": step_id,
+            "output": {"response": result.get("response"), "step_id": step_id, "action": None,
+                       "elicitation": result["elicitation"]},
+        })
+        if not validation.valid:
+            issues.append(_issue("INVALID_ELICITATION", "result.elicitation", "수집 결과 계약이 올바르지 않습니다."))
     if result.get("reason_code") is not None:
         issues.append(
             _issue(

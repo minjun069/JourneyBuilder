@@ -8,6 +8,7 @@ import re
 from typing import Any, Mapping
 
 from core.field_registry import load_field_registry
+from core.mindset_elicitation import ElicitationResult, ElicitationState
 
 
 _FINANCIAL_REFERENCE_TOKEN = re.compile(r"\[\[FINANCIAL_VALUE_[0-9a-f]{12}_[1-9][0-9]*\]\]")
@@ -105,6 +106,32 @@ def validate_form_update_contract(
     review = output.get("review")
     if review is not None:
         issues.extend(_validate_error_review(review))
+    elicitation = output.get("elicitation")
+    if elicitation is not None:
+        try:
+            result = ElicitationResult.model_validate(elicitation)
+            if current_step_id != "financial-mindset" or action is not None or review is not None:
+                raise ValueError("mindset result cannot cross steps or include another mutation")
+            if state.get("elicitation_state") is not None:
+                requested = ElicitationState.model_validate(state["elicitation_state"])
+                if state.get("request_mode") != "mindset_elicitation" or result.field != requested.field:
+                    raise ValueError("mindset result must match its request")
+                if requested.event == "start":
+                    if result.answer_count != 0 or result.status != "in_progress":
+                        raise ValueError("start cannot consume an answer")
+                elif result.completion_reason in ("sufficient", "limit"):
+                    if result.answer_count != requested.answer_count + 1:
+                        raise ValueError("completed answer must advance exactly once")
+                elif result.completion_reason == "skipped":
+                    if result.answer_count != requested.answer_count:
+                        raise ValueError("skip cannot consume an answer")
+                elif result.answer_count not in (requested.answer_count, requested.answer_count + 1):
+                    raise ValueError("answer count must advance at most once")
+            output["elicitation"] = result.model_dump(mode="json")
+        except (TypeError, ValueError):
+            issues.append(_issue("INVALID_ELICITATION", "output.elicitation", "경제관념 수집 결과가 요청과 맞지 않습니다."))
+    elif state.get("request_mode") == "mindset_elicitation":
+        issues.append(_issue("MISSING_ELICITATION", "output.elicitation", "경제관념 수집 결과가 필요합니다."))
     ui_action = output.get("ui_action")
     if ui_action is not None:
         issues.append(_issue(

@@ -179,6 +179,8 @@ def graph_input(request: ChatV2Request) -> dict[str, Any]:
         payload["request_mode"] = request.request_mode
     if request.chart_payload is not None:
         payload["chart_payload"] = request.chart_payload
+    if request.elicitation_state is not None:
+        payload["elicitation_state"] = request.elicitation_state.model_dump(mode="json")
     return payload
 
 

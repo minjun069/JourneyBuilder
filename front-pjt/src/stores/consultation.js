@@ -89,6 +89,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     form = null,
     requestMode = 'chat',
     idempotencyKey = null,
+    elicitationState = null,
   } = {}) {
     if (!sessionId.value) return
     if (streaming.value || isAiRequestActive.value || activeStreamController) {
@@ -109,6 +110,10 @@ export const useConsultationStore = defineStore('consultation', () => {
       step_id: stepId,
       form_data: mapCurrentForm(stepId, form ?? {}),
       request_mode: requestMode,
+      ...(elicitationState ? { elicitation_state: {
+        ...elicitationState,
+        completed_fields: [...elicitationState.completed_fields],
+      } } : {}),
     }
     const resetIdleTimer = () => {
       clearTimeout(idleTimer)

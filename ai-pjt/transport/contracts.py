@@ -13,7 +13,10 @@ from pydantic import (
     Field,
     StrictInt,
     StrictStr,
+    model_validator,
 )
+
+from core.mindset_elicitation import ElicitationResult, ElicitationState, MINDSET_FIELDS, current_summary
 
 
 CONTRACT_VERSION = "2.0"
@@ -39,7 +42,20 @@ class ChatV2Request(BaseModel):
     deadline_at: AwareDatetime
     customer_info: CustomerInfo
     chart_payload: dict[str, Any] | None = None
-    request_mode: Literal["chat", "error_review", "presentation_entry"] = "chat"
+    request_mode: Literal["chat", "error_review", "presentation_entry", "mindset_elicitation"] = "chat"
+    elicitation_state: ElicitationState | None = None
+
+    @model_validator(mode="after")
+    def validate_elicitation_scope(self):
+        if self.request_mode == "mindset_elicitation":
+            if self.step_id != "financial-mindset" or self.elicitation_state is None:
+                raise ValueError("mindset collection requires its step and state")
+            customer = self.customer_info.model_dump(mode="json")
+            for field in MINDSET_FIELDS:
+                current_summary(customer, field)
+        elif self.elicitation_state is not None:
+            raise ValueError("elicitation_state requires mindset_elicitation mode")
+        return self
 
 
 class TerminalError(BaseModel):
@@ -62,6 +78,16 @@ class CompletedTerminal(BaseModel):
     status: Literal["completed"] = "completed"
     completed_at: datetime
     output: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_elicitation_output(self):
+        if self.output.get("elicitation") is not None:
+            if self.output.get("step_id") != "financial-mindset" or self.output.get("action") is not None:
+                raise ValueError("mindset result requires its step and no form action")
+            self.output["elicitation"] = ElicitationResult.model_validate(
+                self.output["elicitation"],
+            ).model_dump(mode="json")
+        return self
 
 
 class FailedTerminal(BaseModel):

@@ -21,6 +21,7 @@ class ChatState(TypedDict):
     customer_info: dict
     chart_payload: NotRequired[dict[str, Any] | None]
     request_mode: NotRequired[str]
+    elicitation_state: NotRequired[dict[str, Any] | None]
     output: dict  # 에이전트 응답 — input_assist는 FormChangeAction 포함
     conversation_context: NotRequired[PersistedConversationState]
     retrieved_memories: NotRequired[list[dict[str, Any]]]
