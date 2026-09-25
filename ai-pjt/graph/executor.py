@@ -231,6 +231,7 @@ async def execute_route_plan(
             "customer_info": deepcopy(dict(customer_info)),
             "chart_payload": deepcopy(plan.get("chart_payload")),
             "request_mode": plan.get("request_mode", "chat"),
+            "elicitation_state": deepcopy(plan.get("elicitation_state")),
             "conversation_context": deepcopy(plan.get("conversation_context", {})),
         }
         observable_execution_input = {
@@ -423,6 +424,7 @@ async def execute_route_plan(
             response_composer is not None
             and not has_execution_failure
             and plan.get("outcome_reason") is None
+            and plan.get("request_mode") != "mindset_elicitation"
         ):
             with (
                 bind_operation_recorder(instrumentation.record_operation),

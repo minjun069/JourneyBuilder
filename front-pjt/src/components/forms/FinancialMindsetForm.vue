@@ -1,5 +1,12 @@
 <script setup>
 import { reactive } from 'vue'
+import { MINDSET_FIELDS } from '@/utils/mindsetElicitation'
+
+defineProps({
+  activeField: { type: String, default: null },
+  lockedField: { type: String, default: null },
+  completedFields: { type: Array, default: () => [] },
+})
 
 const ITEMS = [
   { key: 'values',           label: '가치관',      placeholder: '돈과 재무에 대한 본인의 가치관을 자유롭게 서술해주세요.' },
@@ -24,12 +31,19 @@ defineExpose({ form })
 
 <template>
   <div class="doc-fields">
-    <div v-for="item in ITEMS" :key="item.key" class="field-row">
-      <span class="field-label">{{ item.label }}</span>
+    <p class="draft-guide">대화 내용을 항목별로 정리해 드립니다. 정리된 내용은 직접 수정할 수 있습니다.</p>
+    <div v-for="(item, index) in ITEMS" :key="item.key" class="field-row" :class="{ 'is-current': activeField === MINDSET_FIELDS[index].field }">
+      <span class="field-label">
+        {{ item.label }}
+        <small v-if="activeField === MINDSET_FIELDS[index].field" class="field-status">대화 중</small>
+        <small v-else-if="completedFields.includes(MINDSET_FIELDS[index].field)" class="field-status">정리 완료</small>
+      </span>
       <textarea
         class="field-textarea"
         v-model="form[item.key]"
         :placeholder="item.placeholder"
+        :disabled="lockedField === MINDSET_FIELDS[index].field"
+        :aria-label="item.label"
         rows="3"
       />
     </div>
@@ -38,6 +52,10 @@ defineExpose({ form })
 
 <style scoped>
 .doc-fields { display: flex; flex-direction: column; }
+.draft-guide { margin: 0 0 12px; color: #677080; font-size: 12px; line-height: 1.6; }
+.field-row.is-current { background: #f5f4ff; border-radius: 8px; }
+.field-status { display: block; margin-top: 6px; color: #5e5ce6; font-size: 10px; font-weight: 500; }
+.field-textarea:disabled { cursor: wait; opacity: .65; }
 
 .field-row {
   display: flex;

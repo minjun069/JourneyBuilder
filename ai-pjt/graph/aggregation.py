@@ -91,6 +91,7 @@ def aggregate_task_results(
     responses: list[str] = []
     form_changes: list[Mapping[str, Any]] = []
     reviews: list[dict[str, Any]] = []
+    elicitations: list[dict[str, Any]] = []
     completed_count = 0
 
     for task in tasks:
@@ -112,6 +113,8 @@ def aggregate_task_results(
 
         if isinstance(result.get("review"), Mapping):
             reviews.append(deepcopy(dict(result["review"])))
+        if isinstance(result.get("elicitation"), Mapping):
+            elicitations.append(deepcopy(dict(result["elicitation"])))
 
         response = result.get("response")
         artifact = result.get("artifact")
@@ -146,6 +149,10 @@ def aggregate_task_results(
     }
     if len(reviews) == 1:
         output["review"] = reviews[0]
+    if elicitations:
+        if len(elicitations) != 1 or len(tasks) != 1 or completed_count != 1:
+            raise ValueError("mindset collection requires one successful task")
+        output["elicitation"] = elicitations[0]
     return validate_form_update_contract({
         "step_id": step_id,
         "output": output,

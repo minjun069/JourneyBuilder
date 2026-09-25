@@ -14,6 +14,11 @@ import { decideFormChangeLocally } from '@/utils/formDecision'
 import { addSentenceLineBreaks, renderChatMarkdown } from '@/utils/chatMarkdown'
 import { validateConsultationForm } from '@/utils/formValidation'
 import {
+  applyMindsetResult,
+  createMindsetState,
+  mindsetRequestState,
+} from '@/utils/mindsetElicitation'
+import {
   cloneFormState,
   completedStepsForSession,
   replaceFormState,
@@ -144,6 +149,7 @@ async function navigateToStep(stepId) {
   const alreadyVisited = stepId === 'intro' || messages.value.some((m) => m.role === 'divider' && m.stepId === stepId)
   if (alreadyVisited) {
     scrollToStepStart(stepId, true)
+    if (stepId === 'financial-mindset') void maybeStartMindsetConversation()
     return
   }
 
@@ -155,6 +161,12 @@ async function navigateToStep(stepId) {
   if (PRESENTATION_STEP_IDS.includes(stepId)) {
     scrollToStepStart(stepId, true)
     void maybeSendPresentationEntryGuide(stepId)
+    return
+  }
+
+  if (stepId === 'financial-mindset') {
+    scrollToStepStart(stepId, true)
+    void maybeStartMindsetConversation()
     return
   }
 
@@ -212,6 +224,9 @@ function confirmStepJump() {
 
 // ─── 채팅 ─────────────────────────────────────────────────
 const messages               = ref([])
+const mindsetState = ref(createMindsetState())
+const lockedMindsetField = ref(null)
+const mindsetReceipts = new Set()
 const pendingConsentMessages = ref([])
 const draftMessage           = ref('')
 const chatListRef            = ref(null)
@@ -376,6 +391,9 @@ function resetConversationState() {
   isRestoredSession.value = false
   Object.keys(formDrafts).forEach((key) => delete formDrafts[key])
   emptyConfirmedStepIds.value = new Set()
+  mindsetState.value = createMindsetState()
+  lockedMindsetField.value = null
+  mindsetReceipts.clear()
   clearFormWarning()
 }
 
@@ -417,7 +435,8 @@ function restoreStoredMessages() {
   messages.value = consultationStore.chatMessages
     .filter((message) => !(
       message.role === 'user'
-      && message.extracted_data?.system_event === 'presentation_entry'
+      && (message.extracted_data?.system_event === 'presentation_entry'
+        || message.extracted_data?.system_event === 'mindset_elicitation_start')
     ))
     .map((message) => toChatMessage(message, { interactive: false }))
 }
@@ -464,7 +483,7 @@ async function continueConsultation() {
   }
 }
 
-async function streamAssistantMessage(text, options) {
+async function streamAssistantMessage(text, options = {}) {
   try {
     for await (const { event, data } of consultationStore.streamMessageV2(text, options)) {
       if (event === 'start' || event === 'heartbeat') continue
@@ -479,6 +498,16 @@ async function streamAssistantMessage(text, options) {
         throw error
       }
       if (event === 'done') {
+        const elicitation = data.message.extracted_data?.elicitation
+        if (options.requestMode === 'mindset_elicitation' && elicitation) {
+          if (currentStepId.value !== 'financial-mindset' || !activeFormRef.value?.form) {
+            throw new Error('경제 관념 입력 화면에서 상담을 다시 이어주세요.')
+          }
+          applyMindsetResult(
+            mindsetState.value, activeFormRef.value.form, elicitation, data.request_id, mindsetReceipts,
+          )
+          captureActiveFormDraft()
+        }
         const finalMessage = toChatMessage(data.message)
         const [rendered] = await streamAiMessages([finalMessage], { typingDelay: 120 })
         return {
@@ -562,6 +591,33 @@ async function maybeSendPresentationEntryGuide(stepId) {
   }
 }
 
+async function maybeStartMindsetConversation() {
+  if (
+    currentStepId.value !== 'financial-mindset' || !hasActiveSession.value
+    || mindsetState.value.started || lockedMindsetField.value || !activeFormRef.value?.form
+  ) return
+  const elicitationState = mindsetRequestState(mindsetState.value, 'start')
+  lockedMindsetField.value = elicitationState.field
+  isTyping.value = true
+  isStreamingResponse.value = true
+  try {
+    await streamAssistantMessage('경제관념 항목 상담을 시작합니다.', {
+      stepId: 'financial-mindset',
+      form: activeFormRef.value.form,
+      requestMode: 'mindset_elicitation',
+      elicitationState,
+    })
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      sessionError.value = error?.message ?? '경제 관념 상담을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.'
+    }
+  } finally {
+    lockedMindsetField.value = null
+    isTyping.value = false
+    isStreamingResponse.value = false
+  }
+}
+
 async function sendMessage() {
   const text = draftMessage.value.trim()
   if (!text || isInteractionBusy.value || !hasActiveSession.value) return
@@ -572,11 +628,15 @@ async function sendMessage() {
   scrollToBottom()
   isTyping.value = true
   isStreamingResponse.value = true
+  const elicitationState = currentStepId.value === 'financial-mindset'
+    ? mindsetRequestState(mindsetState.value) : null
+  lockedMindsetField.value = elicitationState?.field ?? null
 
   try {
     await streamAssistantMessage(text, {
       stepId: currentStepId.value,
       form: activeFormRef.value?.form ?? null,
+      ...(elicitationState ? { requestMode: 'mindset_elicitation', elicitationState } : {}),
     })
   } catch (error) {
     if (error?.name === 'AbortError') return
@@ -584,6 +644,7 @@ async function sendMessage() {
       text: error?.message ?? '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',
     }], { typingDelay: 100 })
   } finally {
+    lockedMindsetField.value = null
     isTyping.value = false
     isStreamingResponse.value = false
   }
@@ -710,9 +771,15 @@ const financialGoalProps  = computed(() => ({
   retirementAge: Number(basicInfoData.value?.retirement_age) || 60,
   endAge: Number(basicInfoData.value?.end_age) || 90,
 }))
-const activeFormProps = computed(() =>
-  currentStepId.value === 'financial-goals' ? financialGoalProps.value : {}
-)
+const activeFormProps = computed(() => {
+  if (currentStepId.value === 'financial-goals') return financialGoalProps.value
+  if (currentStepId.value === 'financial-mindset') return {
+    activeField: mindsetState.value.activeField,
+    lockedField: lockedMindsetField.value,
+    completedFields: mindsetState.value.completedFields,
+  }
+  return {}
+})
 const submitButtonLabel   = computed(() => {
   if (isFinancialInfoStep.value) return '다음 단계로 이동'
   if (formSaving.value) return '저장 중...'
@@ -777,6 +844,7 @@ async function restoreConsultationProcess(session) {
   await nextTick()
   await hydrateActiveForm(resumeStep)
   scrollToStepStart(resumeStep)
+  if (resumeStep === 'financial-mindset') void maybeStartMindsetConversation()
   return resumeStep
 }
 
@@ -1054,6 +1122,8 @@ onBeforeUnmount(() => {
         :visited-step-ids="visitedStepIds"
         :completed-step-ids="completedStepIds"
         :skipped-step-ids="skippedStepIds"
+        :current-mindset-field="mindsetState.activeField"
+        :completed-mindset-fields="mindsetState.completedFields"
         :disabled="isInteractionBusy"
         @step-click="handleStepClick"
       />

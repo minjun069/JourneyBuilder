@@ -106,6 +106,7 @@ _TEXTUAL_FIELDS = frozenset({
     'message',
     'reason',
     'response',
+    'summary',
     'title',
 })
 

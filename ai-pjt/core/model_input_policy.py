@@ -13,6 +13,6 @@ ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
     ),
     ModelPurpose.ERROR_REVIEW: (("current_form",),),
     ModelPurpose.CHART_INTERPRET: (("chart_facts",),),
-    ModelPurpose.ELICIT: (),
+    ModelPurpose.ELICIT: (("current_form",),),
     ModelPurpose.SUMMARY: (),
 }

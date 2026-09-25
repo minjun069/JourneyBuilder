@@ -39,7 +39,7 @@ class PromptRegistryTests(unittest.TestCase):
             if path.stem not in {"__init__", "_factory"}
         }
         self.assertEqual(len(modules), len(prompt_ids()))
-        self.assertEqual(len(prompt_ids()), 13)
+        self.assertEqual(len(prompt_ids()), 19)
 
     def test_prompt_payload_contract_rejects_missing_and_unknown_fields(self) -> None:
         prompt = get_prompt("qa.plan")

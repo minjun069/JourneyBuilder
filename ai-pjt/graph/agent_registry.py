@@ -38,6 +38,7 @@ def build_agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
             "task_input": deepcopy(payload["task_input"]),
             "chart_payload": payload.get("chart_payload"),
             "request_mode": payload.get("request_mode", "chat"),
+            "elicitation_state": deepcopy(payload.get("elicitation_state")),
             "conversation_context": deepcopy(
                 payload.get("conversation_context", {})
             ),
@@ -74,6 +75,8 @@ def build_agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
         }
         if isinstance(output.get("review"), Mapping):
             task_result["review"] = deepcopy(dict(output["review"]))
+        if isinstance(output.get("elicitation"), Mapping):
+            task_result["elicitation"] = deepcopy(dict(output["elicitation"]))
         return task_result
 
     return execute

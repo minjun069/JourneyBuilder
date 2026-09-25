@@ -219,12 +219,13 @@ async def proxy_v2_ai_stream(
                     _browser_transient(event_name, state, data),
                 )
                 continue
-            validated = validate_terminal_payload(data)
+            validated = validate_terminal_payload(data, request_payload=payload)
             if event_name == 'error':
                 if validated['status'] != 'failed':
                     raise SSEProtocolError('error event must have failed status')
                 restored = validate_terminal_payload(
-                    token_vault.restore_terminal(validated, step_id=state['step_id'])
+                    token_vault.restore_terminal(validated, step_id=state['step_id']),
+                    request_payload=payload,
                 )
                 finalized = await _finalize(state, restored)
                 terminal = True
@@ -240,7 +241,8 @@ async def proxy_v2_ai_stream(
                 raise SSEProtocolError('done output has no response')
 
             restored = validate_terminal_payload(
-                token_vault.restore_terminal(validated, step_id=state['step_id'])
+                token_vault.restore_terminal(validated, step_id=state['step_id']),
+                request_payload=payload,
             )
 
             finalized = await _finalize(state, restored)

@@ -49,6 +49,8 @@ def _terminal_business_value_paths(payload: Mapping[str, Any]) -> set[MaskingPat
     if not isinstance(output, Mapping):
         return set()
     paths: set[MaskingPath] = set()
+    if isinstance(output.get("elicitation"), Mapping):
+        paths.add(("output", "elicitation", "summary"))
     for action_name in ("action", "elicit_capture"):
         action = output.get(action_name)
         if not isinstance(action, Mapping):

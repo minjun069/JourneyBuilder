@@ -1,5 +1,5 @@
 {
-  "release": "2026-09-23.3",
+  "release": "2026-09-25.1",
   "prompts": [
     {
       "id": "aggregator.compose",
@@ -79,6 +79,141 @@
       ]
     },
     {
+      "id": "elicit.current_challenge",
+      "version": "4.0.0",
+      "sha256": "5c9e5dbdb90c093fc602b0304a355f5f34812f80fdba121063d7fccb5fb2103a",
+      "purpose": "elicit",
+      "output_schema": "mindset_elicitation_model_output",
+      "owner": "ai-team",
+      "risk": "qualitative_collection",
+      "input_sections": [
+        {
+          "key": "current_form",
+          "label": "현재 항목의 최신 폼 요약"
+        },
+        {
+          "key": "conversation_context",
+          "label": "질문 흐름을 위한 이전 대화"
+        },
+        {
+          "key": "user_message",
+          "label": "현재 사용자 답변"
+        },
+        {
+          "key": "last_answer",
+          "label": "이번 답변이 마지막 수집 답변인지"
+        }
+      ]
+    },
+    {
+      "id": "elicit.current_situation",
+      "version": "4.0.0",
+      "sha256": "93c661cb8ab999a00d3ff22e570991f40ff26e79321a9fc7692403217d97ebc3",
+      "purpose": "elicit",
+      "output_schema": "mindset_elicitation_model_output",
+      "owner": "ai-team",
+      "risk": "qualitative_collection",
+      "input_sections": [
+        {
+          "key": "current_form",
+          "label": "현재 항목의 최신 폼 요약"
+        },
+        {
+          "key": "conversation_context",
+          "label": "질문 흐름을 위한 이전 대화"
+        },
+        {
+          "key": "user_message",
+          "label": "현재 사용자 답변"
+        },
+        {
+          "key": "last_answer",
+          "label": "이번 답변이 마지막 수집 답변인지"
+        }
+      ]
+    },
+    {
+      "id": "elicit.future_goals",
+      "version": "4.0.0",
+      "sha256": "ceffd507ee3cc0ecc50a5249410df256ad6b2dfc97bae9c55df11df658bc4e01",
+      "purpose": "elicit",
+      "output_schema": "mindset_elicitation_model_output",
+      "owner": "ai-team",
+      "risk": "qualitative_collection",
+      "input_sections": [
+        {
+          "key": "current_form",
+          "label": "현재 항목의 최신 폼 요약"
+        },
+        {
+          "key": "conversation_context",
+          "label": "질문 흐름을 위한 이전 대화"
+        },
+        {
+          "key": "user_message",
+          "label": "현재 사용자 답변"
+        },
+        {
+          "key": "last_answer",
+          "label": "이번 답변이 마지막 수집 답변인지"
+        }
+      ]
+    },
+    {
+      "id": "elicit.invest_philosophy",
+      "version": "4.0.0",
+      "sha256": "ac1068d6f9f9f7fc7edaaf420c133dfa06bbf231fb5a58afd9bfe30d5bf42c80",
+      "purpose": "elicit",
+      "output_schema": "mindset_elicitation_model_output",
+      "owner": "ai-team",
+      "risk": "qualitative_collection",
+      "input_sections": [
+        {
+          "key": "current_form",
+          "label": "현재 항목의 최신 폼 요약"
+        },
+        {
+          "key": "conversation_context",
+          "label": "질문 흐름을 위한 이전 대화"
+        },
+        {
+          "key": "user_message",
+          "label": "현재 사용자 답변"
+        },
+        {
+          "key": "last_answer",
+          "label": "이번 답변이 마지막 수집 답변인지"
+        }
+      ]
+    },
+    {
+      "id": "elicit.past_experience",
+      "version": "4.0.0",
+      "sha256": "7702018e460177dfc99f32862771bc9a6b12fb83936a5aadbb8bab1ba774d9b4",
+      "purpose": "elicit",
+      "output_schema": "mindset_elicitation_model_output",
+      "owner": "ai-team",
+      "risk": "qualitative_collection",
+      "input_sections": [
+        {
+          "key": "current_form",
+          "label": "현재 항목의 최신 폼 요약"
+        },
+        {
+          "key": "conversation_context",
+          "label": "질문 흐름을 위한 이전 대화"
+        },
+        {
+          "key": "user_message",
+          "label": "현재 사용자 답변"
+        },
+        {
+          "key": "last_answer",
+          "label": "이번 답변이 마지막 수집 답변인지"
+        }
+      ]
+    },
+    {
       "id": "elicit.respond",
       "version": "4.0.0",
       "sha256": "eb5a3d10e153ee2c3dd75514d1c5409beb2d0a3ed044e3bdc83e86f1eb3a46b0",
@@ -94,6 +229,33 @@
         {
           "key": "user_message",
           "label": "현재 사용자 메시지"
+        }
+      ]
+    },
+    {
+      "id": "elicit.values",
+      "version": "4.0.0",
+      "sha256": "a9848f4b2b79ae4a01ac62c7a94ba244d5b0a3aeb8f5896923be4c4a9c235aa5",
+      "purpose": "elicit",
+      "output_schema": "mindset_elicitation_model_output",
+      "owner": "ai-team",
+      "risk": "qualitative_collection",
+      "input_sections": [
+        {
+          "key": "current_form",
+          "label": "현재 항목의 최신 폼 요약"
+        },
+        {
+          "key": "conversation_context",
+          "label": "질문 흐름을 위한 이전 대화"
+        },
+        {
+          "key": "user_message",
+          "label": "현재 사용자 답변"
+        },
+        {
+          "key": "last_answer",
+          "label": "이번 답변이 마지막 수집 답변인지"
         }
       ]
     },
