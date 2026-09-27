@@ -106,7 +106,8 @@ def _graph_progress_phase(graph_event: dict[str, Any], request_mode: str) -> str
 
 def validation_error(exc: ValidationError) -> ServiceContractError:
     first = exc.errors(include_url=False)[0]
-    field = str(first.get("loc", ("request",))[0])
+    location = first.get("loc") or ("request",)
+    field = str(location[0])
     error_type = first.get("type")
     if field == "contract_version" and error_type == "literal_error":
         return ServiceContractError(

@@ -4,6 +4,18 @@
   "request_mode": "mindset_elicitation",
   "max_answer_count": 3,
   "fields": ["values", "past_experience", "current_situation", "current_challenge", "invest_philosophy", "future_goals"],
+  "form_cases": [
+    {
+      "id": "empty-entry",
+      "current_form": {"values": null, "past_experience": null, "current_situation": null, "current_challenge": null, "invest_philosophy": null, "future_goals": null},
+      "summary": ""
+    },
+    {
+      "id": "partial-entry",
+      "current_form": {"values": "저장된 가치관", "past_experience": null, "current_situation": null, "current_challenge": null, "invest_philosophy": null, "future_goals": null},
+      "summary": "저장된 가치관"
+    }
+  ],
   "request_cases": [
     {"id": "start", "valid": true, "state": {"event": "start", "field": "values", "answer_count": 0, "completed_fields": []}},
     {"id": "third-answer", "valid": true, "state": {"event": "answer", "field": "values", "answer_count": 2, "completed_fields": []}},

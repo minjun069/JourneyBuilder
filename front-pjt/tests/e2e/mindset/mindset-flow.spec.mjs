@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+
+const { form_cases: formCases } = JSON.parse(readFileSync(new URL(
+  '../../../../contract-fixtures/ai-lifecycle/v2/mindset-elicitation.json', import.meta.url,
+), 'utf8'))
 
 const fields = ['values', 'past_experience', 'current_situation', 'current_challenge', 'invest_philosophy', 'future_goals']
 const session = { id: 41, status: 'in_progress', section_completion: { basic_info: true } }
@@ -55,6 +60,7 @@ test('항목별 자동 질문, 편집 가능한 요약, 잠금·실패 복구와
   await expect.poll(() => requests.length).toBe(1)
   expect(requests[0].elicitation_state).toEqual({ event: 'start', field: 'values', answer_count: 0, completed_fields: [] })
   expect(requests[0].form_data.values).toBe('저장된 가치관')
+  expect(requests[0].form_data).toEqual(formCases.find(({ id }) => id === 'partial-entry').current_form)
   await expect(page.getByRole('textbox', { name: '가치관', exact: true })).toBeDisabled()
   await expect(page.getByRole('textbox', { name: '미래인생목표', exact: true })).toBeEnabled()
   await expect(page.getByText('경제관념 항목 상담을 시작합니다.', { exact: true })).toHaveCount(0)
@@ -123,6 +129,9 @@ test('빈 경제관념 폼의 여섯 항목을 모두 보류한 뒤 기존 작�
     if (path.endsWith('/messages/stream/')) {
       const body = request.postDataJSON()
       const state = body.elicitation_state
+      if (state?.event === 'start') {
+        expect(body.form_data).toEqual(formCases.find(({ id }) => id === 'empty-entry').current_form)
+      }
       const elicitation = state ? result(state.event === 'start' ? { summary: '' } : {
         field: state.field, summary: deferred, answer_count: 0,
         status: 'completed', completion_reason: 'skipped', next_field: fields[fields.indexOf(state.field) + 1] ?? null,
