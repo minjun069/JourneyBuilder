@@ -14,13 +14,14 @@ from tools.output_policy import validate_form_update_contract
 def default_agent_graphs() -> dict[str, Any]:
     """Load provider-dependent Agent packages only at graph build time."""
 
-    from agents import chart_interpret, elicit, error_review, input_assist, qa
+    from agents import chart_interpret, elicit, input_assist, qa
 
     return {
         "qa": qa.graph,
         "input_assist": input_assist.graph,
         "elicit": elicit.graph,
-        "error_review": error_review.graph,
+        # 운영 일시 중지: 재개 시 error_review.graph를 다시 연결한다.
+        "error_review": None,
         "chart_interpret": chart_interpret.graph,
     }
 
@@ -31,6 +32,8 @@ def build_agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
     async def execute(payload: dict[str, Any]) -> Mapping[str, Any]:
         task = payload["task"]
         task_id = str(task.get("id", "task-unknown"))
+        if agent_graph is None:
+            return failed_task_result(task_id, "executor_unavailable")
         agent_state = {
             "message": payload["message"],
             "step_id": payload["step_id"],

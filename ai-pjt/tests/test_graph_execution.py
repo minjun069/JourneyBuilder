@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import unittest
+from unittest.mock import patch
 
 from tests.instrumentation import fake_instrumentation
 
@@ -84,6 +85,50 @@ FIELD_SPEC = {
 
 @unittest.skipUnless(LANGGRAPH_AVAILABLE, "LangGraph runtime image에서 실행")
 class GraphExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_disconnected_error_review_never_runs_for_chat_or_save(self) -> None:
+        from graph.agent_registry import default_agent_graphs
+        from graph.builder import build_graph
+
+        # 실제 기본 등록을 검사하면서 다른 Agent의 provider 초기화는 피한다.
+        from types import SimpleNamespace
+        with patch.dict("sys.modules", {"agents": SimpleNamespace(**{
+            name: SimpleNamespace(graph=agent)
+            for name, agent in all_agent_graphs().items()
+        })}):
+            agents = default_agent_graphs()
+        self.assertIsNone(agents["error_review"])
+
+        for mode in ("chat", "error_review"):
+            with self.subTest(mode=mode):
+                graph = build_graph(
+                    None,
+                    response_composer=None,
+                    instrumentation=fake_instrumentation()[0],
+                    planner=FakePlanner({"tasks": [{
+                        "id": "review",
+                        "type": "review_validation_error",
+                        "description": "현재 입력값 검토",
+                        "depends_on": [],
+                        "bindings": {},
+                    }]}),
+                    agent_graphs=agents,
+                )
+                result = await graph.ainvoke({
+                    "request_id": f"paused-review-{mode}",
+                    "message": "현재 입력값을 검토해 주세요.",
+                    "step_id": "basic-info",
+                    "request_mode": mode,
+                    "customer_info": {"saved_data": {}, "current_form": {}},
+                })
+                review_results = list(result["task_results"].values())
+                self.assertEqual(len(review_results), 1)
+                self.assertEqual(review_results[0]["status"], "failed")
+                self.assertEqual(review_results[0]["reason_code"], "executor_unavailable")
+                self.assertNotIn("review", result["output"])
+                for agent in agents.values():
+                    if agent is not None:
+                        self.assertEqual(agent.calls, [])
+
     async def test_presentation_entry_bypasses_planner_and_routes_directly_to_chart(self) -> None:
         from graph.builder import build_graph
 

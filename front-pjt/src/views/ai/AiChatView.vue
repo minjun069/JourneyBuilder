@@ -911,6 +911,9 @@ function executeAutoAction(action) {
   }
 }
 
+// 운영 일시 중지: 재개 시 이 연결만 활성화하고 검토 구현은 그대로 사용한다.
+const ERROR_REVIEW_ENABLED = false
+
 async function submitForm() {
   if (isInteractionBusy.value) return
   sessionError.value = ''
@@ -942,10 +945,14 @@ async function submitForm() {
   clearFormWarning()
 
   try {
-    await continueSaveAfterOptionalReview(
-      () => requestErrorReview(nextStepId),
-      () => persistFormAndAdvance(nextStepId),
-    )
+    if (ERROR_REVIEW_ENABLED) {
+      await continueSaveAfterOptionalReview(
+        () => requestErrorReview(nextStepId),
+        () => persistFormAndAdvance(nextStepId),
+      )
+    } else {
+      await persistFormAndAdvance(nextStepId)
+    }
   } catch (error) {
     if (error?.name !== 'AbortError') {
       sessionError.value = error?.message ?? '입력값을 저장하지 못했습니다.'
