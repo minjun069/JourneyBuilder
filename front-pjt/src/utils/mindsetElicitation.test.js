@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { applyMindsetResult, createMindsetState, isMindsetResult, MINDSET_FIELDS, mindsetRequestState } from './mindsetElicitation.js'
+import { applyMindsetResult, cleanMindsetForm, createMindsetState, isMindsetResult, MINDSET_FIELDS, mindsetRequestState } from './mindsetElicitation.js'
+import { cleanMindsetText } from './mindsetText.js'
 import { SSEProtocolError, validateV2SSEEvents } from '../api/sse.js'
 import { validateConsultationForm } from './formValidation.js'
 
@@ -11,6 +12,37 @@ const result = (overrides = {}) => ({
   status: 'in_progress', completion_reason: null, next_field: null, ...overrides,
 })
 const form = () => Object.fromEntries(MINDSET_FIELDS.map(({ formKey }) => [formKey, '']))
+
+test('공용 혼입 사례를 정리하고 정상 직접 수정 문장은 그대로 보존한다', () => {
+  const fixture = JSON.parse(readFileSync(new URL('../../../contract-fixtures/ai-lifecycle/v2/mindset-display-text.json', import.meta.url), 'utf8'))
+  for (const item of fixture.cases) {
+    if (item.invalid) assert.throws(() => cleanMindsetText(item.input), undefined, item.id)
+    else {
+      assert.equal(cleanMindsetText(item.input), item.expected, item.id)
+      assert.equal(cleanMindsetText(item.expected), item.expected, item.id)
+    }
+  }
+  for (const { field } of MINDSET_FIELDS) assert.equal(cleanMindsetText(`${field}: 가족 지원`), '가족 지원')
+})
+
+test('폼 반영과 다음 요청에서 내부 정보만 제거하며 실패는 회차를 바꾸지 않는다', () => {
+  const state = createMindsetState()
+  const current = form()
+  const receipts = new Set()
+  const dirty = 'values: 가족 지원\nsufficient: false\nturn_kind: answer'
+  applyMindsetResult(state, current, result({ summary: dirty }), 'clean', receipts)
+  assert.equal(current.values, '가족 지원')
+  current.values = dirty
+  current.pastExperience = '  내가 직접 고친 내용: 적금 300만 원  '
+  assert.equal(cleanMindsetForm(current).values, '가족 지원')
+  assert.equal(cleanMindsetForm(current).pastExperience, current.pastExperience)
+  assert.equal(current.values, dirty)
+  const before = structuredClone(state)
+  assert.throws(() => applyMindsetResult(state, current, result({ summary: 'sufficient: false', answer_count: 2 }), 'bad', receipts))
+  assert.deepEqual(state, before)
+  assert.equal(receipts.has('bad'), false)
+  assert.equal(current.values, dirty)
+})
 
 test('경제관념 공용 fixture의 항목 순서와 결과를 검증한다', () => {
   assert.deepEqual(MINDSET_FIELDS.map(({ field }) => field), contract.fields)

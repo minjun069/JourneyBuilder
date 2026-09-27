@@ -13,8 +13,10 @@ import {
 import { decideFormChangeLocally } from '@/utils/formDecision'
 import { addSentenceLineBreaks, renderChatMarkdown } from '@/utils/chatMarkdown'
 import { validateConsultationForm } from '@/utils/formValidation'
+import { cleanMindsetText } from '@/utils/mindsetText'
 import {
   applyMindsetResult,
+  cleanMindsetForm,
   createMindsetState,
   mindsetRequestState,
 } from '@/utils/mindsetElicitation'
@@ -503,6 +505,7 @@ async function streamAssistantMessage(text, options = {}) {
           if (currentStepId.value !== 'financial-mindset' || !activeFormRef.value?.form) {
             throw new Error('경제 관념 입력 화면에서 상담을 다시 이어주세요.')
           }
+          data.message.content = cleanMindsetText(data.message.content, 'response')
           applyMindsetResult(
             mindsetState.value, activeFormRef.value.form, elicitation, data.request_id, mindsetReceipts,
           )
@@ -603,7 +606,7 @@ async function maybeStartMindsetConversation() {
   try {
     await streamAssistantMessage('경제관념 항목 상담을 시작합니다.', {
       stepId: 'financial-mindset',
-      form: activeFormRef.value.form,
+      form: cleanMindsetForm(activeFormRef.value.form),
       requestMode: 'mindset_elicitation',
       elicitationState,
     })
@@ -635,7 +638,7 @@ async function sendMessage() {
   try {
     await streamAssistantMessage(text, {
       stepId: currentStepId.value,
-      form: activeFormRef.value?.form ?? null,
+      form: elicitationState ? cleanMindsetForm(activeFormRef.value.form) : activeFormRef.value?.form ?? null,
       ...(elicitationState ? { requestMode: 'mindset_elicitation', elicitationState } : {}),
     })
   } catch (error) {

@@ -11,7 +11,7 @@ from core.prompt_registry import PromptSpec, prompt_manifest
 from prompts.definitions import ALL_PROMPTS
 
 
-PROMPT_RELEASE = "2026-09-27.1"
+PROMPT_RELEASE = "2026-09-27.2"
 
 _CATALOG = {prompt.prompt_id: prompt for prompt in ALL_PROMPTS}
 if len(_CATALOG) != len(ALL_PROMPTS):

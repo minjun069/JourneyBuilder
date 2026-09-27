@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
+from core.mindset_text import clean_mindset_text
 
 
 MindsetField = Literal[
@@ -93,7 +94,7 @@ def current_summary(customer_info: Mapping[str, Any], field: str) -> str:
         return ""
     if not isinstance(value, str):
         raise ValueError("current mindset summary must be text")
-    return value
+    return clean_mindset_text(value, preferred=field)
 
 
 def opening_question(field: str, customer_info: Mapping[str, Any]) -> str:

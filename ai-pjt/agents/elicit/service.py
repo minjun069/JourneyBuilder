@@ -11,6 +11,7 @@ from core.mindset_elicitation import (
     current_summary, next_mindset_field, opening_question,
 )
 from .model import collect_answer, respond
+from core.mindset_text import clean_mindset_text
 
 
 async def _run(state: ChatState) -> dict[str, Any]:
@@ -46,10 +47,12 @@ async def _collect(state: ChatState) -> dict[str, Any]:
             field=request.field, message=state["message"], summary=summary,
             answer_count=count, conversation_context=state.get("conversation_context", {}),
         )
-        response = answer.response
+        response = clean_mindset_text(answer.response, preferred="response")
         if answer.turn_kind == "answer":
             count += 1
-            summary = answer.summary
+            summary = clean_mindset_text(answer.summary, preferred=request.field)
+            if not summary.strip():
+                raise ValueError("answered turn requires a display summary")
             if answer.sufficient and summary.strip():
                 reason = "sufficient"
             elif count >= MAX_ANSWERS:

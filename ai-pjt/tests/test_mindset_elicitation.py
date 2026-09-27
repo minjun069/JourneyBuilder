@@ -31,6 +31,20 @@ def request_state(*, event="answer", field="values", count=0, form=None):
 
 
 class MindsetContractTests(unittest.TestCase):
+    def test_display_text_shared_fixture_and_all_six_labels(self):
+        from core.mindset_text import clean_mindset_text
+        fixture = json.loads((ROOT / "contract-fixtures/ai-lifecycle/v2/mindset-display-text.json").read_text())
+        for case in fixture["cases"]:
+            with self.subTest(case=case["id"]):
+                if case.get("invalid"):
+                    with self.assertRaises(ValueError):
+                        clean_mindset_text(case["input"])
+                else:
+                    self.assertEqual(clean_mindset_text(case["input"]), case["expected"])
+                    self.assertEqual(clean_mindset_text(case["expected"]), case["expected"])
+        for field in MINDSET_FIELDS:
+            self.assertEqual(clean_mindset_text(f"{field}: 가족 지원을 중시함."), "가족 지원을 중시함.")
+
     def test_shared_fixture_matches_request_and_result_validators(self):
         fixture = json.loads((ROOT / "contract-fixtures/ai-lifecycle/v2/mindset-elicitation.json").read_text())
         self.assertEqual(list(MINDSET_FIELDS), fixture["fields"])
@@ -116,13 +130,16 @@ class MindsetModelBoundaryTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(self.model, "llm", fake):
             result = await self.model.collect_answer(
                 field="values", message="안정이 중요해요. 제 연락처는 010-1234-5678입니다.",
-                summary="안정적인 생활비 300만 원을 중시함.", answer_count=0, conversation_context={},
+                summary="values: 안정적인 생활비 300만 원을 중시함.\nsufficient: false\nturn_kind: answer", answer_count=0,
+                conversation_context={"turns": [{"assistant_message": "values: 과거 요약\nsufficient: false\nturn_kind: answer"}]},
             )
         self.assertEqual(len(fake.calls), 1)
         prompt = str(fake.calls[0][-1].content)
         self.assertIn("안정적인 생활비", prompt)
         self.assertIn("300만 원", prompt)
         self.assertNotIn("010-1234-5678", prompt)
+        self.assertNotIn("sufficient: false", prompt)
+        self.assertNotIn("turn_kind: answer", prompt)
         self.assertEqual(result.summary, "안정적인 생활비 300만 원을 중시함.")
 
     async def test_sensitive_summary_is_blocked_even_when_response_is_safe(self):
@@ -159,6 +176,43 @@ class MindsetTerminalTests(unittest.TestCase):
         self.assertNotIn("010-1234-5678", output["elicitation"]["summary"])
 
 class MindsetContinuationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_contaminated_model_text_never_reaches_chat_or_form(self):
+        clean = "돈을 아껴 쓰기 위해 적금부터 넣으며, 자녀의 대학 학자금·결혼 자금 등 미래에 필요한 돈을 마련해 지원할 여유를 중요하게 생각함."
+        dirty = f"values: {clean}\nsufficient: false\nturn_kind: answer"
+        for count, sufficient in ((0, False), (0, True), (2, False)):
+            with self.subTest(count=count, sufficient=sufficient):
+                with patch.object(self.service, "collect_answer", AsyncMock(return_value=self.answer(
+                    summary=dirty, response="response: 가족 지원을 중시하시는군요.\nsufficient: false\nturn_kind: answer", sufficient=sufficient,
+                ))):
+                    output = (await self.service._run(request_state(count=count)))["output"]
+                self.assertEqual(output["elicitation"]["summary"], clean)
+                self.assertEqual(output["elicitation"]["answer_count"], count + 1)
+                for marker in ("values:", "sufficient:", "turn_kind:", "response:"):
+                    self.assertNotIn(marker, output["response"])
+
+    async def test_old_form_is_cleaned_before_reuse_without_mutating_input(self):
+        dirty = "values: 가족 지원을 중시함.\nsufficient: false\nturn_kind: answer"
+        for kind in ("clarification", "skip"):
+            state = request_state(form={"values": dirty})
+            original = deepcopy(state)
+            with patch.object(self.service, "collect_answer", AsyncMock(return_value=self.answer(kind=kind))) as model:
+                output = (await self.service._run(state))["output"]
+            self.assertEqual(model.call_args.kwargs["summary"], "가족 지원을 중시함.")
+            self.assertEqual(output["elicitation"]["summary"], "가족 지원을 중시함.")
+            self.assertEqual(output["elicitation"]["answer_count"], 0)
+            self.assertEqual(state, original)
+        output = (await self.service._run(request_state(event="start", form={"values": dirty})))["output"]
+        self.assertEqual(output["elicitation"]["summary"], "가족 지원을 중시함.")
+
+    async def test_unrecoverable_model_text_fails_without_state_change(self):
+        state = request_state(form={"values": "직접 고친 정상 문장"})
+        original = deepcopy(state)
+        for summary in ("sufficient: false\nturn_kind: answer", "가족 지원. sufficient: maybe", ""):
+            with patch.object(self.service, "collect_answer", AsyncMock(return_value=self.answer(summary=summary))):
+                with self.assertRaises(ValueError):
+                    await self.service._run(state)
+            self.assertEqual(state, original)
+
     setUp = MindsetServiceTests.setUp
     answer = MindsetServiceTests.answer
 

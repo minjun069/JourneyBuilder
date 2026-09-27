@@ -1,0 +1,17 @@
+{
+  "cases": [
+    {"id": "reported-leak", "input": "values: 돈을 아껴 쓰기 위해 적금부터 넣으며, 자녀의 대학 학자금·결혼 자금 등 미래에 필요한 돈을 마련해 지원할 여유를 중요하게 생각함.\nsufficient: false\nturn_kind: answer", "expected": "돈을 아껴 쓰기 위해 적금부터 넣으며, 자녀의 대학 학자금·결혼 자금 등 미래에 필요한 돈을 마련해 지원할 여유를 중요하게 생각함."},
+    {"id": "inline", "input": "values: 가족 지원을 중시함. sufficient: false, turn_kind: answer", "expected": "가족 지원을 중시함."},
+    {"id": "json", "input": "{\"summary\":\"가족 지원을 중시함.\",\"sufficient\":true,\"turn_kind\":\"answer\"}", "expected": "가족 지원을 중시함."},
+    {"id": "yaml-fence", "input": "```yaml\nvalues: 가족 지원을 중시함.\nsufficient: false\nturn_kind: answer\n```", "expected": "가족 지원을 중시함."},
+    {"id": "json-fence", "input": "```json\n{\"values\":\"가족 지원을 중시함.\"}\n```", "expected": "가족 지원을 중시함."},
+    {"id": "quoted", "input": "summary: \"가족 지원을 중시함.\"\nsufficient: False\nturn_kind: 'answer'", "expected": "가족 지원을 중시함."},
+    {"id": "user-edit", "input": "  가족 지원: 학자금 300만 원\n적금부터 넣는다. values라는 단어는 나의 메모.  ", "expected": "  가족 지원: 학자금 300만 원\n적금부터 넣는다. values라는 단어는 나의 메모.  "},
+    {"id": "natural-controls", "input": "sufficient라는 말과 turn_kind의 뜻을 물었음.", "expected": "sufficient라는 말과 turn_kind의 뜻을 물었음."},
+    {"id": "empty", "input": "", "expected": ""},
+    {"id": "metadata-only", "input": "sufficient: false\nturn_kind: answer", "invalid": true},
+    {"id": "invalid-control", "input": "가족 지원을 중시함. sufficient: maybe", "invalid": true},
+    {"id": "ambiguous-fields", "input": "values: 가족 지원\nfuture_goals: 조기 은퇴", "invalid": true},
+    {"id": "invalid-json-value", "input": "{\"summary\":false,\"sufficient\":true}", "invalid": true}
+  ]
+}
