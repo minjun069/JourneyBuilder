@@ -390,7 +390,6 @@ function resetConversationState() {
   reportStore.clearActiveReport()
   isRestoredSession.value = false
   Object.keys(formDrafts).forEach((key) => delete formDrafts[key])
-  emptyConfirmedStepIds.value = new Set()
   mindsetState.value = createMindsetState()
   lockedMindsetField.value = null
   mindsetReceipts.clear()
@@ -757,7 +756,6 @@ const formSaving          = ref(false)
 const reviewLoading       = ref(false)
 const restoringForm       = ref(false)
 const formDrafts          = reactive({})
-const emptyConfirmedStepIds = ref(new Set())
 const formWarning         = reactive({
   code: null,
   canConfirmEmpty: false,
@@ -933,7 +931,6 @@ async function submitForm() {
   const validation = validateConsultationForm(
     currentStepId.value,
     activeFormRef.value?.form,
-    { allowEmpty: emptyConfirmedStepIds.value.has(currentStepId.value) },
   )
   if (!validation.valid) {
     formWarning.code = validation.code
@@ -962,31 +959,36 @@ async function submitForm() {
 
 async function confirmEmptyForm() {
   if (isInteractionBusy.value) return
+  const validation = validateConsultationForm(currentStepId.value, activeFormRef.value?.form)
+  if (!validation.canConfirmEmpty) {
+    clearFormWarning()
+    await submitForm()
+    return
+  }
+  const currentIdx = STEP_IDS.indexOf(currentStepId.value)
+  const nextStepId = currentStepId.value === 'financial-goals'
+    ? 'balance-sheet'
+    : currentIdx >= 0 && currentIdx < STEP_IDS.length - 1 ? STEP_IDS[currentIdx + 1] : null
+  if (!nextStepId) return
   if (currentStepId.value === 'financial-assets') {
-    const currentIdx = STEP_IDS.indexOf(currentStepId.value)
-    const nextStepId = currentIdx >= 0 && currentIdx < STEP_IDS.length - 1
-      ? STEP_IDS[currentIdx + 1]
-      : null
-    if (!nextStepId) return
     const saved = await persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets: true })
     if (saved) clearFormWarning()
     return
   }
 
-  const confirmed = new Set(emptyConfirmedStepIds.value)
-  confirmed.add(currentStepId.value)
-  emptyConfirmedStepIds.value = confirmed
-  clearFormWarning()
-  await submitForm()
+  const saved = await persistFormAndAdvance(nextStepId, { confirmEmptySection: true })
+  if (saved) clearFormWarning()
 }
 
-async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = false } = {}) {
+async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = false, confirmEmptySection = false } = {}) {
   formSaving.value = true
   const savedStepId = currentStepId.value
   try {
     const response = confirmNoFinancialAssets
       ? await consultationStore.confirmNoFinancialAssets()
-      : await consultationStore.saveFormData(savedStepId, activeFormRef.value?.form ?? {})
+      : confirmEmptySection
+        ? await consultationStore.confirmNoSectionData(savedStepId)
+        : await consultationStore.saveFormData(savedStepId, activeFormRef.value?.form ?? {})
     if (savedStepId === 'basic-info') {
       basicInfoData.value = response?.data?.data ?? null
     }
@@ -1023,7 +1025,9 @@ async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = fa
   void streamAiMessages([{
     text: confirmNoFinancialAssets
       ? '보유 금융자산이 없는 것으로 확인했습니다. 다음 단계로 이동할 준비가 완료되었습니다.'
-      : '입력하신 정보가 저장되었습니다. 다음 단계로 이동할 준비가 완료되었습니다.',
+      : confirmEmptySection
+        ? '해당 내용이 없는 것으로 확인했습니다. 다음 단계로 이동할 준비가 완료되었습니다.'
+        : '입력하신 정보가 저장되었습니다. 다음 단계로 이동할 준비가 완료되었습니다.',
     action: { type: 'next-step', stepId: nextStepId, label: '다음 단계로 이동 →' },
   }])
   return true

@@ -24,18 +24,30 @@ test('재무 만족도는 다섯 항목이 모두 있어야 한다', () => {
 })
 
 test('빈 반복 폼은 경고 후 명시적인 해당 없음 확인으로 진행할 수 있다', () => {
-  const warning = validateConsultationForm('liabilities', { assets: [] })
-  assert.equal(warning.valid, false)
-  assert.equal(warning.code, 'empty_form')
-  assert.equal(warning.canConfirmEmpty, true)
-  assert.equal(
-    validateConsultationForm('liabilities', { assets: [] }, { allowEmpty: true }).valid,
-    true,
-  )
+  for (const step of ['pension-assets', 'real-estate', 'liabilities', 'income', 'expenses']) {
+    const warning = validateConsultationForm(step, { assets: [] })
+    assert.equal(warning.valid, false, step)
+    assert.equal(warning.code, 'empty_form', step)
+    assert.equal(warning.canConfirmEmpty, true, step)
+    assert.match(warning.errors.join(' '), /해당 없음으로 진행하시겠습니까/)
+    assert.equal(validateConsultationForm(step, { assets: [] }, { allowEmpty: true }).valid, true)
+    assert.equal(validateConsultationForm(step, { assets: [{ name: '입력 항목' }] }).canConfirmEmpty, false)
+  }
   const financialAssets = validateConsultationForm('financial-assets', { assets: [] })
   assert.equal(financialAssets.canConfirmEmpty, true)
   assert.equal(financialAssets.confirmationLabel, '보유 금융자산 없음')
   assert.match(financialAssets.errors.join(' '), /실제로 보유한 금융자산이 없다면/)
+})
+
+test('빈 재무목표는 명시적인 없음 확인을 요청하며 필수 설문은 건너뛰지 않는다', () => {
+  const form = { before: { periods: [], milestones: [] }, after: { periods: [], milestones: [] } }
+  assert.equal(validateConsultationForm('financial-goals', form).canConfirmEmpty, true)
+  assert.equal(validateConsultationForm('financial-goals', form, { allowEmpty: true }).valid, true)
+  for (const step of ['basic-info', 'financial-mindset', 'financial-satisfaction']) {
+    const result = validateConsultationForm(step, {}, { allowEmpty: true })
+    assert.equal(result.valid, false)
+    assert.equal(result.canConfirmEmpty, false)
+  }
 })
 
 test('반복 폼의 음수 금액과 비정상 범위를 차단한다', () => {

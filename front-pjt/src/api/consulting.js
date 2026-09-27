@@ -85,6 +85,9 @@ export const putFinancialAssets = (sid, data) => consultingApi.put(`/consultatio
 export const confirmEmptyFinancialAssets = (sid) => (
   consultingApi.put(`/consultations/${sid}/data/financial-assets/confirm-empty/`)
 )
+export const confirmEmptySection = (sid, stepId) => (
+  consultingApi.put(`/consultations/${sid}/data/${stepId}/confirm-empty/`)
+)
 
 export const getPensionAssets = (sid)       => consultingApi.get(`/consultations/${sid}/data/pension-assets/`)
 export const putPensionAssets = (sid, data) => consultingApi.put(`/consultations/${sid}/data/pension-assets/`, data)
