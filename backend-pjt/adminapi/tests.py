@@ -314,6 +314,41 @@ class SegmentsApiTests(TestCase):
         rows = self.client.get(CUSTOMERS, {'need': 'unknown'}).json()['data']
         self.assertTrue(all(r['need'] is None for r in rows))
 
+    def test_unavailable_grades_are_excluded_without_excluding_customer(self):
+        baseline = self.client.get('/api/admin/v1/analytics/segments/').json()['data']
+        partial = User.objects.create_user(
+            email='partial@test.com', password='pass-1234-ok', name='자산만 입력')
+        session = ConsultingSession.objects.create(
+            user=partial, status=ConsultingSession.Status.IN_PROGRESS)
+        BasicInfo.objects.create(session=session, age=35, need='은퇴')
+        FinancialAsset.objects.create(
+            session=session, asset_type='예금/적금', name='예금',
+            current_value=50_000_000, monthly_savings=0)
+
+        for include_full in (True, False):
+            with self.subTest(include_full=include_full):
+                if not include_full:
+                    self.full.delete()
+                response = self.client.get('/api/admin/v1/analytics/segments/')
+                self.assertEqual(response.status_code, 200)
+                data = response.json()['data']
+                stacks = {item['key']: item for item in data['indicator_risk']}
+                self.assertEqual(len(stacks), 7)
+                for original in baseline['indicator_risk']:
+                    expected = original.copy() if include_full else {
+                        'key': original['key'], GOOD: 0, WARN: 0, RISK: 0,
+                    }
+                    if original['key'] == '금융자산비중지표':
+                        expected[GOOD] += 1
+                    self.assertEqual(stacks[original['key']], expected)
+                age_counts = {
+                    item['bucket']: item['count'] for item in data['axes']['age_band']
+                }
+                self.assertEqual(age_counts['30s'], 2 if include_full else 1)
+                self.assertEqual(age_counts['unknown'], 1)
+                self.assertIn(partial.id, [item['user_id'] for item in data['scatter']])
+                self.assertEqual(self.client.get(SUMMARY).status_code, 200)
+
 
 class SeedDemoCommandTests(TestCase):
     def test_seed_creates_consistent_demo_data(self):
