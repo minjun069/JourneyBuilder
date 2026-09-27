@@ -67,7 +67,7 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.await_args.kwargs["sensitive_payload"]["chart_facts"], payload)
         self.assertNotIn("customer_info", str(invocation_payload))
 
-    async def test_report_metadata_number_does_not_become_answer_evidence(self):
+    async def test_model_response_is_delivered_without_chart_numeric_rejection(self):
         with (
             patch.object(
                 chart_model,
@@ -83,16 +83,14 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
                 "chart_payload": deepcopy(self.ready),
             })
 
-        self.assertNotIn("701원", result["output"]["response"])
+        self.assertEqual(result["output"]["response"], "보고서 ID는 701원입니다.")
 
-    async def test_new_numeric_claim_is_removed_by_deterministic_fallback(self):
+    async def test_new_numeric_claim_is_observed_without_changing_answer(self):
+        model = AsyncMock(return_value=SimpleNamespace(content="근거 없는 999999원입니다."))
         with (
-            patch.object(
-                chart_model,
-                "secure_ainvoke",
-                AsyncMock(return_value=SimpleNamespace(content="근거 없는 999999원입니다.")),
-            ),
+            patch.object(chart_model, "secure_ainvoke", model),
             patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
+            patch.object(chart_interpret, "record_operation_observation") as observed,
         ):
             result = await chart_interpret._run({
                 "message": "원인을 설명해줘",
@@ -101,13 +99,12 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
             })
 
         response = result["output"]["response"]
-        self.assertNotIn("999999", response)
-        self.assertEqual(
-            chart_interpret.unauthorized_numeric_claims(response, self.ready),
-            set(),
-        )
+        self.assertEqual(response, "근거 없는 999999원입니다.")
+        model.assert_awaited_once()
+        self.assertEqual(observed.call_args.kwargs["output"]["delivery"], "model_output")
+        self.assertGreater(observed.call_args.kwargs["output"]["unmatched_numeric_count"], 0)
 
-    async def test_guidance_only_never_exposes_model_number(self):
+    async def test_guidance_only_preserves_model_response(self):
         with (
             patch.object(
                 chart_model,
@@ -123,8 +120,7 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
                 "chart_payload": deepcopy(self.guidance),
             })
 
-        self.assertNotRegex(result["output"]["response"], r"\d")
-        self.assertIn("숫자를 추정하지 않습니다", result["output"]["response"])
+        self.assertEqual(result["output"]["response"], "준비 전이지만 42원으로 보입니다.")
 
     def test_exact_payload_numbers_are_allowed(self):
         response = "순자산은 713,000,000원이고 적자 전환은 61세입니다."
@@ -133,12 +129,9 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
             set(),
         )
 
-    async def test_rejected_explanation_is_repaired_once_with_existing_reasons(self):
-        valid = "확인된 순자산은 713,000,000원입니다."
-        model = AsyncMock(side_effect=[
-            SimpleNamespace(content="확인되지 않은 999999원입니다."),
-            SimpleNamespace(content=valid),
-        ])
+    async def test_chart_delivery_uses_one_model_call_and_records_diagnostics(self):
+        answer = "시장 폭락 때문에 999999원이 부족합니다."
+        model = AsyncMock(return_value=SimpleNamespace(content=answer))
         with (
             patch.object(chart_model, "secure_ainvoke", model),
             patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
@@ -148,37 +141,30 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
                 "message": "이 보고서의 핵심을 안내해 주세요.", "step_id": "lifetime-cashflow",
                 "request_mode": "presentation_entry", "chart_payload": deepcopy(self.ready),
             })
-        self.assertEqual(model.await_count, 2)
-        self.assertIn("unauthorized_numeric_claim", str(model.await_args_list[1].args[1]))
-        self.assertEqual(result["output"]["response"], valid)
-        self.assertEqual(observed.call_args_list[-1].kwargs["output"],
-                         {"attempt": 2, "issues": [], "fallback": False})
+        model.assert_awaited_once()
+        self.assertEqual(result["output"]["response"], answer)
+        output = observed.call_args.kwargs["output"]
+        self.assertEqual(output["response"], answer)
+        self.assertGreater(output["unmatched_numeric_count"], 0)
+        self.assertGreater(output["causal_heuristic_count"], 0)
 
-    async def test_failed_repair_preserves_every_verified_warning(self):
-        for repair in (SimpleNamespace(content="다시 만든 999999원입니다."), RuntimeError("provider unavailable")):
-            with self.subTest(repair=type(repair).__name__):
-                payload = deepcopy(self.ready)
-                warnings = ["연금 수령 기간을 확인해 주세요.", "이 결과는 미래를 보장하지 않습니다."]
-                payload["warnings"] = [{"message": message} for message in warnings]
-                model = AsyncMock(side_effect=[SimpleNamespace(content="근거 없는 999999원입니다."), repair])
-                with (
-                    patch.object(chart_model, "secure_ainvoke", model),
-                    patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
-                    patch.object(chart_interpret, "record_operation_observation") as observed,
-                ):
-                    result = await chart_interpret._run({
-                        "message": "처음 안내해 주세요.", "step_id": "lifetime-cashflow",
-                        "request_mode": "presentation_entry", "chart_payload": payload,
-                    })
-                response = result["output"]["response"]
-                self.assertEqual(model.await_count, 2)
-                self.assertNotIn("999999", response)
-                self.assertNotIn("provider unavailable", response)
-                for warning in warnings:
-                    self.assertIn(warning, response)
-                self.assertTrue(observed.call_args_list[-1].kwargs["output"]["fallback"])
+    async def test_model_failure_is_observed_and_propagated_without_retry(self):
+        model = AsyncMock(side_effect=RuntimeError("provider unavailable"))
+        with (
+            patch.object(chart_model, "secure_ainvoke", model),
+            patch.object(chart_model, "load_chart_knowledge", return_value="승인된 의미"),
+            patch.object(chart_interpret, "record_operation_observation") as observed,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "provider unavailable"):
+                await chart_interpret._run({
+                    "message": "처음 안내해 주세요.", "step_id": "lifetime-cashflow",
+                    "request_mode": "presentation_entry", "chart_payload": deepcopy(self.ready),
+                })
+        model.assert_awaited_once()
+        self.assertEqual(observed.call_args.kwargs["error_code"], "RuntimeError")
+        self.assertNotIn("provider unavailable", str(observed.call_args))
 
-    async def test_unsupported_cause_falls_back_to_payload_only(self):
+    async def test_unsupported_cause_is_delivered_as_generated(self):
         with (
             patch.object(
                 chart_model,
@@ -195,7 +181,7 @@ class ChartGuidanceTests(unittest.IsolatedAsyncioTestCase):
                 "chart_payload": deepcopy(self.ready),
             })
 
-        self.assertNotIn("시장 폭락", result["output"]["response"])
+        self.assertEqual(result["output"]["response"], "시장 폭락 때문에 현금흐름이 바뀌었습니다.")
 
     async def test_customer_info_is_not_used_for_personalization(self):
         model = AsyncMock(return_value=SimpleNamespace(content="검증 결과를 확인했습니다."))

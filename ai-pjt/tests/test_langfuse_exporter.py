@@ -479,6 +479,82 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             {"role": "assistant", "content": "맞춤 안내입니다."},
         )
 
+    def test_chart_prompt_hash_survives_masking_and_generation_is_exported(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        adapter, sink = build_masked_runtime_instrumentation(
+            pseudonym_key=b"chart-langfuse-prompt-test-key-32bytes",
+            downstream=exporter,
+            sink=MaskingSink.TRACE_EXPORT,
+        )
+        observed = adapter.bind(
+            request_id="request-chart-test",
+            thread_id="thread-chart-test",
+            step_id="lifetime-cashflow",
+        )
+        # This registered hash contains a phone-shaped substring. It formerly
+        # became [DIRECT_IDENTIFIER] and the exporter dropped the generation.
+        chart_hash = "625dc118708831ef1cc8fe45ee4c48c4af054a2c4a4a95e7c41c646ec98f86f9"
+        observed.record_model_call(
+            purpose="chart_interpret",
+            operation_name="chart_interpret.generate",
+            status="succeeded",
+            duration_ms=15,
+            prompt_id="chart_interpret.explain",
+            prompt_version="1.0.0",
+            prompt_hash=chart_hash,
+            prompt_release="2026-09-23.1",
+            prompt_policy_version="1.1",
+            input=[{"role": "user", "content": "보유 자산은 713,000,000원입니다."}],
+            output={"role": "assistant", "content": "순자산은 713,000,000원입니다."},
+        )
+
+        self.assertEqual(sink.dropped_exports, 0)
+        self.assertEqual(len(client.calls), 2)
+        args, _ = client.calls[1]
+        self.assertEqual(args["name"], "retirewise.model.chart_interpret.generate")
+        self.assertEqual(args["metadata"]["prompt_hash"], chart_hash)
+        self.assertIn("[FINANCIAL_VALUE_MASKED]", repr(args["output"]))
+        self.assertNotIn("713,000,000원", repr(args))
+
+    def test_chart_delivery_diagnostics_are_exported_without_raw_financial_values(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        adapter, sink = build_masked_runtime_instrumentation(
+            pseudonym_key=b"chart-delivery-trace-test-key-32bytes",
+            downstream=exporter,
+            sink=MaskingSink.TRACE_EXPORT,
+        )
+        observed = adapter.bind(
+            request_id="request-chart-test",
+            thread_id="thread-chart-test",
+            step_id="lifetime-cashflow",
+        )
+        observed.record_operation(
+            stage=OperationStage.OUTPUT_VALIDATION,
+            status=OperationStatus.SUCCEEDED,
+            operation_name="chart_interpret.deliver",
+            duration_ms=12,
+            agent="chart_interpret",
+            input={"report_status": "ready", "response_mode": "initial_entry"},
+            output={
+                "response": "순자산은 713,000,000원입니다.",
+                "delivery": "model_output",
+                "unmatched_numeric_count": 0,
+                "causal_heuristic_count": 0,
+                "recalculation_marker_count": 0,
+            },
+        )
+
+        self.assertEqual(sink.dropped_exports, 0)
+        self.assertEqual(len(client.calls), 2)
+        args, _ = client.calls[1]
+        self.assertEqual(args["name"], "retirewise.output_validation.chart_interpret.deliver")
+        self.assertEqual(args["output"]["delivery"], "model_output")
+        self.assertEqual(args["output"]["unmatched_numeric_count"], 0)
+        self.assertIn("[FINANCIAL_VALUE_MASKED]", repr(args["output"]))
+        self.assertNotIn("713,000,000원", repr(args))
+
     def test_shutdown_delegates_to_client(self) -> None:
         client = _FakeClient()
         exporter = LangfuseInstrumentationExporter(client)

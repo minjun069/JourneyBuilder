@@ -424,6 +424,10 @@ async def execute_route_plan(
             and not has_execution_failure
             and plan.get("outcome_reason") is None
             and plan.get("request_mode") != "mindset_elicitation"
+            and not any(
+                isinstance(task, Mapping) and task.get("type") == "interpret_chart"
+                for task in aggregate_tasks
+            )
         ):
             with (
                 bind_operation_recorder(instrumentation.record_operation),
