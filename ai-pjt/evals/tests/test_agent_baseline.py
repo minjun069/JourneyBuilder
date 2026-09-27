@@ -143,7 +143,7 @@ class ModelBudgetTests(unittest.IsolatedAsyncioTestCase):
             instrument_agent_models(budget),
         ):
             report = await _run_qa_cases([{
-                "id": "greeting", "message": "안녕", "step_id": "general",
+                "id": "greeting", "message": "안녕", "step_id": "intro",
                 "customer_info": {"saved_data": {}, "current_form": {}},
             }], budget)
         case = report["cases"][0]
