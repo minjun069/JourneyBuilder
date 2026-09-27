@@ -4,6 +4,7 @@ from .views import (
     MessageListView,
     BasicInfoView, FinancialMindsetView, FinancialSatisfactionView,
     FinancialAssetsView, FinancialAssetsEmptyConfirmationView,
+    SectionEmptyConfirmationView,
     PensionAssetsView, RealEstateAssetsView,
     LiabilitiesView, IncomesView, ExpensesView,
     GoalPeriodsView, GoalMilestonesView,
@@ -25,6 +26,7 @@ urlpatterns = [
     # 재무정보 — 1:N 폼 
     path('consultations/<int:session_id>/data/financial-assets/', FinancialAssetsView.as_view(), name='financial-assets'),
     path('consultations/<int:session_id>/data/financial-assets/confirm-empty/', FinancialAssetsEmptyConfirmationView.as_view(), name='financial-assets-confirm-empty'),
+    path('consultations/<int:session_id>/data/<slug:step_id>/confirm-empty/', SectionEmptyConfirmationView.as_view(), name='section-confirm-empty'),
     path('consultations/<int:session_id>/data/pension-assets/', PensionAssetsView.as_view(), name='pension-assets'),
     path('consultations/<int:session_id>/data/real-estate-assets/', RealEstateAssetsView.as_view(), name='real-estate-assets'),
     path('consultations/<int:session_id>/data/liabilities/', LiabilitiesView.as_view(), name='liabilities'),
