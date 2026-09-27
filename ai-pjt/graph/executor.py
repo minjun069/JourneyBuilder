@@ -241,9 +241,8 @@ async def execute_route_plan(
             "customer_info": deepcopy(dict(customer_info)),
             "task_input": deepcopy(execution_input["task_input"]),
         }
-        if executor_kind == "tool":
-            execution_input["tool_call_budget"] = tool_call_budget
-            execution_input["tool_audit_sink"] = instrumentation.record_tool_audit
+        execution_input["tool_call_budget"] = tool_call_budget
+        execution_input["tool_audit_sink"] = instrumentation.record_tool_audit
         operation_started = instrumentation.elapsed_ms(task_span)
         try:
             if executor_kind == "tool":

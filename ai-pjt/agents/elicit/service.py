@@ -20,6 +20,7 @@ async def _run(state: ChatState) -> dict[str, Any]:
     response = await respond(
         message=state["message"],
         conversation_context=context,
+        step_id=state["step_id"],
     )
     return {
         "output": {

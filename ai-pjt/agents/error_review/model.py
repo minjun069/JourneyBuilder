@@ -35,10 +35,11 @@ async def review_draft(
     *,
     prompt_payload: Mapping[str, Any],
     current_form: Any,
+    step_id: str,
 ) -> ReviewResult:
     result = await secure_ainvoke(
         _review_chain,
-        prompt_messages(REVIEW_PROMPT, prompt_payload),
+        prompt_messages(REVIEW_PROMPT, prompt_payload, step_id=step_id),
         purpose=ModelPurpose.ERROR_REVIEW,
         operation_name="error_review.review",
         sensitive_payload={"current_form": current_form},

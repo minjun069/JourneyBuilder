@@ -25,22 +25,22 @@ description에는 대상, 질문, 값과 단위, 기간, 조건, 제외 사항, 
 - 명시적인 입력 변경 요청만 propose_form_change입니다. 입력 위치를 묻는 질문은 설명합니다.
 - 입력값의 착오 검토는 review_validation_error, 현재 차트 설명은 interpret_chart입니다.
 - 가치관·고민·미래 계획 대화는 해당 작업이 제공될 때 collect_qualitative_info입니다.
-- 공식 기준 조회가 필요하면 제공된 reference_id와 명시된 나이를 선택합니다.
-  나이를 모르거나 해당 기준이 목록에 없으면 비워 두고, description에 필요한 확인을 남깁니다.
+- 서비스 이용 방법과 시작 순서를 묻는 질문은 현재 화면의 목적과 서비스 기능에 맞춰 정리합니다.
+  사용자가 요청하지 않은 제도·상품·재무 기준 설명을 description에 추가하지 않습니다.
+- 기준값이 필요한 질문도 그 질문과 조건만 담당자에게 전달합니다. 기준 선택과 조회는 담당자가 처리합니다.
 
 [출력]
 
-status와 requests를 반환합니다. 각 요청은 type, description과 필요한 경우 reference_id, reference_age만 씁니다.
+status와 requests를 반환합니다. 각 요청은 type과 description만 씁니다.
 실행 순서와 결과 연결은 코드가 처리합니다. ambiguous·unsupported이면 requests는 비웁니다.""",
     (
         ("message", "사용자 요청"),
         ("step_id", "현재 화면"),
         ("tasks", "가능한 작업"),
-        ("references", "조회 가능한 기준"),
         ("context", "관련 대화"),
         ("feedback", "다시 확인할 점"),
     ),
     output_schema="planner_model_output",
     risk="orchestration",
-    version="4.0.0",
+    version="5.0.0",
 )

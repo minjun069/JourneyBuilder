@@ -17,7 +17,7 @@ from graph.plan_contracts import (
     issue,
 )
 from graph.task_catalog import planning_guidance_for
-from graph.request_plan import compile_request_plan, reference_options
+from graph.request_plan import compile_request_plan
 
 
 TaskPlanner = Callable[..., Mapping[str, Any]]
@@ -139,5 +139,4 @@ def planner_route_constraints(
         "task_type_guidance": planning_guidance_for([
             task_type for task_type in ordered if task_type != "lookup_reference_value"
         ]),
-        "reference_options": reference_options() if "lookup_reference_value" in ordered else [],
     }

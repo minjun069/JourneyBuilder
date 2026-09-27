@@ -12,6 +12,7 @@ from core.observability_masking import exception_identity_fields
 from core.operation_observation import record_operation_observation
 from core.prompt_inputs import conversation_for_model, report_for_model
 from rag.retriever import format_docs, get_retriever
+from tools.agent_tools import lookup_reference, reference_options
 from .model import (
     ANSWER_PROMPT as _ANSWER_PROMPT,
     JUDGE_PROMPT as _JUDGE_PROMPT,
@@ -48,6 +49,7 @@ class QAState(TypedDict):
     conversation: dict[str, Any]
     report: dict[str, Any]
     task_input: NotRequired[dict[str, Any]]
+    reference_results: NotRequired[dict[str, dict[str, Any]]]
     questions: list[dict[str, Any]]
     customer_context: dict[str, Any]
     evidence: list[dict[str, str]]
@@ -63,12 +65,17 @@ class QAState(TypedDict):
 def _bindings(state: Mapping[str, Any]) -> dict[str, Any]:
     task_input = state.get("task_input")
     bindings = task_input.get("bindings") if isinstance(task_input, Mapping) else None
-    return model_facts(bindings) if isinstance(bindings, Mapping) else {}
+    values = model_facts(bindings) if isinstance(bindings, Mapping) else {}
+    return {**values, **{
+        key: {"question": item["question"], **model_facts(item["reference"])}
+        for key, item in state.get("reference_results", {}).items()
+    }}
 
 
 def _init(state: QAState) -> dict:
     return {
         "questions": [],
+        "reference_results": {},
         "conversation": conversation_for_model(state.get("conversation_context") or {}),
         "report": report_for_model(state.get("chart_payload") or {}),
         "customer_context": relevant_customer_info(
@@ -92,6 +99,7 @@ async def _plan(state: QAState) -> dict:
             **_question_context(state),
             "step_id": state["step_id"],
             "feedback": state["feedback"],
+            "reference_options": reference_options(),
         }),
         purpose=ModelPurpose.QA,
         operation_name="qa.plan",
@@ -108,12 +116,26 @@ async def _retrieve(state: QAState) -> dict:
     task_input = state.get("task_input", {})
     bindings = task_input.get("bindings", {})
     has_reference = isinstance(bindings, Mapping) and has_reference_value(bindings)
+    references = dict(state.get("reference_results", {}))
     for question in state["questions"]:
         text = question["question"]
+        reference_id = question.get("reference_id")
+        question_has_reference = has_reference
+        if reference_id:
+            key = f"{reference_id}:{question.get('reference_age')}"
+            if key not in references:
+                reference = await lookup_reference(reference_id, question.get("reference_age"))
+                if reference is not None:
+                    references[key] = {"question": text, "reference": reference}
+            question_has_reference = key in references
+            if not question_has_reference:
+                unavailable += 1
+                evidence.append({"question": text, "reference": OFFICIAL_VALUE_UNAVAILABLE})
+                continue
         if requests_unbound_official_value(
             message=text,
             current_query=question.get("query") or "",
-            has_bindings=has_reference,
+            has_bindings=question_has_reference,
         ):
             unavailable += 1
             evidence.append({"question": text, "reference": OFFICIAL_VALUE_UNAVAILABLE})
@@ -126,6 +148,7 @@ async def _retrieve(state: QAState) -> dict:
         evidence.append({"question": text, "reference": cache[query]})
     return {
         "evidence": evidence,
+        "reference_results": references,
         "official_only": unavailable == len(state["questions"]),
     }
 
@@ -188,7 +211,7 @@ async def _generate(state: QAState) -> dict:
         llm,
         prompt_messages(_ANSWER_PROMPT, {
             **_answer_context(state), "feedback": state["feedback"],
-        }),
+        }, step_id=state["step_id"]),
         purpose=ModelPurpose.QA,
         operation_name="qa.generate",
         sensitive_payload=_model_sensitive_payload(state),
@@ -204,7 +227,7 @@ async def _judge(state: QAState) -> dict:
         _judge_chain,
         prompt_messages(_JUDGE_PROMPT, {
             **_answer_context(state), "answer": state["current_answer"],
-        }),
+        }, step_id=state["step_id"]),
         purpose=ModelPurpose.QA,
         operation_name="qa.judge",
         sensitive_payload=_model_sensitive_payload(state),

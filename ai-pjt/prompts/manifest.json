@@ -1,15 +1,19 @@
 {
-  "release": "2026-09-25.1",
+  "release": "2026-09-27.1",
   "prompts": [
     {
       "id": "aggregator.compose",
       "version": "4.0.0",
-      "sha256": "8397d18073326c84b3f48f2e15e42b999b7aeac3fa07ee1d4d5f64d1596e9403",
+      "sha256": "ff1fac41038bc3fa80d54eef0320dd11da5aca6853945412386c32c7a57fa1eb",
       "purpose": "aggregator",
       "output_schema": "aggregator_model_output",
       "owner": "ai-team",
       "risk": "financial_explanation",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "answer",
           "label": "검증된 답변"
@@ -19,12 +23,16 @@
     {
       "id": "aggregator.counseling",
       "version": "4.0.0",
-      "sha256": "b52966308628da23cacd99a12ece2729e49ee1417896f8665bb9125a558196cd",
+      "sha256": "440f1f7b9d8248c7cb1462d03c81447a8fade48d4ecdc361e2941c2f53c0a62c",
       "purpose": "aggregator",
       "output_schema": "aggregator_model_output",
       "owner": "ai-team",
       "risk": "financial_explanation",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "answer",
           "label": "검증된 기존 답변"
@@ -46,12 +54,16 @@
     {
       "id": "chart_interpret.explain",
       "version": "4.1.0",
-      "sha256": "625dc118708831ef1cc8fe45ee4c48c4af054a2c4a4a95e7c41c646ec98f86f9",
+      "sha256": "2c3e3da442b874cc77a1a4f948c12f4c1527c4917add5c3baabaf8d5386e4967",
       "purpose": "chart_interpret",
       "output_schema": null,
       "owner": "ai-team",
       "risk": "financial_explanation",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "user_request",
           "label": "사용자 요청"
@@ -81,12 +93,16 @@
     {
       "id": "elicit.current_challenge",
       "version": "4.0.0",
-      "sha256": "5c9e5dbdb90c093fc602b0304a355f5f34812f80fdba121063d7fccb5fb2103a",
+      "sha256": "fc84db0fa3a758327baebccb54d5619fe9c8b8b1ef5a3e31d195869717143016",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
       "risk": "qualitative_collection",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "current_form",
           "label": "현재 항목의 최신 폼 요약"
@@ -108,12 +124,16 @@
     {
       "id": "elicit.current_situation",
       "version": "4.0.0",
-      "sha256": "93c661cb8ab999a00d3ff22e570991f40ff26e79321a9fc7692403217d97ebc3",
+      "sha256": "d2223a0b9be6fc27ade96e6546901f15c80772d583cd7462d81c1c4ec9fbef14",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
       "risk": "qualitative_collection",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "current_form",
           "label": "현재 항목의 최신 폼 요약"
@@ -135,12 +155,16 @@
     {
       "id": "elicit.future_goals",
       "version": "4.0.0",
-      "sha256": "ceffd507ee3cc0ecc50a5249410df256ad6b2dfc97bae9c55df11df658bc4e01",
+      "sha256": "20a772df83f63f87abb9b8aec68c609a75897146e2d6fe34653240f96ae38f38",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
       "risk": "qualitative_collection",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "current_form",
           "label": "현재 항목의 최신 폼 요약"
@@ -162,12 +186,16 @@
     {
       "id": "elicit.invest_philosophy",
       "version": "4.0.0",
-      "sha256": "ac1068d6f9f9f7fc7edaaf420c133dfa06bbf231fb5a58afd9bfe30d5bf42c80",
+      "sha256": "5c402760a66f037ce4b176029fbdf8d20d7e87effe323915f5ff6d788fd68121",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
       "risk": "qualitative_collection",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "current_form",
           "label": "현재 항목의 최신 폼 요약"
@@ -189,12 +217,16 @@
     {
       "id": "elicit.past_experience",
       "version": "4.0.0",
-      "sha256": "7702018e460177dfc99f32862771bc9a6b12fb83936a5aadbb8bab1ba774d9b4",
+      "sha256": "6bc47e91038757abb2e5a1c9ba4311c1fa2d20ba84bc47b803ad33db577bcdac",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
       "risk": "qualitative_collection",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "current_form",
           "label": "현재 항목의 최신 폼 요약"
@@ -216,12 +248,16 @@
     {
       "id": "elicit.respond",
       "version": "4.0.0",
-      "sha256": "eb5a3d10e153ee2c3dd75514d1c5409beb2d0a3ed044e3bdc83e86f1eb3a46b0",
+      "sha256": "5369a770494926a77c71e2cc70ce05417c693aa8799d56c39da491fc1f60520d",
       "purpose": "elicit",
       "output_schema": null,
       "owner": "ai-team",
       "risk": "standard",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "conversation_context",
           "label": "이전 대화 문맥"
@@ -235,12 +271,16 @@
     {
       "id": "elicit.values",
       "version": "4.0.0",
-      "sha256": "a9848f4b2b79ae4a01ac62c7a94ba244d5b0a3aeb8f5896923be4c4a9c235aa5",
+      "sha256": "49d8dac17f9caa3814d37f6cea73148edadd53b35dc271dc91891f3fb85539a5",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
       "risk": "qualitative_collection",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "current_form",
           "label": "현재 항목의 최신 폼 요약"
@@ -262,12 +302,16 @@
     {
       "id": "error_review.analyze",
       "version": "4.0.0",
-      "sha256": "be3b4984b39be74b36819bf5dd1ce50219a7eb1dbf91c72f4e2e5909aaa96df2",
+      "sha256": "66bf12c6e26f0260f6e6581462e82918710e4b9e346f238b54ab028ac3244b83",
       "purpose": "error_review",
       "output_schema": "review_result",
       "owner": "ai-team",
       "risk": "financial_review",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "fields",
           "label": "검토할 입력 항목"
@@ -281,12 +325,16 @@
     {
       "id": "input_assist.extract",
       "version": "4.0.0",
-      "sha256": "63f61410c060b4c9b915bc9d31dd500eb962e220873b88adf7484b9e68e6b615",
+      "sha256": "2164b82dbc778b2ffeb26f0682d2d3b31240dcb4c52fca3278b1c5c603f5ed85",
       "purpose": "input_assist",
       "output_schema": "extract_result",
       "owner": "ai-team",
       "risk": "form_change",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "message",
           "label": "입력 요청"
@@ -312,12 +360,16 @@
     {
       "id": "input_assist.respond",
       "version": "4.0.0",
-      "sha256": "26f42122dd39c0d2246da529c7697f2cd2f312705c19bbfd32b5c5620b9a3980",
+      "sha256": "f2269589fd860a2fc72c14a9c78e2742439894c3aac7d05df21fcf0d80903a59",
       "purpose": "input_assist",
       "output_schema": null,
       "owner": "ai-team",
       "risk": "form_change",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "message",
           "label": "입력 요청"
@@ -335,12 +387,16 @@
     {
       "id": "input_assist.review",
       "version": "4.0.0",
-      "sha256": "6cb7670de941274005375b7b3546633380dde2c7ee5c96edcab87937fe99c93d",
+      "sha256": "3037861e47e7226c8e1f474fe1dd47f9aad2ddcda12b710f281270c2b93d910c",
       "purpose": "input_assist",
       "output_schema": "review_result",
       "owner": "ai-team",
       "risk": "form_change",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "message",
           "label": "입력 요청"
@@ -357,13 +413,17 @@
     },
     {
       "id": "planner.plan",
-      "version": "4.0.0",
-      "sha256": "1d9bca4d8f2ee3252750766056b8e115404aff5658c2a18ddeb7a504a846125f",
+      "version": "5.0.0",
+      "sha256": "eea9016683074ee09cfd952345562935cab0ac46de300d260d4583a772f23aae",
       "purpose": "planner",
       "output_schema": "planner_model_output",
       "owner": "ai-team",
       "risk": "orchestration",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "message",
           "label": "사용자 요청"
@@ -375,10 +435,6 @@
         {
           "key": "tasks",
           "label": "가능한 작업"
-        },
-        {
-          "key": "references",
-          "label": "조회 가능한 기준"
         },
         {
           "key": "context",
@@ -393,12 +449,16 @@
     {
       "id": "qa.answer",
       "version": "4.1.0",
-      "sha256": "8f1d7cff16ffe0c73d09d07b9a5b5edc4891018620a103faf008ee1990fe52ea",
+      "sha256": "21d2225f53616efd003f293e02464b4cee92ae9b005b0c919a7236ba3030c290",
       "purpose": "qa",
       "output_schema": null,
       "owner": "ai-team",
       "risk": "financial_explanation",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "question",
           "label": "사용자 질문"
@@ -436,12 +496,16 @@
     {
       "id": "qa.judge",
       "version": "4.1.0",
-      "sha256": "03c8b516a84b9330b41fd1a622281e2a8d994bda16fdfedd8097b3c541b7e512",
+      "sha256": "2258d72f7febe43d23efbe4daaed667bbdbf6025afb0bcf946614c8d1e6371e8",
       "purpose": "qa",
       "output_schema": "qa_judge_result",
       "owner": "ai-team",
       "risk": "standard",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "question",
           "label": "사용자 질문"
@@ -478,13 +542,17 @@
     },
     {
       "id": "qa.plan",
-      "version": "4.1.0",
-      "sha256": "6e34fca21e5144f01ecc4d4cc044dbd3206a5a73ba7d7c68c8c0c928f952e909",
+      "version": "5.0.0",
+      "sha256": "a5e5a767f43ef91804980e943c1496484769d0833f8982bec4eddba41bb109e5",
       "purpose": "qa",
       "output_schema": "qa_plan_result",
       "owner": "ai-team",
       "risk": "standard",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "question",
           "label": "사용자 질문"
@@ -508,18 +576,26 @@
         {
           "key": "feedback",
           "label": "보완할 점"
+        },
+        {
+          "key": "reference_options",
+          "label": "사용 가능한 기준 조회 도구"
         }
       ]
     },
     {
       "id": "summary.extract",
       "version": "4.0.0",
-      "sha256": "286a38172f62076ed9e97154b6587b1bb5230cc66dfa578dffe3f0870de1b98b",
+      "sha256": "c86339b105c552e6bf672b94b960828845bd46ae0fe142bb7ed1b386299dd24b",
       "purpose": "summary",
       "output_schema": "summary_candidate",
       "owner": "ai-team",
       "risk": "conversation_memory",
       "input_sections": [
+        {
+          "key": "screen_context",
+          "label": "현재 화면 안내"
+        },
         {
           "key": "source",
           "label": "대화 원문"
