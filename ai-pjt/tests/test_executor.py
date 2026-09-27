@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from core.model_contracts import ModelOutputBlockedError
 from core.runtime_instrumentation import RuntimeStage
@@ -114,6 +114,35 @@ def form_result(task_id: str, value: int = 2_500_000) -> dict:
 
 
 class SequentialExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_single_chart_answer_bypasses_composer_without_text_changes(self) -> None:
+        response = "  현재 은퇴 준비액이 부족합니다.\n\n소비 조정부터 검토하세요.  "
+        task = consumer_task("task-1", "interpret_chart", "chart_interpret")
+        task["depends_on"] = []
+        task["bindings"] = {}
+
+        async def chart(_: dict) -> dict:
+            return {
+                "task_id": "task-1",
+                "status": "completed",
+                "response": response,
+                "artifact": {"type": "text_response", "text": response},
+            }
+
+        composer = AsyncMock(return_value={"response": "재작성됨", "step_id": "lifetime-cashflow", "action": None})
+        report = await execute_route_plan(
+            plan={"tasks": [task], "request_mode": "presentation_entry"},
+            request_id="request-test",
+            step_id="lifetime-cashflow",
+            customer_info={},
+            agent_executors={"chart_interpret": chart},
+            tool_executors={},
+            instrumentation=bound_fake_instrumentation()[0],
+            response_composer=composer,
+        )
+
+        composer.assert_not_awaited()
+        self.assertEqual(report.output["response"], response)
+
     async def test_validated_artifact_is_bound_to_two_consumers(self) -> None:
         calls: list[tuple[str, dict]] = []
 

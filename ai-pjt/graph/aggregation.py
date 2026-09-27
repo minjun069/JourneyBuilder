@@ -93,6 +93,7 @@ def aggregate_task_results(
     reviews: list[dict[str, Any]] = []
     elicitations: list[dict[str, Any]] = []
     completed_count = 0
+    direct_chart_response: str | None = None
 
     for task in tasks:
         if not isinstance(task, Mapping):
@@ -120,6 +121,8 @@ def aggregate_task_results(
         artifact = result.get("artifact")
         if isinstance(response, str) and response.strip():
             responses.append(response.strip())
+            if task.get("type") == "interpret_chart":
+                direct_chart_response = response
         elif isinstance(artifact, Mapping) and artifact.get("type") == "text_response":
             text = artifact.get("text")
             if isinstance(text, str) and text.strip():
@@ -141,8 +144,14 @@ def aggregate_task_results(
     elif tasks and completed_count == 0:
         responses.append(failure_response("all_tasks_failed"))
 
+    response_text = (
+        direct_chart_response
+        if direct_chart_response is not None
+        and len(tasks) == 1 and completed_count == 1 and outcome_reason is None
+        else "\n\n".join(_deduplicate(responses))
+    )
     output = {
-        "response": "\n\n".join(_deduplicate(responses))
+        "response": response_text
         or "요청을 처리할 수 있는 결과를 만들지 못했습니다. 내용을 확인해 다시 요청해 주세요.",
         "step_id": step_id,
         "action": action,
