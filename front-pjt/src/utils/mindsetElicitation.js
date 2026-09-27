@@ -1,3 +1,5 @@
+import { cleanMindsetText } from './mindsetText.js'
+
 export const MINDSET_FIELDS = [
   { field: 'values', formKey: 'values', label: '가치관' },
   { field: 'past_experience', formKey: 'pastExperience', label: '과거 경험' },
@@ -28,6 +30,16 @@ export function mindsetRequestState(state, event = 'answer') {
     answer_count: state.records[state.activeField].answerCount,
     completed_fields: [...state.completedFields],
   }
+}
+
+export function cleanMindsetForm(form) {
+  const cleaned = { ...form }
+  for (const { field, formKey } of MINDSET_FIELDS) {
+    if (typeof cleaned[formKey] === 'string') {
+      cleaned[formKey] = cleanMindsetText(cleaned[formKey], field)
+    }
+  }
+  return cleaned
 }
 
 export function isMindsetResult(result) {
@@ -61,7 +73,11 @@ export function applyMindsetResult(state, form, result, requestId, receipts) {
     throw new Error('경제 관념 응답의 답변 횟수가 올바르지 않습니다.')
   }
   const { formKey } = MINDSET_FIELDS.find(({ field }) => field === result.field)
-  form[formKey] = result.summary
+  const summary = cleanMindsetText(result.summary, result.field)
+  if (!isMindsetResult({ ...result, summary })) {
+    throw new Error('경제 관념 요약을 확인하지 못했습니다. 다시 시도해주세요.')
+  }
+  form[formKey] = summary
   record.answerCount = result.answer_count
   record.status = result.status
   record.completionReason = result.completion_reason

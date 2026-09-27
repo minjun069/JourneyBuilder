@@ -1,5 +1,5 @@
 {
-  "release": "2026-09-27.1",
+  "release": "2026-09-27.2",
   "prompts": [
     {
       "id": "aggregator.compose",
@@ -93,7 +93,7 @@
     {
       "id": "elicit.current_challenge",
       "version": "4.0.0",
-      "sha256": "fc84db0fa3a758327baebccb54d5619fe9c8b8b1ef5a3e31d195869717143016",
+      "sha256": "4901ae026b7950b689ae01b0ba520251fa608d34f3fd33a9899b3de636ce2bc7",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
@@ -124,7 +124,7 @@
     {
       "id": "elicit.current_situation",
       "version": "4.0.0",
-      "sha256": "d2223a0b9be6fc27ade96e6546901f15c80772d583cd7462d81c1c4ec9fbef14",
+      "sha256": "d84ca26494c5d88b738efea99a816e22fa42d88718cdea6ab520c3f7cca5f789",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
@@ -155,7 +155,7 @@
     {
       "id": "elicit.future_goals",
       "version": "4.0.0",
-      "sha256": "20a772df83f63f87abb9b8aec68c609a75897146e2d6fe34653240f96ae38f38",
+      "sha256": "ff14ecfeb07acd9ab5fa6df1b393a528d3fc3eb7b5ab5db47c8c3bb8fc832aad",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
@@ -186,7 +186,7 @@
     {
       "id": "elicit.invest_philosophy",
       "version": "4.0.0",
-      "sha256": "5c402760a66f037ce4b176029fbdf8d20d7e87effe323915f5ff6d788fd68121",
+      "sha256": "9653a4895985ea1ee54946ad983dcd7aba9e4728fa5af9d740a17138d5355238",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
@@ -217,7 +217,7 @@
     {
       "id": "elicit.past_experience",
       "version": "4.0.0",
-      "sha256": "6bc47e91038757abb2e5a1c9ba4311c1fa2d20ba84bc47b803ad33db577bcdac",
+      "sha256": "9dd5408788ac6492130710ae414a0722fd394821a050c3d2100e7fa13d3543be",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",
@@ -271,7 +271,7 @@
     {
       "id": "elicit.values",
       "version": "4.0.0",
-      "sha256": "49d8dac17f9caa3814d37f6cea73148edadd53b35dc271dc91891f3fb85539a5",
+      "sha256": "3659c832e9183739d749ff15814103c7081ea78c84ac018f9f5b62a4e1201738",
       "purpose": "elicit",
       "output_schema": "mindset_elicitation_model_output",
       "owner": "ai-team",

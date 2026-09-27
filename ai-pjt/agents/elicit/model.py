@@ -11,6 +11,7 @@ from typing import Literal
 from core.llm import llm
 from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 from core.prompt_inputs import conversation_for_model
+from core.mindset_text import clean_mindset_context, clean_mindset_text
 from prompts import get_prompt
 
 
@@ -28,10 +29,10 @@ FIELD_PROMPTS = {
 class MindsetModelOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    response: StrictStr = Field(min_length=1)
-    summary: StrictStr
-    sufficient: StrictBool
-    turn_kind: Literal["answer", "clarification", "skip"]
+    response: StrictStr = Field(min_length=1, description="사용자에게 보여줄 자연어 답변과 후속 질문만. 필드명·판단값·JSON 제외.")
+    summary: StrictStr = Field(description="현재 항목의 경제관념 요약 문장만. values: 등 필드명과 sufficient·turn_kind 제외.")
+    sufficient: StrictBool = Field(description="조기 종료를 위한 내부 판단값. 표시 문구에 복제하지 않음.")
+    turn_kind: Literal["answer", "clarification", "skip"] = Field(description="회차 계산용 내부 분류. 표시 문구에 복제하지 않음.")
 
 
 async def collect_answer(
@@ -40,8 +41,8 @@ async def collect_answer(
 ) -> MindsetModelOutput:
     prompt = FIELD_PROMPTS[field]
     payload = {
-        "current_form": {field: summary},
-        "conversation_context": conversation_for_model(conversation_context),
+        "current_form": {field: clean_mindset_text(summary, preferred=field)},
+        "conversation_context": clean_mindset_context(conversation_for_model(conversation_context)),
         "user_message": message,
         "last_answer": answer_count == 2,
     }
