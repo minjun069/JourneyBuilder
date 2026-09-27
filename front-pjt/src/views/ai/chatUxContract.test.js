@@ -18,9 +18,12 @@ test('새 AI 답변은 공통 애니메이션 큐와 안전한 Markdown 렌더�
   assert.match(view, /addSentenceLineBreaks/)
 })
 
-test('폼 저장은 결정론적 검증 뒤 save Error Review만 호출한다', () => {
+test('운영 일시 중지 중에는 결정론적 검증 뒤 Error Review 없이 저장한다', () => {
   const submit = view.slice(view.indexOf('async function submitForm'), view.indexOf('async function confirmEmptyForm'))
-  assert.ok(submit.indexOf('validateConsultationForm') < submit.indexOf('requestErrorReview'))
+  assert.match(view, /const ERROR_REVIEW_ENABLED = false/)
+  assert.ok(submit.indexOf('validateConsultationForm') < submit.indexOf('if (ERROR_REVIEW_ENABLED)'))
+  assert.match(submit, /if \(ERROR_REVIEW_ENABLED\) \{\s*await continueSaveAfterOptionalReview\(/)
+  assert.match(submit, /\} else \{\s*await persistFormAndAdvance\(nextStepId\)/)
   assert.doesNotMatch(view, /입력값 검토|requestErrorReview\(['"]user_request/)
   assert.doesNotMatch(store, /reviewTrigger|review_trigger/)
 })
