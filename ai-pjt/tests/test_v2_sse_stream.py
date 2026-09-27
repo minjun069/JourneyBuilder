@@ -1,10 +1,12 @@
 import asyncio
 import json
+from copy import deepcopy
 from hashlib import sha256
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 
@@ -456,6 +458,65 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["error"]["code"], "SERVICE_UNAUTHORIZED")
+
+    @patch("transport.chat_service.get_callbacks", return_value=[])
+    async def test_browser_mindset_forms_reach_real_graph_without_model_calls(self, _callbacks):
+        from agents.elicit import service
+        from agents.elicit.builder import build_graph as build_elicit
+        from core.mindset_elicitation import opening_question
+        from graph.builder import build_graph
+        from tests.test_graph_execution import all_agent_graphs
+
+        fixture = json.loads((Path(__file__).resolve().parents[2]
+                              / "contract-fixtures/ai-lifecycle/v2/mindset-elicitation.json").read_text())
+        planner = Mock(side_effect=AssertionError("start must not call planner"))
+        composer = AsyncMock(side_effect=AssertionError("start must not call composer"))
+        agents = all_agent_graphs()
+        agents["elicit"] = build_elicit()
+        app.state.chat_graph = build_graph(
+            None, planner=planner, response_composer=composer, agent_graphs=agents,
+            instrumentation=fake_instrumentation()[0],
+        )
+        for case in fixture["form_cases"]:
+            with self.subTest(case=case["id"]):
+                app.state.context_api = FakeContextAPI()
+                app.state.context_api.read_context = AsyncMock(return_value=deepcopy(EMPTY_CONTEXT))
+                payload = v2_request().model_dump(mode="json")
+                payload.update(
+                    step_id=fixture["step_id"], request_mode=fixture["request_mode"],
+                    elicitation_state=fixture["request_cases"][0]["state"],
+                    customer_info={"saved_data": {}, "current_form": case["current_form"]},
+                )
+                with patch("main.settings.ai_service_bearer_token", "test-token"), \
+                     patch.object(service, "collect_answer", new_callable=AsyncMock) as model:
+                    response = await self._post(payload, authorization="Bearer test-token")
+                    model.assert_not_awaited()
+                self.assertEqual(response.status_code, 200, response.text)
+                events = [parse_frame(frame) for frame in response.text.strip().split("\n\n")]
+                self.assertEqual([event for event, _ in events], ["start", "done"])
+                output = events[-1][1]["output"]
+                self.assertEqual(output["response"], opening_question("values", payload["customer_info"]))
+                self.assertEqual(output["elicitation"]["summary"], case["summary"])
+                self.assertEqual(output["elicitation"]["answer_count"], 0)
+                self.assertIsNone(output["action"])
+        planner.assert_not_called()
+        composer.assert_not_awaited()
+
+    async def test_model_level_mindset_errors_return_422_instead_of_crashing(self):
+        for value in (42, False, [], {}):
+            with self.subTest(value=value):
+                payload = v2_request().model_dump(mode="json")
+                payload.update(
+                    step_id="financial-mindset", request_mode="mindset_elicitation",
+                    elicitation_state={"event": "start", "field": "values",
+                                       "answer_count": 0, "completed_fields": []},
+                    customer_info={"saved_data": {}, "current_form": {"values": value}},
+                )
+                with patch("main.settings.ai_service_bearer_token", "test-token"):
+                    response = await self._post(payload, authorization="Bearer test-token")
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(response.json()["error"]["code"], "REQUEST_SCHEMA_INVALID")
+                self.assertNotIn("current mindset summary", response.text)
 
     @patch("transport.chat_service.get_callbacks", return_value=[])
     async def test_valid_request_returns_v2_event_stream(self, _callbacks):

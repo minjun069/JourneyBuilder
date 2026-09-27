@@ -88,6 +88,9 @@ def current_summary(customer_info: Mapping[str, Any], field: str) -> str:
     if not isinstance(form, Mapping):
         raise ValueError("mindset collection requires the current form")
     value = form.get(field, "")
+    # The browser's canonical form mapper represents an empty text field as null.
+    if value is None:
+        return ""
     if not isinstance(value, str):
         raise ValueError("current mindset summary must be text")
     return value
