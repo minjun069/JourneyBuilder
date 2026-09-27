@@ -338,7 +338,7 @@ class QARecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             planned["questions"],
             [{"question": "유동성 중시에서 유동성이란?", "need_retrieval": True,
-              "query": "유동성 중시 유동성 정의"}],
+              "query": "유동성 중시 유동성 정의", "reference_id": None, "reference_age": None}],
         )
         plan_chain.ainvoke.assert_awaited_once()
 
