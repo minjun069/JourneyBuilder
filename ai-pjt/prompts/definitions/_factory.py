@@ -25,5 +25,6 @@ def define_prompt(
         required_input_keys=frozenset(key for key, _label in sections),
         output_schema=output_schema,
         risk=risk,
-        input_sections=sections,
+        optional_input_keys=frozenset({"screen_context"}),
+        input_sections=(("screen_context", "현재 화면 안내"), *sections),
     )

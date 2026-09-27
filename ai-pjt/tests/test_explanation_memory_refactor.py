@@ -101,7 +101,8 @@ class CompactReviewTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["suggested_value"], expected)
 
     async def test_service_passes_only_compact_inputs_and_restores_current_value(self):
-        async def fake_review(*, prompt_payload, current_form):
+        async def fake_review(*, prompt_payload, current_form, step_id):
+            self.assertEqual(step_id, "basic-info")
             self.assertEqual(set(prompt_payload), {"fields", "review_rules"})
             target = next(field for field in prompt_payload["fields"] if field["value"] == 95)
             return ReviewResult(items=[ReviewItem(field_ref=target["ref"], reason="종료 나이를 확인하세요")])

@@ -47,7 +47,7 @@ async def collect_answer(
     }
     result = await secure_ainvoke(
         llm.with_structured_output(MindsetModelOutput),
-        prompt_messages(prompt, payload),
+        prompt_messages(prompt, payload, step_id="financial-mindset"),
         purpose=ModelPurpose.ELICIT,
         operation_name=prompt.prompt_id,
         sensitive_payload=payload,
@@ -60,6 +60,7 @@ async def respond(
     *,
     message: str,
     conversation_context: Mapping[str, Any],
+    step_id: str,
 ) -> str:
     context = conversation_for_model(conversation_context)
     result = await secure_ainvoke(
@@ -67,7 +68,7 @@ async def respond(
         prompt_messages(RESPOND_PROMPT, {
             "conversation_context": context,
             "user_message": message,
-        }),
+        }, step_id=step_id),
         purpose=ModelPurpose.ELICIT,
         operation_name="elicit.respond",
         sensitive_payload={

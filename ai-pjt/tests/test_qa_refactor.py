@@ -103,7 +103,11 @@ class QAFlowTests(unittest.IsolatedAsyncioTestCase):
             events.append(f"search:{query}")
             return [query]
 
-        def payload(prompt, value):
+        def payload(prompt, value, *, step_id=None):
+            step_id = step_id if step_id is not None else value.get("step_id")
+            if step_id is not None:
+                from prompts.screens import screen_context
+                value = {**value, "screen_context": screen_context(step_id)}
             prompt.validate_payload(value)
             return value
 
@@ -191,6 +195,7 @@ class QAFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 3)
         self.assertEqual(set(calls[0][1]), {
             "question", "user_message", "conversation", "report", "step_id", "feedback",
+            "reference_options", "screen_context",
         })
         generated, reviewed = calls[1][1], calls[2][1]
         self.assertEqual(generated["customer_info"], {"current_form": {"age": 55}})

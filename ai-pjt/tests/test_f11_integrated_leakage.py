@@ -162,6 +162,11 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
         model = RecordingAsyncModel()
 
         async def agent_executor(payload: dict) -> dict:
+            # Runtime handles stay outside model/checkpoint payloads, as in the production adapter.
+            payload = {
+                key: value for key, value in payload.items()
+                if key not in {"tool_call_budget", "tool_audit_sink"}
+            }
             task_type = str(payload["task"]["type"])
             purpose = TASK_MODEL_PURPOSE.get(task_type)
             if purpose is not None:

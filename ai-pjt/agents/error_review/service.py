@@ -41,6 +41,7 @@ async def analyze_review_items(state: ChatState) -> tuple[Any, list[dict[str, An
     result = await review_draft(
         prompt_payload=prompt_payload,
         current_form=current_form,
+        step_id=state["step_id"],
     )
     validated_items = [
         item for raw in result.items

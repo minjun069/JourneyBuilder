@@ -9,6 +9,8 @@ from typing import Any
 from graph.runtime_types import RuntimeExecutor
 from graph.task_contracts import failed_task_result
 from tools.output_policy import validate_form_update_contract
+from tools.agent_tools import bind_agent_tools
+from tools.runtime import FunctionToolRuntime
 
 
 def default_agent_graphs() -> dict[str, Any]:
@@ -26,7 +28,9 @@ def default_agent_graphs() -> dict[str, Any]:
     }
 
 
-def build_agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
+def build_agent_executor(
+    agent_name: str, agent_graph: Any, *, tool_runtime: FunctionToolRuntime | None = None,
+) -> RuntimeExecutor:
     """Adapt one Agent package graph to the runtime executor contract."""
 
     async def execute(payload: dict[str, Any]) -> Mapping[str, Any]:
@@ -47,7 +51,8 @@ def build_agent_executor(agent_name: str, agent_graph: Any) -> RuntimeExecutor:
             ),
             "request_id": payload.get("request_id"),
         }
-        result = await agent_graph.ainvoke(agent_state)
+        with bind_agent_tools(tool_runtime, agent_name, payload):
+            result = await agent_graph.ainvoke(agent_state)
         if (
             agent_name == "input_assist"
             and isinstance(result, Mapping)

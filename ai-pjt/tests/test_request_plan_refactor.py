@@ -4,7 +4,6 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from graph.request_plan import compile_request_plan
-from graph.task_catalog import binding_expectations_for
 from guardrails.plan_policy import evaluate_route_plan
 
 
@@ -26,7 +25,7 @@ class RequestPlanTests(unittest.TestCase):
             registered_tool_capabilities=tools,
         )
 
-    def test_expanded_plan_failure_does_not_silently_drop_form_change_for_qa(self):
+    def test_planner_reference_fields_are_rejected_without_partial_qa_recovery(self):
         from copy import deepcopy
 
         request = {"status": "executable", "requests": [
@@ -46,7 +45,7 @@ class RequestPlanTests(unittest.TestCase):
         self.assertEqual(result.plan["tasks"], [])
         self.assertEqual(len(calls), 2)
         self.assertEqual(result.issues[0].code, "INVALID_REQUEST_PLAN")
-        self.assertIn("세 작업", calls[1]["validation_feedback"][0]["message"])
+        self.assertIn("작업 종류와 설명만", calls[1]["validation_feedback"][0]["message"])
         self.assertFalse(any(item.get("recovery") == "single_qa_plan" for item in result.diagnostics))
 
     def test_compile_failure_then_provider_failure_cannot_recover_to_partial_qa(self):
@@ -88,22 +87,20 @@ class RequestPlanTests(unittest.TestCase):
         self.assertEqual(plan["tasks"][0]["description"], description)
         self.assertEqual(plan["tasks"][0]["bindings"], {})
 
-    def test_one_lookup_is_shared_with_complete_runtime_bindings(self):
+    def test_semantic_requests_do_not_generate_reference_tasks(self):
         requests = [
-            {"type": kind, "description": "가구 평균 식비 설명과 변경 제안",
-             "reference_id": "household_monthly_expense_food_living_avg"}
+            {"type": kind, "description": "가구 평균 식비 설명과 변경 제안"}
             for kind in ("answer_question", "propose_form_change")
         ]
         plan = compile_request_plan({"status": "executable", "requests": requests})
-        self.assertEqual(len(plan["tasks"]), 3)
-        for task in plan["tasks"][1:]:
-            self.assertEqual(task["depends_on"], ["task-1"])
-            self.assertEqual(set(task["bindings"]), set(binding_expectations_for(task)))
-            self.assertEqual({item["task_id"] for item in task["bindings"].values()}, {"task-1"})
+        self.assertEqual(len(plan["tasks"]), 2)
+        for task in plan["tasks"]:
+            self.assertEqual(task["depends_on"], [])
+            self.assertEqual(task["bindings"], {})
         self.assertTrue(evaluate_route_plan(plan, step_id="expenses", registered_tool_capabilities=("lookup_reference_value",)).allowed)
-        self.assertFalse(evaluate_route_plan(plan, step_id="expenses", registered_tool_capabilities=()).allowed)
+        self.assertTrue(evaluate_route_plan(plan, step_id="expenses", registered_tool_capabilities=()).allowed)
 
-    def test_age_sensitive_reference_is_not_guessed(self):
+    def test_reference_selection_is_not_part_of_planner_contract(self):
         with self.assertRaises(ValueError):
             compile_request_plan({"status": "executable", "requests": [{
                 "type": "answer_question", "description": "부채상환 기준",
@@ -117,11 +114,11 @@ class RequestPlanTests(unittest.TestCase):
                     "type": "answer_question", "description": "설명", **extra,
                 }]})
 
-    def test_expanded_plan_respects_three_task_budget(self):
+    def test_request_plan_respects_three_task_budget(self):
         with self.assertRaises(ValueError):
             compile_request_plan({"status": "executable", "requests": [
-                {"type": "answer_question", "description": "기준 설명", "reference_id": reference, "reference_age": 45}
-                for reference in ("debt_service_ratio_max", "household_balance_max")
+                {"type": "answer_question", "description": "질문 설명"}
+                for _ in range(4)
             ]})
 
 

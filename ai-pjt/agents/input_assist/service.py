@@ -132,7 +132,7 @@ def _sensitive_payload(state: Mapping[str, Any]) -> dict:
 async def _extract(state: InputAssistState) -> dict:
     fields, items, payload = _form_context(state)
     result = await secure_ainvoke(
-        extract_chain, prompt_messages(EXTRACT_PROMPT, payload),
+        extract_chain, prompt_messages(EXTRACT_PROMPT, payload, step_id=state["step_id"]),
         purpose=ModelPurpose.INPUT_ASSIST, operation_name="input_assist.extract",
         sensitive_payload=_sensitive_payload(state), prompt=EXTRACT_PROMPT,
     )
@@ -337,7 +337,7 @@ async def _review(state: InputAssistState) -> dict:
     result = await secure_ainvoke(
         review_chain, prompt_messages(REVIEW_PROMPT, {
             "message": state["message"], "changes": state["review_candidates"], "reference": _reference_for_model(state),
-        }),
+        }, step_id=state["step_id"]),
         purpose=ModelPurpose.INPUT_ASSIST, operation_name="input_assist.review",
         sensitive_payload=_sensitive_payload(state), prompt=REVIEW_PROMPT,
     )
@@ -366,7 +366,7 @@ async def _respond(state: InputAssistState) -> dict:
         llm, prompt_messages(RESPOND_PROMPT, {
             "message": state["message"], "changes": [item["description"] for item in state["candidates"]],
             "questions": state["questions"],
-        }), purpose=ModelPurpose.INPUT_ASSIST, operation_name="input_assist.respond",
+        }, step_id=state["step_id"]), purpose=ModelPurpose.INPUT_ASSIST, operation_name="input_assist.respond",
         sensitive_payload=_sensitive_payload(state), prompt=RESPOND_PROMPT,
     )
     changes = [item["change"] for item in state["candidates"]]

@@ -50,6 +50,7 @@ class PromptRegistryTests(unittest.TestCase):
             "conversation": {},
             "report": {},
             "feedback": "",
+            "reference_options": [],
         }
         self.assertEqual(prompt.validate_payload(payload), payload)
         with self.assertRaisesRegex(ValueError, "missing keys"):
@@ -73,12 +74,13 @@ class PromptRegistryTests(unittest.TestCase):
             "conversation": {},
             "report": {},
             "feedback": "",
+            "reference_options": [],
         })
 
         self.assertIn(COMMON_PRINCIPLES, answer.system_text)
         self.assertIn(ADVISOR_PERSONA, answer.system_text)
         self.assertIn(COMMON_PRINCIPLES, classifier.system_text)
-        self.assertNotIn(ADVISOR_PERSONA, classifier.system_text)
+        self.assertIn(ADVISOR_PERSONA, classifier.system_text)
         self.assertIn("[사용자 질문]", rendered)
         self.assertNotIn("runtime_payload", rendered)
 

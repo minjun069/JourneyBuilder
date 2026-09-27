@@ -202,7 +202,7 @@ async def compose_aggregate_response(
             )
             raw = await secure_ainvoke(
                 llm.with_structured_output(AggregatorModelOutput),
-                prompt_messages(prompt, payload),
+                prompt_messages(prompt, payload, step_id=step_id),
                 purpose=ModelPurpose.AGGREGATOR,
                 operation_name=prompt.prompt_id,
                 sensitive_payload=(

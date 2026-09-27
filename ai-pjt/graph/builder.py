@@ -19,6 +19,7 @@ from graph.plan_node import build_plan_node
 from graph.planner import plan_tasks_with_model
 from graph.state import ChatState
 from tools.output_policy import validate_form_update
+from tools.runtime import FunctionToolRuntime
 
 
 def build_graph(
@@ -28,6 +29,7 @@ def build_graph(
     planner=plan_tasks_with_model,
     agent_graphs: Mapping[str, Any] | None = None,
     tool_executors: Mapping[str, RuntimeExecutor] | None = None,
+    tool_runtime: FunctionToolRuntime | None = None,
     response_composer: AggregateComposer | None = compose_aggregate_response,
 ):
     """Wire planner, executor, validation, and context nodes."""
@@ -39,7 +41,7 @@ def build_graph(
         default_agent_graphs() if agent_graphs is None else agent_graphs
     )
     agent_executors = {
-        name: build_agent_executor(name, graph)
+        name: build_agent_executor(name, graph, tool_runtime=tool_runtime)
         for name, graph in active_graphs.items()
     }
     validate_agent_executor_registry(agent_executors)

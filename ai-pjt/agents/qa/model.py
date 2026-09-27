@@ -14,6 +14,8 @@ class QuestionPlan(BaseModel):
     question: str = Field(min_length=1)
     need_retrieval: bool
     query: str | None = None
+    reference_id: str | None = None
+    reference_age: int | None = Field(default=None, ge=0, le=120)
 
     @model_validator(mode="after")
     def validate_query(self):

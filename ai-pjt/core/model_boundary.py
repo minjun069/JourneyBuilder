@@ -69,10 +69,17 @@ def secure_system_prompt(role_prompt: str) -> str:
     return f"{DATA_HANDLING_PROMPT}\n{role_prompt.strip()}"
 
 
-def prompt_messages(prompt: PromptSpec, payload: Mapping[str, Any]) -> list[Any]:
+def prompt_messages(
+    prompt: PromptSpec, payload: Mapping[str, Any], *, step_id: str | None = None,
+) -> list[Any]:
     """Render a static System message and schema-checked readable sections."""
 
     from langchain_core.messages import HumanMessage, SystemMessage
+    from prompts.screens import screen_context
+
+    active_step = step_id if step_id is not None else payload.get("step_id")
+    if active_step is not None:
+        payload = {**payload, "screen_context": screen_context(active_step)}
 
     human_content = render_prompt_payload(prompt, payload)
     return _PromptMessages([

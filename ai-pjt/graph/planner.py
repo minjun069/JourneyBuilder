@@ -21,8 +21,6 @@ class PlannerTaskOutput(BaseModel):
 
     type: str
     description: str = Field(min_length=1)
-    reference_id: str | None = None
-    reference_age: int | None = Field(default=None, ge=0, le=120)
 
 
 class PlannerModelOutput(BaseModel):
@@ -64,15 +62,8 @@ def invoke_planner_model(
         PlannerModelOutput,
         prompt_messages(PLANNER_PROMPT, {
             "tasks": route_constraints["task_type_guidance"],
-            "references": route_constraints.get("reference_options", []),
             "step_id": step_id,
-            "context": {
-                **conversation_for_model(context),
-                "current_age": next((
-                    value for path, value in context.get("confirmed_facts", {}).items()
-                    if path in {"age", "basic_info.age"}
-                ), None),
-            },
+            "context": conversation_for_model(context),
             "feedback": context.get("validation_feedback", []),
             "message": message,
         }),

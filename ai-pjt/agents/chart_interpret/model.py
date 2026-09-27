@@ -40,7 +40,7 @@ async def explain_chart(
             "response_mode": "initial_entry" if entry else "detail",
             "previous_response": previous_response,
             "feedback": list(feedback),
-        }),
+        }, step_id=state["step_id"]),
         purpose=ModelPurpose.CHART_INTERPRET,
         operation_name="chart_interpret.generate",
         sensitive_payload={

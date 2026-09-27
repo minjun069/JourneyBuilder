@@ -398,7 +398,7 @@ class ContextAwarePlanningTests(unittest.TestCase):
             "lookup_reference_value",
             constraints["task_type_guidance"],
         )
-        self.assertTrue(constraints["reference_options"])
+        self.assertNotIn("reference_options", constraints)
         self.assertNotIn("elicit_enabled", constraints)
 
     def test_planner_receives_only_bounded_context_and_every_task_is_routed(self) -> None:
