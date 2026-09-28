@@ -197,6 +197,7 @@ def secure_structured_invoke(
     sensitive_payload: Any | None = None,
     max_attempts: int = 2,
     prompt: PromptSpec | None = None,
+    method: str | None = None,
 ) -> StructuredModel:
     """Invoke a provider-enforced schema with one bounded retry by default.
 
@@ -215,7 +216,8 @@ def secure_structured_invoke(
         raise ValueError("max_attempts must be between 1 and 2")
 
     try:
-        runnable = model.with_structured_output(schema)
+        options = {"method": method} if method is not None else {}
+        runnable = model.with_structured_output(schema, **options)
     except Exception as error:  # noqa: BLE001 - normalize provider adapters
         raise StructuredModelOutputError(
             "model does not support the required structured-output contract"

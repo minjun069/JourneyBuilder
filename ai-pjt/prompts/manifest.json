@@ -413,8 +413,8 @@
     },
     {
       "id": "planner.plan",
-      "version": "5.0.0",
-      "sha256": "eea9016683074ee09cfd952345562935cab0ac46de300d260d4583a772f23aae",
+      "version": "5.0.1",
+      "sha256": "22cea19d06cbc8ceb2a50951d4d5bd2706bb806f7409e6bd14c06e27f2b4f0fa",
       "purpose": "planner",
       "output_schema": "planner_model_output",
       "owner": "ai-team",
