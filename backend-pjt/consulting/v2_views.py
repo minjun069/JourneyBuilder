@@ -277,7 +277,7 @@ class V2MessageStreamView(V2APIView):
                     session_id=locked_session.id,
                     request_id=request_id,
                 )
-                ai_payload = token_vault.tokenize(raw_ai_payload)
+                ai_payload = token_vault.tokenize_request(raw_ai_payload)
                 ai_payload.pop('payload_digest', None)
                 ai_payload_digest = canonical_digest(ai_payload)
                 ai_payload['payload_digest'] = ai_payload_digest

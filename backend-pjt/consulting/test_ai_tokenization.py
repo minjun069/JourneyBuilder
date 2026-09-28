@@ -30,6 +30,48 @@ def vault(**overrides):
 
 
 class ReferenceTokenVaultTests(SimpleTestCase):
+    def test_request_identity_survives_phone_and_resident_number_patterns(self):
+        for suffix in ('01012345678', '9001011234567'):
+            with self.subTest(suffix=suffix):
+                request_id = f'ai_req_aaaaaaaa{suffix}bbbbbbbbbbbbb'
+                token_vault = vault(request_id=request_id)
+                identity = {
+                    'request_id': request_id, 'session_id': 12,
+                    'thread_id': 'user-01012345678-session-12',
+                }
+                tokenized = token_vault.tokenize_request({
+                    **identity,
+                    'message': '유동성을 중시한다는게 무슨 뜻이죠?',
+                    'customer_info': {'current_form': {}},
+                })
+                self.assertEqual({key: tokenized[key] for key in identity}, identity)
+                self.assertEqual(token_vault.to_record()['tokens'], {})
+                for status in ('completed', 'failed'):
+                    terminal = {**identity, 'status': status}
+                    if status == 'completed':
+                        terminal['output'] = {'step_id': 'basic-info', 'response': '설명입니다.'}
+                    else:
+                        terminal['error'] = {'code': 'POLICY_BLOCKED', 'message': '요청을 확인해 주세요.'}
+                    self.assertEqual(token_vault.restore_terminal(terminal, step_id='basic-info'), terminal)
+
+    def test_request_identity_exemption_does_not_apply_to_user_content(self):
+        token_vault = vault()
+        original = {
+            'request_id': token_vault.request_id, 'session_id': 12,
+            'thread_id': 'user-3-session-12',
+            'message': '연락처 010-1234-5678, 월소득 350만원',
+            'customer_info': {'current_form': {
+                'request_id': '010-1234-5678', 'thread_id': '900101-1234567',
+            }},
+        }
+        tokenized = token_vault.tokenize_request(original)
+        rendered = json.dumps(tokenized, ensure_ascii=False)
+        for private_text in ('010-1234-5678', '900101-1234567', '350만원'):
+            self.assertNotIn(private_text, rendered)
+        self.assertEqual(token_vault.restore(tokenized), original)
+        with self.assertRaises(ReferenceTokenValidationError):
+            token_vault.tokenize_request({**original, 'request_id': 'another-request'})
+
     def test_runtime_policy_matches_shared_contract(self):
         contract = json.loads(CONTRACT_PATH.read_text(encoding='utf-8'))
 

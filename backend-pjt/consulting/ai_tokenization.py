@@ -180,6 +180,21 @@ class ReferenceTokenVault:
     def tokenize(self, payload: Any) -> Any:
         return self._tokenize_node(payload, path=())
 
+    def tokenize_request(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Tokenize a server-built request without rewriting its identity."""
+
+        self.assert_scope(
+            user_id=self._user_id,
+            session_id=payload.get('session_id'),
+            request_id=payload.get('request_id'),
+        )
+        identity = {
+            key: payload[key]
+            for key in ('request_id', 'session_id', 'thread_id')
+        }
+        content = {key: value for key, value in payload.items() if key not in identity}
+        return {**self.tokenize(content), **identity}
+
     def restore(self, payload: Any) -> Any:
         return self._restore_node(payload, path=())
 

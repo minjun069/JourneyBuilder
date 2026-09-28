@@ -137,7 +137,10 @@ class MindsetLifecycleTests(SimpleTestCase):
                 patches['AIRequestExecution.objects'].select_for_update.return_value.filter.return_value.first.return_value = None
                 patches['RedisLifecycleStore'].return_value.get_idempotency.return_value = None
                 patches['Message.objects.create'].return_value = SimpleNamespace(id=41)
-                patches['build_v2_ai_payload'].return_value = {'thread_id': 'user-3-session-12'}
+                patches['build_v2_ai_payload'].side_effect = lambda **kwargs: {
+                    'request_id': kwargs['request_id'], 'session_id': kwargs['session'].id,
+                    'thread_id': 'user-3-session-12',
+                }
                 patches['proxy_v2_ai_stream'].return_value = iter(())
                 body = browser(elicitation_state=state(event=event))
                 if event == 'start':

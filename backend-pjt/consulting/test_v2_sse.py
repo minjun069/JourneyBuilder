@@ -568,8 +568,13 @@ class V2MessageStreamViewTests(SimpleTestCase):
         create_user_message.return_value = SimpleNamespace(id=41, content='은퇴 준비를 알려줘')
         store = store_class.return_value
         store.get_idempotency.return_value = None
+        _new_request_id.return_value = 'ai_req_aaaaaaaa01012345678bbbbbbbbbbbbb'
+        _make_state.return_value = {
+            **processing_state(), 'request_id': _new_request_id.return_value,
+        }
         _build_payload.return_value = {
             **ai_payload(),
+            'request_id': _new_request_id.return_value,
             'message': '이메일은 gildong@example.com이고 월소득은 350만원입니다.',
             'customer_info': {
                 'saved_data': {'email': 'gildong@example.com'},
@@ -595,7 +600,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
         self.assertEqual(response['X-Accel-Buffering'], 'no')
         self.assertIn('event: start', body)
         create_user_message.assert_called_once()
-        store.save_active.assert_called_once_with(processing_state())
+        store.save_active.assert_called_once_with(_make_state.return_value)
         store.save_token_vault.assert_called_once()
         store.save_idempotency.assert_called_once()
         self.assertIs(
@@ -605,6 +610,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
         self.assertTrue(proxy_stream.call_args.kwargs['progress_events'])
         expire_stale.assert_called_once_with(stale_execution, store)
         upstream_payload = proxy_stream.call_args.args[1]
+        self.assertEqual(upstream_payload['request_id'], _new_request_id.return_value)
         rendered = json.dumps(upstream_payload, ensure_ascii=False)
         self.assertNotIn('gildong@example.com', rendered)
         self.assertNotIn('350만원', rendered)
