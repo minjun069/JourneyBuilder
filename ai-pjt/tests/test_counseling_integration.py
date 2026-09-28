@@ -213,6 +213,7 @@ class CounselingStartupTests(unittest.IsolatedAsyncioTestCase):
                     validate_runtime=Mock(), langfuse_enabled=False, masking_pseudonym_key_bytes=MASKING_KEY,
                     context_memory_top_k=5, context_embedding_batch_size=8,
                     counseling_rag_enabled=enabled, counseling_rag_timeout_seconds=7.0,
+                    plan_validation_enabled=enabled,
                 )
                 store = SimpleNamespace(setup=AsyncMock(), cleanup_closed_contexts=AsyncMock())
                 api = SimpleNamespace(cleanup_expired_executions=AsyncMock())
@@ -236,6 +237,7 @@ class CounselingStartupTests(unittest.IsolatedAsyncioTestCase):
                 build = stack.enter_context(patch.object(main, "build_graph", return_value=object()))
                 app = SimpleNamespace(state=SimpleNamespace())
                 async with main.lifespan(app):
+                    self.assertEqual(build.call_args.kwargs["plan_validation_enabled"], enabled)
                     composer = build.call_args.kwargs["response_composer"]
                     if enabled:
                         self.assertIs(composer.func, compose_aggregate_response)

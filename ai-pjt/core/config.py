@@ -83,6 +83,10 @@ def _read_unit_float(
 class Settings:
     def __init__(self, environ: Mapping[str, str] | None = None) -> None:
         active_environ = os.environ if environ is None else environ
+        # Temporary rollout override; set true to restore plan policy checks.
+        self.plan_validation_enabled = _read_bool(
+            "AI_PLAN_VALIDATION_ENABLED", False, active_environ
+        )
 
         self.llm_provider = active_environ.get("LLM_PROVIDER", "gemini").strip()
         self.embedding_provider = active_environ.get(

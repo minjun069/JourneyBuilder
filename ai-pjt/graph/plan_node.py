@@ -161,6 +161,7 @@ def build_plan_node(
     instrumentation: RuntimeInstrumentationAdapter,
     planner=plan_tasks_with_model,
     registered_tool_capabilities: tuple[str, ...] = (),
+    plan_validation_enabled: bool = True,
 ):
     """Bind planning dependencies and return the ChatState adapter node."""
 
@@ -195,6 +196,7 @@ def build_plan_node(
                 plan,
                 step_id=str(state.get("step_id") or "step-unknown"),
                 registered_tool_capabilities=active_tools,
+                validation_enabled=plan_validation_enabled,
             )
             observed.record_security_decision(
                 task_id="plan",

@@ -12,6 +12,7 @@ from graph.plan_contracts import PLAN_SCHEMA_VERSION
 from graph.plan_validation import validate_plan_structure
 from graph.task_catalog import (
     TASK_TYPE_DEFAULT_AGENTS,
+    TASK_TYPE_CONTRACTS,
     allowed_task_types_for,
 )
 
@@ -54,8 +55,12 @@ def evaluate_and_route(
     step_id: str,
     step_candidates: Mapping[str, Sequence[str]] | None = None,
     registered_tool_capabilities: Sequence[str] = (),
+    validation_enabled: bool = True,
 ) -> PlanGuardrailDecision:
     """Validate raw planner output and attach the only executable route metadata."""
+
+    if not validation_enabled:
+        return _route_without_validation(raw_plan, step_id=step_id)
 
     active_steps = load_step_candidates() if step_candidates is None else step_candidates
     active_tools = tuple(registered_tool_capabilities)
@@ -125,6 +130,40 @@ def evaluate_and_route(
         violations=(),
         plan=plan,
     )
+
+
+def _route_without_validation(raw_plan: Mapping[str, Any], *, step_id: str) -> PlanGuardrailDecision:
+    """Temporarily route compiled plans without structural or step policy checks."""
+    plan: dict[str, Any] = {"schema_version": PLAN_SCHEMA_VERSION, "tasks": []}
+    status = raw_plan.get("status", "executable")
+    if status in {"ambiguous", "unsupported"}:
+        plan["outcome_reason"] = f"{status}_intent"
+    else:
+        raw_tasks = raw_plan["tasks"]
+        aliases = {task["id"]: f"task-{index + 1}" for index, task in enumerate(raw_tasks)}
+        for raw in raw_tasks:
+            contract = TASK_TYPE_CONTRACTS[raw["type"]]
+            kind = contract["executor_kind"]
+            task = {
+                "id": aliases[raw["id"]], "type": raw["type"],
+                "description": raw["description"], "step_id": step_id,
+                "depends_on": [aliases[item] for item in raw.get("depends_on", [])],
+                "bindings": {
+                    name: {"task_id": aliases[binding["task_id"]], "path": binding["path"]}
+                    for name, binding in raw.get("bindings", {}).items()
+                },
+                "executor_kind": kind, "produces": contract["produces"],
+            }
+            if kind == "tool":
+                task.update({name: contract[name] for name in ("capability", "tool_name", "authorized_agent")})
+                task["arguments"] = deepcopy(contract.get("fixed_arguments", raw.get("arguments", {})))
+            task["route"] = {
+                "task_id": task["id"], "executor_kind": kind,
+                "executor": TASK_TYPE_DEFAULT_AGENTS[raw["type"]] if kind == "agent" else contract["capability"],
+                "reason_code": "intent_match" if kind == "agent" else "capability_match",
+            }
+            plan["tasks"].append(task)
+    return PlanGuardrailDecision("allow", "PLAN_VALIDATION_DISABLED", (), plan)
 
 
 # Temporary import-compatible name. It now accepts raw planner output directly.

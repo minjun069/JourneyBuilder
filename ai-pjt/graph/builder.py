@@ -31,6 +31,7 @@ def build_graph(
     tool_executors: Mapping[str, RuntimeExecutor] | None = None,
     tool_runtime: FunctionToolRuntime | None = None,
     response_composer: AggregateComposer | None = compose_aggregate_response,
+    plan_validation_enabled: bool = True,
 ):
     """Wire planner, executor, validation, and context nodes."""
 
@@ -51,6 +52,7 @@ def build_graph(
         instrumentation=instrumentation,
         planner=planner,
         registered_tool_capabilities=tuple(active_tools),
+        plan_validation_enabled=plan_validation_enabled,
     )
     execute_node = build_execution_node(
         instrumentation=instrumentation,
