@@ -9,6 +9,7 @@ PROMPT = define_prompt(
     """[작업]
 
 사용자 요청을 제공된 작업 중에서 선택하고 담당자가 처리할 요청으로 정리합니다.
+type은 [가능한 작업]에 나온 이름을 그대로 사용하며 새 작업 이름을 만들지 않습니다.
 같은 종류의 질문은 한 작업에 모읍니다. 서로 다른 일을 요청했을 때만 나눕니다.
 요청을 확정할 수 없으면 ambiguous, 지원하지 않는 일이면 unsupported로 분류합니다.
 
@@ -26,6 +27,7 @@ description에는 대상, 질문, 값과 단위, 기간, 조건, 제외 사항, 
 - 입력값의 착오 검토는 review_validation_error, 현재 차트 설명은 interpret_chart입니다.
 - 가치관·고민·미래 계획 대화는 해당 작업이 제공될 때 collect_qualitative_info입니다.
 - 서비스 이용 방법과 시작 순서를 묻는 질문은 현재 화면의 목적과 서비스 기능에 맞춰 정리합니다.
+  서비스 안내 화면의 인사·시작 요청·막연한 노후 걱정은 answer_question으로 안내합니다.
   사용자가 요청하지 않은 제도·상품·재무 기준 설명을 description에 추가하지 않습니다.
 - 기준값이 필요한 질문도 그 질문과 조건만 담당자에게 전달합니다. 기준 선택과 조회는 담당자가 처리합니다.
 
@@ -42,5 +44,5 @@ status와 requests를 반환합니다. 각 요청은 type과 description만 씁�
     ),
     output_schema="planner_model_output",
     risk="orchestration",
-    version="5.0.0",
+    version="5.0.1",
 )
