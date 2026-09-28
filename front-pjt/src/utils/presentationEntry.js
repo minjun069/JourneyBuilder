@@ -1,25 +1,21 @@
-export function presentationEntryReceiptKey({ sessionId, stepId, reportVersion }) {
-  if (sessionId == null || !stepId || !reportVersion) {
-    throw new Error('Presentation 안내 receipt 식별자가 필요합니다.')
-  }
-  return ['presentation-entry-v2', sessionId, stepId, reportVersion].join(':')
-}
+import { createSecureUuid } from './secureUuid.js'
 
-export function hasPresentationEntryReceipt(memory, storage, key) {
-  if (memory.has(key)) return true
-  try {
-    return storage?.getItem(key) === 'done'
-  } catch {
-    return false
-  }
-}
-
-export function savePresentationEntryReceipt(memory, storage, key) {
-  memory.add(key)
-  try {
-    storage?.setItem(key, 'done')
-  } catch {
-    // in-memory receipt remains authoritative for this page lifecycle.
+export function createPresentationEntryVisit({ sessionId, stepId, visitId = createSecureUuid() }) {
+  const inFlight = new Set()
+  const completed = new Set()
+  return {
+    sessionId,
+    stepId,
+    visitId,
+    begin(reportVersion) {
+      if (!reportVersion || inFlight.has(reportVersion) || completed.has(reportVersion)) return false
+      inFlight.add(reportVersion)
+      return true
+    },
+    finish(reportVersion, message) {
+      inFlight.delete(reportVersion)
+      if (isSuccessfulPresentationEntryMessage(message)) completed.add(reportVersion)
+    },
   }
 }
 

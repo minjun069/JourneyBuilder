@@ -8,10 +8,11 @@ export function createIdempotencyKey(cryptoProvider = globalThis.crypto) {
 }
 
 export async function createPresentationEntryIdempotencyKey(
-  { sessionId, stepId, reportVersion },
+  { sessionId, stepId, reportVersion, visitId },
   cryptoProvider = globalThis.crypto,
 ) {
-  const material = JSON.stringify({ version: 2, sessionId, stepId, reportVersion })
+  if (!visitId) throw new Error('Presentation 안내 방문 식별자가 필요합니다.')
+  const material = JSON.stringify({ version: 3, sessionId, stepId, reportVersion, visitId })
   if (!cryptoProvider?.subtle || typeof TextEncoder === 'undefined') {
     throw new Error('결정적 Presentation 안내 키를 생성할 수 없습니다.')
   }
@@ -20,7 +21,7 @@ export async function createPresentationEntryIdempotencyKey(
     new TextEncoder().encode(material),
   )
   const hex = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
-  return `presentation-entry-v2-${hex}`
+  return `presentation-entry-v3-${hex}`
 }
 
 export function deriveV2BaseURL(root) {
