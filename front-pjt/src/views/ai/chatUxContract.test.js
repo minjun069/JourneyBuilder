@@ -128,21 +128,23 @@ test('진행 이벤트는 본문 대신 공개 단계 하나만 표시하고 hea
   assert.match(view, /streamProgressPhase\.value = null/)
 })
 
-test('Presentation 최초 진입은 보고서 버전별 자동 안내를 한 번만 요청한다', () => {
+test('Presentation 재진입은 새 방문 key로 안내하고 동일 방문 trigger는 합친다', () => {
   const entry = view.slice(
     view.indexOf('async function maybeSendPresentationEntryGuide'),
     view.indexOf('async function sendMessage'),
   )
 
-  assert.match(entry, /presentationGuideInFlight/)
-  assert.match(entry, /wasPresentationGuideConsumed/)
+  assert.match(entry, /visit\.begin\(reportVersion\)/)
+  assert.match(entry, /presentationGuideVisit !== visit/)
   assert.match(entry, /createPresentationEntryIdempotencyKey/)
   assert.match(entry, /requestMode: 'presentation_entry'/)
-  assert.match(entry, /isSuccessfulPresentationEntryMessage/)
-  assert.ok(
-    entry.indexOf('isSuccessfulPresentationEntryMessage')
-      < entry.indexOf('rememberPresentationGuide'),
-  )
+  assert.match(entry, /visitId: visit\.visitId/)
+  assert.match(entry, /visit\.finish\(reportVersion, entryMessage\)/)
+  assert.match(view, /createPresentationEntryVisit\(\{ sessionId, stepId \}\)/)
+  assert.doesNotMatch(view, /wasPresentationGuideConsumed|presentationGuideConsumed/)
+  const revisitStart = view.indexOf('if (alreadyVisited)')
+  const revisited = view.slice(revisitStart, view.indexOf('const step = PROCESS_STEPS', revisitStart))
+  assert.match(revisited, /maybeSendPresentationEntryGuide\(stepId\)/)
   assert.match(view, /system_event === 'presentation_entry'/)
   assert.match(view, /presentationReportVersion/)
 })

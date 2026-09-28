@@ -30,10 +30,7 @@ import { PROCESS_STEPS, PRESENTATION_STEP_IDS, STEP_IDS } from './data/processSt
 import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.js'
 import { createPresentationEntryIdempotencyKey } from '@/api/aiLifecycle'
 import {
-  hasPresentationEntryReceipt,
-  isSuccessfulPresentationEntryMessage,
-  presentationEntryReceiptKey,
-  savePresentationEntryReceipt,
+  createPresentationEntryVisit,
 } from '@/utils/presentationEntry'
 import BasicInfoForm from '@/components/forms/BasicInfoForm.vue'
 import FinancialMindsetForm from '@/components/forms/FinancialMindsetForm.vue'
@@ -151,6 +148,7 @@ async function navigateToStep(stepId) {
   const alreadyVisited = stepId === 'intro' || messages.value.some((m) => m.role === 'divider' && m.stepId === stepId)
   if (alreadyVisited) {
     scrollToStepStart(stepId, true)
+    if (PRESENTATION_STEP_IDS.includes(stepId)) void maybeSendPresentationEntryGuide(stepId)
     if (stepId === 'financial-mindset') void maybeStartMindsetConversation()
     return
   }
@@ -524,28 +522,12 @@ async function streamAssistantMessage(text, options = {}) {
   }
 }
 
-const presentationGuideConsumed = new Set()
-const presentationGuideInFlight = new Set()
-
-function presentationGuideStorageKey(stepId, reportVersion) {
-  return presentationEntryReceiptKey({
-    sessionId: consultationStore.sessionId,
-    stepId,
-    reportVersion,
-  })
-}
-
-function wasPresentationGuideConsumed(key) {
-  return hasPresentationEntryReceipt(presentationGuideConsumed, sessionStorage, key)
-}
-
-function rememberPresentationGuide(key) {
-  savePresentationEntryReceipt(presentationGuideConsumed, sessionStorage, key)
-}
+let presentationGuideVisit = null
 
 async function maybeSendPresentationEntryGuide(stepId) {
   const sessionId = consultationStore.sessionId
-  if (!sessionId || !PRESENTATION_STEP_IDS.includes(stepId)) return
+  const visit = presentationGuideVisit
+  if (!sessionId || !visit || visit.sessionId !== sessionId || visit.stepId !== stepId) return
 
   if (
     !reportStore.reports
@@ -553,13 +535,12 @@ async function maybeSendPresentationEntryGuide(stepId) {
   ) {
     await reportStore.calculatePresentation(sessionId)
   }
-  if (currentStepId.value !== stepId) return
+  if (currentStepId.value !== stepId || presentationGuideVisit !== visit) return
 
   const reportVersion = reportStore.presentationReportVersion(stepId)
-  const storageKey = presentationGuideStorageKey(stepId, reportVersion)
-  if (wasPresentationGuideConsumed(storageKey) || presentationGuideInFlight.has(storageKey)) return
+  if (!visit.begin(reportVersion)) return
 
-  presentationGuideInFlight.add(storageKey)
+  let entryMessage = null
   isTyping.value = true
   isStreamingResponse.value = true
   try {
@@ -567,6 +548,7 @@ async function maybeSendPresentationEntryGuide(stepId) {
       sessionId,
       stepId,
       reportVersion,
+      visitId: visit.visitId,
     })
     const streamed = await streamAssistantMessage('이 보고서의 핵심을 먼저 안내해 주세요.', {
       stepId,
@@ -574,9 +556,7 @@ async function maybeSendPresentationEntryGuide(stepId) {
       requestMode: 'presentation_entry',
       idempotencyKey,
     })
-    if (isSuccessfulPresentationEntryMessage(streamed.message)) {
-      rememberPresentationGuide(storageKey)
-    }
+    entryMessage = streamed.message
   } catch (error) {
     if (error?.name !== 'AbortError' && currentStepId.value === stepId) {
       const fallback = STEP_GUIDE_MESSAGES[stepId]
@@ -587,7 +567,7 @@ async function maybeSendPresentationEntryGuide(stepId) {
       }
     }
   } finally {
-    presentationGuideInFlight.delete(storageKey)
+    visit.finish(reportVersion, entryMessage)
     isTyping.value = false
     isStreamingResponse.value = false
   }
@@ -1059,6 +1039,16 @@ const activePresentationTitle = computed(() => {
 })
 
 // ─── Lifecycle ────────────────────────────────────────────
+watch(
+  [currentStepId, () => consultationStore.sessionId],
+  ([stepId, sessionId]) => {
+    presentationGuideVisit = sessionId && PRESENTATION_STEP_IDS.includes(stepId)
+      ? createPresentationEntryVisit({ sessionId, stepId })
+      : null
+  },
+  { immediate: true, flush: 'sync' },
+)
+
 watch(currentStepId, async (stepId) => {
   if (stepId !== 'financial-goals' || basicInfoData.value) return
   try {

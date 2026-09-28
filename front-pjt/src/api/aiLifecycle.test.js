@@ -35,16 +35,18 @@ test('HTTP 개발 origin에서도 getRandomValues로 안전한 UUID를 만든다
   )
 })
 
-test('동일 session·step·보고서 버전은 동일한 최초 안내 key를 만든다', async () => {
-  const input = { sessionId: 12, stepId: 'lifetime-cashflow', reportVersion: 'report:7:v2' }
+test('같은 차트 방문 재시도는 같은 key, 재방문은 새 key를 만든다', async () => {
+  const input = { sessionId: 12, stepId: 'lifetime-cashflow', reportVersion: 'report:7:v2', visitId: 'visit-1' }
   const first = await createPresentationEntryIdempotencyKey(input)
   const second = await createPresentationEntryIdempotencyKey(input)
   const changed = await createPresentationEntryIdempotencyKey({
     ...input,
     reportVersion: 'report:7:v3',
   })
+  const revisited = await createPresentationEntryIdempotencyKey({ ...input, visitId: 'visit-2' })
 
   assert.equal(first, second)
   assert.notEqual(first, changed)
-  assert.match(first, /^presentation-entry-v2-[0-9a-f]{64}$/)
+  assert.notEqual(first, revisited)
+  assert.match(first, /^presentation-entry-v3-[0-9a-f]{64}$/)
 })
