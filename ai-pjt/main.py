@@ -129,6 +129,7 @@ async def lifespan(app: FastAPI):
                 tool_executors=build_graph_tool_executors(tool_runtime),
                 tool_runtime=tool_runtime,
                 response_composer=build_response_composer(),
+                plan_validation_enabled=settings.plan_validation_enabled,
             )
             app.state.context_store = context_store
             app.state.context_api = build_context_state_api(checkpointer, context_store)

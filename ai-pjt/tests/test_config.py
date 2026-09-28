@@ -22,6 +22,12 @@ BASE_ENV = {
 
 
 class SettingsTests(unittest.TestCase):
+    def test_plan_validation_temporarily_defaults_off_and_can_be_restored(self) -> None:
+        self.assertFalse(Settings(BASE_ENV).plan_validation_enabled)
+        self.assertTrue(Settings({**BASE_ENV, "AI_PLAN_VALIDATION_ENABLED": "true"}).plan_validation_enabled)
+        with self.assertRaisesRegex(RuntimeConfigurationError, "AI_PLAN_VALIDATION_ENABLED"):
+            Settings({**BASE_ENV, "AI_PLAN_VALIDATION_ENABLED": "invalid"})
+
     def test_valid_disposable_runtime_configuration(self) -> None:
         settings = Settings(BASE_ENV)
 
