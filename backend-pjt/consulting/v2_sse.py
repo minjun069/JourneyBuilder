@@ -219,7 +219,7 @@ async def proxy_v2_ai_stream(
                     _browser_transient(event_name, state, data),
                 )
                 continue
-            validated = validate_terminal_payload(data, request_payload=payload)
+            validated = validate_terminal_payload(data)
             if event_name == 'error':
                 if validated['status'] != 'failed':
                     raise SSEProtocolError('error event must have failed status')

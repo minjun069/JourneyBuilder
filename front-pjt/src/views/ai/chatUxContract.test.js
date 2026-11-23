@@ -120,15 +120,16 @@ test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 i
   assert.match(consultingApi, /'X-AI-Progress-Events': 'v1'/)
 })
 
-test('진행 이벤트는 본문 대신 공개 단계 하나만 표시하고 heartbeat는 문구를 바꾸지 않는다', () => {
-  assert.match(view, /STREAM_PROGRESS_MESSAGES/)
+test('협상된 진행 이벤트는 퍼센트 없이 임시 단계 문구로만 표시한다', () => {
+  assert.match(consultingApi, /'X-AI-Progress-Events': 'v1'/)
   assert.match(view, /event === 'progress'/)
-  assert.match(view, /event === 'start' \|\| event === 'heartbeat'/)
-  assert.match(view, /stream-progress-status/)
-  assert.match(view, /streamProgressPhase\.value = null/)
+  assert.match(view, /event === 'heartbeat'/)
+  assert.match(view, /streamProgressPhase\.value = data\.phase/)
+  assert.match(view, /질문을 분석하고 있습니다\./)
+  assert.doesNotMatch(view, /progressPercent|progress_pct|예상 완료/)
 })
 
-test('Presentation 재진입은 새 방문 key로 안내하고 동일 방문 trigger는 합친다', () => {
+test('Presentation 최초 진입은 보고서 버전별 자동 안내를 한 번만 요청한다', () => {
   const entry = view.slice(
     view.indexOf('async function maybeSendPresentationEntryGuide'),
     view.indexOf('async function sendMessage'),

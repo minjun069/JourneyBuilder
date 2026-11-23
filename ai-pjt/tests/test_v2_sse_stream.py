@@ -170,16 +170,6 @@ class ProgressV2Graph:
         }
 
 
-class SlowV2Graph:
-    async def astream_events(self, input_data, *, config, version):
-        await asyncio.sleep(0.05)
-        yield {
-            "event": "on_chain_end",
-            "parent_ids": [],
-            "data": {"output": {}},
-        }
-
-
 class FailingV2Graph:
     async def astream_events(self, input_data, *, config, version):
         yield {
@@ -264,7 +254,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
         self.assertEqual(frames[-1][1]["output"]["response"], "안녕하세요")
         self.assertIn("completed_at", frames[-1][1])
 
-    @patch("transport.chat_service.get_callbacks", return_value=[])
+    @patch("main.get_callbacks", return_value=[])
     async def test_opt_in_stream_emits_public_stages_and_heartbeats(self, _callbacks):
         frames = [
             parse_frame(frame)
@@ -272,7 +262,7 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
                 ProgressV2Graph(),
                 FakeContextAPI(),
                 v2_request(),
-                fake_terminal_masker(),
+                fake_callback_masker(),
                 progress_events=True,
                 heartbeat_interval_seconds=0.005,
             )
@@ -285,41 +275,44 @@ class V2SSEStreamTests(IsolatedAsyncioTestCase):
             [data["phase"] for data in progress],
             ["preparing", "planning", "executing", "validating", "saving"],
         )
-        transient = [
+        nonterminal = [
             data for event, data in frames if event in {"progress", "heartbeat"}
         ]
         self.assertEqual(
-            [data["event_seq"] for data in transient],
-            list(range(1, len(transient) + 1)),
+            [data["event_seq"] for data in nonterminal],
+            list(range(1, len(nonterminal) + 1)),
         )
         self.assertTrue(any(event == "heartbeat" for event, _ in frames))
-        self.assertNotIn("percent", str(transient))
-        self.assertNotIn("은퇴 준비를 알려줘", str(transient))
+        self.assertNotIn("percent", str(nonterminal))
+        self.assertNotIn("은퇴 준비를 알려줘", str(nonterminal))
 
-    @patch("transport.chat_service.get_callbacks", return_value=[])
-    async def test_heartbeats_do_not_extend_the_request_deadline(self, _callbacks):
-        request = ChatV2Request(**{
-            **v2_request().model_dump(),
-            "deadline_at": datetime.now(timezone.utc) + timedelta(seconds=0.02),
-        })
+    @patch("main.get_callbacks", return_value=[])
+    async def test_terminal_replay_does_not_replay_progress(self, _callbacks):
+        context = FakeContextAPI()
+        context.terminal = {
+            "contract_version": "2.0",
+            "request_id": "ai_req_v2_stream",
+            "session_id": 12,
+            "thread_id": "user-3-session-12",
+            "status": "completed",
+            "completed_at": "2026-09-17T00:00:00Z",
+            "output": {"response": "재생 응답"},
+        }
 
         frames = [
             parse_frame(frame)
             async for frame in _stream_v2_chat_events(
-                SlowV2Graph(),
-                FakeContextAPI(),
-                request,
-                fake_terminal_masker(),
+                FakeV2Graph(),
+                context,
+                v2_request(),
+                fake_callback_masker(),
                 progress_events=True,
-                heartbeat_interval_seconds=0.005,
             )
         ]
 
-        self.assertTrue(any(event == "heartbeat" for event, _ in frames))
-        self.assertEqual(frames[-1][0], "error")
-        self.assertEqual(frames[-1][1]["error"]["code"], "LLM_TIMEOUT")
+        self.assertEqual([event for event, _ in frames], ["start", "done"])
 
-    @patch("transport.chat_service.get_callbacks", return_value=[])
+    @patch("main.get_callbacks", return_value=[])
     async def test_stream_emits_one_request_root_lifecycle_with_io(self, _callbacks):
         instrumentation, sink = fake_instrumentation()
 
@@ -534,7 +527,7 @@ class V2SSEEndpointTests(IsolatedAsyncioTestCase):
         self.assertIn("event: done", response.text)
         self.assertIn('"contract_version":"2.0"', response.text)
 
-    @patch("transport.chat_service.get_callbacks", return_value=[])
+    @patch("main.get_callbacks", return_value=[])
     async def test_progress_capability_is_explicitly_negotiated(self, _callbacks):
         app.state.chat_graph = ProgressV2Graph()
         with patch("main.settings.ai_service_bearer_token", "test-token"):

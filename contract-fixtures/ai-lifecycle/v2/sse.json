@@ -13,7 +13,6 @@
     "phases": ["preparing", "planning", "executing", "reviewing", "composing", "validating", "saving"],
     "status": "active",
     "sequence_field": "event_seq",
-    "heartbeat_seconds": 15,
     "stored": false,
     "replayed": false,
     "includes_percentage": false,
@@ -178,13 +177,11 @@
       "graph_reexecution": false
     },
     "same_key_changed_payload": {"http_status": 409, "code": "IDEMPOTENCY_CONFLICT"},
-    "unexpected_disconnect_auto_reconnect_attempts": 1,
     "transient_events_replayed": false,
     "ttl_seconds": 86400
   },
   "timeouts_seconds": {
     "progress_heartbeat": 15,
-    "processing_expiry": 180,
     "service_connect": 5,
     "stream_read_idle": 120,
     "gateway_proxy": 130,

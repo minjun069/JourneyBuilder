@@ -34,7 +34,7 @@ test('Frontend는 인증과 멱등 키가 필요한 v2 SSE endpoint를 사용한
   assert.match(consultingApiSource, /response\.status === 401/)
 })
 
-test('Frontend 정상 이벤트는 협상된 진행·heartbeat 뒤 terminal 순서다', () => {
+test('Frontend는 협상된 진행 이벤트 뒤 완료 응답만 소비한다', () => {
   assert.deepEqual(
     contract.allowed_events,
     ['start', 'progress', 'heartbeat', 'done', 'error'],
@@ -47,6 +47,9 @@ test('Frontend 정상 이벤트는 협상된 진행·heartbeat 뒤 terminal 순�
   assert.equal(contract.progress_policy.heartbeat_seconds, 15)
   assert.equal(contract.progress_policy.includes_content, false)
   assert.doesNotMatch(aiChatViewSource, /event === 'delta'/)
+  assert.match(consultingApiSource, /'X-AI-Progress-Events': 'v1'/)
+  assert.equal(contract.progress_policy.includes_percentage, false)
+  assert.equal(contract.progress_policy.includes_content, false)
 })
 
 test('모든 Browser 이벤트는 동일 v2 request identity를 유지한다', () => {

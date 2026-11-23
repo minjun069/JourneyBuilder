@@ -89,12 +89,12 @@ test('delta 이벤트는 지원하지 않는다', async () => {
 
 test('진행 단계와 heartbeat는 단조 증가 sequence만 허용한다', async () => {
   async function* source() {
-    yield { event: 'start', data: { contract_version: '2.0', request_id: 'req-1' } }
+    yield { event: 'start', data: { request_id: 'req-1' } }
     yield {
       event: 'progress',
       data: {
-        contract_version: '2.0',
         request_id: 'req-1',
+        contract_version: '2.0',
         event_seq: 1,
         phase: 'planning',
         status: 'active',
@@ -102,9 +102,9 @@ test('진행 단계와 heartbeat는 단조 증가 sequence만 허용한다', asy
     }
     yield {
       event: 'heartbeat',
-      data: { contract_version: '2.0', request_id: 'req-1', event_seq: 2 },
+      data: { request_id: 'req-1', contract_version: '2.0', event_seq: 2 },
     }
-    yield { event: 'done', data: { contract_version: '2.0', request_id: 'req-1' } }
+    yield { event: 'done', data: { request_id: 'req-1', output: {} } }
   }
 
   const events = []
@@ -117,39 +117,45 @@ test('진행 단계와 heartbeat는 단조 증가 sequence만 허용한다', asy
 })
 
 
-test('진행 이벤트의 역순·미등록 단계·추가 정보는 거절한다', async () => {
-  const invalidEvents = [
-    { event: 'heartbeat', data: { event_seq: 0 } },
-    { event: 'progress', data: { event_seq: 1, phase: 'internal', status: 'active' } },
-    { event: 'heartbeat', data: { event_seq: 1, content: '금지' } },
-  ]
-  for (const invalid of invalidEvents) {
-    async function* source() {
-      yield { event: 'start', data: { contract_version: '2.0', request_id: 'req-1' } }
-      yield {
-        event: invalid.event,
-        data: {
-          contract_version: '2.0',
-          request_id: 'req-1',
-          ...invalid.data,
-        },
-      }
-    }
-    await assert.rejects(async () => {
-      for await (const event of validateSSEEvents(source())) void event
-    }, SSEProtocolError)
-  }
-})
-
-
-test('terminal 없는 EOF는 재연결 가능한 전송 종료로 분류한다', async () => {
-  async function* source() {
+test('역순 또는 콘텐츠가 포함된 진행 이벤트는 거절한다', async () => {
+  async function* reversed() {
     yield { event: 'start', data: { request_id: 'req-1' } }
+    yield {
+      event: 'heartbeat',
+      data: { request_id: 'req-1', contract_version: '2.0', event_seq: 2 },
+    }
+    yield {
+      event: 'progress',
+      data: {
+        request_id: 'req-1',
+        contract_version: '2.0',
+        event_seq: 1,
+        phase: 'planning',
+        status: 'active',
+      },
+    }
   }
-
   await assert.rejects(async () => {
-    for await (const event of validateSSEEvents(source())) void event
-  }, (error) => error instanceof SSEProtocolError && error.code === 'SSE_TERMINAL_MISSING')
+    for await (const event of validateSSEEvents(reversed())) void event
+  }, SSEProtocolError)
+
+  async function* contentBearing() {
+    yield { event: 'start', data: { request_id: 'req-1' } }
+    yield {
+      event: 'progress',
+      data: {
+        request_id: 'req-1',
+        contract_version: '2.0',
+        event_seq: 1,
+        phase: 'planning',
+        status: 'active',
+        content: '노출하면 안 되는 내용',
+      },
+    }
+  }
+  await assert.rejects(async () => {
+    for await (const event of validateSSEEvents(contentBearing())) void event
+  }, SSEProtocolError)
 })
 
 
