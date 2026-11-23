@@ -56,7 +56,9 @@ class LlamaIndexEmbeddingAdapter:
         self.dimensions = dimensions
 
     def embed_texts(self, texts: Sequence[str]) -> list[tuple[float, ...]]:
-        vectors = self._embedding.get_text_embedding_batch(list(texts))
+        from core.model_measurement import measure_embedding
+        with measure_embedding(self.model_id):
+            vectors = self._embedding.get_text_embedding_batch(list(texts))
         result = [tuple(float(value) for value in vector) for vector in vectors]
         if len(result) != len(texts):
             raise ValueError("embedding provider returned an unexpected batch size")

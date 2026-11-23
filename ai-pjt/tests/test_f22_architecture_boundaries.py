@@ -53,7 +53,7 @@ class ResponsibilityBoundaryTests(unittest.TestCase):
     def test_router_is_removed_and_tool_runtime_has_no_graph_dependency(self) -> None:
         self.assertFalse((AI_ROOT / "graph/router.py").exists())
         for path in AI_ROOT.rglob("*.py"):
-            if "__pycache__" in path.parts:
+            if "__pycache__" in path.parts or ".venv" in path.parts:
                 continue
             relative = str(path.relative_to(AI_ROOT))
             self.assertNotIn("graph.router", _imports(relative))
