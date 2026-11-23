@@ -317,6 +317,7 @@ function cancelMessageAnimations() {
   animationQueue = Promise.resolve()
   isTyping.value = false
   isAnimatingResponse.value = false
+  streamProgressPhase.value = null
 }
 
 function streamAiMessages(bubbles, { typingDelay = 220, onDone } = {}) {
@@ -482,7 +483,7 @@ async function continueConsultation() {
   }
 }
 
-async function streamAssistantMessage(text, options = {}) {
+async function streamAssistantMessage(text, options) {
   try {
     for await (const { event, data } of consultationStore.streamMessageV2(text, options)) {
       if (event === 'start' || event === 'heartbeat') continue
@@ -497,23 +498,9 @@ async function streamAssistantMessage(text, options = {}) {
         throw error
       }
       if (event === 'done') {
-        const elicitation = data.message.extracted_data?.elicitation
-        if (options.requestMode === 'mindset_elicitation' && elicitation) {
-          if (currentStepId.value !== 'financial-mindset' || !activeFormRef.value?.form) {
-            throw new Error('경제 관념 입력 화면에서 상담을 다시 이어주세요.')
-          }
-          data.message.content = cleanMindsetText(data.message.content, 'response')
-          applyMindsetResult(
-            mindsetState.value, activeFormRef.value.form, elicitation, data.request_id, mindsetReceipts,
-          )
-          captureActiveFormDraft()
-        }
         const finalMessage = toChatMessage(data.message)
         const [rendered] = await streamAiMessages([finalMessage], { typingDelay: 120 })
-        return {
-          message: data.message,
-          rendered: rendered ?? finalMessage,
-        }
+        return rendered ?? finalMessage
       }
     }
     throw new Error('AI 스트림이 완료 이벤트 없이 종료되었습니다.')
