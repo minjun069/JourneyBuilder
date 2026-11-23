@@ -149,9 +149,16 @@ def secure_invoke(
         sensitive_payload=sensitive_payload,
         policy=policy,
     )
+    from core.model_measurement import ModelMeasurement
+    measurement = ModelMeasurement()
+    result = None
     started = perf_counter()
+    _record_model_call(purpose=purpose, operation_name=operation_name,
+                       status="started", duration_ms=0, input=observation_input,
+                       output=None, prompt=prompt, measurement=measurement)
     try:
-        result = runnable.invoke(safe_messages)
+        with measurement:
+            result = runnable.invoke(safe_messages)
         block_forbidden_output(
             result,
             purpose=purpose,
@@ -167,6 +174,8 @@ def secure_invoke(
             output={"status": "failed"},
             prompt=prompt,
             error=error,
+            measurement=measurement,
+            response=result,
         )
         _emit_prompt_invocation(prompt, purpose, started, error=error)
         raise
@@ -182,6 +191,8 @@ def secure_invoke(
             policy=policy,
         ),
         prompt=prompt,
+        measurement=measurement,
+        response=result,
     )
     _emit_prompt_invocation(prompt, purpose, started)
     return result
@@ -265,15 +276,23 @@ async def secure_ainvoke(
         sensitive_payload=sensitive_payload,
         policy=policy,
     )
+    from asyncio import CancelledError
+    from core.model_measurement import ModelMeasurement
+    measurement = ModelMeasurement()
+    result = None
     started = perf_counter()
+    _record_model_call(purpose=purpose, operation_name=operation_name,
+                       status="started", duration_ms=0, input=observation_input,
+                       output=None, prompt=prompt, measurement=measurement)
     try:
-        result = await runnable.ainvoke(safe_messages)
+        with measurement:
+            result = await runnable.ainvoke(safe_messages)
         block_forbidden_output(
             result,
             purpose=purpose,
             operation_name=operation_name,
         )
-    except Exception as error:
+    except (Exception, CancelledError) as error:
         _record_model_call(
             purpose=purpose,
             operation_name=operation_name,
@@ -283,6 +302,8 @@ async def secure_ainvoke(
             output={"status": "failed"},
             prompt=prompt,
             error=error,
+            measurement=measurement,
+            response=result,
         )
         _emit_prompt_invocation(prompt, purpose, started, error=error)
         raise
@@ -298,6 +319,8 @@ async def secure_ainvoke(
             policy=policy,
         ),
         prompt=prompt,
+        measurement=measurement,
+        response=result,
     )
     _emit_prompt_invocation(prompt, purpose, started)
     return result
@@ -440,6 +463,8 @@ def _record_model_call(
     output: Any,
     prompt: PromptSpec | None,
     error: BaseException | None = None,
+    measurement: Any = None,
+    response: Any = None,
 ) -> None:
     recorder = _MODEL_CALL_RECORDER.get()
     if recorder is None:
@@ -479,6 +504,7 @@ def _record_model_call(
             error_code=(type(error).__name__ if error is not None else None),
             **prompt_metadata,
             **error_identity,
+            **(measurement.fields(response) if measurement is not None else {}),
         )
     except Exception:
         # Telemetry must never alter model-call behavior.

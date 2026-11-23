@@ -187,8 +187,9 @@ class ConversationMemoryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             settings.masking_pseudonym_key = previous_key
 
-        self.assertEqual(len(sink.baseline_events), 1)
-        event = sink.baseline_events[0]
+        self.assertEqual([event.status.value for event in sink.baseline_events], ["started", "succeeded"])
+        self.assertEqual(sink.baseline_events[0].call_id, sink.baseline_events[1].call_id)
+        event = sink.baseline_events[-1]
         self.assertEqual(event.stage, OperationStage.MODEL)
         self.assertEqual(event.prompt_id, "summary.extract")
         self.assertEqual(event.prompt_release, settings.prompt_release)

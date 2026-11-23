@@ -233,6 +233,7 @@ class TaskStructureLeakageTests(IsolatedAsyncioTestCase):
             for payload in downstream.payloads
             if payload.get("event_family") == "operation"
             and payload.get("stage") == "model"
+            and payload.get("status") != "started"
         ]
         self.assertEqual(len(model_events), len(TASK_MODEL_PURPOSE))
         for event in model_events:

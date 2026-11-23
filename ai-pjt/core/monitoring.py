@@ -31,6 +31,7 @@ class OperationStage(str, Enum):
 
 
 class OperationStatus(str, Enum):
+    STARTED = "started"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     TIMEOUT = "timeout"
@@ -148,6 +149,11 @@ class OperationTraceEvent:
     tool_version: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
+    call_id: str | None = None
+    usage_status: str | None = None
     cost_microusd: int | None = None
     resource_ids: tuple[str, ...] = ()
     scores: tuple[float, ...] = ()
@@ -168,6 +174,16 @@ class OperationTraceEvent:
         _validate_nonnegative_int(self.duration_ms, "duration_ms")
         _validate_nonnegative_int(self.input_tokens, "input_tokens")
         _validate_nonnegative_int(self.output_tokens, "output_tokens")
+        for name in ("total_tokens", "cached_input_tokens", "reasoning_output_tokens"):
+            _validate_nonnegative_int(getattr(self, name), name)
+        if self.call_id is not None:
+            _validate_safe_token(self.call_id, "call_id")
+        if self.usage_status not in {None, "reported", "unavailable"}:
+            raise ValueError("invalid usage_status")
+        if self.stage is not OperationStage.MODEL and any(getattr(self, name) is not None for name in (
+            "call_id", "usage_status", "total_tokens", "cached_input_tokens", "reasoning_output_tokens"
+        )):
+            raise ValueError("model measurements are allowed only for model events")
         _validate_nonnegative_int(self.cost_microusd, "cost_microusd")
         _validate_nonnegative_int(self.result_count, "result_count")
         for field_name in (
@@ -225,7 +241,7 @@ class OperationTraceEvent:
             raise ValueError("model metadata is allowed only for model events")
         if self.status is OperationStatus.SUCCEEDED and self.error_code is not None:
             raise ValueError("succeeded events cannot contain error_code")
-        if self.status is not OperationStatus.SUCCEEDED and self.error_code is None:
+        if self.status not in {OperationStatus.SUCCEEDED, OperationStatus.STARTED} and self.error_code is None:
             raise ValueError("non-success events require a stable error_code")
         _validate_observation_content(self.input, "input")
         _validate_observation_content(self.output, "output")
@@ -269,6 +285,11 @@ class OperationTraceEvent:
             "tool_version",
             "input_tokens",
             "output_tokens",
+            "total_tokens",
+            "cached_input_tokens",
+            "reasoning_output_tokens",
+            "call_id",
+            "usage_status",
             "cost_microusd",
             "result_count",
             "input",

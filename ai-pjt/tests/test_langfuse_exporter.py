@@ -153,9 +153,9 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertEqual(args["model"], "gemini-2.5-flash-lite")
         self.assertEqual(
             args["usage_details"],
-            {"prompt_tokens": 12, "completion_tokens": 5},
+            {"input": 12, "output": 5},
         )
-        self.assertEqual(args["cost_details"], {"total_cost": 0.00125})
+        self.assertEqual(args["cost_details"], {"total": 0.00125})
         self.assertEqual(
             args["input"],
             {"message": "단기 지향은 어느 정도 기간이야?"},
