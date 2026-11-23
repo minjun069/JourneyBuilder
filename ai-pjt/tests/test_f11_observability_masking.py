@@ -5,7 +5,6 @@ from pathlib import Path
 import unittest
 
 from core.masking import MaskingPolicy, MaskingSink
-from core.monitoring import OperationStage, OperationStatus
 from core.observability_masking import (
     FakeSerializedInstrumentationSink,
     MaskedInstrumentationSink,
@@ -95,7 +94,6 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         report = await execute_route_plan(
             plan={
-                "plan_id": "plan-request-raw-0001",
                 "tasks": [{
                     "id": "task-1",
                     "type": "answer_question",
@@ -112,15 +110,14 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }],
             },
+            request_id="request-raw-0001",
             step_id="basic-info",
             customer_info={},
-            field_registry=[],
             agent_executors={"qa": qa},
             tool_executors={},
             instrumentation=adapter.bind(
                 request_id="request-raw-0001",
                 thread_id="thread-raw-0001",
-                plan_id="plan-request-raw-0001",
                 step_id="basic-info",
             ),
         )
@@ -134,42 +131,9 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
         for raw in (
             "request-raw-0001",
             "thread-raw-0001",
-            "plan-request-raw-0001",
             "task-1",
         ):
             self.assertNotIn(raw, rendered)
-
-    def test_callback_attempt_uses_same_masked_correlation(self) -> None:
-        downstream = FakeSerializedInstrumentationSink()
-        adapter, sink = build_masked_runtime_instrumentation(
-            pseudonym_key=TEST_MASKING_KEY,
-            downstream=downstream,
-            sink=MaskingSink.TRACE_EXPORT,
-        )
-        observed = adapter.bind(
-            request_id="request-raw-0001",
-            thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
-            step_id="basic-info",
-        )
-        span = observed.start(RuntimeStage.PLANNER)
-        observed.succeed(span)
-        adapter.record_callback_attempt(
-            request_id="request-raw-0001",
-            thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
-            step_id="basic-info",
-            status=OperationStatus.SUCCEEDED,
-            duration_ms=25,
-        )
-
-        self.assertEqual(sink.dropped_exports, 0)
-        self.assertEqual(len(downstream.payloads), 3)
-        trace_ids = {payload["trace_id"] for payload in downstream.payloads}
-        self.assertEqual(len(trace_ids), 1)
-        callback = downstream.payloads[-1]
-        self.assertEqual(callback["stage"], OperationStage.CALLBACK.value)
-        self.assertEqual(callback["status"], OperationStatus.SUCCEEDED.value)
 
     def test_tool_authorization_audit_uses_masked_typed_port(self) -> None:
         downstream = FakeSerializedInstrumentationSink()
@@ -181,17 +145,15 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
         observed = adapter.bind(
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             step_id="basic-info",
         )
 
         observed.record_tool_audit(ToolAuditEvent(
             request_id="request-raw-0001",
-            plan_id="plan-request-raw-0001",
             task_id="task-1",
             step_id="basic-info",
-            task_type="lookup_retirement_gap",
-            tool_name="get_dashboard_metric",
+            task_type="lookup_reference_value",
+            tool_name="get_approved_reference_value",
             tool_version="1.0",
             agent="qa",
             decision="denied",
@@ -199,7 +161,7 @@ class MaskedInstrumentationRuntimeTests(unittest.IsolatedAsyncioTestCase):
             duration_ms=0,
             argument_classes=("financial_metric_identifier",),
             call_source="graph_task",
-            error_code="TOOL_CONTEXT_MISMATCH",
+            error_code="TOOL_ARGUMENT_SCHEMA_INVALID",
         ))
 
         self.assertEqual(sink.dropped_exports, 0)

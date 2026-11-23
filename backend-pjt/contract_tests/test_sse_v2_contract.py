@@ -58,7 +58,6 @@ class SSEV2ContractTests(unittest.TestCase):
         policy = self.contract["channel_policy"]
         self.assertEqual(policy["error_review"], {
             "save": "sse",
-            "user_request": "sse",
         })
         self.assertEqual(policy["change_decision"], {
             "owner": "frontend",
@@ -67,6 +66,7 @@ class SSEV2ContractTests(unittest.TestCase):
         })
         self.assertEqual(policy["frontend_polling_flows"], [])
         self.assertEqual(self.contract["timeouts_seconds"]["stream_read_idle"], 120)
+        self.assertEqual(self.contract["timeouts_seconds"]["processing_expiry"], 180)
 
 
 if __name__ == "__main__":

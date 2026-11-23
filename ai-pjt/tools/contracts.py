@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from time import monotonic
 from typing import Any
@@ -61,7 +61,6 @@ class ToolCallResult:
 @dataclass(frozen=True)
 class ToolAuditEvent:
     request_id: str
-    plan_id: str
     task_id: str
     step_id: str
     task_type: str
@@ -79,7 +78,6 @@ class ToolAuditEvent:
         # Deliberately excludes raw arguments and tool result values.
         return {
             "request_id": self.request_id,
-            "plan_id": self.plan_id,
             "task_id": self.task_id,
             "step_id": self.step_id,
             "task_type": self.task_type,
@@ -110,14 +108,9 @@ class ToolExecutionContext:
     step_id: str
     agent: str
     task_type: str = "answer_question"
-    plan_id: str = "plan-unknown"
     task_id: str = "task-unknown"
     call_source: str = "graph_task"
     field_registry: tuple[dict[str, Any], ...] = ()
-    dashboard_metrics: Mapping[str, dict[str, Any]] = field(default_factory=dict)
-    retirement_scenarios: Mapping[str, dict[str, Any]] = field(default_factory=dict)
-    available_reports: tuple[dict[str, Any], ...] = ()
-    section_completion: Mapping[str, bool] = field(default_factory=dict)
     knowledge_search: KnowledgeSearch | None = None
     deadline_at_monotonic: float | None = None
     audit_sink: AuditSink | None = None

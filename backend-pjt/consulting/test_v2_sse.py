@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from .sse import SSEProtocolError
@@ -40,7 +41,6 @@ def ai_payload():
         'message': '은퇴 준비를 알려줘',
         'deadline_at': '2026-09-08T00:01:00Z',
         'customer_info': {'saved_data': {}, 'current_form': {}},
-        'field_registry': [],
         'chart_payload': None,
     }
     from .ai_lifecycle import canonical_digest
@@ -399,10 +399,11 @@ class V2SSEProxyTests(SimpleTestCase):
         debt_token = tokenized['total_debt']
         upstream.return_value = async_items([
             'event: done',
-            f'data: {json.dumps({"contract_version": "2.0", "request_id": "ai_req_v2_stream", "session_id": 12, "thread_id": "user-3-session-12", "status": "completed", "completed_at": "2026-09-08T00:00:01Z", "output": {"response": response, "step_id": "basic-info", "action": {"type": "form_change", "target": "draft_form", "user_requested": True, "confidence": 1.0, "changes": [{"section": "liabilities", "path": "balance", "operation": "set", "value": debt_token, "reason": "사용자 요청"}]}}}, ensure_ascii=False)}',
+            f'data: {json.dumps({"contract_version": "2.0", "request_id": "ai_req_v2_stream", "session_id": 12, "thread_id": "user-3-session-12", "status": "completed", "completed_at": "2026-09-08T00:00:01Z", "output": {"response": response, "step_id": "liabilities", "action": {"type": "form_change", "target": "draft_form", "user_requested": True, "changes": [{"section": "liabilities", "path": "balance", "operation": "set", "value": debt_token, "reason": "사용자 요청"}]}}}, ensure_ascii=False)}',
             '',
         ])
         restored_response = '네, 이름은 홍길동이고 희망 월소득은 350만원입니다.'
+        state = {**processing_state(), 'step_id': 'liabilities'}
         message = SimpleNamespace(
             id=99,
             role='assistant',
@@ -420,7 +421,7 @@ class V2SSEProxyTests(SimpleTestCase):
             proxy_v2_ai_stream(
                 SimpleNamespace(id=12),
                 ai_payload(),
-                processing_state(),
+                state,
                 store,
                 token_vault=vault,
             )
@@ -514,7 +515,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
         session = SimpleNamespace(id=12, status='completed')
         get_session.return_value = session
         session_objects.select_for_update.return_value.filter.return_value.first.return_value = session
-        execution_objects.filter.return_value.exists.return_value = False
+        execution_objects.select_for_update.return_value.filter.return_value.first.return_value = None
         create_user_message.return_value = SimpleNamespace(id=41, content='최초 안내')
         store_class.return_value.get_idempotency.return_value = None
         proxy_stream.return_value = async_items([
@@ -550,6 +551,18 @@ class V2MessageStreamViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['error']['code'], 'SESSION_CLOSED')
 
+    @patch('consulting.v2_views.get_owned_session')
+    def test_unknown_progress_capability_is_rejected(self, get_session):
+        get_session.return_value = SimpleNamespace(id=12, status='in_progress')
+
+        response = V2MessageStreamView.as_view()(
+            self.request(progress_events_version='v2'),
+            session_id=12,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['error']['code'], 'REQUEST_INVALID')
+
     @patch('consulting.v2_views.proxy_v2_ai_stream')
     @patch('consulting.v2_views.make_processing_state', return_value=processing_state())
     @patch('consulting.v2_views.build_v2_ai_payload', return_value=ai_payload())
@@ -576,12 +589,20 @@ class V2MessageStreamViewTests(SimpleTestCase):
         session = SimpleNamespace(id=12, status='in_progress')
         get_session.return_value = session
         session_objects.select_for_update.return_value.filter.return_value.first.return_value = session
-        execution_objects.filter.return_value.exists.return_value = False
+        stale_execution = SimpleNamespace(status='processing')
+        execution_objects.select_for_update.return_value.filter.return_value.first.return_value = (
+            stale_execution
+        )
         create_user_message.return_value = SimpleNamespace(id=41, content='은퇴 준비를 알려줘')
         store = store_class.return_value
         store.get_idempotency.return_value = None
+        _new_request_id.return_value = 'ai_req_aaaaaaaa01012345678bbbbbbbbbbbbb'
+        _make_state.return_value = {
+            **processing_state(), 'request_id': _new_request_id.return_value,
+        }
         _build_payload.return_value = {
             **ai_payload(),
+            'request_id': _new_request_id.return_value,
             'message': '이메일은 gildong@example.com이고 월소득은 350만원입니다.',
             'customer_info': {
                 'saved_data': {'email': 'gildong@example.com'},
@@ -592,7 +613,14 @@ class V2MessageStreamViewTests(SimpleTestCase):
             'event: start\ndata: {"contract_version":"2.0","request_id":"ai_req_v2_stream"}\n\n'
         ])
 
-        response = V2MessageStreamView.as_view()(self.request(), session_id=12)
+        with patch(
+            'consulting.v2_views.expire_stale_execution',
+            return_value=(True, None),
+        ) as expire_stale:
+            response = V2MessageStreamView.as_view()(
+                self.request(progress_events_version='v1'),
+                session_id=12,
+            )
         body = b''.join(asyncio.run(collect_async(response.streaming_content))).decode()
 
         self.assertEqual(response.status_code, 200)
@@ -600,7 +628,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
         self.assertEqual(response['X-Accel-Buffering'], 'no')
         self.assertIn('event: start', body)
         create_user_message.assert_called_once()
-        store.save_active.assert_called_once_with(processing_state())
+        store.save_active.assert_called_once_with(_make_state.return_value)
         store.save_token_vault.assert_called_once()
         store.save_idempotency.assert_called_once()
         self.assertIs(
@@ -609,6 +637,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
         )
         self.assertFalse(proxy_stream.call_args.kwargs['progress_events'])
         upstream_payload = proxy_stream.call_args.args[1]
+        self.assertEqual(upstream_payload['request_id'], _new_request_id.return_value)
         rendered = json.dumps(upstream_payload, ensure_ascii=False)
         self.assertNotIn('gildong@example.com', rendered)
         self.assertNotIn('350만원', rendered)
@@ -667,7 +696,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
         session = SimpleNamespace(id=12, status='in_progress')
         get_session.return_value = session
         session_objects.select_for_update.return_value.filter.return_value.first.return_value = session
-        execution_objects.filter.return_value.exists.return_value = False
+        execution_objects.select_for_update.return_value.filter.return_value.first.return_value = None
         create_user_message.return_value = SimpleNamespace(id=41, content='현재 입력값을 검토해 주세요.')
         store_class.return_value.get_idempotency.return_value = None
         proxy_stream.return_value = async_items([
@@ -677,7 +706,6 @@ class V2MessageStreamViewTests(SimpleTestCase):
             **browser_body(),
             'content': '현재 입력값을 검토해 주세요.',
             'request_mode': 'error_review',
-            'review_trigger': 'save',
         }
 
         response = V2MessageStreamView.as_view()(self.request(body), session_id=12)
@@ -685,7 +713,7 @@ class V2MessageStreamViewTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(build_payload.call_args.kwargs['request_mode'], 'error_review')
-        self.assertEqual(build_payload.call_args.kwargs['review_trigger'], 'save')
+        self.assertNotIn('review_trigger', build_payload.call_args.kwargs)
 
     @patch(
         'consulting.v2_views.recover_terminal_state',
@@ -710,7 +738,21 @@ class V2MessageStreamViewTests(SimpleTestCase):
         }
         store.get_request.return_value = processing_state()
 
-        response = V2MessageStreamView.as_view()(self.request(), session_id=12)
+        execution = SimpleNamespace(
+            status='processing',
+            expires_at=None,
+            created_at=timezone.now(),
+        )
+        with (
+            patch('consulting.v2_views.transaction.atomic'),
+            patch('consulting.v2_views.ConsultingSession.objects') as sessions,
+            patch('consulting.v2_views.AIRequestExecution.objects') as executions,
+        ):
+            sessions.select_for_update.return_value.filter.return_value.first.return_value = (
+                get_session.return_value
+            )
+            executions.select_for_update.return_value.filter.return_value.first.return_value = execution
+            response = V2MessageStreamView.as_view()(self.request(), session_id=12)
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.data['error']['code'], 'AI_STREAM_IN_PROGRESS')
@@ -745,14 +787,22 @@ class V2MessageStreamViewTests(SimpleTestCase):
         }
         store.get_request.return_value = state
         store.get_token_vault.return_value = vault
-        execution_objects.filter.return_value.first.return_value = SimpleNamespace(
+        execution_objects.select_for_update.return_value.filter.return_value.first.return_value = SimpleNamespace(
             request_payload=stored_payload,
+            status='processing',
+            expires_at=None,
+            created_at=timezone.now(),
         )
         proxy_stream.return_value = async_items([
             'event: start\ndata: {"request_id":"ai_req_v2_stream"}\n\n'
         ])
 
-        response = V2MessageStreamView.as_view()(self.request(), session_id=12)
+        with (
+            patch('consulting.v2_views.transaction.atomic'),
+            patch('consulting.v2_views.ConsultingSession.objects') as sessions,
+        ):
+            sessions.select_for_update.return_value.filter.return_value.first.return_value = session
+            response = V2MessageStreamView.as_view()(self.request(), session_id=12)
         b''.join(asyncio.run(collect_async(response.streaming_content)))
 
         self.assertEqual(response.status_code, 200)
@@ -778,7 +828,13 @@ class V2MessageStreamViewTests(SimpleTestCase):
         get_session.return_value = session
         store_class.return_value.get_idempotency.return_value = None
         session_objects.select_for_update.return_value.filter.return_value.first.return_value = session
-        execution_objects.filter.return_value.exists.return_value = True
+        execution_objects.select_for_update.return_value.filter.return_value.first.return_value = (
+            SimpleNamespace(
+                status='processing',
+                expires_at=None,
+                created_at=timezone.now(),
+            )
+        )
 
         response = V2MessageStreamView.as_view()(self.request(), session_id=12)
 

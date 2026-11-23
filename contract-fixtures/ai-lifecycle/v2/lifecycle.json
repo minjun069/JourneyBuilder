@@ -6,8 +6,7 @@
     "sse.json",
     "step-registry.json",
     "form-actions.json",
-    "chart-payloads.json",
-    "tool-contexts.json"
+    "chart-payloads.json"
   ],
   "required_case_categories": [
     "normal",
@@ -34,6 +33,7 @@
   },
   "timing": {
     "ai_execution_deadline_seconds": 60,
+    "processing_expiry_seconds": 180,
     "service_connect_timeout_seconds": 5,
     "stream_read_idle_timeout_seconds": 120,
     "active_state_ttl_seconds": 600,
@@ -250,7 +250,10 @@
         "new_user_message_count": 0,
         "new_ai_request_count": 0,
         "graph_execution_count": 0,
-        "replay_events": ["start", "done"],
+        "replay_events": [
+          "start",
+          "done"
+        ],
         "same_assistant_message_id": true,
         "recover_from_terminal_receipt_when_redis_missing": true
       }
@@ -284,7 +287,7 @@
         "body": {
           "contract_version": "2.0",
           "request_id": "ai_req_fixture_001",
-          "payload_digest": "0616fe5c966adb0a23ba3fee68b265ea5e68c20293323aa96fa6ae4cd465b8a7",
+          "payload_digest": "a898eeb97e4ac236e0ecfe707877e30973e3aa80f1ae378639d6dcd4c366423a",
           "session_id": 1,
           "thread_id": "user-3-session-1",
           "step_id": "basic-info",
@@ -294,15 +297,16 @@
             "saved_data": {},
             "current_form": {}
           },
-          "field_registry": [],
-          "tool_context": null,
           "chart_payload": null
         }
       },
       "response": {
         "status": 200,
         "content_type": "text/event-stream",
-        "terminal_events": ["done", "error"]
+        "terminal_events": [
+          "done",
+          "error"
+        ]
       }
     },
     "django_ai_stream_missing_request_id": {
@@ -326,7 +330,6 @@
             "saved_data": {},
             "current_form": {}
           },
-          "field_registry": [],
           "chart_payload": null
         }
       },
@@ -364,7 +367,6 @@
             "saved_data": {},
             "current_form": {}
           },
-          "field_registry": [],
           "chart_payload": null
         }
       },
@@ -455,7 +457,6 @@
                 "mode": "proposal",
                 "status": "pending",
                 "user_requested": false,
-                "confidence": 0.85,
                 "changes": [
                   {
                     "change_id": "chg_fixture_income",
@@ -479,6 +480,39 @@
                   }
                 ]
               }
+            }
+          }
+        }
+      }
+    },
+    "terminal_completed_presentation_entry": {
+      "category": "normal",
+      "boundary": "django_to_browser_sse",
+      "terminal_payload": {
+        "contract_version": "2.0",
+        "request_id": "ai_req_fixture_presentation_001",
+        "session_id": 1,
+        "thread_id": "user-3-session-1",
+        "status": "completed",
+        "completed_at": "2026-09-21T06:00:42Z",
+        "output": {
+          "response": "보고서의 핵심을 안내합니다.",
+          "step_id": "lifetime-cashflow",
+          "presentation_entry_status": "succeeded"
+        }
+      },
+      "browser_event": {
+        "event": "done",
+        "data": {
+          "contract_version": "2.0",
+          "request_id": "ai_req_fixture_presentation_001",
+          "status": "completed",
+          "message": {
+            "id": 12,
+            "role": "assistant",
+            "content": "보고서의 핵심을 안내합니다.",
+            "extracted_data": {
+              "presentation_entry_status": "succeeded"
             }
           }
         }
@@ -579,7 +613,6 @@
             "saved_data": {},
             "current_form": {}
           },
-          "field_registry": [],
           "chart_payload": null
         }
       },

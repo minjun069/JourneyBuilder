@@ -45,17 +45,6 @@ EXPECTED_BINDING_FIELDS = {
     "as_of",
     "calculation_policy_version",
 }
-EXPECTED_METRIC_FIELDS = {
-    "metric_id",
-    "value",
-    "unit",
-    "report_id",
-    "report_version",
-    "calculation_policy_version",
-    "generated_at",
-}
-
-
 def load_report(path: Path = DEFAULT_REPORT) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -82,7 +71,6 @@ def validate(report: Mapping[str, Any]) -> list[str]:
     _validate_executions(report, errors)
     sources = _validate_sources(report, errors)
     _validate_policy(report, sources, errors)
-    _validate_dashboard_metric(report, errors)
     _validate_reference_value(report, errors)
     _validate_rollback(report, sources, errors)
     _validate_rag_reuse(report, errors)
@@ -185,31 +173,6 @@ def _validate_policy(
     ]
     if len(household) != 10:
         errors.append("approved writable household reference family must contain 10 values")
-
-
-def _validate_dashboard_metric(report: Mapping[str, Any], errors: list[str]) -> None:
-    metric = report.get("dashboard_metric_e2e")
-    if not isinstance(metric, Mapping):
-        errors.append("dashboard_metric_e2e is missing")
-        return
-    if metric.get("metric_id") != "retirement_gap":
-        errors.append("dashboard metric must be retirement_gap")
-    if set(metric.get("bound_fields", [])) != EXPECTED_METRIC_FIELDS:
-        errors.append("dashboard metric exact binding fields differ")
-    if metric.get("exact_match") is not True:
-        errors.append("dashboard metric exact match did not pass")
-    if metric.get("older_ready_fallback") is not False or metric.get("ai_recalculation") is not False:
-        errors.append("dashboard metric used a forbidden fallback or AI recalculation")
-    expected_reasons = {
-        "report_not_found",
-        "report_processing",
-        "report_failed",
-        "report_stale",
-        "policy_version_mismatch",
-        "report_schema_invalid",
-    }
-    if set(metric.get("unavailable_reasons", [])) != expected_reasons:
-        errors.append("dashboard metric unavailable reasons differ")
 
 
 def _validate_reference_value(report: Mapping[str, Any], errors: list[str]) -> None:

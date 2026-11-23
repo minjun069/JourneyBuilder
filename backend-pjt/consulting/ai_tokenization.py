@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import date
+from decimal import Decimal, InvalidOperation, localcontext
 import json
+from math import isfinite
 import re
 import secrets
 from typing import Any
@@ -43,9 +46,16 @@ _LONG_IDENTIFIER_PATTERN = re.compile(
 _KOREAN_NAME_PATTERN = re.compile(
     r'((?:이름|성명)(?:은|는|이|가|:)?\s*)([가-힣]{2,5})'
 )
+_MONEY_NUMBER = r'(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?'
+# Keep a signed or compound amount together. Unsupported units are kept in the
+# token too, so the trusted numeric decoder can reject them without truncation.
 _KRW_AMOUNT_PATTERN = re.compile(
-    r'(?<!\d)(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*'
-    r'[십백천만억조]*\s*원'
+    rf'(?<![A-Za-z0-9_.,+\-−])(?:(?:[+\-−]\s*)*(?>{_MONEY_NUMBER})'
+    r'\s*[A-Za-z%*/×÷십백천만억조달러유로엔화개월년]*\s*)+원'
+)
+_IDENTIFIER_CONTEXT = re.compile(
+    r'계좌|전화|휴대폰|연락처|주민|식별|이름|성명|account|phone|contact|identifier|resident|name',
+    re.IGNORECASE,
 )
 
 _DIRECT_IDENTIFIER_FIELDS = {
@@ -87,7 +97,6 @@ _FINANCIAL_FIELDS = frozenset({
 })
 TRUSTED_FINANCIAL_PREFIXES = (
     ('customer_info',),
-    ('tool_context',),
     ('chart_payload',),
 )
 _TEXTUAL_FIELDS = frozenset({
@@ -97,6 +106,7 @@ _TEXTUAL_FIELDS = frozenset({
     'message',
     'reason',
     'response',
+    'summary',
     'title',
 })
 
@@ -170,8 +180,77 @@ class ReferenceTokenVault:
     def tokenize(self, payload: Any) -> Any:
         return self._tokenize_node(payload, path=())
 
+    def tokenize_request(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Tokenize a server-built request without rewriting its identity."""
+
+        self.assert_scope(
+            user_id=self._user_id,
+            session_id=payload.get('session_id'),
+            request_id=payload.get('request_id'),
+        )
+        identity = {
+            key: payload[key]
+            for key in ('request_id', 'session_id', 'thread_id')
+        }
+        content = {key: value for key, value in payload.items() if key not in identity}
+        return {**self.tokenize(content), **identity}
+
     def restore(self, payload: Any) -> Any:
         return self._restore_node(payload, path=())
+
+    def restore_terminal(self, payload: Any, *, step_id: str) -> Any:
+        """Restore approved numeric form values before persistence or SSE done."""
+
+        from .field_registry import get_field_spec, validate_field_change
+
+        if not isinstance(payload, Mapping) or (
+            payload.get('request_id') != self._request_id
+            or payload.get('session_id') != self._session_id
+        ):
+            raise ReferenceTokenValidationError('terminal token scope mismatch')
+        restored = self.restore(payload)
+        raw_output = payload.get('output')
+        output = restored.get('output')
+        if not isinstance(raw_output, Mapping) or not isinstance(output, Mapping):
+            return restored
+        if output.get('step_id') not in (None, step_id):
+            raise ReferenceTokenValidationError('terminal step does not match request')
+        raw_action = raw_output.get('action')
+        action = output.get('action')
+        if not isinstance(action, dict) or action.get('type') != 'form_change':
+            return restored
+        if not isinstance(raw_action, Mapping) or action.get('target', 'draft_form') != 'draft_form':
+            raise ReferenceTokenValidationError('invalid form change target')
+        for raw, change in zip(raw_action.get('changes', []), action.get('changes', []), strict=True):
+            if not isinstance(raw, Mapping) or not isinstance(change, dict):
+                raise ReferenceTokenValidationError('invalid form change')
+            try:
+                spec = validate_field_change(
+                    step_id=step_id, section=change.get('section'),
+                    path=change.get('path'), operation=change.get('operation'),
+                )
+            except (TypeError, ValueError) as error:
+                raise ReferenceTokenValidationError('invalid canonical change target') from error
+            if change.get('unit', spec.unit) != spec.unit:
+                raise ReferenceTokenValidationError('change unit does not match canonical field')
+            if change['operation'] == 'remove':
+                continue
+            if 'value' not in raw:
+                raise ReferenceTokenValidationError('form change requires a value')
+            if change['operation'] == 'add' and spec.cardinality in {'list', 'nested_list'}:
+                if not isinstance(change['value'], dict) or not change['value']:
+                    raise ReferenceTokenValidationError('added row must be an object')
+                prefix = 'items[].' if spec.section == 'goal_periods' and spec.path == 'items' else ''
+                if not isinstance(raw['value'], Mapping) or raw['value'].keys() != change['value'].keys():
+                    raise ReferenceTokenValidationError('added row keys must remain canonical')
+                for name, value in change['value'].items():
+                    child = get_field_spec(spec.section, f'{prefix}{name}')
+                    if child is None or child.step_id != step_id or not child.writable_by_ai:
+                        raise ReferenceTokenValidationError('unapproved added row field')
+                    change['value'][name] = _restore_change_value(raw['value'][name], value, child)
+            else:
+                change['value'] = _restore_change_value(raw['value'], change['value'], spec)
+        return restored
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -284,15 +363,18 @@ class ReferenceTokenVault:
             value,
         )
         value = _PHONE_PATTERN.sub(
-            lambda match: issue('PHONE_NUMBER', match.group(0)),
+            lambda match: match.group(0) if _is_money_occurrence(match, value)
+            else issue('PHONE_NUMBER', match.group(0)),
             value,
         )
         value = _RRN_PATTERN.sub(
-            lambda match: issue('DIRECT_IDENTIFIER', match.group(0)),
+            lambda match: match.group(0) if _is_money_occurrence(match, value)
+            else issue('DIRECT_IDENTIFIER', match.group(0)),
             value,
         )
         value = _LONG_IDENTIFIER_PATTERN.sub(
-            lambda match: issue('ACCOUNT_NUMBER', match.group(0)),
+            lambda match: match.group(0) if _is_money_occurrence(match, value)
+            else issue('ACCOUNT_NUMBER', match.group(0)),
             value,
         )
         value = _KOREAN_NAME_PATTERN.sub(
@@ -300,7 +382,8 @@ class ReferenceTokenVault:
             value,
         )
         value = _KRW_AMOUNT_PATTERN.sub(
-            lambda match: issue('FINANCIAL_VALUE', match.group(0)),
+            lambda match: issue('FINANCIAL_VALUE', match.group(0))
+            if not _identifier_context(value, match.start(), match.end()) else match.group(0),
             value,
         )
         for placeholder, token in protected.items():
@@ -374,6 +457,159 @@ class ReferenceTokenVault:
             return str(self._tokens[token])
 
         return _RESERVED_TOKEN_PATTERN.sub(replace, value)
+
+
+def _identifier_context(text: str, start: int, end: int) -> bool:
+    # Limit the decision to the current clause; commas inside the amount are
+    # deliberately excluded from these surrounding slices.
+    before = re.split(r'[\n;,.!?]', text[:start])[-1]
+    after = re.split(r'[\n;,.!?]', text[end:])[0]
+    return _IDENTIFIER_CONTEXT.search(before + after) is not None
+
+
+def _is_money_occurrence(match: re.Match[str], text: str) -> bool:
+    return any(
+        money.start() <= match.start() and match.end() <= money.end()
+        and not _identifier_context(text, money.start(), money.end())
+        for money in _KRW_AMOUNT_PATTERN.finditer(text)
+    )
+
+
+def _decode_krw(value: Any, value_type: str) -> int | float:
+    """Decode a whole issued amount without dropping signs or unit fragments."""
+
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise ReferenceTokenValidationError('financial reference is not an amount')
+    if isinstance(value, float) and not isfinite(value):
+        raise ReferenceTokenValidationError('financial amount must be finite')
+    source = str(value).strip()
+    if len(source) > 128:
+        raise ReferenceTokenValidationError('financial amount is too long')
+    if re.search(r'\d\s+\d', source):
+        raise ReferenceTokenValidationError('financial number contains ambiguous spacing')
+    source = re.sub(r'\s+', '', source).replace('−', '-')
+    if source.endswith('원'):
+        source = source[:-1]
+    sign = -1 if source.startswith('-') else 1
+    if source.startswith(('+', '-')):
+        source = source[1:]
+    factors = {'십': 10, '백': 100, '천': 1000, '만': 10000, '억': 100000000, '조': 1000000000000}
+    component = re.compile(rf'({_MONEY_NUMBER})([십백천만억조]*)')
+    position = 0
+    previous_factor = None
+    total = Decimal(0)
+    try:
+        with localcontext() as context:
+            context.prec = 256
+            while position < len(source):
+                match = component.match(source, position)
+                if match is None:
+                    raise ReferenceTokenValidationError('unsupported financial amount syntax')
+                factor, previous_unit = 1, 0
+                units = match.group(2)
+                if len(units) > 2 or (len(units) == 2 and not (
+                    units[0] in '십백천' and units[1] in '만억조'
+                )):
+                    raise ReferenceTokenValidationError('unsupported financial unit combination')
+                for unit in units:
+                    if factors[unit] <= previous_unit:
+                        raise ReferenceTokenValidationError('financial units are out of order')
+                    previous_unit = factors[unit]
+                    factor *= previous_unit
+                if previous_factor is not None and factor >= previous_factor:
+                    raise ReferenceTokenValidationError('financial components are out of order')
+                previous_factor = factor
+                total += Decimal(match.group(1).replace(',', '')) * factor
+                position = match.end()
+            total *= sign
+    except InvalidOperation as error:
+        raise ReferenceTokenValidationError('invalid financial amount') from error
+    if not position or not total.is_finite():
+        raise ReferenceTokenValidationError('financial amount must be finite')
+    if value_type == 'integer':
+        if total != total.to_integral_value():
+            raise ReferenceTokenValidationError('financial amount must be a whole won value')
+        return int(total)
+    result = float(total)
+    if not isfinite(result):
+        raise ReferenceTokenValidationError('financial amount must be finite')
+    return result
+
+
+def _restore_change_value(original: Any, value: Any, spec: Any) -> Any:
+    match = REFERENCE_TOKEN_PATTERN.fullmatch(original) if isinstance(original, str) else None
+    numeric = spec.value_type in {'integer', 'decimal', 'number'}
+    if match is not None and (numeric or match.group('kind') == 'FINANCIAL_VALUE'):
+        if not (match.group('kind') == 'FINANCIAL_VALUE' and numeric and spec.unit == 'KRW'):
+            raise ReferenceTokenValidationError('reference kind does not match numeric field')
+        value = _decode_krw(value, spec.value_type)
+    elif isinstance(original, str) and '[[FINANCIAL_VALUE_' in original:
+        raise ReferenceTokenValidationError('financial reference must be an exact token')
+    if value is None:
+        if not spec.nullable:
+            raise ReferenceTokenValidationError('canonical field does not permit null')
+        return None
+    valid_type = {
+        'string': isinstance(value, str),
+        'integer': isinstance(value, int) and not isinstance(value, bool),
+        'decimal': isinstance(value, (int, float)) and not isinstance(value, bool),
+        'number': isinstance(value, (int, float)) and not isinstance(value, bool),
+        'boolean': isinstance(value, bool),
+        'date': isinstance(value, str),
+        'object': isinstance(value, dict),
+        'array': isinstance(value, list),
+    }.get(spec.value_type, False)
+    if not valid_type:
+        raise ReferenceTokenValidationError('value does not match canonical type')
+    if isinstance(value, float) and not isfinite(value):
+        raise ReferenceTokenValidationError('canonical number must be finite')
+    if spec.value_type == 'date':
+        try:
+            date.fromisoformat(value)
+        except ValueError as error:
+            raise ReferenceTokenValidationError('invalid canonical date') from error
+    constraints = spec.constraints
+    if 'choices' in constraints and value not in constraints['choices']:
+        raise ReferenceTokenValidationError('value is outside canonical choices')
+    if numeric:
+        if 'min' in constraints and value < constraints['min']:
+            raise ReferenceTokenValidationError('value is below canonical minimum')
+        if 'max' in constraints and value > constraints['max']:
+            raise ReferenceTokenValidationError('value is above canonical maximum')
+    if isinstance(value, str) and len(value) > constraints.get('max_length', len(value)):
+        raise ReferenceTokenValidationError('value exceeds canonical length')
+    if isinstance(value, (dict, list)):
+        return _restore_nested_values(original, value, spec.section, spec.path)
+    return value
+
+
+def _restore_nested_values(original: Any, value: Any, section: str, path: str) -> Any:
+    from .field_registry import get_field_spec
+
+    spec = get_field_spec(section, path)
+    if spec is not None and spec.value_type not in {'object', 'array'}:
+        return _restore_change_value(original, value, spec)
+    if isinstance(value, dict):
+        if not isinstance(original, Mapping) or original.keys() != value.keys():
+            raise ReferenceTokenValidationError('object keys must remain canonical')
+        return {
+            key: _restore_nested_values(original[key], child, section, f'{path}.{key}')
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        if not isinstance(original, list) or len(original) != len(value):
+            raise ReferenceTokenValidationError('invalid canonical array')
+        return [
+            _restore_nested_values(raw, child, section, f'{path}[]')
+            for raw, child in zip(original, value, strict=True)
+        ]
+    if spec is not None:
+        return _restore_change_value(original, value, spec)
+    if isinstance(original, str) and '[[FINANCIAL_VALUE_' in original:
+        raise ReferenceTokenValidationError('financial reference has no canonical numeric field')
+    if isinstance(value, float) and not isfinite(value):
+        raise ReferenceTokenValidationError('nested number must be finite')
+    return value
 
 
 def _canonical_scalar(value: Any) -> str:

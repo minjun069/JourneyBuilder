@@ -1,18 +1,8 @@
 import { createSecureUuid } from './secureUuid.js'
 
-export function errorReviewConfidenceLevel(confidence) {
-  if (typeof confidence !== 'number' || !Number.isFinite(confidence)) return null
-  if (confidence >= 0.85) return 'high'
-  if (confidence >= 0.60) return 'medium'
-  return 'low'
-}
-
 export function visibleErrorReviewItems(items) {
   if (!Array.isArray(items)) return []
-  return items.filter((item) => {
-    const level = errorReviewConfidenceLevel(item?.confidence)
-    return (level === 'medium' || level === 'high') && item?.confidence_level === level
-  })
+  return items.filter((item) => item && typeof item.reason === 'string' && item.reason.trim())
 }
 
 export function errorReviewItemChange(item) {
@@ -151,7 +141,7 @@ export function readCanonicalValue(currentForm, change) {
 
 function uiValue(field, value) {
   if (field === 'is_fixed' && typeof value === 'boolean') return value ? '고정' : '변동'
-  if (field === 'monthly_income' && typeof value === 'number') return value / 10000
+  // 금액은 AI·서버·화면이 모두 원 단위다. monthly_income 만 만 단위로 내리던 예외를 제거했다.
   return value
 }
 

@@ -41,6 +41,31 @@ def _require_ancestor(commit: str) -> None:
         raise GateFailure(f"required input commit is not an ancestor of HEAD: {commit}")
 
 
+def _validate_input_inventory(
+    manifest: dict[str, Any],
+    inputs: list[Any],
+    *,
+    label: str,
+) -> set[str]:
+    input_ids = [item.get("id") for item in inputs if isinstance(item, dict)]
+    retired = manifest.get("retired_inputs", [])
+    if (
+        len(input_ids) != len(inputs)
+        or not isinstance(retired, list)
+        or not all(isinstance(input_id, str) for input_id in retired)
+    ):
+        raise GateFailure(f"{label} input inventory is invalid")
+    if len(input_ids) != len(set(input_ids)) or len(retired) != len(set(retired)):
+        raise GateFailure(f"{label} input inventory contains duplicate IDs")
+    if set(input_ids) & set(retired):
+        raise GateFailure(f"{label} cannot both retain and retire an input")
+    if set(input_ids) | set(retired) != EXPECTED_INPUTS:
+        raise GateFailure(
+            f"{label} must classify D1-G0 and P01 through P14 exactly once"
+        )
+    return set(retired)
+
+
 def check_manifest() -> list[str]:
     manifest = _load_json(MANIFEST_PATH)
     if not isinstance(manifest, dict):
@@ -57,11 +82,11 @@ def check_manifest() -> list[str]:
     inputs = manifest.get("inputs")
     if not isinstance(inputs, list):
         raise GateFailure("foundation manifest inputs must be an array")
-    input_ids = [item.get("id") for item in inputs if isinstance(item, dict)]
-    if len(input_ids) != len(inputs) or set(input_ids) != EXPECTED_INPUTS:
-        raise GateFailure("foundation manifest must contain D1-G0 and P01 through P14 exactly once")
-    if len(input_ids) != len(set(input_ids)):
-        raise GateFailure("foundation manifest contains duplicate input IDs")
+    _validate_input_inventory(
+        manifest,
+        inputs,
+        label="foundation manifest",
+    )
 
     checked_commits: list[str] = []
     for item in inputs:
@@ -105,9 +130,14 @@ def check_consistency_manifest() -> dict[str, int]:
     inputs = manifest.get("inputs")
     if not isinstance(inputs, list):
         raise GateFailure("artifact consistency inputs must be an array")
-    ids = [item.get("id") for item in inputs if isinstance(item, dict)]
-    if len(ids) != len(inputs) or set(ids) != EXPECTED_INPUTS:
-        raise GateFailure("artifact consistency must classify every G1 input exactly once")
+    retired = _validate_input_inventory(
+        manifest,
+        inputs,
+        label="artifact consistency",
+    )
+    foundation = _load_json(MANIFEST_PATH)
+    if retired != set(foundation.get("retired_inputs", [])):
+        raise GateFailure("G1 manifests disagree on retired input IDs")
 
     counts = {status: 0 for status in EXPECTED_PRODUCTION_STATUSES}
     for item in inputs:
@@ -170,6 +200,10 @@ def check_step_and_chart_contracts() -> tuple[int, int]:
         raise GateFailure("step registry supported and transport fallback steps must be unique")
     if fallback_steps != {"general"}:
         raise GateFailure("general must be the explicit transport-only fallback step")
+    registered_agents = set(registry.get("agents", []))
+    fallback_agents = set(registry.get("transport_fallback_allowed_agents", []))
+    if fallback_agents != {"qa"} or not fallback_agents <= registered_agents:
+        raise GateFailure("general transport fallback must allow only registered qa")
 
     process_steps = (
         REPOSITORY_ROOT / "front-pjt/src/views/ai/data/processSteps.js"
@@ -201,7 +235,6 @@ def check_step_and_chart_contracts() -> tuple[int, int]:
         "step-registry.json",
         "form-actions.json",
         "chart-payloads.json",
-        "tool-contexts.json",
     }
     if companion_fixtures != expected_companions:
         raise GateFailure("lifecycle fixture must name all required companion fixtures")

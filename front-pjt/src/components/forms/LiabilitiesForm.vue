@@ -5,7 +5,7 @@ import AddableTable from '@/components/ui/AddableTable.vue'
 const COLUMNS = [
   { key: 'type',       label: '구분',      minWidth: '8em',  type: 'select', options: ['신용대출', '임대보증금', '담보대출', '학자금대출', '기타'] },
   { key: 'name',       label: '대출 상품명', minWidth: '13em', placeholder: '모두은행 청년신용대출' },
-  { key: 'value',      label: '대출잔액',   minWidth: '5em',  placeholder: '1억',    unit: '원' },
+  { key: 'value',      label: '대출잔액',   minWidth: '5em',  placeholder: '100,000,000',    unit: '원' },
   { key: 'rate',       label: '대출금리',   minWidth: '4em',  placeholder: '5',      unit: '%' },
   { key: 'rateType',   label: '금리유형',   minWidth: '7em',  type: 'toggle', options: ['고정', '변동'] },
   { key: 'baseRate',   label: '기준금리',   minWidth: '6em',  placeholder: 'COFIX', disabledWhen: { key: 'rateType', value: '고정' } },

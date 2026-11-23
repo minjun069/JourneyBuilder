@@ -2,168 +2,163 @@ from __future__ import annotations
 
 from copy import deepcopy
 import unittest
+from unittest.mock import patch
 
-from guardrails.plan_policy import evaluate_route_plan
+from guardrails.plan_policy import evaluate_and_route
 
 
 STEP_CANDIDATES = {
-    "intro": ("qa", "fallback"),
-    "financial-goals": ("qa", "input_assist", "error_review", "fallback"),
+    "intro": ("qa",),
+    "financial-goals": ("qa", "input_assist", "error_review"),
 }
 
 
-def agent_task(
-    task_id: str = "task-1",
-    *,
-    step_id: str = "intro",
-    executor: str = "qa",
-    depends_on: list[str] | None = None,
-) -> dict:
+def raw_agent_plan(*, count: int = 1) -> dict:
     return {
-        "id": task_id,
-        "type": "answer_question",
-        "description": "현재 단계의 은퇴 설계 질문에 답변",
-        "depends_on": depends_on or [],
-        "bindings": {},
-        "executor_kind": "agent",
-        "produces": "text_response",
-        "step_id": step_id,
-        "route": {
-            "task_id": task_id,
-            "executor_kind": "agent",
-            "executor": executor,
-            "reason_code": "intent_match",
-        },
+        "status": "executable",
+        "tasks": [
+            {
+                "id": f"answer-{index}",
+                "type": "answer_question",
+                "description": "현재 단계의 은퇴 설계 질문에 답변",
+                "depends_on": [],
+                "bindings": {},
+            }
+            for index in range(1, count + 1)
+        ],
     }
 
 
-def tool_task() -> dict:
+def raw_tool_plan() -> dict:
     return {
-        "id": "task-1",
-        "type": "lookup_reference_value",
-        "description": "승인된 부채상환 기준값 조회",
-        "depends_on": [],
-        "bindings": {},
-        "arguments": {
-            "reference_id": "debt_service_ratio_max",
-            "age": 45,
-            "period": "annual",
-            "population": "retirewise_kr_households",
-        },
-        "executor_kind": "tool",
-        "produces": "reference_value",
-        "step_id": "financial-goals",
-        "capability": "lookup_reference_value",
-        "tool_name": "get_approved_reference_value",
-        "authorized_agent": "qa",
-        "route": {
-            "task_id": "task-1",
-            "executor_kind": "tool",
-            "executor": "lookup_reference_value",
-            "reason_code": "capability_match",
-        },
+        "status": "executable",
+        "tasks": [{
+            "id": "lookup",
+            "type": "lookup_reference_value",
+            "description": "승인된 부채상환 기준값 조회",
+            "depends_on": [],
+            "bindings": {},
+            "arguments": {
+                "reference_id": "debt_service_ratio_max",
+                "age": 45,
+                "period": "annual",
+                "population": "retirewise_kr_households",
+            },
+        }],
     }
 
 
 class PlanGuardrailPolicyTests(unittest.TestCase):
+    def test_disabled_validation_skips_structure_and_step_allowlist(self) -> None:
+        raw = raw_agent_plan(count=4)
+        before = deepcopy(raw)
+        with patch("guardrails.plan_policy.validate_plan_structure", side_effect=AssertionError("validation ran")):
+            decision = evaluate_and_route(raw, step_id="unknown", step_candidates={}, validation_enabled=False)
+        self.assertTrue(decision.allowed)
+        self.assertEqual(decision.reason_code, "PLAN_VALIDATION_DISABLED")
+        self.assertEqual(len(decision.plan["tasks"]), 4)
+        self.assertEqual(decision.plan["tasks"][0]["route"]["executor"], "qa")
+        self.assertEqual(raw, before)
+        self.assertFalse(evaluate_and_route(raw, step_id="unknown", step_candidates={}).allowed)
+
+    def test_disabled_validation_preserves_canonical_agent_and_tool_routes(self) -> None:
+        for raw in (raw_agent_plan(), raw_tool_plan()):
+            with self.subTest(raw=raw):
+                strict = evaluate_and_route(raw, step_id="intro", step_candidates=STEP_CANDIDATES,
+                                            registered_tool_capabilities=("lookup_reference_value",))
+                bypass = evaluate_and_route(raw, step_id="intro", validation_enabled=False)
+                self.assertTrue(strict.allowed)
+                self.assertEqual(bypass.plan, strict.plan)
+
+    def test_disabled_validation_preserves_non_executable_outcomes(self) -> None:
+        for status in ("ambiguous", "unsupported"):
+            decision = evaluate_and_route({"status": status, "tasks": []}, step_id="intro", validation_enabled=False)
+            self.assertEqual(decision.plan["tasks"], [])
+            self.assertEqual(decision.plan["outcome_reason"], f"{status}_intent")
+
     def test_allows_agent_and_registered_tool_routes(self) -> None:
-        agent_decision = evaluate_route_plan(
-            {"tasks": [agent_task()]},
+        agent = evaluate_and_route(
+            raw_agent_plan(),
             step_id="intro",
             step_candidates=STEP_CANDIDATES,
         )
-        tool_decision = evaluate_route_plan(
-            {"tasks": [tool_task()]},
+        tool = evaluate_and_route(
+            raw_tool_plan(),
             step_id="financial-goals",
             step_candidates=STEP_CANDIDATES,
             registered_tool_capabilities=("lookup_reference_value",),
         )
 
-        self.assertTrue(agent_decision.allowed)
-        self.assertEqual(agent_decision.reason_code, "PLAN_GUARDRAIL_ALLOWED")
-        self.assertTrue(tool_decision.allowed)
+        self.assertTrue(agent.allowed)
+        self.assertEqual(agent.plan["tasks"][0]["route"]["executor"], "qa")
+        self.assertTrue(tool.allowed)
 
-    def test_reuses_planner_task_limit_and_dependency_reasons(self) -> None:
-        over_limit = evaluate_route_plan(
-            {"tasks": [agent_task(f"task-{index}") for index in range(1, 5)]},
-            step_id="intro",
-            step_candidates=STEP_CANDIDATES,
-        )
-        cyclic_tasks = [
-            agent_task("task-1", depends_on=["task-2"]),
-            agent_task("task-2", depends_on=["task-1"]),
-        ]
-        cyclic = evaluate_route_plan(
-            {"tasks": cyclic_tasks},
+    def test_structural_validation_runs_before_route_creation(self) -> None:
+        decision = evaluate_and_route(
+            raw_agent_plan(count=4),
             step_id="intro",
             step_candidates=STEP_CANDIDATES,
         )
 
-        self.assertEqual(over_limit.reason_code, "INVALID_TASK_COUNT")
-        self.assertEqual(cyclic.reason_code, "FORWARD_OR_CYCLIC_DEPENDENCY")
+        self.assertEqual(decision.reason_code, "INVALID_TASK_COUNT")
 
-    def test_blocks_step_agent_and_tool_capability_tampering(self) -> None:
-        disallowed_agent = evaluate_route_plan(
-            {"tasks": [agent_task(executor="input_assist")]},
-            step_id="intro",
-            step_candidates=STEP_CANDIDATES,
-        )
-        mismatched_tool = tool_task()
-        mismatched_tool["route"]["executor"] = "get_dashboard_metric"
-        tool_decision = evaluate_route_plan(
-            {"tasks": [mismatched_tool]},
-            step_id="financial-goals",
-            step_candidates=STEP_CANDIDATES,
-            registered_tool_capabilities=(
-                "lookup_reference_value",
-                "get_dashboard_metric",
-            ),
-        )
-
-        self.assertEqual(disallowed_agent.reason_code, "AGENT_NOT_ALLOWLISTED")
-        self.assertEqual(tool_decision.reason_code, "TOOL_CAPABILITY_MISMATCH")
-
-    def test_accumulates_route_violations_with_stable_primary_reason(self) -> None:
-        tampered = deepcopy(agent_task())
-        tampered["route"].update({
-            "task_id": "task-forged",
+    def test_blocks_planner_route_injection(self) -> None:
+        tampered = raw_agent_plan()
+        tampered["tasks"][0]["route"] = {
             "executor_kind": "tool",
             "executor": "input_assist",
-            "scope": "admin",
-        })
+        }
 
-        decision = evaluate_route_plan(
-            {"tasks": [tampered]},
+        decision = evaluate_and_route(
+            tampered,
             step_id="intro",
             step_candidates=STEP_CANDIDATES,
         )
 
-        self.assertEqual(decision.reason_code, "UNKNOWN_ROUTE_FIELDS")
-        self.assertEqual(
-            [violation.code for violation in decision.violations],
-            [
-                "UNKNOWN_ROUTE_FIELDS",
-                "ROUTE_TASK_ID_MISMATCH",
-                "ROUTE_EXECUTOR_KIND_MISMATCH",
-                "AGENT_NOT_ALLOWLISTED",
-            ],
+        self.assertEqual(decision.reason_code, "UNKNOWN_TASK_FIELDS")
+        self.assertIn(
+            "PLANNER_EXECUTOR_INJECTION",
+            {item.code for item in decision.violations},
         )
 
-    def test_empty_trusted_registries_fail_closed(self) -> None:
-        agent_decision = evaluate_route_plan(
-            {"tasks": [agent_task()]},
+    def test_rejects_extra_root_fields(self) -> None:
+        candidate = raw_agent_plan()
+        candidate["trusted"] = True
+
+        decision = evaluate_and_route(
+            candidate,
+            step_id="intro",
+            step_candidates=STEP_CANDIDATES,
+        )
+
+        self.assertEqual(decision.reason_code, "INVALID_PLAN_FIELDS")
+
+    def test_empty_trusted_registries_fail_in_structural_stage(self) -> None:
+        agent = evaluate_and_route(
+            raw_agent_plan(),
             step_id="intro",
             step_candidates={},
         )
-        tool_decision = evaluate_route_plan(
-            {"tasks": [tool_task()]},
+        tool = evaluate_and_route(
+            raw_tool_plan(),
             step_id="financial-goals",
             step_candidates=STEP_CANDIDATES,
-            registered_tool_capabilities=(),
         )
 
-        self.assertEqual(agent_decision.reason_code, "UNKNOWN_STEP")
-        self.assertEqual(tool_decision.reason_code, "TOOL_NOT_ALLOWLISTED")
+        self.assertEqual(agent.reason_code, "TASK_TYPE_NOT_ALLOWED_FOR_STEP")
+        self.assertEqual(tool.reason_code, "TASK_TYPE_NOT_ALLOWED_FOR_STEP")
+
+    def test_input_plan_is_not_mutated(self) -> None:
+        raw_plan = raw_agent_plan()
+        original = deepcopy(raw_plan)
+
+        evaluate_and_route(
+            raw_plan,
+            step_id="intro",
+            step_candidates=STEP_CANDIDATES,
+        )
+
+        self.assertEqual(raw_plan, original)
 
 
 if __name__ == "__main__":

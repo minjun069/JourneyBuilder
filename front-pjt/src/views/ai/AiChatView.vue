@@ -13,6 +13,13 @@ import {
 import { decideFormChangeLocally } from '@/utils/formDecision'
 import { addSentenceLineBreaks, renderChatMarkdown } from '@/utils/chatMarkdown'
 import { validateConsultationForm } from '@/utils/formValidation'
+import { cleanMindsetText } from '@/utils/mindsetText'
+import {
+  applyMindsetResult,
+  cleanMindsetForm,
+  createMindsetState,
+  mindsetRequestState,
+} from '@/utils/mindsetElicitation'
 import {
   cloneFormState,
   completedStepsForSession,
@@ -23,9 +30,7 @@ import { PROCESS_STEPS, PRESENTATION_STEP_IDS, STEP_IDS } from './data/processSt
 import { initialMessages, STEP_GUIDE_MESSAGES } from './data/stepGuideMessages.js'
 import { createPresentationEntryIdempotencyKey } from '@/api/aiLifecycle'
 import {
-  hasPresentationEntryReceipt,
-  presentationEntryReceiptKey,
-  savePresentationEntryReceipt,
+  createPresentationEntryVisit,
 } from '@/utils/presentationEntry'
 import BasicInfoForm from '@/components/forms/BasicInfoForm.vue'
 import FinancialMindsetForm from '@/components/forms/FinancialMindsetForm.vue'
@@ -74,7 +79,7 @@ function onResizeMove(event) {
   if (isPresentationPhase.value) {
     leftWidth.value = Math.min(45, Math.max(15, nextLeft))
   } else {
-    leftWidth.value = Math.min(85, Math.max(55, nextLeft))
+    leftWidth.value = Math.min(85, Math.max(35, nextLeft))
   }
   rightWidth.value = 100 - leftWidth.value
 }
@@ -89,6 +94,24 @@ const currentStepId    = ref('intro')
 const visitedStepIds   = ref(new Set())
 const completedStepIds = ref(new Set())
 const skippedStepIds   = ref(new Set())
+
+const TABULAR_FORM_STEP_IDS = new Set([
+  'financial-assets',
+  'pension-assets',
+  'real-estate',
+  'liabilities',
+  'income',
+  'expenses',
+])
+const isTabularFormStep = computed(() => TABULAR_FORM_STEP_IDS.has(currentStepId.value))
+
+watch(currentStepId, (stepId) => {
+  const step = PROCESS_STEPS.find((item) => item.id === stepId)
+  if (step?.phase === 'presentation' || stepId === 'intro') return
+
+  leftWidth.value = TABULAR_FORM_STEP_IDS.has(stepId) ? 55 : 71.4
+  rightWidth.value = 100 - leftWidth.value
+})
 
 const isPresentationPhase = computed(() => {
   const step = PROCESS_STEPS.find((s) => s.id === currentStepId.value)
@@ -125,6 +148,8 @@ async function navigateToStep(stepId) {
   const alreadyVisited = stepId === 'intro' || messages.value.some((m) => m.role === 'divider' && m.stepId === stepId)
   if (alreadyVisited) {
     scrollToStepStart(stepId, true)
+    if (PRESENTATION_STEP_IDS.includes(stepId)) void maybeSendPresentationEntryGuide(stepId)
+    if (stepId === 'financial-mindset') void maybeStartMindsetConversation()
     return
   }
 
@@ -136,6 +161,12 @@ async function navigateToStep(stepId) {
   if (PRESENTATION_STEP_IDS.includes(stepId)) {
     scrollToStepStart(stepId, true)
     void maybeSendPresentationEntryGuide(stepId)
+    return
+  }
+
+  if (stepId === 'financial-mindset') {
+    scrollToStepStart(stepId, true)
+    void maybeStartMindsetConversation()
     return
   }
 
@@ -193,6 +224,9 @@ function confirmStepJump() {
 
 // ─── 채팅 ─────────────────────────────────────────────────
 const messages               = ref([])
+const mindsetState = ref(createMindsetState())
+const lockedMindsetField = ref(null)
+const mindsetReceipts = new Set()
 const pendingConsentMessages = ref([])
 const draftMessage           = ref('')
 const chatListRef            = ref(null)
@@ -357,7 +391,9 @@ function resetConversationState() {
   reportStore.clearActiveReport()
   isRestoredSession.value = false
   Object.keys(formDrafts).forEach((key) => delete formDrafts[key])
-  emptyConfirmedStepIds.value = new Set()
+  mindsetState.value = createMindsetState()
+  lockedMindsetField.value = null
+  mindsetReceipts.clear()
   clearFormWarning()
 }
 
@@ -389,7 +425,6 @@ function toChatMessage(message, { interactive = true } = {}) {
     const visibleItems = visibleErrorReviewItems(review.items)
     bubble.action = {
       type: 'error-review',
-      trigger: review.trigger,
       items: visibleItems.map((item) => ({ ...item, decision: 'pending' })),
     }
   }
@@ -400,7 +435,8 @@ function restoreStoredMessages() {
   messages.value = consultationStore.chatMessages
     .filter((message) => !(
       message.role === 'user'
-      && message.extracted_data?.system_event === 'presentation_entry'
+      && (message.extracted_data?.system_event === 'presentation_entry'
+        || message.extracted_data?.system_event === 'mindset_elicitation_start')
     ))
     .map((message) => toChatMessage(message, { interactive: false }))
 }
@@ -473,28 +509,12 @@ async function streamAssistantMessage(text, options) {
   }
 }
 
-const presentationGuideConsumed = new Set()
-const presentationGuideInFlight = new Set()
-
-function presentationGuideStorageKey(stepId, reportVersion) {
-  return presentationEntryReceiptKey({
-    sessionId: consultationStore.sessionId,
-    stepId,
-    reportVersion,
-  })
-}
-
-function wasPresentationGuideConsumed(key) {
-  return hasPresentationEntryReceipt(presentationGuideConsumed, sessionStorage, key)
-}
-
-function rememberPresentationGuide(key) {
-  savePresentationEntryReceipt(presentationGuideConsumed, sessionStorage, key)
-}
+let presentationGuideVisit = null
 
 async function maybeSendPresentationEntryGuide(stepId) {
   const sessionId = consultationStore.sessionId
-  if (!sessionId || !PRESENTATION_STEP_IDS.includes(stepId)) return
+  const visit = presentationGuideVisit
+  if (!sessionId || !visit || visit.sessionId !== sessionId || visit.stepId !== stepId) return
 
   if (
     !reportStore.reports
@@ -502,13 +522,12 @@ async function maybeSendPresentationEntryGuide(stepId) {
   ) {
     await reportStore.calculatePresentation(sessionId)
   }
-  if (currentStepId.value !== stepId) return
+  if (currentStepId.value !== stepId || presentationGuideVisit !== visit) return
 
   const reportVersion = reportStore.presentationReportVersion(stepId)
-  const storageKey = presentationGuideStorageKey(stepId, reportVersion)
-  if (wasPresentationGuideConsumed(storageKey) || presentationGuideInFlight.has(storageKey)) return
+  if (!visit.begin(reportVersion)) return
 
-  presentationGuideInFlight.add(storageKey)
+  let entryMessage = null
   isTyping.value = true
   isStreamingResponse.value = true
   try {
@@ -516,14 +535,15 @@ async function maybeSendPresentationEntryGuide(stepId) {
       sessionId,
       stepId,
       reportVersion,
+      visitId: visit.visitId,
     })
-    await streamAssistantMessage('이 보고서의 핵심을 먼저 안내해 주세요.', {
+    const streamed = await streamAssistantMessage('이 보고서의 핵심을 먼저 안내해 주세요.', {
       stepId,
       form: null,
       requestMode: 'presentation_entry',
       idempotencyKey,
     })
-    rememberPresentationGuide(storageKey)
+    entryMessage = streamed.message
   } catch (error) {
     if (error?.name !== 'AbortError' && currentStepId.value === stepId) {
       const fallback = STEP_GUIDE_MESSAGES[stepId]
@@ -534,7 +554,34 @@ async function maybeSendPresentationEntryGuide(stepId) {
       }
     }
   } finally {
-    presentationGuideInFlight.delete(storageKey)
+    visit.finish(reportVersion, entryMessage)
+    isTyping.value = false
+    isStreamingResponse.value = false
+  }
+}
+
+async function maybeStartMindsetConversation() {
+  if (
+    currentStepId.value !== 'financial-mindset' || !hasActiveSession.value
+    || mindsetState.value.started || lockedMindsetField.value || !activeFormRef.value?.form
+  ) return
+  const elicitationState = mindsetRequestState(mindsetState.value, 'start')
+  lockedMindsetField.value = elicitationState.field
+  isTyping.value = true
+  isStreamingResponse.value = true
+  try {
+    await streamAssistantMessage('경제관념 항목 상담을 시작합니다.', {
+      stepId: 'financial-mindset',
+      form: cleanMindsetForm(activeFormRef.value.form),
+      requestMode: 'mindset_elicitation',
+      elicitationState,
+    })
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      sessionError.value = error?.message ?? '경제 관념 상담을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.'
+    }
+  } finally {
+    lockedMindsetField.value = null
     isTyping.value = false
     isStreamingResponse.value = false
   }
@@ -550,11 +597,15 @@ async function sendMessage() {
   scrollToBottom()
   isTyping.value = true
   isStreamingResponse.value = true
+  const elicitationState = currentStepId.value === 'financial-mindset'
+    ? mindsetRequestState(mindsetState.value) : null
+  lockedMindsetField.value = elicitationState?.field ?? null
 
   try {
     await streamAssistantMessage(text, {
       stepId: currentStepId.value,
-      form: activeFormRef.value?.form ?? null,
+      form: elicitationState ? cleanMindsetForm(activeFormRef.value.form) : activeFormRef.value?.form ?? null,
+      ...(elicitationState ? { requestMode: 'mindset_elicitation', elicitationState } : {}),
     })
   } catch (error) {
     if (error?.name === 'AbortError') return
@@ -562,6 +613,7 @@ async function sendMessage() {
       text: error?.message ?? '메시지 전송 중 오류가 발생했습니다. 다시 시도해주세요.',
     }], { typingDelay: 100 })
   } finally {
+    lockedMindsetField.value = null
     isTyping.value = false
     isStreamingResponse.value = false
   }
@@ -674,7 +726,6 @@ const formSaving          = ref(false)
 const reviewLoading       = ref(false)
 const restoringForm       = ref(false)
 const formDrafts          = reactive({})
-const emptyConfirmedStepIds = ref(new Set())
 const formWarning         = reactive({
   code: null,
   canConfirmEmpty: false,
@@ -688,9 +739,15 @@ const financialGoalProps  = computed(() => ({
   retirementAge: Number(basicInfoData.value?.retirement_age) || 60,
   endAge: Number(basicInfoData.value?.end_age) || 90,
 }))
-const activeFormProps = computed(() =>
-  currentStepId.value === 'financial-goals' ? financialGoalProps.value : {}
-)
+const activeFormProps = computed(() => {
+  if (currentStepId.value === 'financial-goals') return financialGoalProps.value
+  if (currentStepId.value === 'financial-mindset') return {
+    activeField: mindsetState.value.activeField,
+    lockedField: lockedMindsetField.value,
+    completedFields: mindsetState.value.completedFields,
+  }
+  return {}
+})
 const submitButtonLabel   = computed(() => {
   if (isFinancialInfoStep.value) return '다음 단계로 이동'
   if (formSaving.value) return '저장 중...'
@@ -755,6 +812,7 @@ async function restoreConsultationProcess(session) {
   await nextTick()
   await hydrateActiveForm(resumeStep)
   scrollToStepStart(resumeStep)
+  if (resumeStep === 'financial-mindset') void maybeStartMindsetConversation()
   return resumeStep
 }
 
@@ -821,6 +879,9 @@ function executeAutoAction(action) {
   }
 }
 
+// 운영 일시 중지: 재개 시 이 연결만 활성화하고 검토 구현은 그대로 사용한다.
+const ERROR_REVIEW_ENABLED = false
+
 async function submitForm() {
   if (isInteractionBusy.value) return
   sessionError.value = ''
@@ -840,7 +901,6 @@ async function submitForm() {
   const validation = validateConsultationForm(
     currentStepId.value,
     activeFormRef.value?.form,
-    { allowEmpty: emptyConfirmedStepIds.value.has(currentStepId.value) },
   )
   if (!validation.valid) {
     formWarning.code = validation.code
@@ -852,10 +912,14 @@ async function submitForm() {
   clearFormWarning()
 
   try {
-    await continueSaveAfterOptionalReview(
-      () => requestErrorReview(nextStepId),
-      () => persistFormAndAdvance(nextStepId),
-    )
+    if (ERROR_REVIEW_ENABLED) {
+      await continueSaveAfterOptionalReview(
+        () => requestErrorReview(nextStepId),
+        () => persistFormAndAdvance(nextStepId),
+      )
+    } else {
+      await persistFormAndAdvance(nextStepId)
+    }
   } catch (error) {
     if (error?.name !== 'AbortError') {
       sessionError.value = error?.message ?? '입력값을 저장하지 못했습니다.'
@@ -865,31 +929,36 @@ async function submitForm() {
 
 async function confirmEmptyForm() {
   if (isInteractionBusy.value) return
+  const validation = validateConsultationForm(currentStepId.value, activeFormRef.value?.form)
+  if (!validation.canConfirmEmpty) {
+    clearFormWarning()
+    await submitForm()
+    return
+  }
+  const currentIdx = STEP_IDS.indexOf(currentStepId.value)
+  const nextStepId = currentStepId.value === 'financial-goals'
+    ? 'balance-sheet'
+    : currentIdx >= 0 && currentIdx < STEP_IDS.length - 1 ? STEP_IDS[currentIdx + 1] : null
+  if (!nextStepId) return
   if (currentStepId.value === 'financial-assets') {
-    const currentIdx = STEP_IDS.indexOf(currentStepId.value)
-    const nextStepId = currentIdx >= 0 && currentIdx < STEP_IDS.length - 1
-      ? STEP_IDS[currentIdx + 1]
-      : null
-    if (!nextStepId) return
     const saved = await persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets: true })
     if (saved) clearFormWarning()
     return
   }
 
-  const confirmed = new Set(emptyConfirmedStepIds.value)
-  confirmed.add(currentStepId.value)
-  emptyConfirmedStepIds.value = confirmed
-  clearFormWarning()
-  await submitForm()
+  const saved = await persistFormAndAdvance(nextStepId, { confirmEmptySection: true })
+  if (saved) clearFormWarning()
 }
 
-async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = false } = {}) {
+async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = false, confirmEmptySection = false } = {}) {
   formSaving.value = true
   const savedStepId = currentStepId.value
   try {
     const response = confirmNoFinancialAssets
       ? await consultationStore.confirmNoFinancialAssets()
-      : await consultationStore.saveFormData(savedStepId, activeFormRef.value?.form ?? {})
+      : confirmEmptySection
+        ? await consultationStore.confirmNoSectionData(savedStepId)
+        : await consultationStore.saveFormData(savedStepId, activeFormRef.value?.form ?? {})
     if (savedStepId === 'basic-info') {
       basicInfoData.value = response?.data?.data ?? null
     }
@@ -926,7 +995,9 @@ async function persistFormAndAdvance(nextStepId, { confirmNoFinancialAssets = fa
   void streamAiMessages([{
     text: confirmNoFinancialAssets
       ? '보유 금융자산이 없는 것으로 확인했습니다. 다음 단계로 이동할 준비가 완료되었습니다.'
-      : '입력하신 정보가 저장되었습니다. 다음 단계로 이동할 준비가 완료되었습니다.',
+      : confirmEmptySection
+        ? '해당 내용이 없는 것으로 확인했습니다. 다음 단계로 이동할 준비가 완료되었습니다.'
+        : '입력하신 정보가 저장되었습니다. 다음 단계로 이동할 준비가 완료되었습니다.',
     action: { type: 'next-step', stepId: nextStepId, label: '다음 단계로 이동 →' },
   }])
   return true
@@ -955,6 +1026,16 @@ const activePresentationTitle = computed(() => {
 })
 
 // ─── Lifecycle ────────────────────────────────────────────
+watch(
+  [currentStepId, () => consultationStore.sessionId],
+  ([stepId, sessionId]) => {
+    presentationGuideVisit = sessionId && PRESENTATION_STEP_IDS.includes(stepId)
+      ? createPresentationEntryVisit({ sessionId, stepId })
+      : null
+  },
+  { immediate: true, flush: 'sync' },
+)
+
 watch(currentStepId, async (stepId) => {
   if (stepId !== 'financial-goals' || basicInfoData.value) return
   try {
@@ -1032,6 +1113,8 @@ onBeforeUnmount(() => {
         :visited-step-ids="visitedStepIds"
         :completed-step-ids="completedStepIds"
         :skipped-step-ids="skippedStepIds"
+        :current-mindset-field="mindsetState.activeField"
+        :completed-mindset-fields="mindsetState.completedFields"
         :disabled="isInteractionBusy"
         @step-click="handleStepClick"
       />
@@ -1122,7 +1205,7 @@ onBeforeUnmount(() => {
                         <div class="update-change-copy">
                           <strong>{{ `${item.section}.${item.path}` }}</strong>
                           <span>현재 값: {{ formatActionValue(item.current_value, item.unit) }}</span>
-                          <small>{{ item.reason }} · 신뢰도 {{ item.confidence_level === 'high' ? '높음' : '보통' }}</small>
+                          <small>{{ item.reason }}</small>
                           <span v-if="item.suggested_value != null">수정 후보: {{ formatActionValue(item.suggested_value, item.unit) }}</span>
                         </div>
                         <div v-if="item.decision === 'pending'" class="update-actions">
@@ -1178,7 +1261,11 @@ onBeforeUnmount(() => {
               <span></span>
             </button>
 
-            <aside class="input-panel" :style="{ flexBasis: `${isPresentationPhase ? leftWidth : rightWidth}%` }">
+            <aside
+              class="input-panel"
+              :class="{ 'input-panel--tabular': isTabularFormStep }"
+              :style="{ flexBasis: `${isPresentationPhase ? leftWidth : rightWidth}%` }"
+            >
 
               <!-- ── 재무 진단 인라인 뷰 ── -->
               <template v-if="isPresentationPhase">

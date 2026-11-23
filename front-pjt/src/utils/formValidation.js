@@ -95,7 +95,10 @@ export function validateConsultationForm(stepId, form, { allowEmpty = false } = 
           confirmationLabel: '보유 금융자산 없음',
         })
       }
-      return emptyFormResult('현재 단계', { canConfirmEmpty: stepId === 'liabilities' })
+      return emptyFormResult('현재 단계', {
+        canConfirmEmpty: true,
+        message: '입력된 내용이 없습니다. 해당 없음으로 진행하시겠습니까?',
+      })
     }
     const amountFields = {
       'financial-assets': ['principal', 'value', 'monthly'],
@@ -132,7 +135,10 @@ export function validateConsultationForm(stepId, form, { allowEmpty = false } = 
     const hasGoal = phases.some((phase) => (
       (value[phase]?.periods ?? []).length > 0 || (value[phase]?.milestones ?? []).some((item) => item.age)
     ))
-    if (!hasGoal && !allowEmpty) return emptyFormResult('재무목표 단계')
+    if (!hasGoal && !allowEmpty) return emptyFormResult('재무목표 단계', {
+      canConfirmEmpty: true,
+      message: '입력된 재무목표가 없습니다. 해당 없음으로 진행하시겠습니까?',
+    })
     const errors = []
     for (const phase of phases) {
       for (const period of value[phase]?.periods ?? []) {

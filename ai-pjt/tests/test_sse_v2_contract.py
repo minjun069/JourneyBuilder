@@ -25,6 +25,17 @@ class AISSEV2ConsumerContractTests(unittest.TestCase):
         self.assertIn("Authorization", self.contract["required_service_headers"])
         self.assertEqual(self.contract["ai_endpoint"], "/api/ai/v2/chat/stream")
 
+    def test_progress_events_are_opt_in_and_content_free(self) -> None:
+        policy = self.contract["progress_policy"]
+        self.assertEqual(
+            self.contract["optional_service_headers"]["X-AI-Progress-Events"],
+            "v1",
+        )
+        self.assertEqual(policy["events"], ["progress", "heartbeat"])
+        self.assertEqual(policy["heartbeat_seconds"], 15)
+        self.assertFalse(policy["includes_percentage"])
+        self.assertFalse(policy["includes_content"])
+
     def test_all_frontend_conversation_flows_use_sse(self) -> None:
         policy = self.contract["channel_policy"]
         self.assertEqual(policy["general_chat"], "sse")

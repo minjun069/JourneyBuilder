@@ -12,6 +12,7 @@ g1-python: g1-ai g1-backend g1-rag g1-tools g1-observability g1-security
 
 g1-ai:
 	$(PYTHON) -m unittest discover -s ai-pjt/tests -v
+	cd ai-pjt && $(PYTHON) -m unittest discover -s guardrails/tests -v
 
 g1-backend:
 	$(PYTHON) -m unittest discover -s backend-pjt/packages/retirement_simulation/tests -t backend-pjt/packages -q

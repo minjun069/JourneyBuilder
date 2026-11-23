@@ -6,10 +6,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rag.bootstrap import (
+    bootstrap_pending_counseling_candidate,
     bootstrap_latest_official_artifact,
     check_latest_official_artifact,
     select_latest_official_artifact,
 )
+from rag.pipeline.embeddings import DeterministicHashEmbedding
+from rag.pipeline.store import JsonVectorStore
 
 
 def _inspection(path: Path, version: str) -> dict:
@@ -40,6 +43,51 @@ def _inspection(path: Path, version: str) -> dict:
 
 
 class RAGBootstrapTests(unittest.TestCase):
+    def test_pending_counseling_bootstrap_activates_without_evaluation(self) -> None:
+        class OperationalJsonStore(JsonVectorStore):
+            def ensure_schema(self) -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = OperationalJsonStore(Path(directory))
+            embedding = DeterministicHashEmbedding(2048)
+
+            result = bootstrap_pending_counseling_candidate(
+                database_url="postgresql://unused/test",
+                store=store,
+                embedding=embedding,
+            )
+
+            self.assertEqual(result["acceptance"], "pending")
+            self.assertEqual(result["artifact_kind"], "experiment")
+            self.assertEqual(
+                result["evaluation"],
+                "skipped-by-explicit-production-request",
+            )
+            self.assertEqual(result["chunk_count"], 37)
+            self.assertEqual(
+                store.active_collection("counseling-candidate"),
+                result["physical_collection"],
+            )
+            self.assertIsNone(store.active_collection("financial-knowledge"))
+            self.assertIsNone(store.active_collection("interface-guides"))
+            with patch.object(
+                embedding,
+                "embed_texts",
+                wraps=embedding.embed_texts,
+            ) as embed:
+                repeated = bootstrap_pending_counseling_candidate(
+                    database_url="postgresql://unused/test",
+                    store=store,
+                    embedding=embedding,
+                )
+
+            embed.assert_not_called()
+            self.assertEqual(
+                repeated["physical_collection"],
+                result["physical_collection"],
+            )
+
     def test_selects_highest_validated_catalog_version(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

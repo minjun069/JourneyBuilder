@@ -10,6 +10,7 @@ CI(test:backend)가 backend-pjt/tests 를 discover 하므로 여기 두면 게�
 from __future__ import annotations
 
 from copy import deepcopy
+from decimal import Decimal
 from pathlib import Path
 import sys
 import unittest
@@ -369,6 +370,145 @@ class IssueCollectionTests(unittest.TestCase):
             self.assertTrue(issue.message)
 
 
+def deployed_snapshot() -> dict:
+    """배포 세션(ssafy1234)과 같은 모양.
+
+    38세 / 은퇴 60 / 기대수명 90, 국민연금은 수령액을 직접 적었고 IRP·연금저축은
+    상담 화면이 시키는 대로 **적립액과 월 납입액만** 적혀 있다. 이 세션이 예상 월
+    수령액이 비었다는 이유로 막히던 것이 환산을 넣은 이유다.
+    """
+    return snapshot(
+        basic_info={"age": 38, "retirement_age": 60, "end_age": 90},
+        pension_assets=[
+            {
+                "type": "국민연금",
+                "receive_method": "연금형",
+                "pension_start_age": 65,
+                "pension_period": "종신",
+                "expected_amount": 1_300_000,
+            },
+            {
+                "type": "퇴직연금(IRP)",
+                "current_value": 45_000_000,
+                "monthly_savings": 300_000,
+                "expected_return_rate": Decimal("3.50"),
+                "receive_method": "연금형",
+                "pension_start_age": 60,
+                "pension_period": "20년",
+                "expected_amount": None,
+            },
+            {
+                "type": "연금저축",
+                "current_value": 32_000_000,
+                "monthly_savings": 400_000,
+                "expected_return_rate": Decimal("4.00"),
+                "receive_method": "연금형",
+                "pension_start_age": 60,
+                "pension_period": "20년",
+                "expected_amount": None,
+            },
+        ],
+        goal_periods=[
+            {
+                "phase": "after",
+                "from_age": 60,
+                "to_age": 90,
+                "items": [{"name": "생활비", "amount": 3_000_000, "is_fixed": True}],
+            }
+        ],
+    )
+
+
+class PensionDerivationTests(unittest.TestCase):
+    """적립형 연금의 예상 월 수령액 환산 (S15P21B109).
+
+    환산 자체는 tests/test_simulation_pension.py 가 지킨다. 여기서 지키는 것은
+    어댑터 경로다 — 원본 행이 _PENSION_FIELDS 로 잘리기 **전에** 환산이 돌아야 하고,
+    환산이 불가능하면 기존 안내가 그대로 남아야 한다.
+    """
+
+    POLICY_RATE = 0.04
+
+    def _build(self, source, rate=POLICY_RATE):
+        return build_simulation_input(source, default_annual_rate=rate)
+
+    def test_deployed_shaped_session_has_no_issues(self) -> None:
+        result = self._build(deployed_snapshot())
+        self.assertEqual(codes(result), [])
+
+    def test_derived_amounts_land_in_the_module_input(self) -> None:
+        rows = self._build(deployed_snapshot()).saved_data["pension_assets"]
+        # 직접 적은 국민연금은 그대로다.
+        self.assertEqual(rows[0]["expected_amount"], 1_300_000)
+        # 손계산 약 89만 / 102만.
+        self.assertGreater(rows[1]["expected_amount"], 880_000)
+        self.assertLess(rows[1]["expected_amount"], 910_000)
+        self.assertGreater(rows[2]["expected_amount"], 1_005_000)
+        self.assertLess(rows[2]["expected_amount"], 1_035_000)
+
+    def test_derivation_is_disclosed_per_row(self) -> None:
+        """화면이 '추정값' 임을 알 수 있어야 한다. field_name 이 어느 연금인지 가리킨다."""
+        result = self._build(deployed_snapshot())
+        self.assertEqual(
+            [(n.code, n.field_name) for n in result.notices],
+            [
+                ("pension_expected_amount_estimated", "pension_assets[1]"),
+                ("pension_expected_amount_estimated", "pension_assets[2]"),
+            ],
+        )
+
+    def test_user_entered_amount_is_never_replaced(self) -> None:
+        """환산 가능한 행이어도 사용자가 적은 값이 이긴다."""
+        source = deployed_snapshot()
+        source["pension_assets"][1]["expected_amount"] = 500_000
+        result = self._build(source)
+        self.assertEqual(
+            result.saved_data["pension_assets"][1]["expected_amount"], 500_000
+        )
+        self.assertEqual(
+            [n.field_name for n in result.notices], ["pension_assets[2]"]
+        )
+
+    def test_snapshot_is_not_mutated_by_the_derivation(self) -> None:
+        """파생값은 요청 안에서만 산다. 저장 경로로 새면 보고서가 연금을 두 번 센다."""
+        source = deployed_snapshot()
+        untouched = deepcopy(source)
+        self._build(source)
+        self.assertEqual(source, untouched)
+
+    def test_period_only_row_still_reports_the_missing_amount(self) -> None:
+        """실제로 존재하는 행 모양이다 — 기간만 적고 나머지가 전부 빈 연금."""
+        source = snapshot(
+            pension_assets=[
+                {
+                    "receive_method": "연금형",
+                    "pension_period": "20년",
+                    "pension_start_age": None,
+                    "current_value": None,
+                    "monthly_savings": None,
+                    "expected_return_rate": None,
+                    "expected_amount": None,
+                }
+            ]
+        )
+        result = self._build(source)
+        self.assertIn("amount_missing", codes(result))
+        self.assertIn("age_missing", codes(result))
+        self.assertIsNone(
+            result.saved_data["pension_assets"][0]["expected_amount"]
+        )
+        self.assertEqual(result.notices, ())
+
+    def test_no_policy_rate_means_no_guessing(self) -> None:
+        """정책값 없이 부른 호출은 자기 수익률이 없는 행을 환산하지 않는다."""
+        source = deployed_snapshot()
+        for row in source["pension_assets"][1:]:
+            row["expected_return_rate"] = None
+        result = self._build(source, rate=None)
+        self.assertEqual(codes(result), ["amount_missing", "amount_missing"])
+        self.assertEqual(result.notices, ())
+
+
 class AdapterMatchesModuleTests(unittest.TestCase):
     """어댑터가 통과시킨 입력을 모듈이 실제로 받아들이는지 대조한다.
 
@@ -415,6 +555,17 @@ class AdapterMatchesModuleTests(unittest.TestCase):
         self.assertIn("real_estate_not_modeled", notice_codes)
         self.assertIn("liabilities_not_modeled", notice_codes)
         self.assertIn("milestones_not_modeled", notice_codes)
+
+    def test_derived_pension_amounts_run_through_the_module(self) -> None:
+        """환산한 수령액이 모듈 검증(정수·범위)을 실제로 통과하는지."""
+        result = build_simulation_input(deployed_snapshot(), default_annual_rate=0.04)
+        self.assertEqual(result.issues, ())
+        payload = self._run_module(result)
+        self.assertEqual(payload["contract_version"], "retirement-analysis-v1")
+        self.assertEqual(
+            [p["monthly_amount"] for p in payload["baseline_profile"]["pension_incomes"]],
+            [row["expected_amount"] for row in result.saved_data["pension_assets"]],
+        )
 
     def test_out_of_horizon_pension_reaches_the_module_as_a_notice(self) -> None:
         row = {

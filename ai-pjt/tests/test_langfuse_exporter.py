@@ -74,7 +74,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
             "stage": "planner",
             "status": "started",
             "input": {"message": "은퇴 준비를 알려줘"},
@@ -107,7 +106,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertEqual(
             root_args["metadata"],
             {
-                "plan_id": "plan_maskedvalue0001",
                 "request_id": "request_maskedvalue0001",
                 "thread_id": "thread_maskedvalue0001",
             },
@@ -187,7 +185,7 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         self.assertEqual(args["level"], "ERROR")
         self.assertEqual(args["status_message"], "TOOL_CONTEXT_MISMATCH")
 
-    def test_late_callback_reuses_the_ended_request_root(self) -> None:
+    def test_late_operation_reuses_the_ended_request_root(self) -> None:
         client = _FakeClient()
         exporter = LangfuseInstrumentationExporter(client)
         request_event = {
@@ -197,7 +195,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
             "stage": "request_processing",
         }
         exporter.emit({**request_event, "status": "started"})
@@ -212,22 +209,22 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "masking_status": "applied",
             "trace_id": "trace_0123456789abcdef01234567",
             "attempt_id": "attempt_maskedvalue0001",
-            "stage": "callback",
+            "stage": "tool",
             "status": "succeeded",
             "duration_ms": 5,
-            "operation_name": "backend_callback",
+            "operation_name": "approved_reference_lookup",
         })
 
         self.assertEqual(len(client.calls), 2)
         root = client.calls[0][1]
-        callback_args, callback = client.calls[1]
+        operation_args, operation = client.calls[1]
         self.assertTrue(root.ended)
-        self.assertIs(callback.parent, root)
+        self.assertIs(operation.parent, root)
         self.assertEqual(
-            callback_args["name"],
-            "retirewise.callback.backend_callback",
+            operation_args["name"],
+            "retirewise.tool.approved_reference_lookup",
         )
-        self.assertNotIn("trace_context", callback_args)
+        self.assertNotIn("trace_context", operation_args)
 
     def test_projects_planner_task_and_agent_step_hierarchy(self) -> None:
         client = _FakeClient()
@@ -239,7 +236,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
         }
 
         exporter.emit({
@@ -323,7 +319,7 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "stage": "model",
             "status": "succeeded",
             "duration_ms": 5,
-            "operation_name": "qa.specify",
+            "operation_name": "qa.plan",
             "task_id": "task-1",
             "agent": "qa",
         })
@@ -339,8 +335,8 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         route = by_name["retirewise.route.router.select"]
         task = by_name["retirewise.task.task-1.qa"]
         binding = by_name["retirewise.binding_resolution"]
-        agent_step = by_name["retirewise.agent_step.qa.specify"]
-        agent_model = by_name["retirewise.model.qa.specify"]
+        agent_step = by_name["retirewise.agent_step.qa.plan"]
+        agent_model = by_name["retirewise.model.qa.plan"]
 
         self.assertIs(planner.parent, root)
         self.assertIs(planner_model.parent, planner)
@@ -406,7 +402,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             trace_id="trace_contenttrace001",
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             occurred_at_epoch_ms=1,
             stage=RuntimeStage.PLANNER,
             status=RuntimeStatus.STARTED,
@@ -435,7 +430,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         observed = adapter.bind(
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             step_id="basic-info",
         )
 
@@ -485,6 +479,82 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             {"role": "assistant", "content": "맞춤 안내입니다."},
         )
 
+    def test_chart_prompt_hash_survives_masking_and_generation_is_exported(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        adapter, sink = build_masked_runtime_instrumentation(
+            pseudonym_key=b"chart-langfuse-prompt-test-key-32bytes",
+            downstream=exporter,
+            sink=MaskingSink.TRACE_EXPORT,
+        )
+        observed = adapter.bind(
+            request_id="request-chart-test",
+            thread_id="thread-chart-test",
+            step_id="lifetime-cashflow",
+        )
+        # This registered hash contains a phone-shaped substring. It formerly
+        # became [DIRECT_IDENTIFIER] and the exporter dropped the generation.
+        chart_hash = "625dc118708831ef1cc8fe45ee4c48c4af054a2c4a4a95e7c41c646ec98f86f9"
+        observed.record_model_call(
+            purpose="chart_interpret",
+            operation_name="chart_interpret.generate",
+            status="succeeded",
+            duration_ms=15,
+            prompt_id="chart_interpret.explain",
+            prompt_version="1.0.0",
+            prompt_hash=chart_hash,
+            prompt_release="2026-09-23.1",
+            prompt_policy_version="1.1",
+            input=[{"role": "user", "content": "보유 자산은 713,000,000원입니다."}],
+            output={"role": "assistant", "content": "순자산은 713,000,000원입니다."},
+        )
+
+        self.assertEqual(sink.dropped_exports, 0)
+        self.assertEqual(len(client.calls), 2)
+        args, _ = client.calls[1]
+        self.assertEqual(args["name"], "retirewise.model.chart_interpret.generate")
+        self.assertEqual(args["metadata"]["prompt_hash"], chart_hash)
+        self.assertIn("[FINANCIAL_VALUE_MASKED]", repr(args["output"]))
+        self.assertNotIn("713,000,000원", repr(args))
+
+    def test_chart_delivery_diagnostics_are_exported_without_raw_financial_values(self) -> None:
+        client = _FakeClient()
+        exporter = LangfuseInstrumentationExporter(client)
+        adapter, sink = build_masked_runtime_instrumentation(
+            pseudonym_key=b"chart-delivery-trace-test-key-32bytes",
+            downstream=exporter,
+            sink=MaskingSink.TRACE_EXPORT,
+        )
+        observed = adapter.bind(
+            request_id="request-chart-test",
+            thread_id="thread-chart-test",
+            step_id="lifetime-cashflow",
+        )
+        observed.record_operation(
+            stage=OperationStage.OUTPUT_VALIDATION,
+            status=OperationStatus.SUCCEEDED,
+            operation_name="chart_interpret.deliver",
+            duration_ms=12,
+            agent="chart_interpret",
+            input={"report_status": "ready", "response_mode": "initial_entry"},
+            output={
+                "response": "순자산은 713,000,000원입니다.",
+                "delivery": "model_output",
+                "unmatched_numeric_count": 0,
+                "causal_heuristic_count": 0,
+                "recalculation_marker_count": 0,
+            },
+        )
+
+        self.assertEqual(sink.dropped_exports, 0)
+        self.assertEqual(len(client.calls), 2)
+        args, _ = client.calls[1]
+        self.assertEqual(args["name"], "retirewise.output_validation.chart_interpret.deliver")
+        self.assertEqual(args["output"]["delivery"], "model_output")
+        self.assertEqual(args["output"]["unmatched_numeric_count"], 0)
+        self.assertIn("[FINANCIAL_VALUE_MASKED]", repr(args["output"]))
+        self.assertNotIn("713,000,000원", repr(args))
+
     def test_shutdown_delegates_to_client(self) -> None:
         client = _FakeClient()
         exporter = LangfuseInstrumentationExporter(client)
@@ -495,7 +565,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
             "stage": "planner",
             "status": "started",
         })
@@ -525,7 +594,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             "trace_id": "trace_0123456789abcdef01234567",
             "request_id": "request_maskedvalue0001",
             "thread_id": "thread_maskedvalue0001",
-            "plan_id": "plan_maskedvalue0001",
             "stage": "planner",
             "status": "started",
         })
@@ -653,7 +721,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
         observed = adapter.bind(
             request_id="request-raw-0001",
             thread_id="thread-raw-0001",
-            plan_id="plan-request-raw-0001",
             step_id="basic-info",
         )
 
@@ -666,7 +733,6 @@ class LangfuseInstrumentationExporterTests(unittest.TestCase):
             rendered = repr(args)
             self.assertNotIn("request-raw-0001", rendered)
             self.assertNotIn("thread-raw-0001", rendered)
-            self.assertNotIn("plan-request-raw-0001", rendered)
             self.assertRegex(
                 args["trace_context"]["trace_id"],
                 re.compile(r"^[0-9a-f]{32}$"),

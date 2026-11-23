@@ -11,7 +11,7 @@
       "message": "부채상환비율 30%라는 기준이 제 재무상태에서 어떤 의미인지 설명해 주세요.",
       "step_id": "liabilities",
       "customer_info": {"current_form": {"assets": [{"client_item_id": "loan-1", "balance": 120000000, "interest_rate": 4.2}]}, "saved_data": {}},
-      "bound_inputs": {"value": 30, "unit": "percent", "source_id": "approved-policy-debt-service", "source_version": "2026-09-07.v1", "as_of": "2026-09-07"},
+      "bindings": {"value": 30, "unit": "percent", "source_id": "approved-policy-debt-service", "source_version": "2026-09-07.v1", "as_of": "2026-09-07"},
       "signals": {"bound_value": 30, "expects_retrieval": true, "terms": ["부채", "30"]}
     },
     {
@@ -151,12 +151,20 @@
     {"id": "edge_cause_question", "evaluation_case": "edge_cause_question"},
     {"id": "edge_personalization_boundary", "evaluation_case": "edge_personalization_boundary"}
   ],
-  "elicit_classification_cases": [
-    {"id": "elicit_substantive", "message": "가족과 건강을 가장 중요하게 생각해요.", "expected_class": "substantive"},
-    {"id": "elicit_uncertain", "message": "아직 잘 모르겠어요. 조금 생각해 볼게요.", "expected_class": "uncertain"},
-    {"id": "elicit_refusal", "message": "이 질문에는 답하고 싶지 않아요.", "expected_class": "refusal"},
-    {"id": "elicit_stop", "message": "정보 수집을 여기서 그만할게요.", "expected_class": "stop"},
-    {"id": "elicit_skip", "message": "이 항목은 건너뛰어 주세요.", "expected_class": "skip"},
-    {"id": "elicit_reset", "message": "방금 답변은 취소하고 이 항목을 처음부터 다시 할게요.", "expected_class": "reset"}
+  "elicit_response_cases": [
+    {
+      "id": "elicit_contextual_response",
+      "message": "가족과 건강을 가장 중요하게 생각해요.",
+      "step_id": "financial-goals",
+      "conversation_context": {
+        "recent_turns": [{"role": "assistant", "content": "은퇴 후 어떤 삶을 원하시나요?"}]
+      }
+    },
+    {
+      "id": "elicit_uncertain_response",
+      "message": "아직 잘 모르겠어요. 조금 생각해 볼게요.",
+      "step_id": "financial-goals",
+      "conversation_context": {}
+    }
   ]
 }

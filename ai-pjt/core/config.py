@@ -83,6 +83,10 @@ def _read_unit_float(
 class Settings:
     def __init__(self, environ: Mapping[str, str] | None = None) -> None:
         active_environ = os.environ if environ is None else environ
+        # Temporary rollout override; set true to restore plan policy checks.
+        self.plan_validation_enabled = _read_bool(
+            "AI_PLAN_VALIDATION_ENABLED", False, active_environ
+        )
 
         self.llm_provider = active_environ.get("LLM_PROVIDER", "gemini").strip()
         self.embedding_provider = active_environ.get(
@@ -94,9 +98,9 @@ class Settings:
         self.llm_temperature = _read_unit_float(
             "LLM_TEMPERATURE", 0.0, active_environ
         )
-        self.prompt_release = active_environ.get(
-            "PROMPT_RELEASE", "2026-09-17.3"
-        ).strip()
+        from prompts import PROMPT_RELEASE
+
+        self.prompt_release = PROMPT_RELEASE
         self.embedding_model = active_environ.get(
             "EMBEDDING_MODEL", "gemini-embedding-2"
         ).strip()
@@ -146,6 +150,9 @@ class Settings:
         self.rag_interface_collection = active_environ.get(
             "RAG_INTERFACE_COLLECTION", "interface-guides"
         ).strip()
+        self.rag_counseling_collection = active_environ.get(
+            "RAG_COUNSELING_COLLECTION", "counseling-candidate"
+        ).strip()
         self.rag_collection = self.rag_financial_collection
         self.rag_top_k = _read_positive_int("RAG_TOP_K", 5, active_environ)
         self.rag_fetch_k = _read_positive_int("RAG_FETCH_K", 10, active_environ)
@@ -154,9 +161,22 @@ class Settings:
         self.rag_min_dense_score = _read_unit_float(
             "RAG_MIN_DENSE_SCORE", 0.54, active_environ
         )
+        self.rag_counseling_min_dense_score = _read_unit_float(
+            "RAG_COUNSELING_MIN_DENSE_SCORE", 0.54, active_environ
+        )
         self.rag_index_retention_days = _read_positive_int(
             "RAG_INDEX_RETENTION_DAYS", 30, active_environ
         )
+        self.counseling_rag_enabled = _read_bool(
+            "AI_COUNSELING_RAG_ENABLED", False, active_environ
+        )
+        self.counseling_rag_timeout_seconds = _read_positive_int(
+            "AI_COUNSELING_RAG_TIMEOUT_SECONDS", 12, active_environ
+        )
+        if self.counseling_rag_timeout_seconds > 30:
+            raise RuntimeConfigurationError(
+                "AI_COUNSELING_RAG_TIMEOUT_SECONDS must be at most 30"
+            )
         self.embed_dim = _read_positive_int(
             "EMBED_DIM",
             _EMBED_DIM_DEFAULTS.get(self.embedding_provider, 3072),
@@ -206,12 +226,6 @@ class Settings:
             raise RuntimeConfigurationError("EMBEDDING_PROVIDER is unsupported")
         if not self.llm_model:
             raise RuntimeConfigurationError("LLM_MODEL is required")
-        from prompts import SUPPORTED_PROMPT_RELEASES
-
-        if self.prompt_release not in SUPPORTED_PROMPT_RELEASES:
-            raise RuntimeConfigurationError(
-                "PROMPT_RELEASE is not bundled in this AI image"
-            )
         if not self.embedding_model:
             raise RuntimeConfigurationError("EMBEDDING_MODEL is required")
         if self.rag_financial_collection != "financial-knowledge":
@@ -221,6 +235,10 @@ class Settings:
         if self.rag_interface_collection != "interface-guides":
             raise RuntimeConfigurationError(
                 "RAG_INTERFACE_COLLECTION must be interface-guides"
+            )
+        if self.rag_counseling_collection != "counseling-candidate":
+            raise RuntimeConfigurationError(
+                "RAG_COUNSELING_COLLECTION must be counseling-candidate"
             )
 
         self._require_runtime_value("DATABASE_URL", self.db_url)

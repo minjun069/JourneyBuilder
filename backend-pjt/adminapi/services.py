@@ -16,7 +16,7 @@ from reports.calculators import (
     calculate_financial_indicators,
 )
 
-from .grading import age_bracket, build_graded_indicators, count_risky
+from .grading import UNAVAILABLE, age_bracket, build_graded_indicators, count_risky
 
 User = get_user_model()
 
@@ -325,6 +325,8 @@ def build_segments():
         for indicator in row.pop('_indicators', []):
             stack = indicator_stack.setdefault(
                 indicator['key'], {'양호': 0, '주의': 0, '위험': 0})
+            if indicator['grade'] == UNAVAILABLE:
+                continue
             stack[indicator['grade']] += 1
         rows.append(row)
         if row['age'] is not None and row['net_worth'] is not None:

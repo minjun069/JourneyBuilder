@@ -9,7 +9,14 @@ from .models import (
 )
 
 
-def parse_korean_money(value, default_unit='man'):
+# 개인 재무 입력에서 1,000억을 넘는 값은 단위 오입력으로 본다.
+# 평가금액·잔액류는 BigIntegerField 라 10,000배 오입력이 조용히 저장되므로 여기서 막는다.
+MAX_REASONABLE_MONEY = 100_000_000_000
+
+
+# 숫자만 들어오면 원 단위다. '만'/'억' 접미사가 있을 때만 배수를 적용한다.
+# (화면도 같은 규칙이다 — front-pjt/src/utils/canonicalMoney.js)
+def parse_korean_money(value):
     if value in ('', None):
         return None
     if isinstance(value, (int, float)):
@@ -56,17 +63,24 @@ def parse_korean_money(value, default_unit='man'):
 
 class KoreanMoneyFieldsMixin:
     money_fields = ()
-    money_field_default_units = {}
 
     def to_internal_value(self, data):
         if isinstance(data, dict):
             data = data.copy()
+            errors = {}
             for field in self.money_fields:
-                if field in data:
-                    data[field] = parse_korean_money(
-                        data[field],
-                        self.money_field_default_units.get(field, 'man'),
+                if field not in data:
+                    continue
+                parsed = parse_korean_money(data[field])
+                if isinstance(parsed, int) and abs(parsed) > MAX_REASONABLE_MONEY:
+                    errors[field] = (
+                        '금액이 너무 큽니다. 원 단위로 입력해 주세요 '
+                        '(만/억 단위로 적을 때는 "500만"처럼 단위를 붙입니다).'
                     )
+                    continue
+                data[field] = parsed
+            if errors:
+                raise serializers.ValidationError(errors)
         return super().to_internal_value(data)
 
 
@@ -257,11 +271,6 @@ class RealEstateAssetSerializer(KoreanMoneyFieldsMixin, serializers.ModelSeriali
         'current_value', 'acquisition_price', 'monthly_rental_income',
         'rental_deposit', 'secured_loan',
     )
-    money_field_default_units = {
-        'current_value': 'eok',
-        'acquisition_price': 'eok',
-        'secured_loan': 'eok',
-    }
 
     class Meta:
         model  = RealEstateAsset
@@ -283,7 +292,6 @@ class RealEstateAssetSerializer(KoreanMoneyFieldsMixin, serializers.ModelSeriali
 # 부채
 class LiabilitySerializer(KoreanMoneyFieldsMixin, serializers.ModelSerializer):
     money_fields = ('balance',)
-    money_field_default_units = {'balance': 'eok'}
 
     class Meta:
         model  = Liability
@@ -397,7 +405,6 @@ class FinancialGoalPeriodSerializer(serializers.ModelSerializer):
 # 재무목표 - 마일스톤
 class FinancialGoalMilestoneSerializer(KoreanMoneyFieldsMixin, serializers.ModelSerializer):
     money_fields = ('amount',)
-    money_field_default_units = {'amount': 'eok'}
 
     class Meta:
         model  = FinancialGoalMilestone
@@ -417,36 +424,6 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = ['id', 'role', 'content', 'extracted_data', 'created_at']
         read_only_fields = fields
 
-
-class MessageCreateSerializer(serializers.Serializer):
-    step_id = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        max_length=100,
-    )
-    content = serializers.CharField(
-        min_length=1,
-        max_length=2000,
-        error_messages={
-            'blank':      '메시지 내용을 입력해주세요.',
-            'max_length': '메시지는 2000자 이하여야 합니다.',
-        }
-    )
-    form_data = serializers.JSONField(required=False)
-
-    def validate_content(self, value):
-        return value.strip()
-
-    def validate_step_id(self, value):
-        value = value.strip()
-        return value or 'general'
-
-    def validate_form_data(self, value):
-        if value is None:
-            return {}
-        if not isinstance(value, dict):
-            raise serializers.ValidationError('form_data는 객체 형식이어야 합니다.')
-        return value
 
 
 class ConsultingSessionListSerializer(serializers.ModelSerializer):

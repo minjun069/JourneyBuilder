@@ -117,16 +117,16 @@ def _validate_observation_content(value: Any, field_name: str) -> None:
 
 def build_artifact_id(
     *,
-    plan_id: str,
+    request_id: str,
     producer_task_id: str,
     artifact_type: str,
 ) -> str:
     """Build the observation-only identity for a task's single typed artifact."""
 
-    _validate_safe_token(plan_id, "plan_id")
+    _validate_safe_token(request_id, "request_id")
     _validate_safe_token(producer_task_id, "producer_task_id")
     _validate_safe_token(artifact_type, "artifact_type")
-    return f"{plan_id}:{producer_task_id}:{artifact_type}"
+    return f"{request_id}:{producer_task_id}:{artifact_type}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +136,6 @@ class RuntimeTraceEvent:
     trace_id: str
     request_id: str
     thread_id: str
-    plan_id: str
     occurred_at_epoch_ms: int
     stage: RuntimeStage
     status: RuntimeStatus
@@ -162,7 +161,7 @@ class RuntimeTraceEvent:
         if not isinstance(self.status, RuntimeStatus):
             raise ValueError("status must be a RuntimeStatus")
         _validate_trace_id(self.trace_id)
-        for field_name in ("request_id", "thread_id", "plan_id"):
+        for field_name in ("request_id", "thread_id"):
             _validate_safe_token(getattr(self, field_name), field_name)
         _validate_nonnegative_int(self.occurred_at_epoch_ms, "occurred_at_epoch_ms")
         _validate_nonnegative_int(self.duration_ms, "duration_ms")
@@ -251,7 +250,7 @@ class RuntimeTraceEvent:
             if self.producer_task_id != self.task_id:
                 raise ValueError("producer_task_id must match task_id")
             expected_artifact_id = build_artifact_id(
-                plan_id=self.plan_id,
+                request_id=self.request_id,
                 producer_task_id=self.producer_task_id,
                 artifact_type=self.artifact_type,
             )
@@ -269,7 +268,6 @@ class RuntimeTraceEvent:
             "trace_id": self.trace_id,
             "request_id": self.request_id,
             "thread_id": self.thread_id,
-            "plan_id": self.plan_id,
             "occurred_at_epoch_ms": self.occurred_at_epoch_ms,
             "stage": self.stage.value,
             "status": self.status.value,
@@ -306,7 +304,6 @@ class SecurityDecisionTraceEvent:
     trace_id: str
     request_id: str
     thread_id: str
-    plan_id: str
     step_id: str
     task_id: str
     occurred_at_epoch_ms: int
@@ -325,7 +322,6 @@ class SecurityDecisionTraceEvent:
         for field_name in (
             "request_id",
             "thread_id",
-            "plan_id",
             "step_id",
             "task_id",
             "boundary",
@@ -352,7 +348,6 @@ class SecurityDecisionTraceEvent:
             "trace_id": self.trace_id,
             "request_id": self.request_id,
             "thread_id": self.thread_id,
-            "plan_id": self.plan_id,
             "step_id": self.step_id,
             "task_id": self.task_id,
             "occurred_at_epoch_ms": self.occurred_at_epoch_ms,

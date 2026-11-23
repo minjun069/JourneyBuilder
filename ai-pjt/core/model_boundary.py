@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from enum import Enum
-import json
+from copy import deepcopy
 import logging
 import re
 from time import perf_counter
@@ -18,9 +17,15 @@ from core.masking import (
     MaskingPath,
     MaskingPolicy,
     MaskingSink,
-    is_reference_token,
     mask_payload,
 )
+from core.model_contracts import (
+    ModelOutputBlockedError,
+    ModelPurpose,
+    StructuredModelOutputError,
+)
+from core.model_input_policy import ALLOWED_INPUT_PREFIXES
+from core.model_output_policy import block_forbidden_output, redact_direct_text
 from core.prompt_registry import (
     PromptInvocationRecord,
     PromptSpec,
@@ -28,39 +33,13 @@ from core.prompt_registry import (
 )
 
 
-prompt_policy_version = "1.1"
+from prompts.common import COMMON_PRINCIPLES, COMMON_PROMPT_POLICY_VERSION
+from prompts.rendering import render_prompt_payload
+
+
+prompt_policy_version = COMMON_PROMPT_POLICY_VERSION
 PROMPT_POLICY_VERSION = prompt_policy_version
-DATA_HANDLING_PROMPT = f"""\
-[공통 데이터 처리 정책 v{prompt_policy_version}]
-- 현재 작업에 필요한 최소 입력만 사용하고 다른 목적에 재사용하지 않습니다.
-- 이름·전화번호·이메일·계좌번호 등 직접 식별정보와 secret은 추론하거나 반복하지 않습니다.
-- 허용된 금융 입력은 해당 작업의 계산·설명에만 사용하고 새 값으로 바꾸지 않습니다.
-- `[[...]]` 형식의 참조 token은 철자와 구분을 바꾸지 않고 필요한 위치에 그대로 사용합니다.
-- 응답에 직접 식별정보나 secret을 포함하지 않습니다.
-"""
-
-
-class ModelPurpose(str, Enum):
-    PLANNER = "planner"
-    ROUTER = "router"
-    QA = "qa"
-    INPUT_ASSIST = "input_assist"
-    ERROR_REVIEW = "error_review"
-    CHART_INTERPRET = "chart_interpret"
-    ELICIT = "elicit"
-    SUMMARY = "summary"
-
-
-class ModelOutputBlockedError(ValueError):
-    """Raised when a model attempts to return direct identifiers or secrets."""
-
-    def __init__(self, message: str, *, reason_code: str = "DATA_POLICY_BLOCKED") -> None:
-        super().__init__(message)
-        self.reason_code = reason_code
-
-
-class StructuredModelOutputError(RuntimeError):
-    """Raised after bounded structured-output attempts are exhausted."""
+DATA_HANDLING_PROMPT = COMMON_PRINCIPLES
 
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
@@ -74,56 +53,12 @@ _MODEL_CALL_RECORDER: ContextVar[ModelCallRecorder | None] = ContextVar(
 logger = logging.getLogger(__name__)
 
 
-_ALLOWED_INPUT_PREFIXES: dict[ModelPurpose, tuple[MaskingPath, ...]] = {
-    ModelPurpose.PLANNER: (),
-    ModelPurpose.ROUTER: (),
-    ModelPurpose.QA: (("customer_info",), ("bound_inputs",), ("evidence",)),
-    ModelPurpose.INPUT_ASSIST: (("customer_info",), ("bound_inputs",)),
-    ModelPurpose.ERROR_REVIEW: (("current_form",),),
-    ModelPurpose.CHART_INTERPRET: (("chart_payload",),),
-    ModelPurpose.ELICIT: (),
-    ModelPurpose.SUMMARY: (),
-}
-_DIRECT_TEXT_PATTERNS = (
-    re.compile(
-        r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+"
-        r"@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
-    ),
-    re.compile(r"(?<!\d)(?:\+?82[- .]?)?0?1[016789][- .]?\d{3,4}[- .]?\d{4}(?!\d)"),
-    re.compile(r"(?<!\d)\d{6}[- ]?[1-4]\d{6}(?!\d)"),
-)
-_SECRET_TEXT_PATTERNS = (
-    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
-    re.compile(
-        r"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\."
-        r"[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])"
-    ),
-)
-_FORBIDDEN_OUTPUT_FIELDS = frozenset({
-    "account_identifier",
-    "account_id",
-    "account_number",
-    "address",
-    "authorization",
-    "bearer",
-    "cookie",
-    "customer_id",
-    "customer_name",
-    "date_of_birth",
-    "email",
-    "email_address",
-    "full_name",
-    "name",
-    "password",
-    "phone",
-    "phone_number",
-    "resident_registration_number",
-    "rrn",
-    "secret",
-    "token",
-    "user_id",
-    "user_name",
-})
+class _PromptMessages(list[Any]):
+    """Keep trusted structure until masking; only plain messages reach a provider."""
+
+    def __init__(self, messages: list[Any], payload: Mapping[str, Any]) -> None:
+        super().__init__(messages)
+        self.payload = deepcopy(dict(payload))
 
 
 def secure_system_prompt(role_prompt: str) -> str:
@@ -134,23 +69,23 @@ def secure_system_prompt(role_prompt: str) -> str:
     return f"{DATA_HANDLING_PROMPT}\n{role_prompt.strip()}"
 
 
-def prompt_messages(prompt: PromptSpec, payload: Mapping[str, Any]) -> list[Any]:
-    """Render a static System message and a schema-checked JSON Human payload."""
+def prompt_messages(
+    prompt: PromptSpec, payload: Mapping[str, Any], *, step_id: str | None = None,
+) -> list[Any]:
+    """Render a static System message and schema-checked readable sections."""
 
     from langchain_core.messages import HumanMessage, SystemMessage
+    from prompts.screens import screen_context
 
-    validated = prompt.validate_payload(payload)
-    human_content = json.dumps(
-        {"runtime_payload": validated},
-        ensure_ascii=False,
-        allow_nan=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return [
+    active_step = step_id if step_id is not None else payload.get("step_id")
+    if active_step is not None:
+        payload = {**payload, "screen_context": screen_context(active_step)}
+
+    human_content = render_prompt_payload(prompt, payload)
+    return _PromptMessages([
         SystemMessage(content=secure_system_prompt(prompt.system_text)),
         HumanMessage(content=human_content),
-    ]
+    ], payload)
 
 
 def mask_model_payload(
@@ -167,7 +102,7 @@ def mask_model_payload(
     allowed_paths = frozenset(
         path
         for path in _leaf_paths(payload)
-        if any(path[: len(prefix)] == prefix for prefix in _ALLOWED_INPUT_PREFIXES[purpose])
+        if any(path[: len(prefix)] == prefix for prefix in ALLOWED_INPUT_PREFIXES[purpose])
     )
     return mask_payload(
         payload,
@@ -217,7 +152,11 @@ def secure_invoke(
     started = perf_counter()
     try:
         result = runnable.invoke(safe_messages)
-        _block_forbidden_output(result)
+        block_forbidden_output(
+            result,
+            purpose=purpose,
+            operation_name=operation_name,
+        )
     except Exception as error:
         _record_model_call(
             purpose=purpose,
@@ -258,12 +197,13 @@ def secure_structured_invoke(
     sensitive_payload: Any | None = None,
     max_attempts: int = 2,
     prompt: PromptSpec | None = None,
+    method: str | None = None,
 ) -> StructuredModel:
     """Invoke a provider-enforced schema with one bounded retry by default.
 
     The provider adapter owns JSON/tool-call parsing. Every returned value is
     validated again with Pydantic so markdown fences, explanatory prose,
-    missing fields, and invalid enum values never reach planner/router policy.
+    missing fields, and invalid enum values never reach planner or aggregation policy.
     Model calls are read-only, so retrying a transient or parsing failure once
     cannot duplicate a business side effect.
     """
@@ -276,7 +216,8 @@ def secure_structured_invoke(
         raise ValueError("max_attempts must be between 1 and 2")
 
     try:
-        runnable = model.with_structured_output(schema)
+        options = {"method": method} if method is not None else {}
+        runnable = model.with_structured_output(schema, **options)
     except Exception as error:  # noqa: BLE001 - normalize provider adapters
         raise StructuredModelOutputError(
             "model does not support the required structured-output contract"
@@ -327,7 +268,11 @@ async def secure_ainvoke(
     started = perf_counter()
     try:
         result = await runnable.ainvoke(safe_messages)
-        _block_forbidden_output(result)
+        block_forbidden_output(
+            result,
+            purpose=purpose,
+            operation_name=operation_name,
+        )
     except Exception as error:
         _record_model_call(
             purpose=purpose,
@@ -516,13 +461,13 @@ def _record_model_call(
             "prompt_policy_version": prompt_policy_version,
         }
         if prompt is not None:
-            from prompts.catalog import selected_prompt_release
+            from prompts.catalog import current_prompt_release
 
             prompt_metadata.update({
                 "prompt_id": prompt.prompt_id,
                 "prompt_version": prompt.version,
                 "prompt_hash": prompt.content_hash,
-                "prompt_release": selected_prompt_release(),
+                "prompt_release": current_prompt_release(),
             })
         recorder(
             purpose=purpose.value,
@@ -566,6 +511,7 @@ def _prepare_call(
     key = _runtime_key()
     policy = MaskingPolicy(pseudonym_key=key)
     replacements: tuple[tuple[str, str], ...] = ()
+    numeric_tokens: dict[str, str] = {}
     if sensitive_payload is not None:
         safe_payload = mask_model_payload(
             sensitive_payload,
@@ -573,6 +519,18 @@ def _prepare_call(
             pseudonym_key=key,
         )
         replacements = _replacement_pairs(sensitive_payload, safe_payload)
+        if isinstance(messages, _PromptMessages) and prompt is not None:
+            protected_payload, numeric_tokens = _protect_model_numbers(
+                messages.payload,
+                sensitive_payload=sensitive_payload,
+                safe_sensitive_payload=safe_payload,
+                purpose=purpose,
+                key=key,
+                original_content=message_list[1].content,
+            )
+            message_list[1] = _copy_message(
+                message_list[1], render_prompt_payload(prompt, protected_payload)
+            )
     return [
         _copy_message(
             message,
@@ -580,6 +538,7 @@ def _prepare_call(
                 getattr(message, "content", ""),
                 policy=policy,
                 replacements=replacements,
+                numeric_tokens=numeric_tokens,
             ),
         )
         for message in message_list
@@ -599,13 +558,13 @@ def _emit_prompt_invocation(
         # The model recorder already emits content and prompt metadata together.
         return
     from core.config import settings
-    from prompts.catalog import selected_prompt_release
+    from prompts.catalog import current_prompt_release
 
     record = PromptInvocationRecord(
         prompt_id=prompt.prompt_id,
         prompt_version=prompt.version,
         prompt_hash=prompt.content_hash,
-        prompt_release=selected_prompt_release(),
+        prompt_release=current_prompt_release(),
         prompt_policy_version=prompt_policy_version,
         purpose=purpose.value,
         model_provider=settings.llm_provider,
@@ -656,6 +615,7 @@ def _mask_message_content(
     *,
     policy: MaskingPolicy,
     replacements: tuple[tuple[str, str], ...],
+    numeric_tokens: Mapping[str, str] | None = None,
 ) -> Any:
     replaced = _replace_literals(content, replacements)
     masked = mask_payload(
@@ -663,7 +623,75 @@ def _mask_message_content(
         sink=MaskingSink.MODEL_INPUT,
         policy=policy,
     )["content"]
-    return _redact_direct_text(masked)
+    result = redact_direct_text(masked)
+    if isinstance(result, str):
+        for token, original in (numeric_tokens or {}).items():
+            result = result.replace(token, original)
+    return result
+
+
+_MONEY_LITERAL = re.compile(r"(?<![\d.])\d[\d,]*(?:\.\d+)?(?=\s*(?:원|달러|KRW|USD)(?![A-Za-z]))")
+_IDENTIFIER_CONTEXT = re.compile(
+    r"계좌|전화|휴대폰|연락처|주민|식별|이름|성명|account|phone|contact|identifier|resident|name|token|secret|password",
+    re.IGNORECASE,
+)
+
+
+def _protect_model_numbers(
+    payload: Mapping[str, Any], *, sensitive_payload: Any,
+    safe_sensitive_payload: Any, purpose: ModelPurpose, key: bytes, original_content: str,
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Preserve allowed business numbers without unmasking identifier occurrences."""
+
+    allowed: set[str] = set()
+
+    def collect(raw: Any, safe: Any, path: MaskingPath = ()) -> None:
+        if isinstance(raw, Mapping) and isinstance(safe, Mapping):
+            for name, value in raw.items():
+                collect(value, safe.get(name), (*path, name))
+        elif isinstance(raw, (list, tuple)) and isinstance(safe, (list, tuple)):
+            for index, (value, sanitized) in enumerate(zip(raw, safe)):
+                collect(value, sanitized, (*path, index))
+        elif raw == safe and any(path[:len(prefix)] == prefix for prefix in ALLOWED_INPUT_PREFIXES[purpose]):
+            if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+                allowed.add(str(raw))
+            elif isinstance(raw, str):
+                allowed.update(match.group().replace(",", "") for match in _MONEY_LITERAL.finditer(raw))
+
+    collect(sensitive_payload, safe_sensitive_payload)
+    safe_input = mask_model_payload(payload, purpose=purpose, pseudonym_key=key)
+    tokens: dict[str, str] = {}
+    prefix = "\x00RWALLOWEDNUMBER"
+    while prefix in original_content:
+        prefix += "X"
+
+    def protect(text: str) -> str:
+        token = f"{prefix}{len(tokens)}\x00"
+        tokens[token] = text
+        return token
+
+    def visit(raw: Any, safe: Any, path: MaskingPath = ()) -> Any:
+        if isinstance(raw, Mapping) and isinstance(safe, Mapping):
+            return {name: visit(value, safe.get(name), (*path, name)) for name, value in raw.items()}
+        if isinstance(raw, list) and isinstance(safe, list):
+            return [visit(value, sanitized, (*path, index)) for index, (value, sanitized) in enumerate(zip(raw, safe))]
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            return protect(str(raw)) if raw == safe and str(raw) in allowed else raw
+        if isinstance(raw, str) and path and path[-1] in {
+            "message", "question", "answer", "text", "reference", "description",
+        }:
+            # Treat each line separately so a financial value cannot authorize
+            # a matching phone/account number in another line of the request.
+            return "\n".join(
+                line if _IDENTIFIER_CONTEXT.search(line) else _MONEY_LITERAL.sub(
+                    lambda match: protect(match.group())
+                    if match.group().replace(",", "") in allowed else match.group(),
+                    line,
+                ) for line in raw.split("\n")
+            )
+        return raw
+
+    return visit(payload, safe_input), tokens
 
 
 def _replace_literals(
@@ -740,94 +768,3 @@ def _leaf_paths(value: Any, path: MaskingPath = ()) -> tuple[MaskingPath, ...]:
             paths.extend(_leaf_paths(child, (*path, index)))
         return tuple(paths)
     return (path,) if path else ()
-
-
-def _block_forbidden_output(result: Any) -> None:
-    payload = _serializable_output(result)
-    if _contains_forbidden_text(payload) or _contains_forbidden_field(payload):
-        raise ModelOutputBlockedError(
-            "model output contained a direct identifier or secret"
-        )
-    from guardrails.boundary_policy import evaluate_financial_output
-
-    decision = evaluate_financial_output(payload)
-    if not decision.allowed:
-        raise ModelOutputBlockedError(
-            "model output contained unsupported financial certainty",
-            reason_code=decision.reason_code,
-        )
-
-
-def _serializable_output(result: Any) -> Any:
-    dumper = getattr(result, "model_dump", None)
-    if callable(dumper):
-        return dumper(mode="json")
-    if isinstance(result, (str, bytes, int, float, bool)) or result is None:
-        return result
-    if isinstance(result, Mapping):
-        return dict(result)
-    if isinstance(result, Sequence):
-        return list(result)
-    raise ModelOutputBlockedError("model output could not be inspected safely")
-
-
-def _redact_direct_text(value: Any) -> Any:
-    if isinstance(value, str):
-        for pattern in _DIRECT_TEXT_PATTERNS:
-            value = pattern.sub("[DIRECT_IDENTIFIER]", value)
-        for pattern in _SECRET_TEXT_PATTERNS:
-            value = pattern.sub("[SECRET]", value)
-        return value
-    if isinstance(value, Mapping):
-        return {key: _redact_direct_text(child) for key, child in value.items()}
-    if isinstance(value, list):
-        return [_redact_direct_text(child) for child in value]
-    return value
-
-
-def _contains_forbidden_text(value: Any) -> bool:
-    if isinstance(value, bytes):
-        value = value.decode("utf-8", errors="replace")
-    if isinstance(value, str):
-        patterns = (*_DIRECT_TEXT_PATTERNS, *_SECRET_TEXT_PATTERNS)
-        if any(pattern.search(value) for pattern in patterns):
-            return True
-        stripped = value.strip()
-        if stripped.startswith(("{", "[")):
-            import json
-
-            try:
-                decoded = json.loads(stripped)
-            except json.JSONDecodeError:
-                return False
-            return _contains_forbidden_field(decoded)
-        return False
-    if isinstance(value, Mapping):
-        return any(_contains_forbidden_text(child) for child in value.values())
-    if isinstance(value, Sequence):
-        return any(_contains_forbidden_text(child) for child in value)
-    return False
-
-
-def _contains_forbidden_field(value: Any) -> bool:
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            normalized = str(key).lower().replace("-", "_")
-            forbidden = (
-                normalized in _FORBIDDEN_OUTPUT_FIELDS
-                or normalized.endswith("_email")
-                or normalized.endswith("_phone")
-                or normalized.endswith("_account_number")
-                or normalized.endswith("_api_key")
-                or normalized.endswith("_password")
-                or normalized.endswith("_secret")
-                or normalized.endswith("_token")
-            )
-            if forbidden and child not in (None, "") and not is_reference_token(child):
-                return True
-            if _contains_forbidden_field(child):
-                return True
-        return False
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-        return any(_contains_forbidden_field(child) for child in value)
-    return False

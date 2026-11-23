@@ -14,6 +14,7 @@ from reports.policy import active_policy_version, load_financial_policy
 from reports.snapshots import calculation_input_digest
 
 from .chart_payload_adapters import PROJECTORS, ProjectionError
+from .simulation_notices import simulation_notice_warning
 
 
 CHART_SCHEMA_VERSION = "2.1"
@@ -299,12 +300,13 @@ def _compatible_connections(*, session: Any, definition: ChartDefinition, curren
 
 def _validated_simulation_payload(*, session: Any, definition: ChartDefinition, current_digest: str) -> dict[str, Any]:
     try:
-        from simulations.services import load_consistent_snapshot, load_policy, package_version, prepare_input, run_analysis
+        from simulations.services import confirmed_empty_sections, load_consistent_snapshot, load_policy, package_version, prepare_input, run_analysis
         assumptions, policy_version = load_policy()
         snapshot, snapshot_digest = load_consistent_snapshot(session)
         if snapshot_digest != current_digest:
             raise ChartPayloadValidationError("report_stale")
-        prepared = prepare_input(snapshot)
+        # "금융자산 없음" 확인을 넘기지 않으면 해당 세션은 항상 INPUT_NOT_READY 가 된다.
+        prepared = prepare_input(snapshot, confirmed_empty_sections=confirmed_empty_sections(session, snapshot))
         analysis, _elapsed_ms = run_analysis(prepared, assumptions, scenarios=())
     except ChartPayloadValidationError:
         raise
@@ -347,7 +349,7 @@ def _validated_simulation_payload(*, session: Any, definition: ChartDefinition, 
             "facts": [_simulation_fact("depletion-age", "첫 고갈 관측 연령", first_depletion, "age", "baseline.first_depletion_counts")],
             "reason_code": "verified_monte_carlo_count", "provenance": {"source": "verified_payload", "path": "baseline.first_depletion_counts"},
         })
-    warnings = [{"code": str(item.get("code")), "field_name": str(item.get("field_name")), "message": "입력 매핑 시 확인할 사항이 있습니다."} for item in analysis.get("notices", []) if isinstance(item, dict)]
+    warnings = [simulation_notice_warning(item) for item in analysis.get("notices", []) if isinstance(item, dict)]
     warnings.append({"code": "simulation_not_guarantee", "message": "확률 시뮬레이션 결과는 미래를 보장하지 않습니다."})
     package = package_version()
     material = json.dumps({"digest": current_digest, "policy": policy_version, "package": package}, sort_keys=True, separators=(",", ":")).encode("utf-8")

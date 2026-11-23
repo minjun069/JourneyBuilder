@@ -36,7 +36,6 @@ def _bound_adapter() -> tuple[object, FakeInstrumentationSink]:
         adapter.bind(
             request_id="request-test",
             thread_id="thread-test",
-            plan_id="plan-test",
             step_id="step-test",
         ),
         sink,
@@ -59,7 +58,6 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         observed = adapter.bind(
             request_id="request-test",
             thread_id="thread-test",
-            plan_id="plan-test",
             step_id="step-test",
         )
         span = observed.start(RuntimeStage.PLANNER)
@@ -72,25 +70,6 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
         span = observed.start(RuntimeStage.PLANNER, input=large_context)
         observed.succeed(span, output={"ok": True})
         self.assertEqual(sink.runtime_events[0].input, large_context)
-
-    def test_callback_adapter_emits_only_typed_terminal_operation(self) -> None:
-        sink = FakeInstrumentationSink()
-        adapter = RuntimeInstrumentationAdapter(InstrumentationPort(sink))
-        adapter.record_callback_attempt(
-            request_id="request-test",
-            thread_id="thread-test",
-            plan_id="plan-test",
-            step_id="step-test",
-            status=OperationStatus.TIMEOUT,
-            duration_ms=125,
-            error_code="callback_timeout",
-        )
-
-        event = sink.baseline_events[0]
-        self.assertIsInstance(event, OperationTraceEvent)
-        self.assertEqual(event.stage, OperationStage.CALLBACK)
-        self.assertEqual(event.status, OperationStatus.TIMEOUT)
-        self.assertEqual(event.error_code, "callback_timeout")
 
     def test_actual_model_call_recorder_emits_generation_content(self) -> None:
         observed, sink = _bound_adapter()
@@ -181,7 +160,6 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         report = await execute_route_plan(
             plan={
-                "plan_id": "plan-test",
                 "tasks": [{
                     "id": "task-1",
                     "type": "answer_question",
@@ -198,9 +176,9 @@ class RuntimeInstrumentationAdapterTests(unittest.IsolatedAsyncioTestCase):
                     },
                 }],
             },
+            request_id="request-test",
             step_id="step-test",
             customer_info={},
-            field_registry=[],
             agent_executors={"qa": qa},
             tool_executors={},
             instrumentation=observed,  # type: ignore[arg-type]

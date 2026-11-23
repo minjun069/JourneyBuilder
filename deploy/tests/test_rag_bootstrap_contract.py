@@ -29,7 +29,19 @@ class RAGBootstrapDeploymentContractTests(unittest.TestCase):
         self.assertIn('command: ["python", "-m", "rag.bootstrap"]', bootstrap)
         self.assertIn('restart: "no"', bootstrap)
         self.assertIn('DATABASE_URL: "${DATABASE_URL:?DATABASE_URL is required}"', bootstrap)
+        self.assertIn('GOOGLE_API_KEY: "${GOOGLE_API_KEY:?GOOGLE_API_KEY is required}"', bootstrap)
+        self.assertIn('AI_COUNSELING_RAG_ENABLED: "${AI_COUNSELING_RAG_ENABLED:-false}"', bootstrap)
         self.assertIn("rag-bootstrap:\n        condition: service_completed_successfully", ai)
+
+    def test_production_enables_candidate_in_bootstrap_and_runtime(self) -> None:
+        compose = (REPOSITORY_ROOT / "docker-compose.prod.yml").read_text(
+            encoding="utf-8"
+        )
+        bootstrap = _service_block(compose, "rag-bootstrap")
+        ai = _service_block(compose, "ai-pjt")
+
+        self.assertIn('AI_COUNSELING_RAG_ENABLED: "true"', bootstrap)
+        self.assertIn('AI_COUNSELING_RAG_ENABLED: "true"', ai)
 
     def test_ci_validates_artifact_and_deploy_tracks_bootstrap_image(self) -> None:
         pipeline = (REPOSITORY_ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")

@@ -6,11 +6,9 @@ from rest_framework.permissions import IsAuthenticated
 import logging
 
 from .models import (
-    ConsultingSession, Message,
+    ConsultingSession,
     BasicInfo, FinancialMindset, FinancialSatisfaction,
-    FinancialAsset, PensionAsset, RealEstateAsset,
-    Liability, Income, Expense,
-    FinancialGoalPeriod, FinancialGoalPeriodItem, FinancialGoalMilestone,
+    FinancialGoalPeriod, FinancialGoalPeriodItem,
 )
 from .serializers import (
     ConsultingSessionSerializer,
@@ -216,7 +214,8 @@ class BulkReplaceView(APIView):
     related_name       = None   # session의 related_manager 이름
 
     def after_replace(self, session):
-        pass
+        section = 'financial_goals' if self.related_name == 'goal_milestones' else self.related_name
+        session.clear_empty_confirmation(section)
 
     def get(self, request, session_id):
         session = get_session_or_404(session_id, request.user)
@@ -309,6 +308,36 @@ class FinancialAssetsEmptyConfirmationView(APIView):
             'success': True,
             'data': ConsultingSessionSerializer(session).data,
         })
+
+
+class SectionEmptyConfirmationView(APIView):
+    permission_classes = [IsAuthenticated]
+    sections = {
+        'pension-assets': ('pension_assets', ('pension_assets',)),
+        'real-estate': ('real_estate_assets', ('real_estate_assets',)),
+        'liabilities': ('liabilities', ('liabilities',)),
+        'income': ('incomes', ('incomes',)),
+        'expenses': ('expenses', ('expenses',)),
+        'financial-goals': ('financial_goals', ('goal_periods', 'goal_milestones')),
+    }
+
+    def put(self, request, session_id, step_id):
+        session = get_session_or_404(session_id, request.user)
+        if not session:
+            return session_not_found()
+        if step_id not in self.sections:
+            return Response({'success': False, 'error': '해당 없음 확인을 지원하지 않는 단계입니다.'}, status=400)
+
+        section, relations = self.sections[step_id]
+        with transaction.atomic():
+            session = ConsultingSession.objects.select_for_update().get(pk=session.pk)
+            for relation in relations:
+                getattr(session, relation).all().delete()
+            session.confirmed_empty_sections = sorted(set(session.confirmed_empty_sections) | {section})
+            session.save(update_fields=['confirmed_empty_sections'])
+            session.refresh_completion_status()
+
+        return Response({'success': True, 'data': ConsultingSessionSerializer(session).data})
 
 
 class PensionAssetsView(BulkReplaceView):
@@ -475,6 +504,7 @@ class GoalPeriodsView(APIView):
             stale_period_ids = set(existing_periods) - kept_period_ids
             if stale_period_ids:
                 session.goal_periods.filter(id__in=stale_period_ids).delete()
+            session.clear_empty_confirmation('financial_goals')
             session.refresh_completion_status()
 
         refreshed = {

@@ -49,38 +49,6 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             step_id="basic-info",
             agent="qa",
             field_registry=(FIELD_SPEC,),
-            dashboard_metrics={
-                "net_worth": {
-                    "metric_id": "net_worth",
-                    "value": 120_000_000,
-                    "unit": "KRW",
-                    "report_id": 10,
-                    "report_version": 2,
-                    "calculation_policy_version": "2026-09-07.v1",
-                    "generated_at": "2026-09-04T00:00:00Z",
-                    "availability": "ready",
-                }
-            },
-            retirement_scenarios={
-                "baseline": {
-                    "scenario_id": "baseline",
-                    "status": "ready",
-                    "version": 1,
-                    "generated_at": "2026-09-04T00:00:00Z",
-                    "assumptions": {"retirement_age": 60},
-                    "metrics": {"shortfall": 10_000_000},
-                }
-            },
-            available_reports=(
-                {
-                    "report_id": 10,
-                    "report_type": "asset_statement",
-                    "version": 2,
-                    "status": "ready",
-                    "generated_at": "2026-09-04T00:00:00Z",
-                },
-            ),
-            section_completion={"basic_info": True, "financial_assets": False},
             knowledge_search=knowledge_search,
             audit_sink=self.events.append,
         )
@@ -88,13 +56,13 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_schemas_are_filtered_by_agent(self):
         names = {
             item["name"]
-            for item in self.registry.schemas_for("chart_interpret")
+            for item in self.registry.schemas_for("qa")
         }
         self.assertEqual(
             names,
-            {"get_dashboard_metric", "get_retirement_scenario", "list_available_reports"},
+            {"search_financial_knowledge", "get_approved_reference_value", "get_form_field_spec"},
         )
-        schemas = self.registry.schemas_for("chart_interpret")
+        schemas = self.registry.schemas_for("qa")
         self.assertTrue(all("input_schema" in item for item in schemas))
         self.assertTrue(all("function" not in item for item in schemas))
 
@@ -107,7 +75,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         registered_agents = set(step_registry["agents"])
         definitions = default_tool_definitions()
 
-        self.assertEqual(len(definitions), 7)
+        self.assertEqual(len(definitions), 3)
         for definition in definitions:
             with self.subTest(tool=definition.name):
                 self.assertTrue(definition.allowed_agents)
@@ -129,7 +97,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_non_object_arguments_return_structured_error(self):
         result = await self.registry.invoke(  # type: ignore[arg-type]
-            "get_step_completion_status",
+            "get_form_field_spec",
             [],
             self.context,
         )
@@ -143,7 +111,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             agent="fallback",
             audit_sink=self.events.append,
         )
-        result = await self.registry.invoke("get_dashboard_metric", {"metric_id": "x"}, context)
+        result = await self.registry.invoke("get_form_field_spec", {}, context)
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, ToolErrorCode.FORBIDDEN)
 
@@ -156,65 +124,6 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.data["step_id"], "basic-info")
         self.assertEqual(result.data["fields"][0]["path"], "monthly_income")
-
-    async def test_get_dashboard_metric_returns_only_ready_report_metric(self):
-        result = await self.registry.invoke(
-            "get_dashboard_metric",
-            {"metric_id": "net_worth", "report_version": 2},
-            self.context,
-        )
-        self.assertTrue(result.ok)
-        self.assertEqual(result.data["metric"]["unit"], "KRW")
-
-    async def test_backend_unavailable_metric_reason_becomes_tool_failure(self):
-        for reason, expected_code, retryable in (
-            ("report_not_found", ToolErrorCode.NOT_FOUND, False),
-            ("report_processing", ToolErrorCode.DEPENDENCY_UNAVAILABLE, True),
-            ("report_failed", ToolErrorCode.DEPENDENCY_UNAVAILABLE, False),
-            ("report_stale", ToolErrorCode.DEPENDENCY_UNAVAILABLE, False),
-            ("policy_version_mismatch", ToolErrorCode.DEPENDENCY_UNAVAILABLE, False),
-            ("report_schema_invalid", ToolErrorCode.DEPENDENCY_UNAVAILABLE, False),
-        ):
-            with self.subTest(reason=reason):
-                context = ToolExecutionContext(
-                    request_id="req-unavailable",
-                    step_id="basic-info",
-                    agent="qa",
-                    dashboard_metrics={
-                        "retirement_gap": {
-                            "availability": "unavailable",
-                            "reason": reason,
-                        },
-                    },
-                )
-                result = await self.registry.invoke(
-                    "get_dashboard_metric",
-                    {"metric_id": "retirement_gap"},
-                    context,
-                )
-
-                self.assertFalse(result.ok)
-                self.assertEqual(result.error.code, expected_code)
-                self.assertEqual(result.error.retryable, retryable)
-                self.assertEqual(result.error.details[0]["reason"], reason)
-
-    async def test_get_retirement_scenario_fails_explicitly_when_missing(self):
-        result = await self.registry.invoke(
-            "get_retirement_scenario",
-            {"scenario_id": "not-saved"},
-            self.context,
-        )
-        self.assertFalse(result.ok)
-        self.assertEqual(result.error.code, ToolErrorCode.NOT_FOUND)
-
-    async def test_list_reports_and_completion_do_not_return_financial_values(self):
-        reports = await self.registry.invoke("list_available_reports", {}, self.context)
-        completion = await self.registry.invoke("get_step_completion_status", {}, self.context)
-        self.assertTrue(reports.ok)
-        self.assertEqual(reports.data["reports"][0]["status"], "ready")
-        self.assertTrue(completion.ok)
-        self.assertEqual(completion.data["progress_pct"], 50)
-        self.assertNotIn("value", completion.data)
 
     async def test_search_uses_injected_approved_retriever(self):
         result = await self.registry.invoke(
@@ -293,7 +202,7 @@ class FunctionToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             agent="qa",
             deadline_at_monotonic=monotonic() - 1,
         )
-        result = await self.registry.invoke("list_available_reports", {}, context)
+        result = await self.registry.invoke("get_form_field_spec", {}, context)
         self.assertFalse(result.ok)
         self.assertEqual(result.error.code, ToolErrorCode.DEADLINE_EXCEEDED)
 

@@ -1,5 +1,3 @@
-from math import isfinite
-
 from .field_registry import validate_field_change
 
 
@@ -11,14 +9,6 @@ def normalize_form_action(output, step_id):
     target = action.get('target') or 'draft_form'
     if target != 'draft_form':
         raise ValueError(f'지원하지 않는 form action target입니다: {target}')
-    raw_confidence = action.get('confidence', 0)
-    try:
-        confidence = float(raw_confidence)
-    except (TypeError, ValueError):
-        confidence = 0.0
-    if not isfinite(confidence):
-        confidence = 0.0
-    confidence = max(0.0, min(1.0, confidence))
     user_requested = action.get('user_requested') is True
     changes = []
     for raw in action.get('changes') or []:
@@ -66,6 +56,5 @@ def normalize_form_action(output, step_id):
         'target': target,
         'mode': 'proposal',
         'user_requested': user_requested,
-        'confidence': confidence,
         'changes': changes,
     }

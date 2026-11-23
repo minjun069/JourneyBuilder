@@ -2,24 +2,23 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 from pathlib import Path
-from unittest.mock import patch
 import unittest
 
 from core.prompt_registry import PromptInvocationRecord, PromptSpec
 from prompts import (
-    ACTIVE_PROMPT_RELEASE,
-    PREVIOUS_PROMPT_RELEASE,
+    PROMPT_RELEASE,
     get_prompt,
     get_prompt_manifest,
     prompt_ids,
 )
+from prompts.common import ADVISOR_PERSONA, COMMON_PRINCIPLES
+from prompts.rendering import render_prompt_payload
 
 
 AI_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = AI_ROOT / "prompts" / "manifest.json"
-PREVIOUS_MANIFEST_PATH = AI_ROOT / "prompts" / "manifest.previous.json"
+DEFINITION_ROOT = AI_ROOT / "prompts" / "definitions"
 PRODUCTION_ROOTS = (
     AI_ROOT / "agents",
     AI_ROOT / "core",
@@ -28,48 +27,30 @@ PRODUCTION_ROOTS = (
 
 
 class PromptRegistryTests(unittest.TestCase):
-    def test_committed_manifest_matches_active_release_exactly(self) -> None:
+    def test_committed_manifest_matches_current_image_exactly(self) -> None:
         committed = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(
-            committed,
-            get_prompt_manifest(release=ACTIVE_PROMPT_RELEASE),
-        )
+        self.assertEqual(committed, get_prompt_manifest())
+        self.assertEqual(committed["release"], PROMPT_RELEASE)
 
-    def test_committed_previous_manifest_is_a_frozen_rollback_snapshot(self) -> None:
-        committed = json.loads(
-            PREVIOUS_MANIFEST_PATH.read_text(encoding="utf-8")
-        )
-        self.assertEqual(
-            committed,
-            get_prompt_manifest(release=PREVIOUS_PROMPT_RELEASE),
-        )
-
-    def test_current_and_previous_releases_are_selectable(self) -> None:
-        for release in (PREVIOUS_PROMPT_RELEASE, ACTIVE_PROMPT_RELEASE):
-            with self.subTest(release=release), patch.dict(
-                os.environ,
-                {"PROMPT_RELEASE": release},
-            ):
-                self.assertEqual(get_prompt_manifest()["release"], release)
-                self.assertEqual(len(prompt_ids()), 18)
-
-    def test_changed_prompt_content_requires_a_new_semantic_version(self) -> None:
-        for prompt_id in prompt_ids(release=ACTIVE_PROMPT_RELEASE):
-            active = get_prompt(prompt_id, release=ACTIVE_PROMPT_RELEASE)
-            previous = get_prompt(prompt_id, release=PREVIOUS_PROMPT_RELEASE)
-            if active.content_hash != previous.content_hash:
-                self.assertNotEqual(
-                    active.version,
-                    previous.version,
-                    f"{prompt_id} changed content without a version bump",
-                )
+    def test_current_catalog_has_one_definition_module_per_prompt(self) -> None:
+        modules = {
+            path.stem
+            for path in DEFINITION_ROOT.glob("*.py")
+            if path.stem not in {"__init__", "_factory"}
+        }
+        self.assertEqual(len(modules), len(prompt_ids()))
+        self.assertEqual(len(prompt_ids()), 19)
 
     def test_prompt_payload_contract_rejects_missing_and_unknown_fields(self) -> None:
-        prompt = get_prompt("qa.specify")
+        prompt = get_prompt("qa.plan")
         payload = {
             "step_id": "basic-info",
-            "message": "질문",
-            "bound_inputs": {},
+            "question": "질문",
+            "user_message": "원문 질문",
+            "conversation": {},
+            "report": {},
+            "feedback": "",
+            "reference_options": [],
         }
         self.assertEqual(prompt.validate_payload(payload), payload)
         with self.assertRaisesRegex(ValueError, "missing keys"):
@@ -77,32 +58,40 @@ class PromptRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown keys"):
             prompt.validate_payload({**payload, "extra": True})
 
-    def test_role_prompts_encode_authority_and_action_boundaries(self) -> None:
-        planner = get_prompt("planner.plan").system_text
-        qa = get_prompt("qa.answer_with_evidence").system_text
-        input_resolver = get_prompt("input_assist.resolve").system_text
-        elicit = get_prompt("elicit.analyze").system_text
-        chart = get_prompt("chart_interpret.explain").system_text
+    def test_model_contracts_keep_only_task_specific_inputs(self) -> None:
+        self.assertEqual(get_prompt("aggregator.compose").required_input_keys, {"answer"})
+        self.assertEqual(get_prompt("error_review.analyze").required_input_keys, {"fields", "review_rules"})
+        self.assertNotIn("route_constraints", get_prompt("planner.plan").required_input_keys)
+        self.assertEqual((get_prompt("qa.answer").required_input_keys - {"feedback"}) | {"answer"}, get_prompt("qa.judge").required_input_keys)
 
-        self.assertIn("route_constraints", planner)
-        self.assertIn("현재 step", planner)
-        self.assertIn("Agent·executor·handler를 직접 선택하거나 출력하지 않습니다", planner)
-        self.assertIn("source_id", qa)
-        self.assertIn("사용자 답변에 노출하지 않습니다", qa)
-        self.assertIn("경계값으로 자르거나 보정하지 않습니다", input_resolver)
-        self.assertIn("state transition", elicit)
-        self.assertIn("결정하지", elicit)
-        self.assertIn("재계산", chart)
-        self.assertIn("입력 변경안", chart)
+    def test_common_principles_persona_and_readable_sections_are_composed(self) -> None:
+        answer = get_prompt("qa.answer")
+        classifier = get_prompt("qa.plan")
+        rendered = render_prompt_payload(classifier, {
+            "step_id": "basic-info",
+            "question": "질문",
+            "user_message": "원문 질문",
+            "conversation": {},
+            "report": {},
+            "feedback": "",
+            "reference_options": [],
+        })
+
+        self.assertIn(COMMON_PRINCIPLES, answer.system_text)
+        self.assertIn(ADVISOR_PERSONA, answer.system_text)
+        self.assertIn(COMMON_PRINCIPLES, classifier.system_text)
+        self.assertIn(ADVISOR_PERSONA, classifier.system_text)
+        self.assertIn("[사용자 질문]", rendered)
+        self.assertNotIn("runtime_payload", rendered)
 
     def test_invocation_metadata_rejects_incomplete_failed_records(self) -> None:
         with self.assertRaisesRegex(ValueError, "error_code"):
             PromptInvocationRecord(
-                prompt_id="qa.specify",
+                prompt_id="qa.plan",
                 prompt_version="1.0.0",
                 prompt_hash="a" * 64,
-                prompt_release=ACTIVE_PROMPT_RELEASE,
-                prompt_policy_version="1.1",
+                prompt_release=PROMPT_RELEASE,
+                prompt_policy_version="2.0",
                 purpose="qa",
                 model_provider="gemini",
                 model_name="gemini-2.5-flash-lite",
@@ -118,16 +107,15 @@ class PromptRegistryTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertTrue(all(len(prompt.content_hash) == 64 for prompt in specs))
 
-    def test_active_qa_prompts_require_product_term_rag_without_source_metadata(self) -> None:
-        decide = get_prompt("qa.decide_retrieval").system_text
-        answer = get_prompt("qa.answer_with_evidence").system_text
-        merge = get_prompt("qa.merge").system_text
+    def test_qa_has_one_planning_answering_and_review_prompt(self) -> None:
+        self.assertEqual({key for key in prompt_ids() if key.startswith("qa.")}, {"qa.plan", "qa.answer", "qa.judge"})
 
-        self.assertIn("제품 화면의 용어명·별칭·뜻", decide)
-        self.assertIn("retrieve로 판단하세요", decide)
-        self.assertIn("검색된 용어 절의 정의·사용 맥락·주의사항", answer)
-        self.assertIn("출처·참고 문서 목록을 표시하지 마세요", answer)
-        self.assertIn("출처 목록을 새로 붙이거나 복원하지 마세요", merge)
+    def test_aggregator_counseling_rewrites_with_grounding(self) -> None:
+        self.assertEqual({key for key in prompt_ids() if key.startswith("counseling.")}, set())
+        self.assertEqual(
+            get_prompt("aggregator.counseling").required_input_keys,
+            {"answer", "question", "conversation_context", "evidence"},
+        )
 
 
 class ProductionPromptCallAuditTests(unittest.TestCase):
@@ -216,7 +204,7 @@ class ProductionPromptCallAuditTests(unittest.TestCase):
                     # provider boundary. Every model call inside it is audited
                     # in the registered Agent modules.
                     if (
-                        path.name == "builder.py"
+                        path.name in {"builder.py", "agent_registry.py"}
                         and isinstance(node.func.value, ast.Name)
                         and node.func.value.id == "agent_graph"
                     ):

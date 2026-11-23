@@ -15,7 +15,6 @@ from config.runtime_env import (  # noqa: E402
     read_csv,
     read_optional_pattern,
     read_positive_float,
-    read_positive_int,
     require_secret,
 )
 
@@ -41,7 +40,6 @@ class RuntimeEnvironmentTests(unittest.TestCase):
             read_bool("FLAG", False, {"FLAG": "yes"})
 
     def test_numeric_parsers_require_positive_finite_values(self) -> None:
-        self.assertEqual(read_positive_int("COUNT", 3, {}), 3)
         self.assertEqual(read_positive_float("TIMEOUT", 2, {}), 2.0)
         for value in ("0", "-1", "nan", "inf"):
             with self.subTest(value=value):

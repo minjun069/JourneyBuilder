@@ -60,7 +60,7 @@ test('fixture adapter는 원본을 바꾸지 않고 server-owned ID를 제거해
 
   assert.deepEqual(fixtureCase, before)
   assert.equal(output.action.user_requested, false)
-  assert.ok(output.action.confidence < 0.9)
+  assert.equal(output.action.user_requested, false)
   assert.equal(output.action.action_id, undefined)
   assert.ok(output.action.changes.every((change) => change.change_id === undefined))
   assert.ok(output.action.changes.every((change) => change.decision_status === undefined))

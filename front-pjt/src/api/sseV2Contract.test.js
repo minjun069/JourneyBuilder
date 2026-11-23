@@ -43,6 +43,9 @@ test('Frontend는 협상된 진행 이벤트 뒤 완료 응답만 소비한다',
     contract.browser_events.map(({ event }) => event),
     ['start', 'progress', 'heartbeat', 'done'],
   )
+  assert.equal(contract.optional_browser_headers['X-AI-Progress-Events'], 'v1')
+  assert.equal(contract.progress_policy.heartbeat_seconds, 15)
+  assert.equal(contract.progress_policy.includes_content, false)
   assert.doesNotMatch(aiChatViewSource, /event === 'delta'/)
   assert.match(consultingApiSource, /'X-AI-Progress-Events': 'v1'/)
   assert.equal(contract.progress_policy.includes_percentage, false)
@@ -62,6 +65,8 @@ test('처리 중 중복은 새 요청을 만들지 않고 완료 결과만 재�
     contract.idempotency.same_key_completed.replay_events,
     ['start', 'done'],
   )
+  assert.equal(contract.idempotency.unexpected_disconnect_auto_reconnect_attempts, 1)
+  assert.equal(contract.idempotency.transient_events_replayed, false)
 })
 
 test('Planner가 라우팅한 Elicit 턴은 일반 채팅과 같은 v2 SSE를 사용한다', () => {
@@ -72,10 +77,9 @@ test('Planner가 라우팅한 Elicit 턴은 일반 채팅과 같은 v2 SSE를 �
   assert.doesNotMatch(consultationStoreSource, /elicit_action|elicitAction/)
 })
 
-test('Error Review 계약은 두 trigger를 지원하지만 Frontend 제품 경로는 저장 시에만 호출한다', () => {
+test('Error Review 계약은 저장 경로만 지원한다', () => {
   assert.deepEqual(contract.channel_policy.error_review, {
     save: 'sse',
-    user_request: 'sse',
   })
 
   const reviewForm = consultationStoreSource.slice(
@@ -84,7 +88,7 @@ test('Error Review 계약은 두 trigger를 지원하지만 Frontend 제품 경�
   )
   assert.match(reviewForm, /streamMessageV2/)
   assert.match(reviewForm, /requestMode: 'error_review'/)
-  assert.match(reviewForm, /reviewTrigger: 'save'/)
+  assert.doesNotMatch(reviewForm, /reviewTrigger|review_trigger/)
   assert.match(reviewForm, /event === 'done'/)
   assert.doesNotMatch(reviewForm, /poll|sendMessage/)
   assert.doesNotMatch(reviewForm, /user_request/)

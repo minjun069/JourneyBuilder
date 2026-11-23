@@ -34,7 +34,7 @@ def _policy(*allowed_model_paths: tuple[str | int, ...]) -> MaskingPolicy:
 
 def _sentinel_payload() -> dict[str, object]:
     return {
-        "plan_id": "P13-PLAN-RAW-0001",
+        "request_id": "P13-REQUEST-RAW-0001",
         "tasks": [
             {
                 "id": "task-1",
@@ -87,7 +87,7 @@ class RecursiveMaskingTests(unittest.TestCase):
         sink_pairs = (
             (MaskingSink.MODEL_INPUT, ContractSink.MODEL_INPUT),
             (MaskingSink.MODEL_OUTPUT, ContractSink.MODEL_OUTPUT),
-            (MaskingSink.CALLBACK, ContractSink.CALLBACK),
+            (MaskingSink.TERMINAL, ContractSink.TERMINAL),
             (MaskingSink.APPLICATION_LOG, ContractSink.APPLICATION_LOG),
             (MaskingSink.TRACE_EXPORT, ContractSink.TRACE_EXPORT),
         )
@@ -101,11 +101,11 @@ class RecursiveMaskingTests(unittest.TestCase):
             with self.subTest(sink=production_sink.value):
                 assert_no_raw_sentinels(rendered, contract_sink)
 
-    def test_callback_preserves_only_root_transport_correlation_ids(self) -> None:
+    def test_terminal_preserves_only_root_transport_correlation_ids(self) -> None:
         payload = {
-            "request_id": "callback-request-0001",
+            "request_id": "terminal-request-0001",
             "session_id": 731,
-            "thread_id": "callback-thread-0001",
+            "thread_id": "terminal-thread-0001",
             "output": {
                 "request_id": "nested-request-raw-0001",
                 "task_id": "task-1",
@@ -119,7 +119,7 @@ class RecursiveMaskingTests(unittest.TestCase):
 
         masked = mask_payload(
             payload,
-            sink=MaskingSink.CALLBACK,
+            sink=MaskingSink.TERMINAL,
             policy=_policy(),
         )
 
@@ -134,15 +134,15 @@ class RecursiveMaskingTests(unittest.TestCase):
             "[FINANCIAL_VALUE_MASKED]",
         )
 
-    def test_callback_removes_every_p13_sentinel_from_nested_output(self) -> None:
+    def test_terminal_removes_every_p13_sentinel_from_nested_output(self) -> None:
         masked = mask_payload(
             {
-                "request_id": "callback-request-0001",
+                "request_id": "terminal-request-0001",
                 "session_id": 731,
-                "thread_id": "callback-thread-0001",
+                "thread_id": "terminal-thread-0001",
                 "output": _sentinel_payload(),
             },
-            sink=MaskingSink.CALLBACK,
+            sink=MaskingSink.TERMINAL,
             policy=_policy(),
         )
         rendered = json.dumps(masked, ensure_ascii=False, sort_keys=True)
@@ -153,7 +153,7 @@ class RecursiveMaskingTests(unittest.TestCase):
 
     def test_route_plan_and_task_result_references_keep_correlation(self) -> None:
         payload = {
-            "plan_id": "plan-raw-0001",
+            "request_id": "request-raw-0001",
             "tasks": [
                 {
                     "id": "task-1",
@@ -198,7 +198,7 @@ class RecursiveMaskingTests(unittest.TestCase):
                     },
                 },
             },
-            "bound_inputs": {"value": 7_310_000},
+            "task_input": {"bindings": {"value": 7_310_000}},
         }
 
         first = mask_payload(
@@ -215,7 +215,7 @@ class RecursiveMaskingTests(unittest.TestCase):
         source_id = first["tasks"][0]["id"]
         result_key = next(iter(first["task_results"]))
         self.assertEqual(first, second)
-        self.assertRegex(first["plan_id"], r"^plan_[0-9a-f]{24}$")
+        self.assertRegex(first["request_id"], r"^request_[0-9a-f]{24}$")
         self.assertRegex(source_id, r"^task_[0-9a-f]{24}$")
         self.assertEqual(first["tasks"][1]["depends_on"], [source_id])
         self.assertEqual(
@@ -232,14 +232,17 @@ class RecursiveMaskingTests(unittest.TestCase):
             first["task_results"][result_key]["artifact"]["value"],
             "[FINANCIAL_VALUE_MASKED]",
         )
-        self.assertEqual(first["bound_inputs"]["value"], "[FINANCIAL_VALUE_MASKED]")
+        self.assertEqual(
+            first["task_input"]["bindings"]["value"],
+            "[FINANCIAL_VALUE_MASKED]",
+        )
         second_task_id = first["tasks"][1]["id"]
         self.assertEqual(
             first["task_results"][second_task_id]["artifact"]["changes"][0]["value"],
             "[FINANCIAL_VALUE_MASKED]",
         )
         rendered = json.dumps(first, ensure_ascii=False, sort_keys=True)
-        self.assertNotIn("plan-raw-0001", rendered)
+        self.assertNotIn("request-raw-0001", rendered)
         self.assertNotIn("task-1", rendered)
 
     def test_model_financial_and_quasi_values_require_exact_allowlist_paths(self) -> None:

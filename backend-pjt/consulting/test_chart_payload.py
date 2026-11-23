@@ -307,7 +307,10 @@ class ChartPayloadProviderTests(SimpleTestCase):
                 'probability': 'fraction', 'probability_delta': 'pp',
                 'annual_rate': 'fraction', 'age': 'years',
             },
-            'notices': [],
+            'notices': [
+                {'code': 'pre_retirement_cashflow_not_recalculated', 'field_name': 'financial_assets'},
+                {'code': 'pension_horizon_limited', 'field_name': 'pension_assets[0]'},
+            ],
             'baseline_profile': {
                 'current_age': 60, 'retirement_age': 60, 'end_age': 61,
                 'retirement_expenses': [], 'pension_incomes': [],
@@ -339,6 +342,11 @@ class ChartPayloadProviderTests(SimpleTestCase):
         self.assertEqual(result.payload['highlights'][0]['display'], '75.0%')
         self.assertEqual(result.payload['events'][0]['age'], 61)
         self.assertEqual(result.payload['assumption_details'][0]['display'], '4%')
+        warnings = result.payload['warnings']
+        self.assertEqual(len(warnings), 3)
+        self.assertIn('월 저축액', warnings[0]['message'])
+        self.assertIn('연금자산 1번째 항목', warnings[1]['message'])
+        self.assertEqual(warnings[2]['code'], 'simulation_not_guarantee')
 
     def test_chart_report_is_bound_to_authenticated_owner(self):
         with self.assertRaises(ChartPayloadOwnershipError):

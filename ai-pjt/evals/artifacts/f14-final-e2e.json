@@ -100,7 +100,7 @@
   "source_artifacts": [
     {
       "path": "ai-pjt/evals/artifacts/f14-full-regression.json",
-      "sha256": "934e12d234eca11ee1bba15295abeed9ba5bc56d5448f703e5cb04adda427cdc"
+      "sha256": "33a24b6c302cea0bd416af5f6aa3fc134834d53f26353cc0b1914a90e1bf309e"
     },
     {
       "path": "ai-pjt/evals/artifacts/f14-rollback-rehearsal.json",
@@ -115,30 +115,6 @@
       "sha256": "972ffb38464183cad16f714cc200b962e7c8bf73d3151e0550bb3b7cb49fb7a7"
     }
   ],
-  "dashboard_metric_e2e": {
-    "metric_id": "retirement_gap",
-    "backend_source": "latest_ready_required_savings_report",
-    "bound_fields": [
-      "metric_id",
-      "value",
-      "unit",
-      "report_id",
-      "report_version",
-      "calculation_policy_version",
-      "generated_at"
-    ],
-    "exact_match": true,
-    "unavailable_reasons": [
-      "report_not_found",
-      "report_processing",
-      "report_failed",
-      "report_stale",
-      "policy_version_mismatch",
-      "report_schema_invalid"
-    ],
-    "older_ready_fallback": false,
-    "ai_recalculation": false
-  },
   "reference_value_e2e": {
     "reference_family": "household_monthly_expense_*_avg",
     "approved_reference_count": 10,

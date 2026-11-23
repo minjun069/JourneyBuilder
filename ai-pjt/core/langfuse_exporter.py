@@ -38,12 +38,11 @@ _FORBIDDEN_CONTENT_FIELDS = frozenset(
         "prompt",
         "query",
         "response",
-        "tool_context",
     }
 )
 _OBSERVATION_CONTENT_FIELDS = frozenset({"input", "output"})
 _ROOT_METADATA_FIELDS = frozenset(
-    {"attempt_id", "plan_id", "request_id", "step_id", "thread_id"}
+    {"attempt_id", "request_id", "step_id", "thread_id"}
 )
 _OBSERVATION_METADATA_FIELDS_BY_FAMILY = {
     "operation": frozenset(
@@ -169,7 +168,6 @@ _ALLOWED_FIELDS_BY_FAMILY = {
         "error_type",
         "executor_kind",
         "executor_name",
-        "plan_id",
         "producer_task_id",
         "reason_code",
         "request_id",
@@ -189,7 +187,6 @@ _ALLOWED_FIELDS_BY_FAMILY = {
         "boundary",
         "call_source",
         "decision",
-        "plan_id",
         "reason_code",
         "request_id",
         "step_id",

@@ -8,7 +8,7 @@ import {
   getLiabilities, getIncomes, getExpenses,
   getGoalPeriods, getGoalMilestones,
   putBasicInfo, putFinancialMindset, putFinancialSatisfaction,
-  putFinancialAssets, confirmEmptyFinancialAssets, putPensionAssets, putRealEstateAssets,
+  putFinancialAssets, confirmEmptyFinancialAssets, confirmEmptySection, putPensionAssets, putRealEstateAssets,
   putLiabilities, putIncomes, putExpenses,
   putGoalPeriods, putGoalMilestones,
   mapBasicInfo, mapFinancialMindset, mapFinancialSatisfaction,
@@ -60,7 +60,7 @@ export const useConsultationStore = defineStore('consultation', () => {
   // 기존 상담 이어하기: 최신 세션 선택
   async function continueLatestSession() {
     const list = await loadSessions()
-    const latest = list.find((session) => ['onboarding', 'in_progress'].includes(session.status)) ?? list[0]
+    const latest = list[0]
     clearActiveSession()
     if (!latest) return null
 
@@ -88,8 +88,8 @@ export const useConsultationStore = defineStore('consultation', () => {
     stepId,
     form = null,
     requestMode = 'chat',
-    reviewTrigger = null,
     idempotencyKey = null,
+    elicitationState = null,
   } = {}) {
     if (!sessionId.value) return
     if (streaming.value || isAiRequestActive.value || activeStreamController) {
@@ -104,6 +104,17 @@ export const useConsultationStore = defineStore('consultation', () => {
     isAiRequestActive.value = true
     let idleTimedOut = false
     let idleTimer = null
+    const resolvedIdempotencyKey = idempotencyKey ?? createIdempotencyKey()
+    const requestBody = {
+      content,
+      step_id: stepId,
+      form_data: mapCurrentForm(stepId, form ?? {}),
+      request_mode: requestMode,
+      ...(elicitationState ? { elicitation_state: {
+        ...elicitationState,
+        completed_fields: [...elicitationState.completed_fields],
+      } } : {}),
+    }
     const resetIdleTimer = () => {
       clearTimeout(idleTimer)
       idleTimer = setTimeout(() => {
@@ -111,27 +122,40 @@ export const useConsultationStore = defineStore('consultation', () => {
         controller.abort()
       }, STREAM_IDLE_TIMEOUT_MS)
     }
+    const isUnexpectedTransportClose = (error) => (
+      !controller.signal.aborted
+      && (
+        error?.code === 'SSE_TERMINAL_MISSING'
+        || (error?.name === 'TypeError' && error?.status == null)
+      )
+    )
 
     try {
-      resetIdleTimer()
-      const events = streamMessagesV2(
-        sessionId.value,
-        {
-          content,
-          step_id: stepId,
-          form_data: mapCurrentForm(stepId, form ?? {}),
-          request_mode: requestMode,
-          ...(reviewTrigger ? { review_trigger: reviewTrigger } : {}),
-        },
-        {
-          idempotencyKey: idempotencyKey ?? createIdempotencyKey(),
-          signal: controller.signal,
-        },
-      )
-      for await (const event of events) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
         resetIdleTimer()
-        if (event.data?.request_id) requestId.value = event.data.request_id
-        yield event
+        try {
+          const events = streamMessagesV2(
+            sessionId.value,
+            requestBody,
+            {
+              idempotencyKey: resolvedIdempotencyKey,
+              signal: controller.signal,
+            },
+          )
+          for await (const event of events) {
+            resetIdleTimer()
+            if (event.data?.request_id) requestId.value = event.data.request_id
+            yield event
+          }
+          return
+        } catch (error) {
+          if (attempt === 0 && isUnexpectedTransportClose(error)) {
+            await new Promise((resolve) => setTimeout(resolve, 400))
+            if (controller.signal.aborted) throw error
+            continue
+          }
+          throw error
+        }
       }
     } catch (error) {
       if (idleTimedOut) {
@@ -158,7 +182,6 @@ export const useConsultationStore = defineStore('consultation', () => {
         stepId,
         form,
         requestMode: 'error_review',
-        reviewTrigger: 'save',
       },
     )) {
       // Error Review는 구조화된 최종 결과만 화면에 반영한다.
@@ -240,6 +263,13 @@ export const useConsultationStore = defineStore('consultation', () => {
     return response
   }
 
+  async function confirmNoSectionData(stepId) {
+    if (!sessionId.value) return
+    const response = await confirmEmptySection(sessionId.value, stepId)
+    activeSession.value = response.data?.data ?? activeSession.value
+    return response
+  }
+
   const FORM_LOAD_MAP = {
     'basic-info': getBasicInfo,
     'financial-mindset': getFinancialMindset,
@@ -290,7 +320,7 @@ export const useConsultationStore = defineStore('consultation', () => {
     sessions,
     initSession, loadSessions, continueLatestSession, loadActiveSession,
     loadMessages, streamMessageV2, reviewForm, cancelActiveStream,
-    saveFormData, confirmNoFinancialAssets, loadFormData, loadBasicInfo,
+    saveFormData, confirmNoFinancialAssets, confirmNoSectionData, loadFormData, loadBasicInfo,
     clearConsultation,
   }
 })

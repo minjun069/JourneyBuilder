@@ -61,7 +61,7 @@ class FakeSummaryModel:
 
 
 class VerifiedSummaryTests(unittest.TestCase):
-    def test_unquoted_or_financial_claim_rejects_whole_candidate(self):
+    def test_financial_claim_is_retained_with_its_source(self):
         from core.context import SummaryJob
 
         job = SummaryJob(
@@ -78,8 +78,9 @@ class VerifiedSummaryTests(unittest.TestCase):
             value="월 소득",
             evidence_quote="월 소득을 기억해줘",
         )])
-        with self.assertRaises(SummaryValidationError):
-            verify_summary_candidate(job, candidate)
+        summary, state = verify_summary_candidate(job, candidate)
+        self.assertEqual(state.decisions, ("사용자: 월 소득",))
+        self.assertIn("월 소득", summary.text)
 
 
 class ConversationMemoryTests(unittest.IsolatedAsyncioTestCase):
@@ -153,7 +154,7 @@ class ConversationMemoryTests(unittest.IsolatedAsyncioTestCase):
         current = await self.api.read_context(self.scope)
         self.assertIsNotNone(current.summary)
         self.assertEqual(current.summary.summarized_through_sequence, 1)
-        self.assertEqual(current.structured_state.current_goal, "RAG 챗봇 구현")
+        self.assertEqual(current.structured_state.current_goal, "사용자: RAG 챗봇 구현")
 
         third = ConversationTurn("req-3", "후속 질문", "후속 답변")
         stale_request_context = ConversationContext(turns=(third,))

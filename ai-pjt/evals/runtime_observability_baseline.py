@@ -7,12 +7,11 @@ from math import ceil, floor
 from collections import Counter, defaultdict
 from typing import Iterable
 
-from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
 from core.runtime_instrumentation import RuntimeStage, RuntimeStatus, RuntimeTraceEvent
 from evals.observability_baseline import Distribution, Rate
 
 
-RUNTIME_BASELINE_SCHEMA_VERSION = "f10-runtime-observability-baseline-v1"
+RUNTIME_BASELINE_SCHEMA_VERSION = "f10-runtime-observability-baseline-v3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,19 +36,6 @@ class TaskOutcomeBaseline:
 
 
 @dataclass(frozen=True, slots=True)
-class CallbackDeliveryBaseline:
-    requests: int
-    attempts: int
-    succeeded_attempts: int
-    failed_attempts: int
-    timeout_attempts: int
-    retried_requests: int
-    eventually_succeeded: int
-    exhausted: int
-    latency_ms: Distribution
-
-
-@dataclass(frozen=True, slots=True)
 class RuntimeObservabilityBaseline:
     schema_version: str
     measurement_disposition: str
@@ -58,8 +44,7 @@ class RuntimeObservabilityBaseline:
     request_timeout_count: int
     task_outcomes: TaskOutcomeBaseline
     stages: dict[str, RuntimeStageBaseline]
-    callback_delivery: CallbackDeliveryBaseline
-    fallback_request_rate: Rate
+    all_tasks_failed_response_rate: Rate
     aggregation_success_rate: Rate
 
     def to_dict(self) -> dict[str, object]:
@@ -67,15 +52,14 @@ class RuntimeObservabilityBaseline:
 
 
 def build_runtime_observability_baseline(
-    events: Iterable[RuntimeTraceEvent | OperationTraceEvent],
+    events: Iterable[RuntimeTraceEvent],
 ) -> RuntimeObservabilityBaseline:
     """Aggregate one closed cohort and reject incomplete runtime spans."""
 
     collected = tuple(events)
-    if any(not isinstance(event, (RuntimeTraceEvent, OperationTraceEvent)) for event in collected):
-        raise TypeError("runtime baseline accepts only runtime and operation events")
-    runtime_events = [event for event in collected if isinstance(event, RuntimeTraceEvent)]
-    operation_events = [event for event in collected if isinstance(event, OperationTraceEvent)]
+    if any(not isinstance(event, RuntimeTraceEvent) for event in collected):
+        raise TypeError("runtime baseline accepts only runtime events")
+    runtime_events = list(collected)
     _validate_closed_runtime_spans(runtime_events)
 
     terminal_by_stage = {
@@ -127,10 +111,14 @@ def build_runtime_observability_baseline(
     request_timeouts = sum(
         event.reason_code == "request_timeout" for event in request_terminals
     )
-    fallback_requests = {
-        event.trace_id
-        for event in task_terminals
-        if event.executor_name == "fallback"
+    task_terminals_by_trace: dict[str, list[RuntimeTraceEvent]] = defaultdict(list)
+    for event in task_terminals:
+        task_terminals_by_trace[event.trace_id].append(event)
+    all_tasks_failed_requests = {
+        trace_id
+        for trace_id, trace_tasks in task_terminals_by_trace.items()
+        if trace_tasks
+        and not any(event.status is RuntimeStatus.SUCCEEDED for event in trace_tasks)
     }
     aggregations = terminal_by_stage[RuntimeStage.AGGREGATION]
     aggregation_successes = sum(
@@ -145,8 +133,10 @@ def build_runtime_observability_baseline(
         request_timeout_count=request_timeouts,
         task_outcomes=task_outcomes,
         stages=stages,
-        callback_delivery=_callback_baseline(operation_events),
-        fallback_request_rate=Rate(len(fallback_requests), len(request_terminals)),
+        all_tasks_failed_response_rate=Rate(
+            len(all_tasks_failed_requests),
+            len(request_terminals),
+        ),
         aggregation_success_rate=Rate(aggregation_successes, len(aggregations)),
     )
 
@@ -154,7 +144,7 @@ def build_runtime_observability_baseline(
 def _span_key(event: RuntimeTraceEvent) -> tuple[str, str, RuntimeStage, str | None, str | None]:
     return (
         event.trace_id,
-        event.plan_id,
+        event.request_id,
         event.stage,
         event.task_id,
         event.artifact_id,
@@ -204,36 +194,6 @@ def _stage_baseline(events: list[RuntimeTraceEvent]) -> RuntimeStageBaseline:
     )
 
 
-def _callback_baseline(events: list[OperationTraceEvent]) -> CallbackDeliveryBaseline:
-    callbacks = [event for event in events if event.stage is OperationStage.CALLBACK]
-    by_trace: dict[str, list[OperationTraceEvent]] = defaultdict(list)
-    for event in callbacks:
-        by_trace[event.trace_id].append(event)
-    for trace_events in by_trace.values():
-        trace_events.sort(key=lambda event: event.occurred_at_epoch_ms)
-    return CallbackDeliveryBaseline(
-        requests=len(by_trace),
-        attempts=len(callbacks),
-        succeeded_attempts=sum(
-            event.status is OperationStatus.SUCCEEDED for event in callbacks
-        ),
-        failed_attempts=sum(
-            event.status is OperationStatus.FAILED for event in callbacks
-        ),
-        timeout_attempts=sum(
-            event.status is OperationStatus.TIMEOUT for event in callbacks
-        ),
-        retried_requests=sum(len(trace_events) > 1 for trace_events in by_trace.values()),
-        eventually_succeeded=sum(
-            trace_events[-1].status is OperationStatus.SUCCEEDED
-            for trace_events in by_trace.values()
-        ),
-        exhausted=sum(
-            trace_events[-1].status is not OperationStatus.SUCCEEDED
-            for trace_events in by_trace.values()
-        ),
-        latency_ms=_distribution([event.duration_ms for event in callbacks]),
-    )
 
 
 def _distribution(values: list[int]) -> Distribution:

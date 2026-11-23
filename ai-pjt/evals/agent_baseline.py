@@ -10,12 +10,9 @@ from contextlib import asynccontextmanager, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import importlib
 import json
 from pathlib import Path
-import re
 import subprocess
-import sys
 from time import monotonic
 from typing import Any
 
@@ -113,22 +110,22 @@ class BudgetedRunnable:
 def instrument_agent_models(budget: ModelCallBudget):
     """Count each production LangChain invocation without changing its prompt."""
 
-    from agents import chart_interpret, elicit, error_review, input_assist, qa
+    from agents.chart_interpret import model as chart_model
+    from agents.elicit import model as elicit_model
+    from agents.error_review import model as error_review_model
+    from agents.input_assist import service as input_assist
+    from agents.qa import service as qa
 
     targets = (
-        (qa, "_specify_chain"),
-        (qa, "_decision_chain"),
+        (qa, "_plan_chain"),
         (qa, "_judge_chain"),
-        (qa, "_refine_chain"),
         (qa, "llm"),
-        (input_assist, "_classify_chain"),
-        (input_assist, "_identify_chain"),
-        (input_assist, "_resolve_chain"),
-        (input_assist, "_error_check_2_chain"),
+        (input_assist, "extract_chain"),
+        (input_assist, "review_chain"),
         (input_assist, "llm"),
-        (error_review, "_review_chain"),
-        (chart_interpret, "llm"),
-        (elicit, "_analysis_chain"),
+        (error_review_model, "_review_chain"),
+        (chart_model, "llm"),
+        (elicit_model, "llm"),
     )
     originals: list[tuple[Any, str, Any]] = []
     try:
@@ -190,16 +187,9 @@ def load_fixture(path: Path = DEFAULT_FIXTURE) -> dict[str, Any]:
 
 
 def _field_registry(step_id: str) -> list[dict[str, Any]]:
-    backend_root = REPOSITORY_ROOT / "backend-pjt"
-    inserted = str(backend_root) not in sys.path
-    if inserted:
-        sys.path.insert(0, str(backend_root))
-    try:
-        module = importlib.import_module("consulting.field_registry")
-        return module.get_step_field_registry(step_id)
-    finally:
-        if inserted:
-            sys.path.remove(str(backend_root))
+    from core.field_registry import load_field_registry
+
+    return load_field_registry(step_id)
 
 
 def _walk_path(value: Any, path: str) -> list[Any]:
@@ -252,54 +242,59 @@ def summarize_false_positives(
     normal_results: list[dict[str, Any]],
 ) -> dict[str, Any]:
     by_field: dict[str, dict[str, Any]] = {}
-    totals = {"evaluated": 0, "low": 0, "medium": 0, "high": 0}
+    totals = {"evaluated": 0, "false_positives": 0}
     for case in normal_results:
+        if case.get("status") not in {None, "completed"}:
+            continue
         for field_name, count in case.get("evaluated_fields", {}).items():
             entry = by_field.setdefault(
                 field_name,
-                {"evaluated": 0, "low": 0, "medium": 0, "high": 0},
+                {"evaluated": 0, "false_positives": 0},
             )
             entry["evaluated"] += count
             totals["evaluated"] += count
-        for item in case.get("raw_items", []):
+        seen = set()
+        for item in case.get("items", []):
             field_name = f"{item.get('section')}.{item.get('path')}"
-            level = item.get("confidence_level")
-            if field_name not in by_field or level not in {"low", "medium", "high"}:
+            identity = tuple(item.get(key) for key in (
+                "section", "path", "item_id", "client_item_id", "parent_item_id", "parent_client_item_id",
+            ))
+            if field_name not in by_field or identity in seen:
                 continue
-            by_field[field_name][level] += 1
-            totals[level] += 1
+            seen.add(identity)
+            by_field[field_name]["false_positives"] += 1
+            totals["false_positives"] += 1
     for entry in by_field.values():
         denominator = entry["evaluated"]
-        entry["raw_false_positive_rate"] = (
-            (entry["low"] + entry["medium"] + entry["high"]) / denominator
-            if denominator else None
-        )
-        entry["visible_false_positive_rate"] = (
-            (entry["medium"] + entry["high"]) / denominator
+        entry["false_positive_rate"] = (
+            entry["false_positives"] / denominator
             if denominator else None
         )
     denominator = totals["evaluated"]
     return {
         "unit": "field_instance",
-        "confidence_bands": {
-            "low": {"range": "0.00<=confidence<0.60", "visible": False},
-            "medium": {"range": "0.60<=confidence<0.85", "visible": True},
-            "high": {"range": "0.85<=confidence<=1.00", "visible": True},
-        },
         "totals": {
             **totals,
-            "raw_false_positive_rate": (
-                (totals["low"] + totals["medium"] + totals["high"]) / denominator
-                if denominator else None
-            ),
-            "visible_false_positive_rate": (
-                (totals["medium"] + totals["high"]) / denominator
+            "false_positive_rate": (
+                totals["false_positives"] / denominator
                 if denominator else None
             ),
         },
         "by_field": dict(sorted(by_field.items())),
         "acceptance_threshold": None,
     }
+
+
+def review_field_counts(current_form: Any, registry: list[dict[str, Any]]) -> dict[str, int]:
+    """Measure only field instances actually exposed to the review model."""
+    from agents.error_review.policy import build_review_fields
+
+    _fields, references = build_review_fields(current_form, registry)
+    counts: dict[str, int] = defaultdict(int)
+    for item in references.values():
+        if item["current_value"] is not None:
+            counts[f"{item['section']}.{item['path']}"] += 1
+    return dict(counts)
 
 
 def _error_payload(exc: Exception) -> dict[str, str]:
@@ -316,7 +311,7 @@ def _contains_number(text: str, expected: int | float) -> bool:
 
 @asynccontextmanager
 async def _qa_retriever(budget: ModelCallBudget) -> AsyncIterator[RecordingRetriever]:
-    from agents import qa
+    from agents.qa import service as qa
     from rag.retriever import get_retriever
 
     recorder = RecordingRetriever(get_retriever(), budget)
@@ -340,7 +335,10 @@ async def _run_qa_cases(cases: list[dict[str, Any]], budget: ModelCallBudget) ->
                     "message": case["message"],
                     "step_id": case["step_id"],
                     "customer_info": deepcopy(case["customer_info"]),
-                    "bound_inputs": deepcopy(case.get("bound_inputs", {})),
+                    "task_input": {
+                        "description": "평가 fixture의 검증된 입력",
+                        "bindings": deepcopy(case.get("bindings", {})),
+                    },
                 })
             response = str(state.get("output", {}).get("response", ""))
             signals = case.get("signals", {})
@@ -388,7 +386,6 @@ async def _run_input_assist_cases(
                 "message": case["message"],
                 "step_id": case["step_id"],
                 "customer_info": deepcopy(case["customer_info"]),
-                "field_registry": _field_registry(case["step_id"]),
             })
             output = state.get("output", {})
             action = output.get("action") if isinstance(output, Mapping) else None
@@ -425,18 +422,15 @@ async def _run_error_review_cases(
     fixture: dict[str, Any], budget: ModelCallBudget
 ) -> dict[str, Any]:
     from agents.error_review import analyze_review_items
-    from agents.error_review_confidence import visible_review_items
 
     normal_results = []
     for case in fixture["normal_cases"]:
         registry = _field_registry(case["step_id"])
         started_calls = budget.used
         try:
-            manual, raw_items = await analyze_review_items({
+            manual, items = await analyze_review_items({
                 "step_id": case["step_id"],
-                "review_trigger": "user_request",
                 "customer_info": {"current_form": deepcopy(case["current_form"])},
-                "field_registry": registry,
             })
             normal_results.append({
                 "id": case["id"],
@@ -444,9 +438,8 @@ async def _run_error_review_cases(
                 "status": "completed",
                 "model_calls": budget.used - started_calls,
                 "manual": {"document_id": manual.document_id, "version": manual.version},
-                "evaluated_fields": present_field_counts(case["current_form"], registry),
-                "raw_items": raw_items,
-                "visible_items": visible_review_items(raw_items),
+                "evaluated_fields": review_field_counts(case["current_form"], registry),
+                "items": items,
             })
         except Exception as exc:
             normal_results.append({
@@ -454,9 +447,8 @@ async def _run_error_review_cases(
                 "step_id": case["step_id"],
                 "status": "error",
                 "model_calls": budget.used - started_calls,
-                "evaluated_fields": present_field_counts(case["current_form"], registry),
-                "raw_items": [],
-                "visible_items": [],
+                "evaluated_fields": review_field_counts(case["current_form"], registry),
+                "items": [],
                 **_error_payload(exc),
             })
 
@@ -465,15 +457,11 @@ async def _run_error_review_cases(
         registry = _field_registry(case["step_id"])
         started_calls = budget.used
         try:
-            manual, raw_items = await analyze_review_items({
+            manual, items = await analyze_review_items({
                 "step_id": case["step_id"],
-                "review_trigger": "save",
                 "customer_info": {"current_form": deepcopy(case["current_form"])},
-                "field_registry": registry,
             })
-            visible = visible_review_items(raw_items)
-            raw_fields = {f"{item['section']}.{item['path']}" for item in raw_items}
-            visible_fields = {f"{item['section']}.{item['path']}" for item in visible}
+            detected_fields = {f"{item['section']}.{item['path']}" for item in items}
             expected = set(case["expected_fields"])
             suspicious_results.append({
                 "id": case["id"],
@@ -482,12 +470,10 @@ async def _run_error_review_cases(
                 "model_calls": budget.used - started_calls,
                 "manual": {"document_id": manual.document_id, "version": manual.version},
                 "expected_fields": sorted(expected),
-                "raw_items": raw_items,
-                "visible_items": visible,
+                "items": items,
                 "observations": {
-                    "raw_expected_detected": sorted(expected & raw_fields),
-                    "visible_expected_detected": sorted(expected & visible_fields),
-                    "unexpected_fields": sorted(raw_fields - expected),
+                    "expected_detected": sorted(expected & detected_fields),
+                    "unexpected_fields": sorted(detected_fields - expected),
                 },
             })
         except Exception as exc:
@@ -501,12 +487,8 @@ async def _run_error_review_cases(
             })
 
     expected_count = sum(len(case["expected_fields"]) for case in fixture["suspicious_cases"])
-    raw_detected = sum(
-        len(case.get("observations", {}).get("raw_expected_detected", []))
-        for case in suspicious_results
-    )
-    visible_detected = sum(
-        len(case.get("observations", {}).get("visible_expected_detected", []))
+    detected = sum(
+        len(case.get("observations", {}).get("expected_detected", []))
         for case in suspicious_results
     )
     return {
@@ -517,45 +499,11 @@ async def _run_error_review_cases(
         "suspicious_field_detection": {
             "unit": "canonical_field",
             "expected": expected_count,
-            "raw_detected": raw_detected,
-            "visible_detected": visible_detected,
-            "raw_recall": raw_detected / expected_count if expected_count else None,
-            "visible_recall": visible_detected / expected_count if expected_count else None,
+            "detected": detected,
+            "recall": detected / expected_count if expected_count else None,
             "acceptance_threshold": None,
         },
     }
-
-
-def _numeric_lexemes(value: Any) -> set[str]:
-    tokens = {
-        _normalized_numeric_token(token)
-        for token in re.findall(r"-?\d+(?:\.\d+)?", json.dumps(value, ensure_ascii=False))
-    }
-    for number in _walk_numbers(value):
-        if isinstance(number, float) and 0 < abs(number) <= 1:
-            tokens.add(_normalized_numeric_token(number * 100))
-    return tokens
-
-
-def _walk_numbers(value: Any):
-    if isinstance(value, bool):
-        return
-    if isinstance(value, (int, float)):
-        yield value
-        return
-    if isinstance(value, Mapping):
-        for child in value.values():
-            yield from _walk_numbers(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _walk_numbers(child)
-
-
-def _normalized_numeric_token(value: str | int | float) -> str:
-    number = float(value)
-    if number.is_integer():
-        return str(int(number))
-    return format(number, ".12g")
 
 
 async def _run_chart_cases(cases: list[dict[str, Any]], budget: ModelCallBudget) -> dict[str, Any]:
@@ -613,35 +561,26 @@ async def _run_chart_cases(cases: list[dict[str, Any]], budget: ModelCallBudget)
 
 async def _run_elicit_cases(cases: list[dict[str, Any]], budget: ModelCallBudget) -> dict[str, Any]:
     from agents import elicit
-    from core.model_boundary import ModelPurpose, prompt_messages, secure_ainvoke
 
     results = []
     for case in cases:
         started_calls = budget.used
         try:
-            result = await secure_ainvoke(
-                elicit._analysis_chain,
-                prompt_messages(elicit.ANALYZE_PROMPT, {
-                    "target_field": "life_goal",
-                    "turn_kind": "answer",
-                    "confirmed_summary": None,
-                    "pending_candidate": None,
-                    "open_question": "삶에서 가장 중요한 것은 무엇인가요?",
-                    "user_message": case["message"],
-                }),
-                purpose=ModelPurpose.ELICIT,
-                sensitive_payload={"message": case["message"]},
-                prompt=elicit.ANALYZE_PROMPT,
-            )
+            state = await elicit.graph.ainvoke({
+                "message": case["message"],
+                "step_id": case.get("step_id", "financial-goals"),
+                "conversation_context": deepcopy(case.get("conversation_context", {})),
+            })
+            output = state.get("output", {})
+            response = str(output.get("response", ""))
             results.append({
                 "id": case["id"],
                 "status": "completed",
                 "model_calls": budget.used - started_calls,
-                "expected_class": case["expected_class"],
-                "actual_class": result.response_class,
-                "captured_text": result.captured_text,
+                "response": response,
                 "observations": {
-                    "class_exact_match": result.response_class == case["expected_class"],
+                    "response_nonempty": bool(response.strip()),
+                    "action_absent": output.get("action") is None,
                 },
             })
         except Exception as exc:
@@ -649,15 +588,11 @@ async def _run_elicit_cases(cases: list[dict[str, Any]], budget: ModelCallBudget
                 "id": case["id"],
                 "status": "error",
                 "model_calls": budget.used - started_calls,
-                "expected_class": case["expected_class"],
                 **_error_payload(exc),
             })
-    completed = [case for case in results if case["status"] == "completed"]
-    exact = sum(case["observations"]["class_exact_match"] for case in completed)
     return {
         "quality_disposition": "baseline_only",
         "cases": results,
-        "classification_accuracy": exact / len(cases) if cases else None,
         "acceptance_threshold": None,
     }
 
@@ -710,7 +645,7 @@ async def build_baseline(
         input_assist = await _run_input_assist_cases(fixture["input_assist_cases"], budget)
         error_review = await _run_error_review_cases(fixture["error_review"], budget)
         chart = await _run_chart_cases(fixture["chart_cases"], budget)
-        elicit = await _run_elicit_cases(fixture["elicit_classification_cases"], budget)
+        elicit = await _run_elicit_cases(fixture["elicit_response_cases"], budget)
 
     from prompts import get_prompt_manifest
 
@@ -726,7 +661,7 @@ async def build_baseline(
             "llm_model": settings.llm_model,
             "llm_temperature": settings.llm_temperature,
             "prompt_release": settings.prompt_release,
-            "prompt_manifest": get_prompt_manifest(release=settings.prompt_release),
+            "prompt_manifest": get_prompt_manifest(),
             "embedding_provider": settings.embedding_provider,
             "embedding_model": settings.embedding_model,
             "rag_min_dense_score": settings.rag_min_dense_score,
@@ -750,7 +685,7 @@ async def build_baseline(
             "f08": {
                 "chart": chart,
                 "elicit": elicit,
-                "fallback_and_aggregation": {
+                "failure_responder_and_aggregation": {
                     "quality_disposition": "deterministic_contract_only",
                     "actual_model_calls": 0,
                 },

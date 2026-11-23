@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from core.monitoring import OperationStage, OperationStatus, OperationTraceEvent
 from core.runtime_instrumentation import (
     RuntimeStage,
     RuntimeStatus,
@@ -11,12 +10,11 @@ from core.runtime_instrumentation import (
 )
 
 
-def reference_runtime_events() -> tuple[RuntimeTraceEvent | OperationTraceEvent, ...]:
-    events: list[RuntimeTraceEvent | OperationTraceEvent] = []
+def reference_runtime_events() -> tuple[RuntimeTraceEvent, ...]:
+    events: list[RuntimeTraceEvent] = []
     events.extend(_successful_partial_request(1))
-    events.extend(_fallback_request(2))
+    events.extend(_all_tasks_failed_request(2))
     events.extend(_timeout_request(3))
-    events.extend(_callback_attempts())
     return tuple(events)
 
 
@@ -36,21 +34,20 @@ def _runtime(
     response_owner: str | None = None,
     artifact_type: str | None = None,
 ) -> RuntimeTraceEvent:
-    plan_id = f"plan-request-{number:08d}"
+    request_id = f"request-{number:08d}"
     artifact_id = None
     producer_task_id = None
     if artifact_type is not None:
         producer_task_id = task_id
         artifact_id = build_artifact_id(
-            plan_id=plan_id,
+            request_id=request_id,
             producer_task_id=str(task_id),
             artifact_type=artifact_type,
         )
     return RuntimeTraceEvent(
         trace_id=f"trace_{number:08d}",
-        request_id=f"request-{number:08d}",
+        request_id=request_id,
         thread_id=f"thread-{number:08d}",
-        plan_id=plan_id,
         occurred_at_epoch_ms=occurred_at,
         stage=stage,
         status=status,
@@ -118,7 +115,7 @@ def _successful_partial_request(number: int):
         occurred_at=1_060,
         task_id="task-2",
         executor_kind="tool",
-        executor_name="get_dashboard_metric",
+        executor_name="get_approved_reference_value",
     )
     tool_failed = _runtime(
         number,
@@ -129,7 +126,7 @@ def _successful_partial_request(number: int):
         reason_code="tool_timeout",
         task_id="task-2",
         executor_kind="tool",
-        executor_name="get_dashboard_metric",
+        executor_name="get_approved_reference_value",
     )
     events.extend((tool_start, tool_failed))
     events.append(_runtime(
@@ -147,7 +144,7 @@ def _successful_partial_request(number: int):
     return events
 
 
-def _fallback_request(number: int):
+def _all_tasks_failed_request(number: int):
     events: list[RuntimeTraceEvent] = []
     events.extend(_pair(number, RuntimeStage.REQUEST_PROCESSING, start=2_000, duration=90))
     tool_start = _runtime(
@@ -157,7 +154,7 @@ def _fallback_request(number: int):
         occurred_at=2_010,
         task_id="task-1",
         executor_kind="tool",
-        executor_name="get_dashboard_metric",
+        executor_name="get_approved_reference_value",
     )
     tool_failed = _runtime(
         number,
@@ -168,28 +165,10 @@ def _fallback_request(number: int):
         reason_code="tool_dependency_unavailable",
         task_id="task-1",
         executor_kind="tool",
-        executor_name="get_dashboard_metric",
+        executor_name="get_approved_reference_value",
     )
     events.extend((tool_start, tool_failed))
-    events.extend(_pair(
-        number,
-        RuntimeStage.TASK_EXECUTION,
-        start=2_031,
-        duration=25,
-        task_id="task-fallback-all-failed",
-        executor_kind="agent",
-        executor_name="fallback",
-        response_owner="fallback",
-    ))
-    events.extend(_pair(
-        number,
-        RuntimeStage.ARTIFACT_VALIDATION,
-        start=2_056,
-        duration=4,
-        task_id="task-fallback-all-failed",
-        artifact_type="text_response",
-    ))
-    events.extend(_pair(number, RuntimeStage.AGGREGATION, start=2_061, duration=8))
+    events.extend(_pair(number, RuntimeStage.AGGREGATION, start=2_031, duration=8))
     return events
 
 
@@ -209,31 +188,4 @@ def _timeout_request(number: int):
             duration_ms=200,
             reason_code="request_timeout",
         ),
-    )
-
-
-def _callback_attempts():
-    specs = (
-        (1, 1, OperationStatus.FAILED, "callback_http_503", 10),
-        (1, 2, OperationStatus.FAILED, "callback_http_503", 12),
-        (1, 3, OperationStatus.SUCCEEDED, None, 8),
-        (2, 1, OperationStatus.TIMEOUT, "callback_timeout", 50),
-        (2, 2, OperationStatus.TIMEOUT, "callback_timeout", 50),
-        (2, 3, OperationStatus.TIMEOUT, "callback_timeout", 50),
-        (2, 4, OperationStatus.TIMEOUT, "callback_timeout", 50),
-        (3, 1, OperationStatus.SUCCEEDED, None, 7),
-    )
-    return tuple(
-        OperationTraceEvent(
-            trace_id=f"trace_{number:08d}",
-            attempt_id=f"attempt_{number:08d}",
-            occurred_at_epoch_ms=4_000 + number * 100 + attempt,
-            stage=OperationStage.CALLBACK,
-            status=status,
-            duration_ms=duration,
-            operation_name="backend_callback",
-            step_id="basic-info",
-            error_code=error_code,
-        )
-        for number, attempt, status, error_code, duration in specs
     )

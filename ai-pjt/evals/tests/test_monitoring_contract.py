@@ -123,10 +123,10 @@ class MonitoringContractTests(unittest.TestCase):
                 trace_id=TRACE_ID,
                 attempt_id=ATTEMPT_ID,
                 occurred_at_epoch_ms=2,
-                stage=OperationStage.CALLBACK,
+                stage=OperationStage.TOOL,
                 status=OperationStatus.FAILED,
                 duration_ms=15,
-                operation_name="django_callback",
+                operation_name="tool",
             )
 
     def test_survey_keeps_only_recommended_sampled_dimensions(self):

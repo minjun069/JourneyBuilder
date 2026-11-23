@@ -14,10 +14,17 @@ from consulting.models import (
     FinancialAsset,
     Income,
     Liability,
+    PensionAsset,
     RealEstateAsset,
 )
+from reports.snapshots import build_calculation_input_snapshot
+from simulations.adapter import build_simulation_input
 
 from .grading import GOOD, RISK, WARN, build_graded_indicators
+from .management.commands.seed_demo import (
+    PENSION_PERIOD_LIFETIME,
+    PENSION_PERIOD_SAVINGS,
+)
 from .services import representative_session
 
 User = get_user_model()
@@ -307,6 +314,41 @@ class SegmentsApiTests(TestCase):
         rows = self.client.get(CUSTOMERS, {'need': 'unknown'}).json()['data']
         self.assertTrue(all(r['need'] is None for r in rows))
 
+    def test_unavailable_grades_are_excluded_without_excluding_customer(self):
+        baseline = self.client.get('/api/admin/v1/analytics/segments/').json()['data']
+        partial = User.objects.create_user(
+            email='partial@test.com', password='pass-1234-ok', name='자산만 입력')
+        session = ConsultingSession.objects.create(
+            user=partial, status=ConsultingSession.Status.IN_PROGRESS)
+        BasicInfo.objects.create(session=session, age=35, need='은퇴')
+        FinancialAsset.objects.create(
+            session=session, asset_type='예금/적금', name='예금',
+            current_value=50_000_000, monthly_savings=0)
+
+        for include_full in (True, False):
+            with self.subTest(include_full=include_full):
+                if not include_full:
+                    self.full.delete()
+                response = self.client.get('/api/admin/v1/analytics/segments/')
+                self.assertEqual(response.status_code, 200)
+                data = response.json()['data']
+                stacks = {item['key']: item for item in data['indicator_risk']}
+                self.assertEqual(len(stacks), 7)
+                for original in baseline['indicator_risk']:
+                    expected = original.copy() if include_full else {
+                        'key': original['key'], GOOD: 0, WARN: 0, RISK: 0,
+                    }
+                    if original['key'] == '금융자산비중지표':
+                        expected[GOOD] += 1
+                    self.assertEqual(stacks[original['key']], expected)
+                age_counts = {
+                    item['bucket']: item['count'] for item in data['axes']['age_band']
+                }
+                self.assertEqual(age_counts['30s'], 2 if include_full else 1)
+                self.assertEqual(age_counts['unknown'], 1)
+                self.assertIn(partial.id, [item['user_id'] for item in data['scatter']])
+                self.assertEqual(self.client.get(SUMMARY).status_code, 200)
+
 
 class SeedDemoCommandTests(TestCase):
     def test_seed_creates_consistent_demo_data(self):
@@ -334,6 +376,49 @@ class SeedDemoCommandTests(TestCase):
         call_command('seed_demo', '--count', '6', verbosity=0)
         self.assertEqual(
             User.objects.filter(email__endswith='@retirewise.demo').count(), 6)
+
+
+class SeedDemoPensionPeriodTests(TestCase):
+    """시드 연금 행이 시뮬레이션 어댑터의 수령 기간 규격을 만족해야 한다.
+
+    pension_period 는 CharField 다. 비워 두면 pension_period_missing, 정수를 넣으면
+    '20' 으로 저장돼 pension_period_unsupported 가 난다. 둘 다 시연 고객을
+    시뮬레이션 불가 상태로 만든다.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command('seed_demo', '--count', '10', verbosity=0)
+
+    def test_no_pension_row_has_an_empty_period(self):
+        self.assertTrue(PensionAsset.objects.exists())
+        self.assertFalse(
+            PensionAsset.objects.filter(pension_period__isnull=True).exists())
+        self.assertFalse(PensionAsset.objects.filter(pension_period='').exists())
+
+    def test_seeded_periods_use_the_frontend_select_values(self):
+        self.assertEqual(
+            set(PensionAsset.objects.values_list('pension_period', flat=True)),
+            {PENSION_PERIOD_LIFETIME, PENSION_PERIOD_SAVINGS},
+        )
+
+    def test_adapter_reports_no_pension_period_issue_for_seeded_sessions(self):
+        """패턴을 여기 복사하지 않고 어댑터 자신의 판정을 돌린다.
+
+        복사하면 어댑터가 규칙을 바꿔도 이 테스트가 눈치채지 못한다.
+        """
+        sessions = ConsultingSession.objects.filter(
+            pension_assets__isnull=False).distinct()
+        self.assertTrue(sessions.exists())
+        for session in sessions:
+            with self.subTest(session=session.pk):
+                codes = {
+                    issue.code
+                    for issue in build_simulation_input(
+                        build_calculation_input_snapshot(session)).issues
+                }
+                self.assertNotIn('pension_period_missing', codes)
+                self.assertNotIn('pension_period_unsupported', codes)
 
 
 class BootstrapDemoCommandTests(TestCase):

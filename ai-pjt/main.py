@@ -1,57 +1,68 @@
 from contextlib import asynccontextmanager, suppress
 import asyncio
-from hashlib import sha256
-import hmac
-import json
 import logging
-from typing import Any, AsyncIterator
+from functools import partial
 
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import ValidationError
 
-from core.callback_masking import CallbackPayloadMasker
 from core.checkpointer import (
     build_committed_context_store,
     build_context_state_api,
     get_checkpointer,
 )
 from core.config import settings
-from core.context import ContextScope, ConversationContext, ConversationTurn
-from core.context_summary import ConversationMemoryManager, ModelSummaryGenerator
-from core.logging_setup import configure_logging
+from core.context_summary_model import ModelSummaryGenerator
+from core.context_summary_worker import ConversationMemoryManager
 from core.langfuse_exporter import build_langfuse_instrumentation_exporter
+from core.logging_setup import configure_logging
 from core.masking import MaskingSink
 from core.monitoring import get_callbacks
 from core.observability_masking import (
     StructuredLogInstrumentationExporter,
     build_masked_runtime_instrumentation,
-    masked_exception_fields,
 )
-from core.runtime_instrumentation import RuntimeStage
-from core.runtime_instrumentation_adapter import RuntimeInstrumentationAdapter
+from core.terminal_masking import TerminalPayloadMasker
 from graph.builder import build_graph
+from graph.aggregation import compose_aggregate_response
+from graph.task_catalog import TASK_TYPE_CONTRACTS
 from tools.graph_adapter import build_graph_tool_executors
 from tools.runtime import build_production_tool_runtime
-from transport.contracts import (
-    CallbackError,
-    ChatV2Request,
-    CompletedCallback,
-    FailedCallback,
-    ServiceContractError,
-    verify_service_authorization,
+from transport.chat_service import (
+    PROGRESS_EVENTS_VERSION,
+    graph_input,
+    parse_v2_request,
+    stream_v2_chat_events,
+    validation_error,
 )
-from transport.runtime import (
-    ExecutionBudget,
-    utc_now,
-)
+from transport.contracts import ServiceContractError, verify_service_authorization
+from transport.sse_presenter import encode_sse
 
 
-# uvicorn 기본 로깅 설정은 uvicorn* 로거만 구성하고 root 에는 핸들러를 붙이지 않는다.
-# 그대로 두면 이 서비스의 로그와 계측 이벤트가 컨테이너 stdout 에 전혀 나오지 않는다.
 configure_logging()
-
 logger = logging.getLogger(__name__)
+
+# Compatibility aliases for internal tests and operational scripts.
+_encode_sse = encode_sse
+_graph_input = graph_input
+_parse_v2_request = parse_v2_request
+_stream_v2_chat_events = stream_v2_chat_events
+_v2_validation_error = validation_error
+
+
+def build_response_composer():
+    """Fail startup closed unless the enabled candidate index is compatible."""
+    if not settings.counseling_rag_enabled:
+        return compose_aggregate_response
+    from rag.counseling_retriever import get_counseling_retriever
+
+    retriever = get_counseling_retriever()
+
+    return partial(
+        compose_aggregate_response,
+        counseling_retriever=retriever,
+        timeout_seconds=settings.counseling_rag_timeout_seconds,
+    )
 
 
 PROGRESS_EVENTS_VERSION = "v1"
@@ -165,7 +176,9 @@ async def lifespan(app: FastAPI):
         async with get_checkpointer() as checkpointer:
             context_store = build_committed_context_store()
             await context_store.setup()
-            tool_runtime = build_production_tool_runtime()
+            tool_runtime = build_production_tool_runtime(
+                task_contracts=TASK_TYPE_CONTRACTS,
+            )
             instrumentation, instrumentation_sink = build_masked_runtime_instrumentation(
                 pseudonym_key=settings.masking_pseudonym_key_bytes,
                 sink=MaskingSink.TRACE_EXPORT,
@@ -174,17 +187,20 @@ async def lifespan(app: FastAPI):
             app.state.instrumentation = instrumentation
             app.state.instrumentation_sink = instrumentation_sink
             app.state.instrumentation_exporter = instrumentation_exporter
-            callback_masker = CallbackPayloadMasker(
+            app.state.terminal_masker = TerminalPayloadMasker(
                 pseudonym_key=settings.masking_pseudonym_key_bytes,
             )
-            app.state.callback_masker = callback_masker
             app.state.chat_graph = build_graph(
                 checkpointer,
                 instrumentation=instrumentation,
                 tool_executors=build_graph_tool_executors(tool_runtime),
+                tool_runtime=tool_runtime,
+                response_composer=build_response_composer(),
+                plan_validation_enabled=settings.plan_validation_enabled,
             )
             app.state.context_store = context_store
             app.state.context_api = build_context_state_api(checkpointer, context_store)
+
             from core.llm import embed_model, llm
 
             app.state.context_memory = ConversationMemoryManager(
@@ -209,14 +225,11 @@ async def lifespan(app: FastAPI):
             finally:
                 cleanup_task.cancel()
                 memory_task.cancel()
-                try:
-                    await cleanup_task
-                except asyncio.CancelledError:
-                    pass
-                try:
-                    await memory_task
-                except asyncio.CancelledError:
-                    pass
+                for task in (cleanup_task, memory_task):
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
     finally:
         shutdown = getattr(instrumentation_exporter, "shutdown", None)
         if callable(shutdown):
@@ -227,121 +240,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="RetireWise AI Service", lifespan=lifespan)
-
-
-def _v2_validation_error(exc: ValidationError) -> ServiceContractError:
-    first = exc.errors(include_url=False)[0]
-    field = str(first.get("loc", ("request",))[0])
-    error_type = first.get("type")
-    if field == "contract_version" and error_type == "literal_error":
-        return ServiceContractError(
-            status_code=422,
-            code="CONTRACT_VERSION_UNSUPPORTED",
-            message="지원하지 않는 계약 버전입니다.",
-        )
-    if error_type == "missing":
-        message = f"{field}는 필수입니다."
-    elif field == "session_id" and error_type in {"int_type", "int_parsing"}:
-        message = "session_id는 정수여야 합니다."
-    else:
-        message = "AI 요청 스키마가 올바르지 않습니다."
-    return ServiceContractError(
-        status_code=422,
-        code="REQUEST_SCHEMA_INVALID",
-        message=message,
-    )
-
-
-def _encode_sse(event: str, data: dict[str, Any]) -> str:
-    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-    return f"event: {event}\ndata: {payload}\n\n"
-
-
-def _graph_input(request: ChatV2Request) -> dict[str, Any]:
-    customer_info = request.customer_info
-    if hasattr(customer_info, "model_dump"):
-        customer_info = customer_info.model_dump(mode="json")
-    payload = {
-        "request_id": request.request_id,
-        "thread_id": request.thread_id,
-        "message": request.message,
-        "step_id": request.step_id,
-        "customer_info": customer_info,
-        "field_registry": request.field_registry,
-    }
-    for field in ("request_mode", "review_trigger"):
-        value = getattr(request, field, None)
-        if value is not None:
-            payload[field] = value
-    chart_payload = getattr(request, "chart_payload", None)
-    if chart_payload is not None:
-        payload["chart_payload"] = chart_payload
-    tool_context = getattr(request, "tool_context", None)
-    if tool_context is not None:
-        payload["tool_context"] = (
-            tool_context.model_dump(mode="json")
-            if hasattr(tool_context, "model_dump")
-            else tool_context
-        )
-    return payload
-
-
-async def _process_v2_graph(
-    request: ChatV2Request,
-    budget: ExecutionBudget,
-) -> dict[str, Any]:
-    budget.require_time()
-    scope = ContextScope(request.session_id, request.thread_id)
-    context_api = app.state.context_api
-    await context_api.begin_execution(scope, request.request_id)
-    try:
-        context = await context_api.read_context(scope)
-        memory_manager = getattr(app.state, "context_memory", None)
-        memories = (
-            await memory_manager.retrieve(scope, request.message, context)
-            if memory_manager is not None
-            else ()
-        )
-        graph_input = {
-            **_graph_input(request),
-            **context_api.state_channels(scope, context, memories),
-            "execution_budget": budget.to_state(),
-        }
-        graph_config = {
-            **context_api.config_for(scope, request.request_id),
-            "callbacks": get_callbacks(),
-        }
-        result = await app.state.chat_graph.ainvoke(
-            graph_input,
-            config=graph_config,
-        )
-        output = result.get("output", {})
-        if not isinstance(output, dict):
-            raise ValueError("graph output must be an object")
-        context_payload = result.get("conversation_context")
-        if not isinstance(context_payload, dict):
-            raise ValueError("completed graph state must include conversation_context")
-        await context_api.commit(
-            scope,
-            request.request_id,
-            request.payload_digest,
-            ConversationContext.from_state(context_payload),
-            CompletedCallback(
-                request_id=request.request_id,
-                session_id=request.session_id,
-                thread_id=request.thread_id,
-                completed_at=utc_now(),
-                output=output,
-            ).model_dump(mode="json"),
-            ConversationTurn(
-                turn_id=request.request_id,
-                user_message=request.message,
-                assistant_message=str(output.get("response", "")),
-            ),
-        )
-        return output
-    finally:
-        await asyncio.shield(context_api.delete_execution(scope, request.request_id))
 
 
 @app.exception_handler(ServiceContractError)
@@ -679,20 +577,17 @@ async def chat_v2_stream(
             message="지원하지 않는 진행 이벤트 capability입니다.",
         )
     return StreamingResponse(
-        _stream_v2_chat_events(
+        stream_v2_chat_events(
             app.state.chat_graph,
             app.state.context_api,
             request,
-            app.state.callback_masker,
+            app.state.terminal_masker,
             getattr(app.state, "context_memory", None),
             instrumentation=app.state.instrumentation,
             progress_events=progress_events_version == PROGRESS_EVENTS_VERSION,
         ),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

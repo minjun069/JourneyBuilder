@@ -22,7 +22,6 @@ from simulations.policy import (  # noqa: E402
     SimulationPolicyError,
     active_simulation_policy_version,
     load_simulation_policy,
-    max_comparison_scenarios,
     simulation_assumption_values,
 )
 
@@ -53,7 +52,7 @@ class SimulationPolicyContractTests(unittest.TestCase):
                 "seed": 42,
             },
         )
-        self.assertEqual(max_comparison_scenarios(), 1)
+        self.assertEqual(load_simulation_policy()["max_comparison_scenarios"], 1)
 
     def test_assumption_values_are_a_fresh_copy_each_call(self) -> None:
         first = simulation_assumption_values()

@@ -6,7 +6,7 @@ from unittest import TestCase
 
 from pydantic import ValidationError
 
-from transport.contracts import ChatV2Request, CompletedCallback, FailedCallback
+from transport.contracts import ChatV2Request, CompletedTerminal, FailedTerminal
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -29,14 +29,21 @@ class V2AISSEConsumerContractTests(TestCase):
 
     def test_terminal_models_consume_completed_and_failed_sse_shapes(self):
         completed = FIXTURE["cases"]["terminal_completed_proposal"]["terminal_payload"]
+        presentation = FIXTURE["cases"][
+            "terminal_completed_presentation_entry"
+        ]["terminal_payload"]
         failed = FIXTURE["cases"]["terminal_failed_llm_timeout"]["terminal_payload"]
 
         self.assertEqual(
-            CompletedCallback.model_validate(completed).model_dump(mode="json"),
+            CompletedTerminal.model_validate(completed).model_dump(mode="json"),
             completed,
         )
         self.assertEqual(
-            FailedCallback.model_validate(failed).model_dump(mode="json"),
+            CompletedTerminal.model_validate(presentation).model_dump(mode="json"),
+            presentation,
+        )
+        self.assertEqual(
+            FailedTerminal.model_validate(failed).model_dump(mode="json"),
             failed,
         )
 

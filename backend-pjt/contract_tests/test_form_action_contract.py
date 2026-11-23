@@ -12,12 +12,11 @@ from consulting.form_actions import normalize_form_action  # noqa: E402
 
 
 class FormActionPolicyContractTests(unittest.TestCase):
-    def action(self, *, confidence, requested):
+    def action(self, *, requested):
         return normalize_form_action({
             'action': {
                 'type': 'form_change',
                 'target': 'draft_form',
-                'confidence': confidence,
                 'user_requested': requested,
                 'changes': [{
                     'section': 'basic_info',
@@ -28,11 +27,11 @@ class FormActionPolicyContractTests(unittest.TestCase):
             },
         }, 'basic-info')
 
-    def test_user_request_and_confidence_never_bypass_approval(self):
-        for confidence, requested in ((1.0, True), (0.90, True), (0.1, False)):
-            with self.subTest(confidence=confidence, requested=requested):
+    def test_user_request_never_bypasses_approval(self):
+        for requested in (True, False):
+            with self.subTest(requested=requested):
                 self.assertEqual(
-                    self.action(confidence=confidence, requested=requested)['mode'],
+                    self.action(requested=requested)['mode'],
                     'proposal',
                 )
 

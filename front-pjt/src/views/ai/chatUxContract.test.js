@@ -8,6 +8,7 @@ const store = readFileSync(new URL('../../stores/consultation.js', import.meta.u
 const validation = readFileSync(new URL('../../utils/formValidation.js', import.meta.url), 'utf8')
 const consultingApi = readFileSync(new URL('../../api/consulting.js', import.meta.url), 'utf8')
 const reportStore = readFileSync(new URL('../../stores/report.js', import.meta.url), 'utf8')
+const addableTable = readFileSync(new URL('../../components/ui/AddableTable.vue', import.meta.url), 'utf8')
 
 test('새 AI 답변은 공통 애니메이션 큐와 안전한 Markdown 렌더러를 사용한다', () => {
   assert.match(view, /function streamAiMessages/)
@@ -17,11 +18,14 @@ test('새 AI 답변은 공통 애니메이션 큐와 안전한 Markdown 렌더�
   assert.match(view, /addSentenceLineBreaks/)
 })
 
-test('폼 저장은 결정론적 검증 뒤 save Error Review만 호출한다', () => {
+test('운영 일시 중지 중에는 결정론적 검증 뒤 Error Review 없이 저장한다', () => {
   const submit = view.slice(view.indexOf('async function submitForm'), view.indexOf('async function confirmEmptyForm'))
-  assert.ok(submit.indexOf('validateConsultationForm') < submit.indexOf('requestErrorReview'))
+  assert.match(view, /const ERROR_REVIEW_ENABLED = false/)
+  assert.ok(submit.indexOf('validateConsultationForm') < submit.indexOf('if (ERROR_REVIEW_ENABLED)'))
+  assert.match(submit, /if \(ERROR_REVIEW_ENABLED\) \{\s*await continueSaveAfterOptionalReview\(/)
+  assert.match(submit, /\} else \{\s*await persistFormAndAdvance\(nextStepId\)/)
   assert.doesNotMatch(view, /입력값 검토|requestErrorReview\(['"]user_request/)
-  assert.match(store, /reviewTrigger: 'save'/)
+  assert.doesNotMatch(store, /reviewTrigger|review_trigger/)
 })
 
 test('Error Review 처리 상태와 오류를 스크롤 밖의 현재 화면에 표시한다', () => {
@@ -65,12 +69,41 @@ test('재무정보 안내는 말풍선 안에도 다음 단계 action을 제공�
   assert.match(financialInfo, /stepId: 'financial-assets'/)
 })
 
+test('재무 만족도 안내는 다섯 영역의 구체적인 설명을 후속 말풍선으로 제공한다', () => {
+  const financialSatisfaction = guides.slice(
+    guides.indexOf("'financial-satisfaction':"),
+    guides.indexOf("'financial-info':"),
+  )
+
+  assert.doesNotMatch(financialSatisfaction, /type: 'container'/)
+  assert.match(financialSatisfaction, /각 영역의 구체적인 내용은 다음과 같습니다/)
+  for (const label of ['현금흐름 관리', '위험 관리', '투자', '재무관리', '상속']) {
+    assert.match(financialSatisfaction, new RegExp(`\\*\\*${label}\\*\\*:`))
+  }
+})
+
 test('빈 금융자산은 명시적인 없음 확인 API로 완료 처리한다', () => {
   assert.match(validation, /보유 금융자산 없음/)
   assert.match(view, /confirmNoFinancialAssets: true/)
   assert.match(store, /async function confirmNoFinancialAssets/)
   assert.match(store, /confirmEmptyFinancialAssets/)
   assert.match(consultingApi, /data\/financial-assets\/confirm-empty\//)
+})
+
+test('행 추가형 재무 폼은 넓은 입력 패널과 내용 기반 열 너비를 사용한다', () => {
+  for (const stepId of [
+    'financial-assets', 'pension-assets', 'real-estate',
+    'liabilities', 'income', 'expenses',
+  ]) {
+    assert.match(view, new RegExp(`'${stepId}'`))
+  }
+  assert.match(view, /TABULAR_FORM_STEP_IDS\.has\(stepId\) \? 55 : 71\.4/)
+  assert.match(view, /Math\.min\(85, Math\.max\(35, nextLeft\)\)/)
+  assert.match(view, /input-panel--tabular/)
+  assert.match(addableTable, /function inputWidth/)
+  assert.match(addableTable, /--input-width/)
+  assert.match(addableTable, /width: var\(--input-width, 100%\)/)
+  assert.match(addableTable, /vertical-align: top/)
 })
 
 test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 idle timeout을 둔다', () => {
@@ -81,6 +114,10 @@ test('중복 AI 스트림은 기존 요청을 취소하지 않고 거절하며 i
   assert.match(stream, /AI_STREAM_IN_PROGRESS/)
   assert.doesNotMatch(stream, /cancelActiveStream\(\)/)
   assert.match(store, /STREAM_IDLE_TIMEOUT_MS = 120_000/)
+  assert.match(stream, /resolvedIdempotencyKey/)
+  assert.match(stream, /attempt < 2/)
+  assert.match(stream, /SSE_TERMINAL_MISSING/)
+  assert.match(consultingApi, /'X-AI-Progress-Events': 'v1'/)
 })
 
 test('협상된 진행 이벤트는 퍼센트 없이 임시 단계 문구로만 표시한다', () => {
@@ -98,10 +135,17 @@ test('Presentation 최초 진입은 보고서 버전별 자동 안내를 한 번
     view.indexOf('async function sendMessage'),
   )
 
-  assert.match(entry, /presentationGuideInFlight/)
-  assert.match(entry, /wasPresentationGuideConsumed/)
+  assert.match(entry, /visit\.begin\(reportVersion\)/)
+  assert.match(entry, /presentationGuideVisit !== visit/)
   assert.match(entry, /createPresentationEntryIdempotencyKey/)
   assert.match(entry, /requestMode: 'presentation_entry'/)
+  assert.match(entry, /visitId: visit\.visitId/)
+  assert.match(entry, /visit\.finish\(reportVersion, entryMessage\)/)
+  assert.match(view, /createPresentationEntryVisit\(\{ sessionId, stepId \}\)/)
+  assert.doesNotMatch(view, /wasPresentationGuideConsumed|presentationGuideConsumed/)
+  const revisitStart = view.indexOf('if (alreadyVisited)')
+  const revisited = view.slice(revisitStart, view.indexOf('const step = PROCESS_STEPS', revisitStart))
+  assert.match(revisited, /maybeSendPresentationEntryGuide\(stepId\)/)
   assert.match(view, /system_event === 'presentation_entry'/)
   assert.match(view, /presentationReportVersion/)
 })

@@ -20,17 +20,38 @@ def _report(release: str) -> dict:
             "prompts": [{"id": "qa.answer", "version": "1.0.0"}],
         },
         "quality_metrics": {
-            "router_accuracy": 0.97,
+            "planner_contract_pass_rate": 0.97,
             "critical_safety_pass_rate": 1.0,
             "grounded_answer_rate": 0.94,
             "form_action_exact_rate": 0.96,
             "error_review_false_positive_rate": 0.04,
             "average_model_calls": 4.0,
+            "qa_normal_max_calls": 3,
+            "input_direct_max_calls": 2,
+            "input_review_max_calls": 3,
+            "request_conditions_preserved_rate": 1.0,
+            "question_coverage_rate": 1.0,
+            "plain_language_pass_rate": 1.0,
         },
     }
 
 
 class PromptReleaseGateTests(unittest.TestCase):
+    def test_required_behavior_and_per_agent_call_budgets_are_enforced(self) -> None:
+        candidate = _report("candidate")
+        candidate["quality_metrics"].update({
+            "qa_normal_max_calls": 4,
+            "input_direct_max_calls": 3,
+            "input_review_max_calls": 4,
+            "request_conditions_preserved_rate": 0.9,
+            "question_coverage_rate": 0.8,
+            "plain_language_pass_rate": 0.7,
+        })
+        self.assertEqual(set(evaluate_prompt_candidate(_report("previous"), candidate)), {
+            "qa_normal_max_calls_exceeded", "input_direct_max_calls_exceeded", "input_review_max_calls_exceeded",
+            "request_conditions_preserved_rate_incomplete", "question_coverage_rate_incomplete", "plain_language_pass_rate_incomplete",
+        })
+
     def test_non_regressing_new_release_passes(self) -> None:
         self.assertEqual(
             evaluate_prompt_candidate(_report("previous"), _report("candidate")),
@@ -42,7 +63,7 @@ class PromptReleaseGateTests(unittest.TestCase):
         candidate = deepcopy(_report("candidate"))
         candidate["quality_metrics"].update({
             "critical_safety_pass_rate": 0.99,
-            "router_accuracy": 0.94,
+            "planner_contract_pass_rate": 0.94,
             "grounded_answer_rate": 0.90,
             "form_action_exact_rate": 0.95,
             "error_review_false_positive_rate": 0.05,
@@ -53,7 +74,7 @@ class PromptReleaseGateTests(unittest.TestCase):
             set(evaluate_prompt_candidate(baseline, candidate)),
             {
                 "critical_safety_regression",
-                "router_accuracy_below_threshold",
+                "planner_contract_pass_rate_below_threshold",
                 "grounded_answer_regression",
                 "form_action_regression",
                 "error_review_false_positive_regression",
@@ -89,9 +110,9 @@ class PromptReleaseGateTests(unittest.TestCase):
     def test_non_numeric_or_out_of_range_metrics_fail_closed(self) -> None:
         baseline = _report("previous")
         candidate = deepcopy(_report("candidate"))
-        candidate["quality_metrics"]["router_accuracy"] = "0.99"
+        candidate["quality_metrics"]["planner_contract_pass_rate"] = "0.99"
         self.assertIn(
-            "candidate_router_accuracy_invalid",
+            "candidate_planner_contract_pass_rate_invalid",
             evaluate_prompt_candidate(baseline, candidate),
         )
 

@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { PROCESS_STEPS, STEP_IDS } from '@/views/ai/data/processSteps.js'
+import { MINDSET_FIELDS } from '@/utils/mindsetElicitation'
 
 const props = defineProps({
   currentStepId: { type: String, required: true },
@@ -8,6 +9,8 @@ const props = defineProps({
   completedStepIds: { default: () => new Set() },
   skippedStepIds: { default: () => new Set() },
   disabled: { type: Boolean, default: false },
+  currentMindsetField: { type: String, default: null },
+  completedMindsetFields: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['step-click'])
@@ -73,12 +76,23 @@ function handleClick(step) {
           </span>
           <span class="step-label">{{ step.label }}</span>
         </button>
+        <ol v-if="step.id === 'financial-mindset' && currentStepId === step.id" class="mindset-progress" aria-label="경제 관념 상담 항목">
+          <li v-for="item in MINDSET_FIELDS" :key="item.field" :class="{ current: item.field === currentMindsetField, complete: completedMindsetFields.includes(item.field) }" :aria-current="item.field === currentMindsetField ? 'step' : undefined">
+            <span aria-hidden="true">{{ completedMindsetFields.includes(item.field) ? '✓' : '·' }}</span>
+            {{ item.label }}
+          </li>
+        </ol>
       </template>
     </nav>
   </aside>
 </template>
 
 <style scoped>
+.mindset-progress { list-style: none; margin: 2px 16px 12px 43px; padding: 0; color: #9ca3af; font-size: 12px; }
+.mindset-progress li { padding: 4px 0; }
+.mindset-progress li span { display: inline-block; width: 15px; }
+.mindset-progress .current { color: #c4b5fd; font-weight: 700; }
+.mindset-progress .complete { color: #a7f3d0; }
 .process-sidebar {
   width: 230px;
   flex-shrink: 0;

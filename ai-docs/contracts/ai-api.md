@@ -1,6 +1,6 @@
 # AI 서비스 API 계약
 
-상태: **D1 기준 Django↔AI·승인 생명주기와 chart 입력 v2 단일 원천 동결 — citation·chart insight 출력은 후속 계약**
+상태: **Django↔AI v2 계약 — 모델 confidence 제거와 과업별 최소 입력 반영**
 
 이 문서는 Django→AI SSE 요청·terminal 결과, 서비스 인증·상태·오류와 step별 Agent allowlist를 소유한다. Browser↔Django 계약은 [Django HTTP API](http-api.md), canonical 필드 의미와 데이터 소유권은 [데이터 스키마](../data/schema.md), 동결 계약과 아직 다른 실제 구현은 [현재 계약 불일치 조사](current-state.md)를 따른다.
 
@@ -12,7 +12,7 @@ AI→Django HTTP callback은 제공하지 않는다.
 
 Browser는 AI 서버를 직접 호출하지 않는다. Django가 사용자 인증, 상담 세션 소유권, canonical snapshot, SSE terminal 검증과 최종 폼 저장을 담당한다. change별 승인·거절은 Frontend 로컬 UI가 소유한다.
 
-AI 서비스는 Django가 전달한 snapshot을 바탕으로 6-Agent를 실행하고 자연어 답변, 인용, draft 변경 제안, 분석 결과를 SSE로 반환한다. AI 서비스는 Django 업무 DB에 직접 쓰지 않는다.
+AI 서비스는 Django가 전달한 snapshot을 바탕으로 다섯 Agent를 실행하고 자연어 답변, draft 변경 제안, 검토 결과를 SSE로 반환한다. Planner가 만든 요청은 코드가 실행 계획으로 변환하며 별도 Fallback Agent는 실행하지 않는다. AI 서비스는 Django 업무 DB에 직접 쓰지 않는다.
 
 | 주체 | 책임 |
 |---|---|
@@ -44,6 +44,7 @@ Authorization: Bearer <AI_SERVICE_BEARER_TOKEN>
 {
   "contract_version": "2.0",
   "request_id": "ai_req_...",
+  "payload_digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "session_id": 1,
   "thread_id": "user-3-session-1",
   "step_id": "basic-info",
@@ -53,22 +54,6 @@ Authorization: Bearer <AI_SERVICE_BEARER_TOKEN>
     "saved_data": {},
     "current_form": {}
   },
-  "field_registry": [
-    {
-      "step_id": "basic-info",
-      "section": "basic_info",
-      "path": "monthly_income",
-      "value_type": "integer",
-      "unit": "KRW",
-      "constraints": {"min": 0, "period": "month"},
-      "cardinality": "single",
-      "sensitivity": "financial_sensitive",
-      "writable_by_ai": true,
-      "nullable": true,
-      "label": "세후 월 소득",
-      "operations": ["set", "add", "update", "remove"]
-    }
-  ],
   "chart_payload": null
 }
 ```
@@ -77,15 +62,18 @@ Authorization: Bearer <AI_SERVICE_BEARER_TOKEN>
 |---|---:|---|
 | `contract_version` | Y | v2는 정확히 `2.0` |
 | `request_id` | Y | Django가 생성하는 SSE 실행·terminal idempotency 식별자 |
+| `payload_digest` | Y | 정규화 요청의 SHA-256 hex. 같은 request ID의 다른 payload를 거부 |
 | `session_id` | Y | Django 상담 세션 ID; thread·request와 결합 검증 |
 | `thread_id` | Y | 사용자와 상담 세션을 함께 식별하고 다른 조합에서 재사용 금지 |
-| `step_id` | Y | Frontend 실제 단계 ID. 미지원 값은 fallback 처리 |
+| `step_id` | Y | Frontend 실제 단계 ID. 미지원 값은 요청 검증에서 거부 |
 | `message` | Y | 1~2000자의 현재 사용자 메시지 |
 | `deadline_at` | Y | AI 실행 60초 상한의 UTC 시각 |
 | `customer_info.saved_data` | Y | DB에 확정 저장된 canonical snapshot |
 | `customer_info.current_form` | Y | 아직 저장되지 않은 현재 폼 snapshot |
-| `field_registry` | Y | 현재 단계의 canonical 필드·자료형·단위·제약·민감도·쓰기 가능 여부 |
-| `chart_payload` | N | chart 단계의 읽기 전용 원본 수치와 계산 metadata. 다른 단계 또는 보고서 미준비 상태는 `null` |
+| `request_mode` | N | 기본 chat, 저장 전 error_review 또는 presentation_entry |
+| `chart_payload` | N | chart 단계의 검증 보고서. ready는 수치 설명, guidance_only는 목적 안내, 비차트 단계만 null |
+
+필드 레지스트리는 요청으로 반복 전달하지 않고 AI가 step_id로 로컬 canonical 계약을 읽는다.
 
 같은 Browser idempotency key가 이미 종결됐다면 Django는 AI graph를 다시 실행하지 않고
 terminal receipt의 결과를 SSE로 재생한다. 같은 key의 payload가 다르면
@@ -95,8 +83,8 @@ terminal receipt의 결과를 SSE로 재생한다. 같은 key의 payload가 다�
 
 `step_id`와 단계별 허용 Agent의 기계 판독 원천은 저장소의
 `contract-fixtures/ai-lifecycle/v2/step-registry.json` 하나다. 이 Markdown은 값을
-복제하지 않는다. fixture는 계약 버전, fallback Agent, 전체 Agent 목록·설명과 각 단계의
-`step_id`·`allowed_agents`, 화면 단계가 아닌 transport 전용 fallback ID를 정의한다.
+복제하지 않는다. fixture는 계약 버전, Agent 목록·설명과 각 단계의
+`step_id`·`allowed_agents`를 정의한다. 모호·미지원 요청과 실행 실패는 공통 실패 안내가 처리한다.
 
 - AI router는 시작 시 fixture를 직접 읽고 중복 단계, 미등록 Agent, fallback 누락을 거부한다.
 - 라우팅 평가도 같은 fixture를 읽으며 이 문서의 표를 파싱하지 않는다.
@@ -155,7 +143,6 @@ terminal payload를 보낸다. 두 상태 모두 `contract_version`, 세 식별�
       "type": "form_change",
       "target": "draft_form",
       "user_requested": false,
-      "confidence": 0.85,
       "changes": [
         {
           "section": "basic_info",
@@ -177,7 +164,15 @@ terminal payload를 보낸다. 두 상태 모두 `contract_version`, 세 식별�
 }
 ```
 
-AI는 `action_id`, `change_id`, 최종 `mode`, 결정 상태를 만들지 않는다. Django가 terminal의 section/path/operation을 canonical 레지스트리로 검증하고 모든 form action을 `proposal`로 정규화한다. 모든 change에 표시 ID와 초기 `pending` 상태를 부여하며 Browser가 독립 승인·거절한다. 이 결정은 Frontend에서만 전이하며 Django로 전송하거나 저장하지 않는다. AI의 `user_requested`와 confidence는 승인 증거가 아니고 별도 사용자 결정 없이 draft 적용을 허용하지 않는다.
+AI는 `action_id`, `change_id`, 최종 `mode`, 결정 상태를 만들지 않는다. Django가 terminal의 section/path/operation을 canonical 레지스트리로 검증하고 모든 form action을 `proposal`로 정규화한다. 모든 change에 표시 ID와 초기 `pending` 상태를 부여하며 Browser가 독립 승인·거절한다. 이 결정은 Frontend에서만 전이하며 Django로 전송하거나 저장하지 않는다. `user_requested`는 승인 증거가 아니며 confidence 필드는 계약에 없다.
+
+Input Assist의 정확한 `FINANCIAL_VALUE` 토큰 한 개는 canonical KRW 숫자 leaf에서만 AI 자료형 검증을 Django 복원 시점까지 미룰 수 있다. Django는 현재 요청 vault 발급·scope·서버 step·canonical 경로·단위·자료형과 제약을 다시 검사하고 전체 금액 표현을 원 단위 숫자로 복원한다. `add`와 중첩 배열도 실제 child field별로 검사한다. 부호 손실, 범위 밖 음수, 소수 원·지수·외화·퍼센트·기간 혼합, 미발급/다른 kind/문자가 붙은 토큰은 성공 메시지 저장과 SSE done 전에 `POLICY_BLOCKED`로 거부한다. response·reason은 원래 표현을 복원하며 사용자 승인 절차는 유지한다.
+
+Error Review 모델은 필드 참조키·이름·현재값·단위와 관계 검토 지침을 받아 참조키·이유·선택 수정값을 반환한다. AI 코드가 section/path·행/부모 ID·현재값을 복원하고 수정 후보를 canonical 계약으로 검사한다. 외부 `review.items`에는 confidence와 confidence_level이 없으며 검토 실패가 기존 폼 저장을 막지 않는다.
+
+Error Review는 Input Assist의 토큰 지연 검증을 사용하지 않는다. 숫자 필드의 `suggested_value`가 opaque 토큰이면 후보만 null로 제외하고 reason·current_value는 유지한다. 유효한 직접 숫자와 문자열 필드 후보는 기존 canonical 검증을 따른다.
+
+대화 요약은 같은 scope의 사용자 발화·AI 응답·기존 요약을 모두 근거로 삼는다. 앞선 마스킹은 유지하며 금융값·숫자·참조 토큰·AI 출처라는 이유만으로 기억을 추가 제외하지 않는다. 인용 근거와 출처를 검증하고 AI 제안을 사용자 확정 사실과 구분한다. 현재 금융값의 권위 원천은 Backend가 전달한 snapshot이다.
 
 반복 항목은 `item_id` 또는 `client_item_id`, 중첩 추가는 부모 ID를 사용한다. 상세 필드·operation·mode 계약은 [데이터 스키마](../data/schema.md)를 따른다.
 

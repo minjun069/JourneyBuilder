@@ -1,7 +1,10 @@
+import { isMindsetResult } from '../utils/mindsetElicitation.js'
+
 export class SSEProtocolError extends Error {
-  constructor(message) {
+  constructor(message, code = 'SSE_PROTOCOL_ERROR') {
     super(message)
     this.name = 'SSEProtocolError'
+    this.code = code
   }
 }
 
@@ -139,7 +142,10 @@ export async function* validateSSEEvents(events) {
     yield event
     if (event.event === 'done' || event.event === 'error') return
   }
-  throw new SSEProtocolError('SSE 연결이 완료 이벤트 없이 종료되었습니다.')
+  throw new SSEProtocolError(
+    'SSE 연결이 완료 이벤트 없이 종료되었습니다.',
+    'SSE_TERMINAL_MISSING',
+  )
 }
 
 
@@ -159,6 +165,9 @@ export async function* validateV2SSEEvents(events) {
         || typeof message.content !== 'string'
       ) {
         throw new SSEProtocolError('SSE 완료 메시지 형식이 올바르지 않습니다.')
+      }
+      if (message.extracted_data?.elicitation != null && !isMindsetResult(message.extracted_data.elicitation)) {
+        throw new SSEProtocolError('경제 관념 수집 결과 형식이 올바르지 않습니다.')
       }
     }
     if (event.event === 'error') {

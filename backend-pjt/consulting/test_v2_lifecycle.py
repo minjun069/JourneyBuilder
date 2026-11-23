@@ -91,20 +91,23 @@ class BrowserMessageValidationTests(SimpleTestCase):
         self.assertEqual(captured.exception.status_code, 422)
         self.assertEqual(captured.exception.code, 'CONTRACT_VERSION_UNSUPPORTED')
 
-    def test_error_review_control_is_bound_and_legacy_elicit_control_is_rejected(self):
+    def test_error_review_is_save_bound_and_legacy_controls_are_rejected(self):
         review = validate_browser_message({
             **self.valid_payload(),
             'request_mode': 'error_review',
-            'review_trigger': 'save',
         })
-        self.assertEqual(review['review_trigger'], 'save')
+        self.assertEqual(review['request_mode'], 'error_review')
 
         with self.assertRaises(LifecycleError):
-            validate_browser_message({**self.valid_payload(), 'request_mode': 'error_review'})
+            validate_browser_message({
+                **self.valid_payload(),
+                'request_mode': 'error_review',
+                'review_trigger': 'save',
+            })
         with self.assertRaises(LifecycleError):
             validate_browser_message({**self.valid_payload(), 'elicit_action': 'start'})
 
-    def test_presentation_entry_is_a_bound_mode_without_review_trigger(self):
+    def test_presentation_entry_is_a_bound_mode(self):
         payload = validate_browser_message({
             **self.valid_payload(),
             'step_id': 'lifetime-cashflow',
@@ -177,22 +180,12 @@ class RedisLifecycleStoreTests(SimpleTestCase):
 
 
 class AIStreamRequestTests(SimpleTestCase):
-    @patch('consulting.ai_lifecycle.get_step_field_registry')
-    @patch('consulting.ai_lifecycle.build_tool_context')
     @patch('consulting.ai_lifecycle.build_customer_info')
     def test_builds_frozen_payload_without_callback_url(
         self,
         customer_info,
-        tool_context,
-        registry,
     ):
         customer_info.return_value = {'saved_data': {}, 'current_form': {}}
-        registry.return_value = [{'path': 'monthly_income'}]
-        tool_context.return_value = {
-            'schema_version': '1.0',
-            'session_id': 12,
-            'step_id': 'basic-info',
-        }
         payload = build_v2_ai_payload(
             request_id='ai_req_test',
             session=SimpleNamespace(id=12),
@@ -205,8 +198,8 @@ class AIStreamRequestTests(SimpleTestCase):
 
         self.assertEqual(payload['thread_id'], 'user-3-session-12')
         self.assertEqual(payload['deadline_at'], '2026-09-02T06:01:00Z')
-        self.assertEqual(payload['field_registry'], [{'path': 'monthly_income'}])
-        self.assertEqual(payload['tool_context']['session_id'], 12)
+        self.assertNotIn('field_registry', payload)
+        self.assertNotIn('tool_context', payload)
         self.assertNotIn('callback_url', payload)
 
 class RequestStateTransitionTests(SimpleTestCase):
@@ -258,6 +251,14 @@ class RequestStateTransitionTests(SimpleTestCase):
 class TerminalPayloadValidationTests(SimpleTestCase):
     def test_completed_and_failed_terminal_payloads_are_valid(self):
         self.assertEqual(validate_terminal_payload(completed_terminal())['status'], 'completed')
+        presentation = completed_terminal(output={
+            'response': '보고서 핵심 안내입니다.',
+            'presentation_entry_status': 'succeeded',
+        })
+        self.assertEqual(
+            validate_terminal_payload(presentation)['output']['presentation_entry_status'],
+            'succeeded',
+        )
         failed = completed_terminal(
             status='failed',
             error={
@@ -268,6 +269,13 @@ class TerminalPayloadValidationTests(SimpleTestCase):
         )
         failed.pop('output')
         self.assertEqual(validate_terminal_payload(failed)['status'], 'failed')
+
+        invalid_presentation = completed_terminal(output={
+            'response': '잘못된 상태입니다.',
+            'presentation_entry_status': 'unknown',
+        })
+        with self.assertRaises(LifecycleError):
+            validate_terminal_payload(invalid_presentation)
 
     def test_legacy_elicit_ui_action_is_rejected(self):
         payload = completed_terminal()
@@ -294,7 +302,6 @@ class TerminalPayloadValidationTests(SimpleTestCase):
     def test_structured_error_review_output_is_validated(self):
         review = {
             'type': 'error_review',
-            'trigger': 'save',
             'manual': {'document_id': 'interface-basic-info', 'version': '1.0.0'},
             'items': [{
                 'section': 'basic_info',
@@ -302,8 +309,6 @@ class TerminalPayloadValidationTests(SimpleTestCase):
                 'current_value': 20_000,
                 'reason': '다른 소득 정보와 비교해 단위 착오가 의심됩니다.',
                 'suggested_value': 2_000_000,
-                'confidence': 0.91,
-                'confidence_level': 'high',
             }],
         }
         payload = completed_terminal(output={'response': '확인이 필요합니다.', 'review': review})
@@ -311,7 +316,7 @@ class TerminalPayloadValidationTests(SimpleTestCase):
 
         invalid = completed_terminal(output={
             'response': '확인이 필요합니다.',
-            'review': {**review, 'trigger': 'blocking_save'},
+            'review': {**review, 'trigger': 'save'},
         })
         with self.assertRaises(LifecycleError):
             validate_terminal_payload(invalid)
@@ -325,22 +330,48 @@ class TerminalPayloadValidationTests(SimpleTestCase):
                 },
             }, 'basic-info')
 
-        low_confidence = completed_terminal(output={
+        missing_reason = completed_terminal(output={
             'response': '확인이 필요합니다.',
             'review': {
                 **review,
                 'items': [{
                     **review['items'][0],
-                    'confidence': 0.59,
-                    'confidence_level': 'low',
+                    'reason': '',
                 }],
             },
         })
         with self.assertRaises(LifecycleError):
-            validate_terminal_payload(low_confidence)
+            validate_terminal_payload(missing_reason)
 
 
 class FormChangeProposalTests(SimpleTestCase):
+    @patch('consulting.ai_lifecycle.create_assistant_message_from_terminal')
+    def test_presentation_entry_status_is_exposed_to_the_browser(self, create_message):
+        message = SimpleNamespace(
+            extracted_data={
+                'intent': 'qa',
+                'requires_approval': False,
+                'pending_changes': [],
+            },
+            save=Mock(),
+        )
+        create_message.return_value = message
+
+        result = create_v2_assistant_message(
+            SimpleNamespace(id=12),
+            completed_terminal(output={
+                'response': '보고서 핵심 안내입니다.',
+                'presentation_entry_status': 'succeeded',
+            }),
+            'lifetime-cashflow',
+        )
+
+        self.assertEqual(
+            result.extracted_data['presentation_entry_status'],
+            'succeeded',
+        )
+        message.save.assert_called_once_with(update_fields=['extracted_data'])
+
     @patch('consulting.ai_lifecycle.create_assistant_message_from_terminal')
     def test_terminal_message_exposes_only_v2_action_shape(self, create_message):
         message = SimpleNamespace(

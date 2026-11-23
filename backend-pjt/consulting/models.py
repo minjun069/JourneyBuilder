@@ -22,6 +22,7 @@ class ConsultingSession(models.Model):
         default=Status.ONBOARDING
     )
     financial_assets_confirmed_empty = models.BooleanField(default=False)
+    confirmed_empty_sections = models.JSONField(default=list, blank=True)
     completed_at   = models.DateTimeField(null=True, blank=True)
     created_at     = models.DateTimeField(auto_now_add=True)
 
@@ -41,15 +42,23 @@ class ConsultingSession(models.Model):
                 self.financial_assets_confirmed_empty
                 or self.financial_assets.exists()
             ),
-            'pension_assets': self.pension_assets.exists(),
-            'real_estate_assets': self.real_estate_assets.exists(),
-            'incomes': self.incomes.exists(),
-            'expenses': self.expenses.exists(),
+            'pension_assets': 'pension_assets' in self.confirmed_empty_sections or self.pension_assets.exists(),
+            'real_estate_assets': 'real_estate_assets' in self.confirmed_empty_sections or self.real_estate_assets.exists(),
+            'incomes': 'incomes' in self.confirmed_empty_sections or self.incomes.exists(),
+            'expenses': 'expenses' in self.confirmed_empty_sections or self.expenses.exists(),
             'financial_goals': (
-                self.goal_periods.exists()
+                'financial_goals' in self.confirmed_empty_sections
+                or self.goal_periods.exists()
                 or self.goal_milestones.exists()
             ),
         }
+
+    def clear_empty_confirmation(self, section):
+        if section in self.confirmed_empty_sections:
+            self.confirmed_empty_sections = [
+                item for item in self.confirmed_empty_sections if item != section
+            ]
+            self.save(update_fields=['confirmed_empty_sections'])
 
     def get_progress_pct(self):
         section_completion = self.get_section_completion()
@@ -174,6 +183,7 @@ class AIRequestExecution(models.Model):
         default=Status.PROCESSING,
     )
     completed_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

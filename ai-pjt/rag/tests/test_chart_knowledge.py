@@ -27,24 +27,26 @@ class ChartKnowledgeTests(unittest.TestCase):
                 ["retirewise-household-balance-cash-flow", "unapproved"],
             )
 
-    def test_reused_documents_cover_definition_reading_order_cautions_and_links(self):
-        expectations = {
-            "balance-sheet": ("재무상태표", "현금흐름표", "해석 원칙"),
-            "cash-flow": ("현금흐름표", "재무상태표", "입력 확인 체크리스트"),
-            "financial-indicators": ("공통 계산 규칙", "결과 표현", "현금흐름"),
-            "financial-goal-result": ("좋은 재무목표", "현재가치와 미래가치", "설명 원칙"),
-            "retirement-fund": ("은퇴자금 보고서", "필요저축액 보고서", "주요 은퇴 위험"),
-            "retirement-readiness": ("은퇴준비도 보고서", "생애 현금흐름 보고서", "주요 은퇴 위험"),
-            "retirement-simulation": ("주요 은퇴 위험", "생애 현금흐름 보고서", "가정 사용 원칙"),
-            "pension-schedule": ("연금일정 보고서", "생애 현금흐름 보고서", "공식 조회 우선순위"),
-            "lifetime-cashflow": ("생애 현금흐름 보고서", "현금흐름표", "주요 은퇴 위험"),
-            "required-savings": ("필요저축액 보고서", "필요저축액 해석", "설명 원칙"),
-        }
-        for step_id, terms in expectations.items():
+    def test_entry_contains_only_the_current_report_guide(self):
+        for step_id in CHART_KNOWLEDGE_SOURCES:
             with self.subTest(step_id=step_id):
                 context = load_chart_knowledge(
                     step_id,
                     list(CHART_KNOWLEDGE_SOURCES[step_id]),
                 )
-                for term in terms:
-                    self.assertIn(term, context)
+                self.assertEqual(context.count("보고서:"), 1)
+                self.assertIn("의미:", context)
+                self.assertIn("읽는 순서:", context)
+                self.assertIn("주의사항:", context)
+                self.assertLess(len(context), 500)
+
+    def test_detail_adds_relevant_sections_without_other_report_table_rows(self):
+        context = load_chart_knowledge(
+            "lifetime-cashflow", list(CHART_KNOWLEDGE_SOURCES["lifetime-cashflow"]),
+            question="장기 가정과 은퇴 위험을 설명해줘",
+        )
+        self.assertIn("생애 현금흐름", context)
+        self.assertIn("위험", context)
+        self.assertNotIn("| 필요저축액 |", context)
+        self.assertLessEqual(context.count("## "), 2)
+        self.assertLessEqual(len(context), 2400)

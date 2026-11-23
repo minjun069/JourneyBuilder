@@ -30,6 +30,7 @@ from consulting.ai_lifecycle import (  # noqa: E402
     validate_browser_message,
     validate_terminal_payload,
 )
+from consulting.ai_execution import AI_PROCESSING_EXPIRY_SECONDS  # noqa: E402
 
 
 FIXTURE = json.loads(
@@ -66,19 +67,13 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
             missing_key,
         )
 
-    @patch('consulting.ai_lifecycle.get_step_field_registry')
-    @patch('consulting.ai_lifecycle.build_tool_context')
     @patch('consulting.ai_lifecycle.build_customer_info')
     def test_django_outbound_payload_matches_ai_provider_fixture(
         self,
         customer_info,
-        tool_context,
-        registry,
     ):
         fixture_body = FIXTURE['cases']['django_ai_stream']['request']['body']
         customer_info.return_value = fixture_body['customer_info']
-        registry.return_value = fixture_body['field_registry']
-        tool_context.return_value = fixture_body['tool_context']
         deadline = datetime.fromisoformat(fixture_body['deadline_at'].replace('Z', '+00:00'))
 
         actual = build_v2_ai_payload(
@@ -96,8 +91,12 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
 
     def test_terminal_shapes_and_errors_match_frozen_cases(self):
         completed = FIXTURE['cases']['terminal_completed_proposal']['terminal_payload']
+        presentation = FIXTURE['cases'][
+            'terminal_completed_presentation_entry'
+        ]['terminal_payload']
         failed = FIXTURE['cases']['terminal_failed_llm_timeout']['terminal_payload']
         self.assertEqual(validate_terminal_payload(completed), completed)
+        self.assertEqual(validate_terminal_payload(presentation), presentation)
         self.assertEqual(validate_terminal_payload(failed), failed)
 
         missing = FIXTURE['cases']['terminal_missing_status']
@@ -122,6 +121,7 @@ class V2BackendProviderConsumerContractTests(unittest.TestCase):
         timing = FIXTURE['timing']
         self.assertEqual(CONTRACT_VERSION, FIXTURE['contract_version'])
         self.assertEqual(AI_EXECUTION_DEADLINE_SECONDS, timing['ai_execution_deadline_seconds'])
+        self.assertEqual(AI_PROCESSING_EXPIRY_SECONDS, timing['processing_expiry_seconds'])
         self.assertEqual(ACTIVE_STATE_TTL_SECONDS, timing['active_state_ttl_seconds'])
         self.assertEqual(TERMINAL_STATE_TTL_SECONDS, timing['terminal_state_ttl_seconds'])
         self.assertEqual(TERMINAL_STATE_TTL_SECONDS, timing['idempotency_ttl_seconds'])

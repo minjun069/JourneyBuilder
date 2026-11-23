@@ -21,7 +21,11 @@ from .ai_services import (
 from .ai_tokenization import ReferenceTokenVault, TOKEN_VAULT_TTL_SECONDS
 from .field_registry import get_step_field_registry
 from .chart_payload import build_chart_payload
-from .tool_context import build_tool_context
+from .elicitation_contract import (
+    MODE as ELICITATION_MODE,
+    validate_request as validate_elicitation_request,
+    validate_output as validate_elicitation_output,
+)
 
 
 CONTRACT_VERSION = '2.0'
@@ -79,14 +83,6 @@ class LifecycleError(Exception):
         return body
 
 
-def v2_success(data):
-    return {
-        'contract_version': CONTRACT_VERSION,
-        'success': True,
-        'data': data,
-    }
-
-
 def validate_browser_message(payload):
     if not isinstance(payload, dict):
         raise LifecycleError(400, 'REQUEST_INVALID', '요청 본문은 객체여야 합니다.')
@@ -98,7 +94,7 @@ def validate_browser_message(payload):
         )
     allowed_fields = {
         'contract_version', 'content', 'step_id', 'form_data',
-        'request_mode', 'review_trigger',
+        'request_mode', 'elicitation_state',
     }
     if set(payload) - allowed_fields:
         raise LifecycleError(400, 'REQUEST_INVALID', '지원하지 않는 요청 필드가 있습니다.')
@@ -118,14 +114,17 @@ def validate_browser_message(payload):
     if not isinstance(form_data, dict):
         raise LifecycleError(400, 'REQUEST_INVALID', 'form_data는 객체여야 합니다.')
     request_mode = payload.get('request_mode', 'chat')
-    review_trigger = payload.get('review_trigger')
-    if request_mode not in ('chat', 'error_review', 'presentation_entry'):
+    if request_mode not in ('chat', 'error_review', 'presentation_entry', ELICITATION_MODE):
         raise LifecycleError(400, 'REQUEST_INVALID', 'request_mode이 올바르지 않습니다.')
-    if request_mode == 'error_review':
-        if review_trigger not in ('save', 'user_request'):
-            raise LifecycleError(400, 'REQUEST_INVALID', 'review_trigger가 필요합니다.')
-    elif review_trigger is not None:
-        raise LifecycleError(400, 'REQUEST_INVALID', '이 요청에는 review_trigger를 사용할 수 없습니다.')
+    try:
+        elicitation_state = validate_elicitation_request(
+            payload.get('elicitation_state'),
+            request_mode=request_mode, step_id=step_id, content=content,
+        )
+        if 'elicitation_state' in payload and request_mode != ELICITATION_MODE:
+            raise ValueError('elicitation_state는 경제관념 상담에서만 사용할 수 있습니다.')
+    except ValueError as exc:
+        raise LifecycleError(400, 'REQUEST_INVALID', str(exc)) from exc
     normalized = {
         'contract_version': CONTRACT_VERSION,
         'content': content,
@@ -134,8 +133,8 @@ def validate_browser_message(payload):
     }
     if 'request_mode' in payload:
         normalized['request_mode'] = request_mode
-    if review_trigger is not None:
-        normalized['review_trigger'] = review_trigger
+    if elicitation_state is not None:
+        normalized['elicitation_state'] = elicitation_state
     return normalized
 
 
@@ -146,7 +145,7 @@ def require_idempotency_key(request):
     return key
 
 
-def validate_terminal_payload(payload):
+def validate_terminal_payload(payload, *, request_payload=None):
     if not isinstance(payload, dict):
         raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'terminal 본문은 객체여야 합니다.')
     if payload.get('contract_version') != CONTRACT_VERSION:
@@ -186,7 +185,18 @@ def validate_terminal_payload(payload):
         output = payload.get('output')
         if not isinstance(output, dict) or not isinstance(output.get('response'), str):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'completed output이 올바르지 않습니다.')
+        presentation_entry_status = output.get('presentation_entry_status')
+        if presentation_entry_status not in (None, 'succeeded', 'failed'):
+            raise LifecycleError(
+                422,
+                'REQUEST_SCHEMA_INVALID',
+                'presentation_entry_status가 올바르지 않습니다.',
+            )
         _validate_error_review_output(output)
+        try:
+            validate_elicitation_output(output, request_payload=request_payload)
+        except ValueError as exc:
+            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', str(exc)) from exc
         if 'ui_action' in output:
             raise LifecycleError(
                 422,
@@ -208,9 +218,9 @@ def _validate_error_review_output(output):
     review = output.get('review')
     if review is None:
         return
-    if not isinstance(review, dict) or set(review) != {'type', 'trigger', 'manual', 'items'}:
+    if not isinstance(review, dict) or set(review) != {'type', 'manual', 'items'}:
         raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review output이 올바르지 않습니다.')
-    if review.get('type') != 'error_review' or review.get('trigger') not in ('save', 'user_request'):
+    if review.get('type') != 'error_review':
         raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review output이 올바르지 않습니다.')
     manual = review.get('manual')
     if (
@@ -224,8 +234,7 @@ def _validate_error_review_output(output):
         raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review items가 올바르지 않습니다.')
     allowed = {
         'section', 'path', 'item_id', 'client_item_id', 'parent_item_id',
-        'parent_client_item_id', 'current_value', 'reason', 'suggested_value', 'confidence',
-        'confidence_level',
+        'parent_client_item_id', 'current_value', 'reason', 'suggested_value',
     }
     for item in items:
         if not isinstance(item, dict) or set(item) - allowed:
@@ -234,16 +243,6 @@ def _validate_error_review_output(output):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review item에 현재 값이 필요합니다.')
         if not all(isinstance(item.get(key), str) and item.get(key) for key in ('section', 'path', 'reason')):
             raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review item이 올바르지 않습니다.')
-        confidence = item.get('confidence')
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review confidence가 올바르지 않습니다.')
-        expected_level = (
-            'high' if confidence >= 0.85
-            else 'medium' if confidence >= 0.60
-            else 'low'
-        )
-        if item.get('confidence_level') not in ('medium', 'high') or item.get('confidence_level') != expected_level:
-            raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', 'review confidence 등급이 올바르지 않습니다.')
 
 
 def _validate_error_review_fields(output, step_id):
@@ -346,7 +345,7 @@ class RedisLifecycleStore:
 
 def build_v2_ai_payload(
     *, request_id, session, user, message, step_id, form_data,
-    request_mode='chat', review_trigger=None, now=None,
+    request_mode='chat', elicitation_state=None, now=None,
 ):
     current = now or utc_now()
     chart_result = build_chart_payload(
@@ -365,19 +364,15 @@ def build_v2_ai_payload(
             current + timedelta(seconds=AI_EXECUTION_DEADLINE_SECONDS)
         ),
         'customer_info': build_customer_info(session, form_data),
-        'field_registry': get_step_field_registry(step_id),
-        'tool_context': build_tool_context(
-            session=session,
-            user=user,
-            step_id=step_id,
-            generated_at=current,
-        ),
         'chart_payload': chart_result.payload,
     }
     if request_mode != 'chat':
         payload['request_mode'] = request_mode
-    if review_trigger is not None:
-        payload['review_trigger'] = review_trigger
+    if elicitation_state is not None:
+        payload['elicitation_state'] = {
+            **elicitation_state,
+            'completed_fields': list(elicitation_state['completed_fields']),
+        }
     return payload
 
 
@@ -437,6 +432,10 @@ def bind_terminal_result(state, payload):
 def create_v2_assistant_message(session, payload, step_id):
     output = payload.get('output') if isinstance(payload.get('output'), dict) else {}
     _validate_error_review_fields(output, step_id)
+    try:
+        validate_elicitation_output({**output, 'step_id': step_id})
+    except ValueError as exc:
+        raise LifecycleError(422, 'REQUEST_SCHEMA_INVALID', str(exc)) from exc
     message = create_assistant_message_from_terminal(session, payload, step_id=step_id)
     extracted = message.extracted_data or {}
     extracted_changed = False
@@ -460,6 +459,12 @@ def create_v2_assistant_message(session, payload, step_id):
         extracted_changed = True
     if isinstance(output.get('review'), dict):
         extracted['review'] = output['review']
+        extracted_changed = True
+    if output.get('presentation_entry_status') in ('succeeded', 'failed'):
+        extracted['presentation_entry_status'] = output['presentation_entry_status']
+        extracted_changed = True
+    if isinstance(output.get('elicitation'), dict):
+        extracted['elicitation'] = output['elicitation']
         extracted_changed = True
     if extracted_changed:
         message.extracted_data = extracted

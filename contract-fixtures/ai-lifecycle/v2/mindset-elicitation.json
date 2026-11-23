@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "step_id": "financial-mindset",
+  "request_mode": "mindset_elicitation",
+  "max_answer_count": 3,
+  "fields": ["values", "past_experience", "current_situation", "current_challenge", "invest_philosophy", "future_goals"],
+  "form_cases": [
+    {
+      "id": "empty-entry",
+      "current_form": {"values": null, "past_experience": null, "current_situation": null, "current_challenge": null, "invest_philosophy": null, "future_goals": null},
+      "summary": ""
+    },
+    {
+      "id": "partial-entry",
+      "current_form": {"values": "저장된 가치관", "past_experience": null, "current_situation": null, "current_challenge": null, "invest_philosophy": null, "future_goals": null},
+      "summary": "저장된 가치관"
+    }
+  ],
+  "request_cases": [
+    {"id": "start", "valid": true, "state": {"event": "start", "field": "values", "answer_count": 0, "completed_fields": []}},
+    {"id": "third-answer", "valid": true, "state": {"event": "answer", "field": "values", "answer_count": 2, "completed_fields": []}},
+    {"id": "next-field", "valid": true, "state": {"event": "answer", "field": "past_experience", "answer_count": 0, "completed_fields": ["values"]}},
+    {"id": "unknown-field", "valid": false, "state": {"event": "answer", "field": "income", "answer_count": 0, "completed_fields": []}},
+    {"id": "already-capped", "valid": false, "state": {"event": "answer", "field": "values", "answer_count": 3, "completed_fields": []}},
+    {"id": "boolean-count", "valid": false, "state": {"event": "answer", "field": "values", "answer_count": true, "completed_fields": []}},
+    {"id": "missing-prefix", "valid": false, "state": {"event": "answer", "field": "past_experience", "answer_count": 0, "completed_fields": []}},
+    {"id": "start-after-answer", "valid": false, "state": {"event": "start", "field": "values", "answer_count": 1, "completed_fields": []}},
+    {"id": "untrusted-summary-state", "valid": false, "state": {"event": "start", "field": "values", "answer_count": 0, "completed_fields": [], "summary": "폼 외 복제본"}}
+  ],
+  "result_cases": [
+    {"id": "opened", "valid": true, "result": {"field": "values", "summary": "", "answer_count": 0, "status": "in_progress", "completion_reason": null, "next_field": null}},
+    {"id": "exploring", "valid": true, "result": {"field": "values", "summary": "예측 가능한 생활을 중시함. 안정의 구체적인 의미는 미확인.", "answer_count": 1, "status": "in_progress", "completion_reason": null, "next_field": null}},
+    {"id": "sufficient", "valid": true, "result": {"field": "values", "summary": "예측 가능한 생활비를 확보해 가족의 생활을 지키는 것을 중시함.", "answer_count": 1, "status": "completed", "completion_reason": "sufficient", "next_field": "past_experience"}},
+    {"id": "limit", "valid": true, "result": {"field": "values", "summary": "안정감을 중시함. 구체적인 의미는 미확인.", "answer_count": 3, "status": "completed", "completion_reason": "limit", "next_field": "past_experience"}},
+    {"id": "skip-without-answer", "valid": true, "result": {"field": "values", "summary": "", "answer_count": 0, "status": "completed", "completion_reason": "skipped", "next_field": "past_experience"}},
+    {"id": "last-field", "valid": true, "result": {"field": "future_goals", "summary": "은퇴 후 가족과 보낼 시간을 우선함.", "answer_count": 1, "status": "completed", "completion_reason": "sufficient", "next_field": null}},
+    {"id": "capped-but-active", "valid": false, "result": {"field": "values", "summary": "안정 중시", "answer_count": 3, "status": "in_progress", "completion_reason": null, "next_field": null}},
+    {"id": "early-limit", "valid": false, "result": {"field": "values", "summary": "안정 중시", "answer_count": 2, "status": "completed", "completion_reason": "limit", "next_field": "past_experience"}},
+    {"id": "wrong-next", "valid": false, "result": {"field": "values", "summary": "안정 중시", "answer_count": 1, "status": "completed", "completion_reason": "sufficient", "next_field": "future_goals"}},
+    {"id": "empty-sufficient", "valid": false, "result": {"field": "values", "summary": "", "answer_count": 1, "status": "completed", "completion_reason": "sufficient", "next_field": "past_experience"}},
+    {"id": "empty-limit", "valid": false, "result": {"field": "values", "summary": "", "answer_count": 3, "status": "completed", "completion_reason": "limit", "next_field": "past_experience"}},
+    {"id": "skip-at-three", "valid": false, "result": {"field": "values", "summary": "", "answer_count": 3, "status": "completed", "completion_reason": "skipped", "next_field": "past_experience"}},
+    {"id": "foreign-target", "valid": false, "result": {"field": "income", "summary": "수입", "answer_count": 1, "status": "in_progress", "completion_reason": null, "next_field": null}},
+    {"id": "unknown-output-field", "valid": false, "result": {"field": "values", "summary": "안정", "answer_count": 1, "status": "in_progress", "completion_reason": null, "next_field": null, "action": {}}}
+  ]
+}

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import unittest
 
 from tools.catalog import build_default_registry
@@ -12,7 +11,6 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
     def payload(self, budget: ToolCallBudget) -> dict:
         return {
             "request_id": "req-1",
-            "plan_id": "plan-req-1",
             "task": {
                 "id": "task-1",
                 "type": "answer_question",
@@ -25,16 +23,6 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 },
             },
             "step_id": "basic-info",
-            "deadline_at": (
-                datetime.now(timezone.utc) + timedelta(seconds=30)
-            ).isoformat(),
-            "tool_context": {
-                "field_specs": [],
-                "dashboard_metrics": {},
-                "retirement_scenarios": {},
-                "available_reports": [],
-                "section_completion": {"basic_info": True},
-            },
             "tool_call_budget": budget,
             "tool_audit_sink": self.events.append,
         }
@@ -48,7 +36,7 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         result = await runtime.invoke(
             RuntimeToolRequest(
-                tool_name="get_step_completion_status",
+                tool_name="get_form_field_spec",
                 arguments={},
                 agent="qa",
             ),
@@ -58,7 +46,7 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.ok)
         self.assertEqual(payload["tool_call_budget"].used, 1)
         self.assertEqual(self.events[0].request_id, "req-1")
-        self.assertEqual(self.events[0].plan_id, "plan-req-1")
+        self.assertFalse(hasattr(self.events[0], "plan_id"))
         self.assertEqual(self.events[0].task_id, "task-1")
         self.assertEqual(self.events[0].call_source, "graph_task")
         self.assertEqual(self.events[0].decision, "allowed")
@@ -67,7 +55,7 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
         runtime = FunctionToolRuntime(build_default_registry())
         result = await runtime.invoke(
             RuntimeToolRequest(
-                tool_name="get_step_completion_status",
+                tool_name="get_form_field_spec",
                 arguments={},
                 agent="qa",
             ),
@@ -81,24 +69,29 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
         payload = self.payload(ToolCallBudget(limit=1))
         payload["task"] = {
             "id": "task-1",
-            "type": "lookup_retirement_gap",
+            "type": "lookup_reference_value",
             "step_id": "basic-info",
             "executor_kind": "tool",
-            "produces": "dashboard_metric",
-            "capability": "get_dashboard_metric",
-            "tool_name": "get_dashboard_metric",
-            "authorized_agent": "chart_interpret",
+            "produces": "reference_value",
+            "capability": "lookup_reference_value",
+            "tool_name": "get_approved_reference_value",
+            "authorized_agent": "qa",
             "route": {
                 "executor_kind": "tool",
-                "executor": "get_dashboard_metric",
+                "executor": "lookup_reference_value",
             },
         }
         runtime = FunctionToolRuntime(build_default_registry())
 
         result = await runtime.invoke(
             RuntimeToolRequest(
-                tool_name="get_dashboard_metric",
-                arguments={"metric_id": "retirement_gap"},
+                tool_name="get_approved_reference_value",
+                arguments={
+                    "reference_id": "debt_service_ratio_max",
+                    "age": 45,
+                    "period": "annual",
+                    "population": "retirewise_kr_households",
+                },
                 agent="chart_interpret",
             ),
             payload,
@@ -111,12 +104,12 @@ class FunctionToolRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_trusted_task_binding_fails_closed(self) -> None:
         payload = self.payload(ToolCallBudget())
-        payload.pop("plan_id")
+        payload.pop("request_id")
         runtime = FunctionToolRuntime(build_default_registry())
 
         result = await runtime.invoke(
             RuntimeToolRequest(
-                tool_name="get_step_completion_status",
+                tool_name="get_form_field_spec",
                 arguments={},
                 agent="qa",
             ),

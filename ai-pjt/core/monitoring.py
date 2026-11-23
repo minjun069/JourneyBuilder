@@ -28,7 +28,6 @@ class OperationStage(str, Enum):
     TOOL = "tool"
     MODEL = "model"
     OUTPUT_VALIDATION = "output_validation"
-    CALLBACK = "callback"
 
 
 class OperationStatus(str, Enum):
@@ -55,7 +54,6 @@ class AssistanceMode(str, Enum):
 class ManualTransitionReason(str, Enum):
     USER_PREFERENCE = "user_preference"
     AI_FAILURE = "ai_failure"
-    LOW_CONFIDENCE = "low_confidence"
     UNSUPPORTED_TASK = "unsupported_task"
     ACCESSIBILITY = "accessibility"
     UNKNOWN = "unknown"
@@ -120,7 +118,7 @@ def _validate_observation_content(value: Any, field_name: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class OperationTraceEvent:
-    """One route/search/tool/model/validation/callback measurement.
+    """One route/search/tool/model/validation measurement.
 
     IDs must already be pseudonymized. Search events may contain approved
     document IDs and scores, never excerpts or queries. Costs use integer

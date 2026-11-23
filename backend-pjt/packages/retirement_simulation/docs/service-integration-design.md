@@ -71,7 +71,7 @@ LLM 설명은 이번 기본 연결 범위에 넣지 않는다. 임시 실행 상
 | 채팅 제한 | [v2 메시지/스트림 View](../../../consulting/v2_views.py)는 완료·중도 이탈 상담을 거절 | 보고서 버튼을 기존 채팅 API에 그대로 연결할 수 없음 |
 | 입력 원천 | [build_customer_info()](../../../consulting/ai_services.py)가 `saved_data`를 구성 | 계산에 필요한 부분만 추출하고 일관된 시점으로 검증 |
 | 보고서 기준 — 2026-09-10 재확인 | [스냅샷 helper/digest](../../../reports/snapshots.py), [공통 정책 로더](../../../reports/policy.py)가 추가되어 있음 | 실제 타입·동일 시점 조회·정책 의미·MC 변동성/없음 확인을 검증한 뒤 재사용 |
-| AI 조회 도구 | [get_retirement_scenario](../../../../ai-pjt/tools/catalog.py)는 컨텍스트에 제공된 시나리오를 조회 | 엔진 실행·결과 생성·보관 기능으로 오인하지 않기 |
+| AI 연동 | 요청별 은퇴 시나리오 snapshot과 전용 조회 도구는 제공하지 않음 | 필요 시 별도 서비스 계약과 권한 경계를 먼저 정의 |
 | 화면 데이터 | [Report Store](../../../../front-pjt/src/stores/report.js)가 보고서와 시뮬레이션 상태를 같이 관리 | 실제 API 정상·오류·stale 흐름 검증 |
 
 이전 설계 문서의 `runtime 구현 전` 같은 상태 문구로 현재 동작을 추정하지 않는다.

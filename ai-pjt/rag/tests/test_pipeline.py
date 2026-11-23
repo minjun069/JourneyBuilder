@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from rag.pipeline.chunking import DeterministicChunker, MarkdownStructureChunker
-from rag.pipeline.cli import main as cli_main
+from rag.pipeline.cli import _require_writable_report_directory, main as cli_main
 from rag.pipeline.corpus import load_approved_catalog, load_corpus, load_gold_queries
 from rag.pipeline.embeddings import (
     DeterministicHashEmbedding,
@@ -78,6 +78,39 @@ class PipelineTestCase(unittest.TestCase):
             chunker=self.chunker,
             embedding=self.embedding,
         )
+
+    def test_report_directory_preflight_creates_directory_without_residue(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report_dir = Path(directory) / "nested" / "reports"
+
+            _require_writable_report_directory(report_dir)
+
+            self.assertTrue(report_dir.is_dir())
+            self.assertEqual(list(report_dir.iterdir()), [])
+
+    def test_counseling_report_preflight_fails_before_embedding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report_path = Path(directory) / "not-a-directory"
+            report_path.write_text("occupied", encoding="utf-8")
+            with patch.dict(
+                "os.environ",
+                {"DATABASE_URL": "postgresql://unused/test"},
+                clear=True,
+            ), patch(
+                "rag.pipeline.cli._operational_embedding"
+            ) as embedding, redirect_stdout(io.StringIO()), redirect_stderr(
+                io.StringIO()
+            ):
+                result = cli_main(
+                    [
+                        "run-counseling-candidate",
+                        "--report-dir",
+                        str(report_path),
+                    ]
+                )
+
+        self.assertEqual(result, 2)
+        embedding.assert_not_called()
 
     def test_chunk_ids_and_offsets_are_deterministic(self) -> None:
         document = make_document("source-a", "가" * 150)
@@ -316,7 +349,7 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
             repository_root=repository_root,
         )
 
-        self.assertEqual(catalog.catalog_version, "2.3.0")
+        self.assertEqual(catalog.catalog_version, "2.3.1")
         self.assertEqual(len(catalog.for_collection("interface-guides")), 10)
         self.assertEqual(len(catalog.for_collection("financial-knowledge")), 15)
         self.assertTrue(
@@ -403,13 +436,13 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
             interface = json.loads(
                 (
                     Path(directory)
-                    / "interface-guides__experiment-catalog-2-3-0-report.json"
+                    / "interface-guides__experiment-catalog-2-3-1-report.json"
                 ).read_text(encoding="utf-8")
             )
             financial = json.loads(
                 (
                     Path(directory)
-                    / "financial-knowledge__experiment-catalog-2-3-0-report.json"
+                    / "financial-knowledge__experiment-catalog-2-3-1-report.json"
                 ).read_text(encoding="utf-8")
             )
             self.assertEqual(interface["evaluation"]["query_count"], 20)
@@ -521,6 +554,115 @@ class FixtureAndAdapterTestCase(unittest.TestCase):
                 "financial-knowledge__official-catalog-2-2-0-test",
             },
         )
+
+    def test_counseling_qualification_uses_independent_pending_pointer(self) -> None:
+        class OperationalJsonStore(JsonVectorStore):
+            def ensure_schema(self) -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = OperationalJsonStore(root / "store")
+            embedding = DeterministicHashEmbedding(2048)
+            with patch.dict(
+                "os.environ",
+                {"DATABASE_URL": "postgresql://unused/test"},
+                clear=True,
+            ), patch(
+                "rag.pipeline.cli.PostgresIndexStore", return_value=store
+            ), patch(
+                "rag.pipeline.cli._operational_embedding", return_value=embedding
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                result = cli_main(
+                    [
+                        "run-counseling-candidate",
+                        "--report-dir",
+                        str(root / "reports"),
+                        "--environment-id",
+                        "test-counseling-db",
+                        "--operator-id",
+                        "candidate-owner",
+                        "--source-revision",
+                        "b" * 40,
+                        "--index-version",
+                        "candidate-test",
+                        "--minimum-dense-score",
+                        "1",
+                        "--minimum-recall",
+                        "0",
+                        "--minimum-mrr",
+                        "0",
+                        "--promote",
+                    ]
+                )
+
+            payload = json.loads(
+                (
+                    root
+                    / "reports"
+                    / "experiment__candidate-test__counseling-qualification.json"
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(payload["acceptance"], "pending")
+        self.assertFalse(payload["deployable"])
+        self.assertEqual(payload["evaluation"]["query_count"], 50)
+        self.assertEqual(payload["retrieval"]["strategy"], "postgres-dense-vector")
+        self.assertTrue(payload["pointer_isolation"]["passed"])
+        self.assertTrue(payload["activation"]["performed"])
+        self.assertIsNone(payload["activation"]["after"]["financial-knowledge"])
+        self.assertIsNone(payload["activation"]["after"]["interface-guides"])
+        self.assertEqual(
+            payload["activation"]["after"]["counseling-candidate"],
+            "counseling-candidate__experiment-candidate-test",
+        )
+
+    def test_failed_counseling_evaluation_does_not_activate(self) -> None:
+        class OperationalJsonStore(JsonVectorStore):
+            def ensure_schema(self) -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = OperationalJsonStore(root / "store")
+            with patch.dict(
+                "os.environ",
+                {"DATABASE_URL": "postgresql://unused/test"},
+                clear=True,
+            ), patch(
+                "rag.pipeline.cli.PostgresIndexStore", return_value=store
+            ), patch(
+                "rag.pipeline.cli._operational_embedding",
+                return_value=DeterministicHashEmbedding(2048),
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                result = cli_main(
+                    [
+                        "run-counseling-candidate",
+                        "--report-dir",
+                        str(root / "reports"),
+                        "--source-revision",
+                        "c" * 40,
+                        "--index-version",
+                        "candidate-fail",
+                        "--minimum-dense-score",
+                        "1",
+                        "--promote",
+                    ]
+                )
+
+            payload = json.loads(
+                (
+                    root
+                    / "reports"
+                    / "experiment__candidate-fail__counseling-qualification.json"
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(result, 1)
+        self.assertEqual(payload["overall_decision"], "FAIL")
+        self.assertFalse(payload["activation"]["performed"])
+        self.assertIsNone(payload["activation"]["after"]["counseling-candidate"])
 
     def test_negative_query_fails_when_retriever_returns_false_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

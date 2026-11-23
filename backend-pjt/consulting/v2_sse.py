@@ -223,7 +223,10 @@ async def proxy_v2_ai_stream(
             if event_name == 'error':
                 if validated['status'] != 'failed':
                     raise SSEProtocolError('error event must have failed status')
-                restored = validate_terminal_payload(token_vault.restore(validated))
+                restored = validate_terminal_payload(
+                    token_vault.restore_terminal(validated, step_id=state['step_id']),
+                    request_payload=payload,
+                )
                 finalized = await _finalize(state, restored)
                 terminal = True
                 await _save_terminal(store, finalized.state)
@@ -237,7 +240,10 @@ async def proxy_v2_ai_stream(
             if not output.get('response'):
                 raise SSEProtocolError('done output has no response')
 
-            restored = validate_terminal_payload(token_vault.restore(validated))
+            restored = validate_terminal_payload(
+                token_vault.restore_terminal(validated, step_id=state['step_id']),
+                request_payload=payload,
+            )
 
             finalized = await _finalize(state, restored)
             terminal = True
@@ -256,16 +262,33 @@ async def proxy_v2_ai_stream(
 
         raise SSEProtocolError('SSE stream ended without a terminal event')
     except asyncio.CancelledError:
-        logger.info('Django v2 SSE 클라이언트 연결 종료', extra={'request_id': state['request_id']})
+        logger.info(
+            'Django v2 SSE 클라이언트 연결 종료',
+            extra={
+                'request_id': state['request_id'],
+                'reason_code': 'browser_stream_disconnected',
+            },
+        )
         if not terminal:
             # The AI may already have atomically committed context and its
             # terminal while delivery to Django was interrupted. Keep the
             # original request identity and vault so an idempotent retry can
             # query/replay that exact terminal instead of creating a new turn.
-            await sync_to_async(store.save_active, thread_sensitive=True)({
-                **state,
-                'retry_after_disconnect': True,
-            })
+            try:
+                await asyncio.shield(
+                    sync_to_async(store.save_active, thread_sensitive=True)({
+                        **state,
+                        'retry_after_disconnect': True,
+                    })
+                )
+            except Exception:
+                logger.exception(
+                    'Django v2 SSE 재연결 표식 저장 실패',
+                    extra={
+                        'request_id': state['request_id'],
+                        'reason_code': 'disconnect_resume_marker_failed',
+                    },
+                )
         raise
     except Exception as exc:
         if isinstance(exc, ReferenceTokenValidationError):
