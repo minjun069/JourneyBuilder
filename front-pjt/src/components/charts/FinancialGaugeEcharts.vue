@@ -1,7 +1,8 @@
 <template>
   <div class="gauge-card">
     <div class="gauge-chart-area">
-      <VChart :option="chartOption" autoresize />
+      <VChart v-if="indicator.value != null" :option="chartOption" autoresize />
+      <div v-else class="unavailable-value" aria-label="지표 계산 불가">—</div>
     </div>
     <div class="gauge-footer">
       <div class="gauge-label">{{ indicator.label }}</div>
@@ -32,6 +33,9 @@ const props = defineProps({
 
 const currentZone = computed(() => {
   const { value, zones } = props.indicator
+  if (value == null) return { color: '#94a3b8', status: '판정 불가' }
+  if (props.indicator.status) return { color: props.indicator.color, status: props.indicator.status }
+  if (value < zones[0].from) return zones[0]
   return zones.find((z) => value >= z.from && value < z.to) || zones[zones.length - 1]
 })
 
@@ -126,4 +130,5 @@ const chartOption = computed(() => ({
   padding: 2px 10px;
   border-radius: 20px;
 }
+.unavailable-value { height: 100%; display: grid; place-items: center; font-size: 26px; color: #94a3b8; }
 </style>

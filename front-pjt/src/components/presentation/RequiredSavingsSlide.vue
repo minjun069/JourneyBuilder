@@ -1,23 +1,36 @@
+<script setup>
+import { computed } from 'vue'
+import { useReportStore } from '@/stores/report'
+import { fmtKRW } from '@/utils/format'
+const reportStore = useReportStore()
+const savings = computed(() => reportStore.reports?.['required-savings'])
+const currentWidth = computed(() => savings.value?.target_monthly_savings > 0
+  ? Math.min(100, Math.max(0, savings.value.current_monthly_savings / savings.value.target_monthly_savings * 100)) : 0)
+</script>
+
 <template>
   <div class="slide">
+    <template v-if="savings">
     <div class="compare">
       <div class="box current">
         <div class="box-label">현재 월 저축</div>
-        <div class="box-amount">80만원</div>
-        <div class="bar-track"><div class="bar" style="width:55%; background:#94a3b8"></div></div>
+        <div class="box-amount">{{ fmtKRW(savings.current_monthly_savings) }}</div>
+        <div class="bar-track"><div class="bar" :style="{ width: `${currentWidth}%`, background: '#94a3b8' }"></div></div>
       </div>
       <div class="arrow">→</div>
       <div class="box needed">
         <div class="box-label">목표 달성을 위한<br/>필요 월 저축</div>
-        <div class="box-amount hl">145만원</div>
-        <div class="bar-track"><div class="bar" style="width:100%; background:#5e5ce6"></div></div>
+        <div class="box-amount hl">{{ fmtKRW(savings.target_monthly_savings) }}</div>
+        <div class="bar-track"><div class="bar" :style="{ width: savings.target_monthly_savings > 0 ? '100%' : '0%', background: '#5e5ce6' }"></div></div>
       </div>
     </div>
     <div class="gap-box">
       <span class="gap-label">월 부족 저축액</span>
-      <span class="gap-amount">65만원</span>
+      <span class="gap-amount">{{ fmtKRW(savings.additional_required_savings) }}</span>
     </div>
-    <div class="note">지출 구조 개선 또는 부업 소득으로 충당 가능합니다.</div>
+    <div class="note">현재 금융·연금자산 월 적립액과 은퇴 부족자금에 대한 추가 필요 저축액입니다.</div>
+    </template>
+    <p v-else role="status">필요저축액 보고서를 준비해 주세요.</p>
   </div>
 </template>
 
@@ -31,7 +44,7 @@
   justify-content: center;
   gap: 12px;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .compare { display: flex; align-items: center; gap: 12px; }
@@ -68,4 +81,8 @@
 .gap-amount { font-size: 20px; font-weight: 800; color: #b83232; }
 
 .note { font-size: 11px; color: #6b7280; }
+.compare { flex-wrap: wrap; }
+.box { min-width: 150px; }
+.box-amount { overflow-wrap: anywhere; }
+.gap-box { flex-wrap: wrap; gap: 8px; }
 </style>

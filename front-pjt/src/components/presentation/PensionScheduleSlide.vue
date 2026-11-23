@@ -1,26 +1,30 @@
+<script setup>
+import { computed } from 'vue'
+import { useReportStore } from '@/stores/report'
+import { fmtKRW } from '@/utils/format'
+const reportStore = useReportStore()
+const pension = computed(() => reportStore.reports?.['pension-schedule'])
+const rows = computed(() => (pension.value?.yearly_schedule ?? [])
+  .filter((row, index, all) => index === 0 || index === all.length - 1 || row.age % 5 === 0))
+const maxAmount = computed(() => Math.max(0, ...rows.value.map((row) => row.monthly_amount)))
+const methodLabel = computed(() => ({ user_input: '사용자가 입력한 예상액', simple_formula: '가입기간·소득에 따른 간이 추정', unavailable: '추정에 필요한 정보 없음' }[pension.value?.results.estimate_method] ?? '계산 결과'))
+</script>
+
 <template>
   <div class="slide">
-    <div class="timeline">
-      <div class="tl-row">
-        <div class="tl-age">55세~</div>
-        <div class="tl-bar-wrap"><div class="tl-bar personal" style="width:80%"></div></div>
-        <div class="tl-info"><span class="tl-name">개인연금</span><span class="tl-amount">45만원/월</span></div>
+    <template v-if="pension">
+      <div class="summary">국민연금 · {{ pension.results.pension_start_age }}세부터 <strong>{{ fmtKRW(pension.results.final_monthly_est) }}/월</strong><br><small>{{ methodLabel }}</small></div>
+      <div v-if="rows.length" class="timeline">
+        <div v-for="row in rows" :key="row.age" class="tl-row">
+          <div class="tl-age">{{ row.age }}세</div>
+          <div class="tl-bar-wrap"><div class="tl-bar national" :style="{ width: `${maxAmount > 0 ? row.monthly_amount / maxAmount * 100 : 0}%` }"></div></div>
+          <div class="tl-info"><span class="tl-name">{{ row.year }}년</span><span class="tl-amount">{{ fmtKRW(row.monthly_amount) }}/월</span></div>
+        </div>
       </div>
-      <div class="tl-row">
-        <div class="tl-age">62세~</div>
-        <div class="tl-bar-wrap"><div class="tl-bar retirement" style="width:70%"></div></div>
-        <div class="tl-info"><span class="tl-name">퇴직연금</span><span class="tl-amount">60만원/월</span></div>
-      </div>
-      <div class="tl-row">
-        <div class="tl-age">65세~</div>
-        <div class="tl-bar-wrap"><div class="tl-bar national" style="width:100%"></div></div>
-        <div class="tl-info"><span class="tl-name">국민연금</span><span class="tl-amount">95만원/월</span></div>
-      </div>
-    </div>
-    <div class="summary">
-      65세 이후 연금 합계 <strong>200만원/월</strong>
-      — 필요 생활비 250만원의 <strong>80%</strong>
-    </div>
+      <p v-else role="status">국민연금 수령 예상액이 없습니다. 가입·예상 수령 정보를 확인해 주세요.</p>
+      <p class="note">현재 보고서는 국민연금 예상 수령 일정입니다. 개인·퇴직연금 합계가 아닙니다.</p>
+    </template>
+    <p v-else role="status">연금 수령 일정 보고서를 준비해 주세요.</p>
   </div>
 </template>
 
@@ -34,7 +38,7 @@
   justify-content: center;
   gap: 14px;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .timeline { display: flex; flex-direction: column; gap: 12px; }
@@ -71,4 +75,7 @@
   border-radius: 8px;
   padding: 8px 12px;
 }
+.note { font-size: 11px; color: #64748b; line-height: 1.6; }
+.tl-info { min-width: 105px; }
+.tl-bar-wrap { min-width: 30px; }
 </style>

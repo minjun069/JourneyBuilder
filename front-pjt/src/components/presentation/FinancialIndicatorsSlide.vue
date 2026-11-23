@@ -2,12 +2,6 @@
 import { computed } from 'vue'
 import { useReportStore } from '@/stores/report'
 import FinancialGaugeEcharts from '@/components/charts/FinancialGaugeEcharts.vue'
-import { makeIndicator, toIndicatorGroups } from '@/components/charts/financialIndicatorSchema'
-
-// 글에 첨부된 스냅샷을 받는다. 없으면 기존처럼 store 를 본다(대시보드·AI 화면 동작 유지)
-const props = defineProps({
-  data: { type: Object, default: null },
-})
 
 const reportStore = useReportStore()
 
@@ -25,18 +19,11 @@ const GROUP_ORDER = Object.keys(GROUP_LABEL)
 
 const groups = computed(() => {
   const data = fi.value
-  if (!data?.groups) return []
-  const age = data.age
-  const incoming = data.groups
-  // 없는 그룹은 건너뛰고, 맵에 없는 그룹은 버리지 않고 뒤에 들어온 순서대로 붙인다
-  const keys = [
-    ...GROUP_ORDER.filter(key => key in incoming),
-    ...Object.keys(incoming).filter(key => !(key in GROUP_LABEL)),
-  ]
-  return keys.map(key => ({
+  if (!data) return []
+  return Object.entries(data.groups ?? {}).map(([key, items]) => ({
     key,
     label: GROUP_LABEL[key] ?? key,
-    items: (incoming[key] ?? []).map(i => makeIndicator(i.key, i.value, age)),
+    items,
   }))
 })
 </script>

@@ -18,6 +18,7 @@ const CONSULTATION_PATH = '/ai'
 
 defineProps({
   compact: { type: Boolean, default: false },
+  readOnly: { type: Boolean, default: false },
 })
 
 const reportStore = useReportStore()
@@ -237,11 +238,12 @@ async function resetToBaseline() {
     <header class="panel-header">
       <div class="panel-title">
         <h2>은퇴 시뮬레이션</h2>
-        <p v-if="!compact" class="lede">{{ lede }}</p>
+        <p v-if="readOnly" class="subtitle">가상 입력으로 계산한 기준 결과입니다. 입력 변경 후 계산 데이터를 다시 생성해 주세요.</p>
+        <p v-else class="subtitle">결과는 서버에 저장하지 않으며 화면을 새로 열 때 최신 정보로 다시 계산합니다.</p>
       </div>
       <button
-        v-if="reportStore.activeSessionId"
-        class="ghost-button"
+        v-if="reportStore.activeSessionId && !readOnly"
+        class="secondary-button"
         type="button"
         :disabled="reportStore.simulationLoading"
         @click="reportStore.runBaselineSimulation()"
@@ -271,53 +273,36 @@ async function resetToBaseline() {
         <SimulationIssueList :issues="issues" />
       </div>
 
-      <!-- 답: 문장이 먼저, 숫자가 그 근거 -->
-      <div class="headline" :class="`tone-${headline.tone}`">
-        <div class="headline-verdict">
-          <span class="verdict-chip">{{ headline.chip }}</span>
-          <div class="verdict-value">
-            <strong>{{ headline.value }}</strong>
-            <span
-              v-if="headline.deltaText"
-              class="verdict-delta"
-              :class="`delta-${headline.deltaTone}`"
-            >{{ headline.deltaText }}</span>
-          </div>
-          <span v-if="headline.support" class="verdict-support">{{ headline.support }}</span>
-        </div>
-        <div class="headline-copy">
-          <p class="headline-title">{{ headline.title }}</p>
-          <p class="headline-detail">{{ headline.detail }}</p>
-        </div>
+      <div class="result-grid">
+        <article class="result-card">
+          <span>기준 성공확률</span>
+          <strong>{{ probability(baseline?.success_probability) }}</strong>
+          <small>최종 잔액 P50 {{ fmtKRW(baseline?.final_balance_percentiles?.p50) }}</small>
+        </article>
+        <article class="result-card comparison" :class="{ empty: !comparison }">
+          <span>변경 성공확률</span>
+          <strong>{{ probability(comparison?.success_probability) }}</strong>
+          <small v-if="comparison">최종 잔액 P50 {{ fmtKRW(comparison.final_balance_percentiles.p50) }}</small>
+          <small v-else>{{ readOnly ? '개발 미리보기는 기준 결과만 표시합니다.' : '조건을 조절하고 다시 계산해 보세요.' }}</small>
+        </article>
+        <article class="result-card delta">
+          <span>성공확률 차이</span>
+          <strong>{{ probabilityDelta(delta?.success_probability_delta_pp) }}</strong>
+          <small>변경안 − 기준안</small>
+        </article>
       </div>
 
-      <SimulationFanChart
-        :baseline-rows="baselineRows"
-        :comparison-rows="comparisonRows"
-        :retirement-age="profile?.retirement_age ?? null"
-        :comparison-retirement-age="scenario?.profile?.retirement_age ?? null"
-        :compact="compact"
-      />
-
-      <!-- 조건 바꿔보기 -->
-      <form class="controls" @submit.prevent="recalculate">
-        <div class="controls-head">
-          <div class="controls-intro">
-            <h3>{{ comparison ? '바꾼 조건' : '조건을 바꾸면 어떻게 될까요' }}</h3>
-            <p v-if="!comparison && !compact">
-              아래 값을 조정하면 바꾼 결과가 위 그래프에 겹쳐 그려집니다. 상담 내용은 그대로 두고 화면에서만 비교합니다.
-            </p>
-          </div>
-          <button
-            v-if="comparison"
-            class="link-button"
-            type="button"
-            :disabled="reportStore.simulationLoading"
-            @click="resetToBaseline"
-          >
-            원래 조건으로 되돌리기
-          </button>
-        </div>
+      <form v-if="!readOnly" class="controls" @submit.prevent="recalculate">
+        <label>
+          <span>월 총 적립액</span>
+          <input v-model.number="monthlySavings" type="number" min="0" step="1">
+          <small>원/월</small>
+        </label>
+        <label>
+          <span>은퇴 나이</span>
+          <input v-model.number="retirementAge" type="number" min="18" max="100" step="1">
+          <small>세</small>
+        </label>
 
         <div class="lever-row">
           <div class="lever lever-grow">
@@ -444,11 +429,10 @@ async function resetToBaseline() {
     </div>
 
     <div v-else-if="reportStore.simulationError" class="state-card error" role="alert">
-      <p class="state-message">{{ reportStore.simulationError.message }}</p>
-      <SimulationIssueList :issues="issues" />
-      <p v-if="canRetry" class="state-hint">
-        위 ‘다시 계산’ 버튼으로 다시 시도해 주세요.
-      </p>
+      {{ reportStore.simulationError.message }}
+      <ul v-if="issues.length">
+        <li v-for="issue in issues" :key="`${issue.field}-${issue.code}`">{{ issue.message }}</li>
+      </ul>
     </div>
   </section>
 </template>

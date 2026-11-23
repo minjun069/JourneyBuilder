@@ -1,4 +1,5 @@
 import { makeIndicator } from '../components/charts/financialIndicatorSchema.js'
+import { makeReportIndicator, REPORT_INDICATORS } from './reportIndicators.js'
 
 export class ReportDataError extends Error {
   constructor(path) {
@@ -55,7 +56,11 @@ export function normalizePresentationData(data) {
     ...data,
     asset_statement: normalizeAssetStatement(data.asset_statement),
     cash_flow: normalizeCashFlow(data.cash_flow),
-    'financial-indicators': normalizeFinancialIndicators(data['financial-indicators']),
+    'financial-indicators': normalizeFinancialIndicators(data['financial-indicators'], data['retirement-readiness']?.current_age),
+    'retirement-fund': normalizeRetirementFund(data['retirement-fund']),
+    'retirement-readiness': normalizeRetirementReadiness(data['retirement-readiness']),
+    'pension-schedule': normalizePensionSchedule(data['pension-schedule']),
+    'required-savings': normalizeRequiredSavings(data['required-savings']),
   }
 }
 
@@ -227,7 +232,19 @@ function normalizeCashFlow(cf) {
   }
 }
 
-function normalizeFinancialIndicators(fi) {
+function normalizeFinancialIndicators(fi, currentAge) {
+  if (fi && Object.hasOwn(fi, 'household_balance')) {
+    const rawAge = fi.age ?? currentAge
+    const age = rawAge == null ? undefined : reportNumber(rawAge, 'financial-indicators.age')
+    const groups = { cashflow: [], assets: [], risk: [] }
+    for (const definition of REPORT_INDICATORS) {
+      const field = definition[0]
+      // A null denominator result is explicitly undefined, not a zero score.
+      const value = fi[field] === null ? null : reportNumber(fi[field], `financial-indicators.${field}`)
+      groups[definition[3]].push(makeReportIndicator(definition, value, age))
+    }
+    return { ...fi, age, groups }
+  }
   if (!fi?.groups) return fi ?? null
 
   return {
@@ -313,6 +330,56 @@ function buildAiComment(bs, cf, fallback) {
   const surplusRatio = cf?.surplus_ratio ?? 0
 
   return `AI 상담 결과 기준 순자산은 ${formatEok(bs?.net_worth ?? 0)}이며, 부채비율은 ${debtRatio}%입니다. 월 잉여현금흐름은 ${formatEok(cf?.surplus ?? 0)}(잉여율 ${surplusRatio}%) 수준입니다.`
+}
+
+function numericFields(value, fields, path) {
+  const result = { ...value }
+  for (const field of fields) result[field] = reportNumber(value?.[field], `${path}.${field}`)
+  return result
+}
+
+function reportRows(value, path, normalize) {
+  if (!Array.isArray(value)) throw new ReportDataError(path)
+  return value.map((row, index) => normalize(row, `${path}[${index}]`))
+}
+
+function normalizeRetirementFund(report) {
+  if (!report) return report
+  const path = 'retirement-fund'
+  return {
+    ...numericFields(report, ['prep_period_years', 'retirement_period_years', 'total_required_fund', 'total_prepared_fund', 'shortfall'], path),
+    assumptions: numericFields(report.assumptions, ['inflation_rate'], `${path}.assumptions`),
+    phase_details: reportRows(report.phase_details, `${path}.phase_details`, (row, rowPath) =>
+      numericFields(row, ['duration_years', 'monthly_required', 'annual_required', 'total_required'], rowPath)),
+  }
+}
+
+function normalizeRetirementReadiness(report) {
+  if (!report) return report
+  const path = 'retirement-readiness'
+  return {
+    ...numericFields(report, ['current_age', 'retirement_age', 'total_retirement_assets'], path),
+    retirement_composition: numericFields(report.retirement_composition,
+      ['financial', 'real_estate', 'pension_accumulation'], `${path}.retirement_composition`),
+    retirement_income_sources: numericFields(report.retirement_income_sources,
+      ['public_pension_monthly', 'severance_pay_estimated', 'rental_income_annual'], `${path}.retirement_income_sources`),
+  }
+}
+
+function normalizePensionSchedule(report) {
+  if (!report) return report
+  const path = 'pension-schedule'
+  return {
+    ...report,
+    results: numericFields(report.results, ['pension_start_age', 'final_monthly_est', 'total_months'], `${path}.results`),
+    yearly_schedule: reportRows(report.yearly_schedule, `${path}.yearly_schedule`, (row, rowPath) =>
+      numericFields(row, ['age', 'year', 'monthly_amount', 'annual_amount'], rowPath)),
+  }
+}
+
+function normalizeRequiredSavings(report) {
+  if (!report) return report
+  return numericFields(report, ['current_monthly_savings', 'target_monthly_savings', 'additional_required_savings'], 'required-savings')
 }
 
 function reportNumber(value, path) {

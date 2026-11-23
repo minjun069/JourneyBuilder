@@ -341,6 +341,24 @@ export const useReportStore = defineStore('report', () => {
     return Boolean(reports.value?.[reportKey])
   }
 
+  function loadDevelopmentPresentation(scenario) {
+    if (!import.meta.env.DEV) throw new Error('Development preview is unavailable')
+    // Normalize before changing state so malformed fixtures cannot leave half a scenario.
+    const nextReports = mapReports(scenario.reports)
+    const nextSimulation = scenario.simulation.success
+      ? normalizeSimulationResponse(scenario.simulation)
+      : null
+    const nextError = scenario.simulation.success ? null : normalizeSimulationError({
+      response: { status: 422, data: scenario.simulation },
+    })
+    clearReports()
+    activeSessionId.value = `dev:${scenario.id}`
+    const key = reportCacheKey(activeSessionId.value)
+    writeReports(key, nextReports)
+    simulationsBySession.value = { [key]: nextSimulation }
+    simulationErrorsBySession.value = { [key]: nextError }
+  }
+
   function presentationReportVersion(stepId) {
     if (stepId === 'retirement-simulation') {
       return simulation.value?.baselineKey
@@ -417,5 +435,6 @@ export const useReportStore = defineStore('report', () => {
     dashboardCashflow,
     clearActiveReport,
     clearReports,
+    ...(import.meta.env.DEV ? { loadDevelopmentPresentation } : {}),
   }
 })
