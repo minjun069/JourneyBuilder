@@ -20,148 +20,150 @@
 #   - g1_gate.py 는 Windows 로컬에서는 실행되지 않는다. check_manifest 가 매니페스트의 경로 문자열을
 #     str(Path.relative_to) 와 비교하는데 Windows 에서는 역슬래시가 되어 항상 불일치한다(러너는 Linux 라 통과).
 
-stages:
-  - test
-  - deploy
 
-default:
-  tags: [ssafy-ec2]
-  interruptible: true
+# stages:
+#   - test
+#   - deploy
 
-variables:
-  GIT_DEPTH: "0"             # 전체 히스토리. g1_gate.py 가 200 커밋 전 조상을 검사하고, 저장소가 8.7MiB 라 얕게 받을 이득이 없다
-  DOCKER_BUILDKIT: "1"
-  # 테스트 전용 더미 (운영 값 아님)
-  CI_DJANGO_SECRET_KEY: "ci-only-django-secret-key-not-for-production"
-  CI_POSTGRES_PASSWORD: "ci-only-postgres-password"
-  CI_AI_SERVICE_BEARER_TOKEN: "ci-only-ai-bearer-token"
-  CI_AI_MASKING_PSEUDONYM_KEY: "ci-only-ai-masking-pseudonym-key-32-bytes"
-  CI_GOOGLE_API_KEY: "ci-only-dummy-google-key"   # ai 설정 검증(validate_runtime) 통과용. 실제 호출 없음
-  CI_DATABASE_URL: "postgresql://ci:ci-only-db-password@localhost:5432/ci"   # 동일. 로컬에선 루트 .env 가 load_dotenv 로 잡혀 통과했지만 CI 에는 .env 가 없다
+# default:
+#   tags: [ssafy-ec2]
+#   interruptible: true
 
-workflow:
-  rules:
-    # MR 이 열린 브랜치는 MR 파이프라인만 돌린다 (브랜치 + MR 이중 실행 방지)
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
-      when: never
-    - if: $CI_COMMIT_BRANCH
+# variables:
+#   GIT_DEPTH: "0"             # 전체 히스토리. g1_gate.py 가 200 커밋 전 조상을 검사하고, 저장소가 8.7MiB 라 얕게 받을 이득이 없다
+#   DOCKER_BUILDKIT: "1"
+#   # 테스트 전용 더미 (운영 값 아님)
+#   CI_DJANGO_SECRET_KEY: "ci-only-django-secret-key-not-for-production"
+#   CI_POSTGRES_PASSWORD: "ci-only-postgres-password"
+#   CI_AI_SERVICE_BEARER_TOKEN: "ci-only-ai-bearer-token"
+#   CI_AI_MASKING_PSEUDONYM_KEY: "ci-only-ai-masking-pseudonym-key-32-bytes"
+#   CI_GOOGLE_API_KEY: "ci-only-dummy-google-key"   # ai 설정 검증(validate_runtime) 통과용. 실제 호출 없음
+#   CI_DATABASE_URL: "postgresql://ci:ci-only-db-password@localhost:5432/ci"   # 동일. 로컬에선 루트 .env 가 load_dotenv 로 잡혀 통과했지만 CI 에는 .env 가 없다
 
-# ── 환경변수 계약: Compose 치환값·서비스 reader·예제 파일 exact match ─────────
-# stdlib 정적 검사라 secret 값이나 Docker daemon이 필요 없다. 이 잡은 blocking이다.
-test:env-contract:
-  stage: test
-  script:
-    - python3 deploy/check_env_contract.py
-    - python3 -m unittest discover -s deploy/tests -p 'test_*.py' -v
-    - bash deploy/tests/test_deploy_ai_diagnostics.sh
+# workflow:
+#   rules:
+#     # MR 이 열린 브랜치는 MR 파이프라인만 돌린다 (브랜치 + MR 이중 실행 방지)
+#     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+#     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+#       when: never
+#     - if: $CI_COMMIT_BRANCH
 
-# ── 산출물 정합성 게이트 (Makefile g1-foundation, g1_gate.py — 강병민 작성 2026-09-06) ──
-# AI 문서·매니페스트·RAG 해시 거버넌스를 검사한다. 작성자 개인 규율 도구 성격이라 다른 팀원의 MR 을 막지 않도록
-# allow_failure 로 둔다(결과는 보임). 팀 게이트로 쓰기로 합의(A18)되면 allow_failure 를 제거한다.
-test:foundation:
-  stage: test
-  allow_failure: true
-  script:
-    - python3 --version
-    - python3 g1_gate.py
+# # ── 환경변수 계약: Compose 치환값·서비스 reader·예제 파일 exact match ─────────
+# # stdlib 정적 검사라 secret 값이나 Docker daemon이 필요 없다. 이 잡은 blocking이다.
+# test:env-contract:
+#   stage: test
+#   script:
+#     - python3 deploy/check_env_contract.py
+#     - python3 -m unittest discover -s deploy/tests -p 'test_*.py' -v
+#     - bash deploy/tests/test_deploy_ai_diagnostics.sh
 
-# ── backend (Makefile g1-backend): 계산 패키지·Backend 회귀, 저장소 루트를 /src 에 마운트 ──
-test:backend:
-  stage: test
-  script:
-    - docker build -q -f backend-pjt/Dockerfile -t ci-backend:$CI_COMMIT_SHORT_SHA .
-    - >
-      docker run --rm
-      -v "$CI_PROJECT_DIR:/src:ro" -w /src/backend-pjt
-      -e DJANGO_SECRET_KEY="$CI_DJANGO_SECRET_KEY"
-      -e POSTGRES_PASSWORD="$CI_POSTGRES_PASSWORD"
-      -e AI_SERVICE_BEARER_TOKEN="$CI_AI_SERVICE_BEARER_TOKEN"
-      -e DJANGO_DEBUG=false
-      ci-backend:$CI_COMMIT_SHORT_SHA
-      sh -c "
-        python -m unittest discover -s packages/retirement_simulation/tests -t packages -q &&
-        python -m unittest discover -s tests -v &&
-        python -m unittest discover -s contract_tests -v"
-  after_script:
-    - docker image rm -f ci-backend:$CI_COMMIT_SHORT_SHA >/dev/null 2>&1 || true
+# # ── 산출물 정합성 게이트 (Makefile g1-foundation, g1_gate.py — 강병민 작성 2026-09-06) ──
+# # AI 문서·매니페스트·RAG 해시 거버넌스를 검사한다. 작성자 개인 규율 도구 성격이라 다른 팀원의 MR 을 막지 않도록
+# # allow_failure 로 둔다(결과는 보임). 팀 게이트로 쓰기로 합의(A18)되면 allow_failure 를 제거한다.
+# test:foundation:
+#   stage: test
+#   allow_failure: true
+#   script:
+#     - python3 --version
+#     - python3 g1_gate.py
 
-# ── ai (Makefile g1-ai · g1-rag · g1-tools · g1-observability · g1-security): 빌드 컨텍스트는 루트 ──
-test:ai:
-  stage: test
-  script:
-    - docker build -q -f ai-pjt/Dockerfile -t ci-ai:$CI_COMMIT_SHORT_SHA .
-    - >
-      docker run --rm
-      -v "$CI_PROJECT_DIR:/src:ro" -w /src/ai-pjt
-      -e AI_SERVICE_BEARER_TOKEN="$CI_AI_SERVICE_BEARER_TOKEN"
-      -e AI_MASKING_PSEUDONYM_KEY="$CI_AI_MASKING_PSEUDONYM_KEY"
-      -e GOOGLE_API_KEY="$CI_GOOGLE_API_KEY"
-      -e DATABASE_URL="$CI_DATABASE_URL"
-      ci-ai:$CI_COMMIT_SHORT_SHA
-      sh -c "
-        python -m rag.bootstrap --check-only &&
-        python -m unittest discover -s tests -v &&
-        python -m unittest discover -s guardrails/tests -v &&
-        python -m unittest discover -s rag/tests -v &&
-        python -m unittest discover -s tools/tests -v &&
-        python -m unittest discover -s evals/tests -v &&
-        cd evals/security && python -m unittest discover -p 'test_*.py' -q"
-  after_script:
-    - docker image rm -f ci-ai:$CI_COMMIT_SHORT_SHA >/dev/null 2>&1 || true
+# # ── backend (Makefile g1-backend): 계산 패키지·Backend 회귀, 저장소 루트를 /src 에 마운트 ──
+# test:backend:
+#   stage: test
+#   script:
+#     - docker build -q -f backend-pjt/Dockerfile -t ci-backend:$CI_COMMIT_SHORT_SHA .
+#     - >
+#       docker run --rm
+#       -v "$CI_PROJECT_DIR:/src:ro" -w /src/backend-pjt
+#       -e DJANGO_SECRET_KEY="$CI_DJANGO_SECRET_KEY"
+#       -e POSTGRES_PASSWORD="$CI_POSTGRES_PASSWORD"
+#       -e AI_SERVICE_BEARER_TOKEN="$CI_AI_SERVICE_BEARER_TOKEN"
+#       -e DJANGO_DEBUG=false
+#       ci-backend:$CI_COMMIT_SHORT_SHA
+#       sh -c "
+#         python -m unittest discover -s packages/retirement_simulation/tests -t packages -q &&
+#         python -m unittest discover -s tests -v &&
+#         python -m unittest discover -s contract_tests -v"
+#   after_script:
+#     - docker image rm -f ci-backend:$CI_COMMIT_SHORT_SHA >/dev/null 2>&1 || true
 
-# ── front (Makefile g1-node 와 동일): node 컨테이너에 마운트, npm test + p07 e2e ──
-# lint 는 게이트에 넣지 않는다. 2026-09-07 기준 현재 코드가 oxlint 154 / eslint 44 오류 상태이고
-# 팀 스크립트(npm run lint)는 --fix 로 돌려서 통과시키는 방식이다. 정리되면 별도 잡으로 추가한다.
-test:front:
-  stage: test
-  script:
-    - >
-      docker run --rm --user "$(id -u):$(id -g)"
-      -e HOME=/tmp -e npm_config_cache=/tmp/.npm
-      -v "$CI_PROJECT_DIR:/workspace" -w /workspace/front-pjt
-      node:22-bookworm
-      sh -c "npm ci --no-audit --no-fund && npm test"
-    - >
-      docker run --rm
-      -v "$CI_PROJECT_DIR:/workspace:ro" -w /workspace
-      node:22-bookworm
-      node --test front-pjt/tests/e2e/p07/p07-preparation.test.mjs
+# # ── ai (Makefile g1-ai · g1-rag · g1-tools · g1-observability · g1-security): 빌드 컨텍스트는 루트 ──
+# test:ai:
+#   stage: test
+#   script:
+#     - docker build -q -f ai-pjt/Dockerfile -t ci-ai:$CI_COMMIT_SHORT_SHA .
+#     - >
+#       docker run --rm
+#       -v "$CI_PROJECT_DIR:/src:ro" -w /src/ai-pjt
+#       -e AI_SERVICE_BEARER_TOKEN="$CI_AI_SERVICE_BEARER_TOKEN"
+#       -e AI_MASKING_PSEUDONYM_KEY="$CI_AI_MASKING_PSEUDONYM_KEY"
+#       -e GOOGLE_API_KEY="$CI_GOOGLE_API_KEY"
+#       -e DATABASE_URL="$CI_DATABASE_URL"
+#       ci-ai:$CI_COMMIT_SHORT_SHA
+#       sh -c "
+#         python -m rag.bootstrap --check-only &&
+#         python -m unittest discover -s tests -v &&
+#         python -m unittest discover -s guardrails/tests -v &&
+#         python -m unittest discover -s rag/tests -v &&
+#         python -m unittest discover -s tools/tests -v &&
+#         python -m unittest discover -s evals/tests -v &&
+#         cd evals/security && python -m unittest discover -p 'test_*.py' -q"
+#   after_script:
+#     - docker image rm -f ci-ai:$CI_COMMIT_SHORT_SHA >/dev/null 2>&1 || true
 
-# ── F14 전체 release regression: Django 앱 내부 transaction test까지 포함 ──
-# 기존 세 언어 잡의 빠른 실패 피드백과 별도로, 격리 PostgreSQL·Redis에서 Backend 전체
-# Django suite를 실행하고 T01/T02/T04 artifact·calculation policy 소비자 digest를 G6로 묶는다.
-test:f14-regression:
-  stage: test
-  script:
-    - bash deploy/f14-regression.sh
+# # ── front (Makefile g1-node 와 동일): node 컨테이너에 마운트, npm test + p07 e2e ──
+# # lint 는 게이트에 넣지 않는다. 2026-09-07 기준 현재 코드가 oxlint 154 / eslint 44 오류 상태이고
+# # 팀 스크립트(npm run lint)는 --fix 로 돌려서 통과시키는 방식이다. 정리되면 별도 잡으로 추가한다.
+# test:front:
+#   stage: test
+#   script:
+#     - >
+#       docker run --rm --user "$(id -u):$(id -g)"
+#       -e HOME=/tmp -e npm_config_cache=/tmp/.npm
+#       -v "$CI_PROJECT_DIR:/workspace" -w /workspace/front-pjt
+#       node:22-bookworm
+#       sh -c "npm ci --no-audit --no-fund && npm test"
+#     - >
+#       docker run --rm
+#       -v "$CI_PROJECT_DIR:/workspace:ro" -w /workspace
+#       node:22-bookworm
+#       node --test front-pjt/tests/e2e/p07/p07-preparation.test.mjs
 
-# ── deploy: master 에 머지되면 서버에 배포 (S15P21B109-125) ──
-# 러너가 곧 배포 서버(shell executor)라서 SSH·이미지 레지스트리 없이 체크아웃 디렉터리에서 compose 를 올린다.
-# 비밀값은 /srv/s15p21b109/secrets/app.env (root:gitlab-runner 640) 를 deploy.sh 가 --env-file 로 읽는다.
-# 실패하면 deploy.sh 가 직전 이미지로 롤백하고 exit 1 → 잡 failed. 첫 배포는 롤백 대상이 없어 중단만 한다.
-deploy:production:
-  stage: deploy
-  interruptible: false          # 배포 도중 새 커밋이 와도 이 잡은 끊지 않는다 (compose 가 반만 올라간 상태 방지)
-  resource_group: production    # 배포 잡은 동시에 하나만 (러너 concurrent=1 이지만 명시)
-  variables:
-    # ai-pjt 가 healthy 가 되지 못한 배포를 성공으로 기록하지 않는다 (S15P21B109-132).
-    # #122 때 ai 컨테이너가 이틀간 재시작을 반복했는데 배포는 계속 성공으로 남아 발견이 늦었다.
-    # AI env 가 깨져 배포가 계속 실패하면 서빙(web·backend) 수정도 못 나간다 → 그때는 코드 수정 없이 끈다:
-    #   "Run pipeline" 화면에서 변수 AI_REQUIRED=0 (그 실행만) / 프로젝트 CI 변수 AI_REQUIRED=0 (상시)
-    #   또는 서버에서 AI_REQUIRED=0 bash deploy/deploy.sh
-    AI_REQUIRED: "1"
-  environment:
-    name: production
-    url: https://j15b109.p.ssafy.io
-    deployment_tier: production
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: never                # MR 파이프라인에서는 배포하지 않는다
-    - if: $CI_COMMIT_BRANCH == "master"
-      when: on_success           # test 스테이지 통과 시 자동. 그 외 브랜치에서는 잡이 생성되지 않는다
-  script:
-    - bash deploy/deploy.sh
-  after_script:
-    - docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml ps || true
-    - docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml ps -a rag-bootstrap || true
+# # ── F14 전체 release regression: Django 앱 내부 transaction test까지 포함 ──
+# # 기존 세 언어 잡의 빠른 실패 피드백과 별도로, 격리 PostgreSQL·Redis에서 Backend 전체
+# # Django suite를 실행하고 T01/T02/T04 artifact·calculation policy 소비자 digest를 G6로 묶는다.
+# test:f14-regression:
+#   stage: test
+#   script:
+#     - bash deploy/f14-regression.sh
+
+# # ── deploy: master 에 머지되면 서버에 배포 (S15P21B109-125) ──
+# # 러너가 곧 배포 서버(shell executor)라서 SSH·이미지 레지스트리 없이 체크아웃 디렉터리에서 compose 를 올린다.
+# # 비밀값은 /srv/s15p21b109/secrets/app.env (root:gitlab-runner 640) 를 deploy.sh 가 --env-file 로 읽는다.
+# # 실패하면 deploy.sh 가 직전 이미지로 롤백하고 exit 1 → 잡 failed. 첫 배포는 롤백 대상이 없어 중단만 한다.
+# deploy:production:
+#   stage: deploy
+#   interruptible: false          # 배포 도중 새 커밋이 와도 이 잡은 끊지 않는다 (compose 가 반만 올라간 상태 방지)
+#   resource_group: production    # 배포 잡은 동시에 하나만 (러너 concurrent=1 이지만 명시)
+#   variables:
+#     # ai-pjt 가 healthy 가 되지 못한 배포를 성공으로 기록하지 않는다 (S15P21B109-132).
+#     # #122 때 ai 컨테이너가 이틀간 재시작을 반복했는데 배포는 계속 성공으로 남아 발견이 늦었다.
+#     # AI env 가 깨져 배포가 계속 실패하면 서빙(web·backend) 수정도 못 나간다 → 그때는 코드 수정 없이 끈다:
+#     #   "Run pipeline" 화면에서 변수 AI_REQUIRED=0 (그 실행만) / 프로젝트 CI 변수 AI_REQUIRED=0 (상시)
+#     #   또는 서버에서 AI_REQUIRED=0 bash deploy/deploy.sh
+#     AI_REQUIRED: "1"
+#   environment:
+#     name: production
+#     url: https://j15b109.p.ssafy.io
+#     deployment_tier: production
+#   rules:
+#     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+#       when: never                # MR 파이프라인에서는 배포하지 않는다
+#     - if: $CI_COMMIT_BRANCH == "master"
+#       when: on_success           # test 스테이지 통과 시 자동. 그 외 브랜치에서는 잡이 생성되지 않는다
+#   script:
+#     - bash deploy/deploy.sh
+#   after_script:
+#     - docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml ps || true
+#     - docker compose --env-file /srv/s15p21b109/secrets/app.env -f docker-compose.yml -f docker-compose.prod.yml ps -a rag-bootstrap || true1
+
