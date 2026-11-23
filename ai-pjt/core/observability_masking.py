@@ -166,6 +166,11 @@ class MaskedInstrumentationSink:
                 and re.fullmatch(r"[0-9a-f]{64}", prompt_hash)
             ):
                 masked = {**masked, "prompt_hash": prompt_hash}
+            # This is a generated UUID, never user content. Numeric substrings
+            # must not be mistaken for phone numbers by free-text masking.
+            call_id = raw.get("call_id")
+            if raw.get("stage") == "model" and isinstance(call_id, str) and re.fullmatch(r"call_[0-9a-f]{32}", call_id):
+                masked = {**masked, "call_id": call_id}
             self._downstream.emit({**masked, "masking_status": "applied"})
         except Exception:
             self._dropped_exports += 1

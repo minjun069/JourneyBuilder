@@ -105,10 +105,11 @@ def _create_llamaindex_embedding() -> BaseEmbedding:
 
     if provider == "gemini":
         from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
-        return GoogleGenAIEmbedding(
+        from core.embedding_usage import instrument_gemini_embedding
+        return instrument_gemini_embedding(GoogleGenAIEmbedding(
             model_name=settings.embedding_model, # 예: "models/text-embedding-004"
             api_key=settings.gemini_api_key,
-        )
+        ))
     elif provider == "openai":
         raise RuntimeConfigurationError(
             "EMBEDDING_PROVIDER=openai has no installed runtime adapter"

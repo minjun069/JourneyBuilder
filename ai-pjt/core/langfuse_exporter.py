@@ -48,6 +48,9 @@ _OBSERVATION_METADATA_FIELDS_BY_FAMILY = {
     "operation": frozenset(
         {
             "agent",
+            "call_id",
+            "usage_status",
+            "duration_ms",
             "error_code",
             "error_fingerprint",
             "error_type",
@@ -115,6 +118,11 @@ _ALLOWED_FIELDS_BY_FAMILY = {
         "agent",
         "attempt_id",
         "cost_microusd",
+        "call_id",
+        "usage_status",
+        "total_tokens",
+        "cached_input_tokens",
+        "reasoning_output_tokens",
         "duration_ms",
         "error_code",
         "error_fingerprint",
@@ -205,8 +213,17 @@ _MAX_RETAINED_TRACES = 1_024
 @dataclass(slots=True)
 class _OpenObservation:
     observation: _LangfuseObservation
+    step_observation: _LangfuseObservation | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     identity: dict[str, str] = field(default_factory=dict)
+
+
+    def end(self) -> None:
+        try:
+            self.observation.end()
+        finally:
+            if self.step_observation is not None:
+                self.step_observation.end()
 
 
 @dataclass(slots=True)
@@ -299,6 +316,10 @@ class LangfuseInstrumentationExporter:
             )
             self._evict_closed_traces()
 
+    def flush(self) -> None:
+        """Drain completed observations before a short collection process exits."""
+        self._client.flush()
+
     def shutdown(self) -> None:
         failure: Exception | None = None
         with self._lock:
@@ -307,7 +328,7 @@ class LangfuseInstrumentationExporter:
                     tuple(state.observations.values())
                 ):
                     try:
-                        open_observation.observation.end()
+                        open_observation.end()
                     except Exception as error:  # noqa: BLE001 - flush all spans
                         failure = failure or error
                 if not state.ended:
@@ -377,7 +398,7 @@ class LangfuseInstrumentationExporter:
             return
 
         for open_observation in reversed(tuple(state.observations.values())):
-            open_observation.observation.end()
+            open_observation.end()
         state.observations.clear()
         state.root.end()
         state.ended = True
@@ -405,11 +426,16 @@ class LangfuseInstrumentationExporter:
             return
         metadata = _observation_metadata(payload)
         parent = _observation_parent(state, payload)
+        step_args = _agent_step_args(payload, contract_version)
+        step_observation = parent.start_observation(**step_args) if step_args else None
+        if step_observation is not None:
+            parent = step_observation
         observation = parent.start_observation(
             **_observation_args(payload, contract_version, metadata=metadata)
         )
         state.observations[lifecycle_key] = _OpenObservation(
             observation=observation,
+            step_observation=step_observation,
             metadata=metadata,
             identity=_observation_identity(payload),
         )
@@ -428,8 +454,15 @@ class LangfuseInstrumentationExporter:
         open_observation.observation.update(
             **_content_update_args(payload, metadata=metadata)
         )
-        open_observation.observation.end()
+        open_observation.end()
         del state.observations[lifecycle_key]
+        # Background summaries have a synthetic trace and no HTTP request
+        # terminal. Finish their root with the generation, rather than waiting
+        # until process shutdown (which would distort latency and retain roots).
+        if payload.get("agent") == "summary" and not state.observations:
+            state.root.update(metadata=state.root_metadata, output=payload.get("output"), **_failure_args(payload))
+            state.root.end()
+            state.ended = True
 
     def _emit_one_shot_observation(
         self,
@@ -604,6 +637,10 @@ def _content_update_args(
         if field_name in payload:
             args[field_name] = payload[field_name]
     args.update(_failure_args(payload))
+    if payload.get("event_family") == "operation" and payload.get("stage") == "model":
+        generation = _generation_args(payload)
+        generation.pop("as_type", None)
+        args.update(generation)
     return args
 
 
@@ -626,7 +663,7 @@ def _observation_args(
         if field_name in payload:
             args[field_name] = payload[field_name]
     args.update(_failure_args(payload))
-    if event_family == "operation" and payload.get("stage") == "model":
+    if event_family == "operation" and payload.get("stage") == "model" and (payload.get("model_name") or payload.get("call_id")):
         args.update(_generation_args(payload))
     return args
 
@@ -746,6 +783,8 @@ def _is_request_lifecycle(payload: Mapping[str, Any]) -> bool:
 def _runtime_lifecycle_key(
     payload: Mapping[str, Any],
 ) -> tuple[str, ...] | None:
+    if payload.get("event_family") == "operation" and payload.get("stage") == "model" and payload.get("call_id"):
+        return ("model", str(payload["call_id"]))
     if payload.get("event_family") != "runtime":
         return None
     stage = payload.get("stage")
@@ -776,20 +815,31 @@ def _otel_trace_id(masked_trace_id: str) -> str:
 
 
 def _generation_args(payload: Mapping[str, Any]) -> dict[str, Any]:
-    args: dict[str, Any] = {"as_type": "generation"}
+    args: dict[str, Any] = {"as_type": "embedding" if payload.get("operation_name") == "rag.embedding" else "generation"}
     model_name = payload.get("model_name")
     if isinstance(model_name, str) and model_name:
         args["model"] = model_name
 
     usage_details: dict[str, int] = {}
     for source, target in (
-        ("input_tokens", "prompt_tokens"),
-        ("output_tokens", "completion_tokens"),
+        ("input_tokens", "input"),
+        ("output_tokens", "output"),
     ):
         value = payload.get(source)
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
             usage_details[target] = value
     if usage_details:
+        # Normalized totals include cache/reasoning; do not count them twice.
+        for total, detail, source in (
+            ("input", "input_cached_tokens", "cached_input_tokens"),
+            ("output", "output_reasoning_tokens", "reasoning_output_tokens"),
+        ):
+            value = payload.get(source)
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= usage_details.get(total, -1):
+                usage_details[total] -= value
+                usage_details[detail] = value
+        if isinstance(payload.get("total_tokens"), int):
+            usage_details["total"] = payload["total_tokens"]
         args["usage_details"] = usage_details
 
     cost_microusd = payload.get("cost_microusd")
@@ -798,5 +848,5 @@ def _generation_args(payload: Mapping[str, Any]) -> dict[str, Any]:
         and not isinstance(cost_microusd, bool)
         and cost_microusd >= 0
     ):
-        args["cost_details"] = {"total_cost": cost_microusd / 1_000_000}
+        args["cost_details"] = {"total": cost_microusd / 1_000_000}
     return args

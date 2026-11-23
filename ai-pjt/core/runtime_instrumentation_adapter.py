@@ -251,6 +251,11 @@ class BoundRuntimeInstrumentation:
         tool_version: str | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        total_tokens: int | None = None,
+        cached_input_tokens: int | None = None,
+        reasoning_output_tokens: int | None = None,
+        call_id: str | None = None,
+        usage_status: str | None = None,
         cost_microusd: int | None = None,
         resource_ids: tuple[str, ...] = (),
         scores: tuple[float, ...] = (),
@@ -284,6 +289,11 @@ class BoundRuntimeInstrumentation:
             tool_version=tool_version,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cached_input_tokens=cached_input_tokens,
+            reasoning_output_tokens=reasoning_output_tokens,
+            call_id=call_id,
+            usage_status=usage_status,
             cost_microusd=cost_microusd,
             resource_ids=resource_ids,
             scores=scores,
@@ -298,6 +308,13 @@ class BoundRuntimeInstrumentation:
         self,
         *,
         purpose: str,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+        cached_input_tokens: int | None = None,
+        reasoning_output_tokens: int | None = None,
+        call_id: str | None = None,
+        usage_status: str | None = None,
         operation_name: str | None = None,
         status: str,
         duration_ms: int,
@@ -323,6 +340,7 @@ class BoundRuntimeInstrumentation:
 
         operation_status = OperationStatus(status)
         if operation_status not in {
+            OperationStatus.STARTED,
             OperationStatus.SUCCEEDED,
             OperationStatus.FAILED,
             OperationStatus.TIMEOUT,
@@ -330,6 +348,13 @@ class BoundRuntimeInstrumentation:
             raise ValueError("model call status must be terminal")
         self.record_operation(
             stage=OperationStage.MODEL,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cached_input_tokens=cached_input_tokens,
+            reasoning_output_tokens=reasoning_output_tokens,
+            call_id=call_id,
+            usage_status=usage_status,
             status=operation_status,
             operation_name=operation_name or f"{purpose}.generate",
             duration_ms=duration_ms,
@@ -337,7 +362,7 @@ class BoundRuntimeInstrumentation:
             agent=purpose,
             error_code=(
                 None
-                if operation_status is OperationStatus.SUCCEEDED
+                if operation_status in {OperationStatus.SUCCEEDED, OperationStatus.STARTED}
                 else error_code or "model_call_failed"
             ),
             model_provider=model_provider or settings.llm_provider,

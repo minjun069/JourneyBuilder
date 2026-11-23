@@ -1,0 +1,2 @@
+# Optional authoring-time JSON Schema validation; not an AI service dependency.
+jsonschema>=4.10,<5

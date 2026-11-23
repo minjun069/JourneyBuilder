@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI 시나리오 자동입력 데이터 v1",
+  "description": "단계와 대화는 배열 순서대로 처리한다. 입력값은 해당 턴에 입력하거나 변경할 항목이다.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["step_id", "프로세스", "대화"],
+    "properties": {
+      "step_id": {
+        "type": "string",
+        "enum": [
+          "intro", "collection", "basic-info", "financial-mindset",
+          "financial-satisfaction", "financial-info", "financial-assets",
+          "pension-assets", "real-estate", "liabilities", "income", "expenses",
+          "financial-goals", "presentation", "balance-sheet", "cash-flow",
+          "financial-indicators", "financial-goal-result", "retirement-fund",
+          "retirement-readiness", "retirement-simulation", "pension-schedule",
+          "lifetime-cashflow", "required-savings", "general"
+        ]
+      },
+      "프로세스": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      },
+      "대화": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["사용자", "입력값"],
+          "properties": {
+            "사용자": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "pattern": "\\S"
+            },
+            "입력값": {
+              "type": "object",
+              "description": "한글 항목명과 입력할 값. 빈 객체는 변경 없음이며, 명시한 항목만 갱신한다. 배열은 해당 목록 전체 값으로 입력한다. null은 빈 값, 빈 배열은 빈 목록을 뜻한다.",
+              "propertyNames": {"minLength": 1, "pattern": "\\S"},
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

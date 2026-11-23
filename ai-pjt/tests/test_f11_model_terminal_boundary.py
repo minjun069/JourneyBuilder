@@ -150,9 +150,10 @@ class ModelBoundaryTests(unittest.TestCase):
                     prompt=prompt,
                 )
 
-        self.assertEqual(len(model_events), 1)
+        self.assertEqual([event["status"] for event in model_events], ["started", "succeeded"])
+        self.assertEqual(model_events[0]["call_id"], model_events[1]["call_id"])
         self.assertEqual(prompt_events, [])
-        event = model_events[0]
+        event = model_events[-1]
         self.assertEqual(event["prompt_id"], "qa.plan")
         self.assertEqual(event["prompt_version"], prompt.version)
         self.assertEqual(len(event["prompt_hash"]), 64)
@@ -234,8 +235,8 @@ class ModelBoundaryTests(unittest.TestCase):
             )
 
         self.assertEqual(result.content, "월 소득 기준으로 안내할게요.")
-        self.assertEqual(len(records), 1)
-        event = records[0]
+        self.assertEqual([event["status"] for event in records], ["started", "succeeded"])
+        event = records[-1]
         self.assertEqual(event["purpose"], "qa")
         self.assertEqual(event["operation_name"], "qa.plan")
         self.assertEqual(event["status"], "succeeded")
